@@ -1,9 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ContactsList } from "./contacts-list";
-import { SitesList } from "./sites-list";
 import { DeleteCustomerButton } from "./delete-customer-button";
+import { CustomerDetailTabs } from "./customer-detail-tabs";
 
 export default async function CustomerDetailPage({
   params,
@@ -13,23 +12,34 @@ export default async function CustomerDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: customer, error } = await supabase
-    .from("customers")
-    .select(
-      "*, customer_contacts(*), customer_sites(*), parent:customers!parent_customer_id(id, name)"
-    )
-    .eq("id", id)
-    .single();
+  const [customerResult, jobsResult, notesResult] = await Promise.all([
+    supabase
+      .from("customers")
+      .select(
+        "*, customer_contacts(*), customer_sites(*), parent:customers!parent_customer_id(id, name)"
+      )
+      .eq("id", id)
+      .single(),
+    supabase
+      .from("jobs")
+      .select("id, number, reference, description, status:statuses(name, colour, phase), created_at, updated_at")
+      .eq("customer_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("job_notes")
+      .select("id, content, type, created_at, staff:staff(display_name, initials), job:jobs!inner(customer_id)")
+      .eq("job.customer_id", id)
+      .order("created_at", { ascending: false })
+      .limit(50),
+  ]);
 
-  if (error || !customer) {
+  if (customerResult.error || !customerResult.data) {
     notFound();
   }
 
-  // Get job count for this customer
-  const { count: jobCount } = await supabase
-    .from("jobs")
-    .select("id", { count: "exact", head: true })
-    .eq("customer_id", id);
+  const customer = customerResult.data;
+  const jobs = jobsResult.data ?? [];
+  const notes = notesResult.data ?? [];
 
   return (
     <div>
@@ -50,9 +60,11 @@ export default async function CustomerDetailPage({
           <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
             <span className="capitalize">{customer.type}</span>
             {customer.abn && <span>ABN: {customer.abn}</span>}
-            {jobCount !== null && <span>{jobCount} jobs</span>}
+            <span>{jobs.length} jobs</span>
             {customer.total_revenue > 0 && (
-              <span>${Number(customer.total_revenue).toLocaleString()} revenue</span>
+              <span>
+                ${Number(customer.total_revenue).toLocaleString()} revenue
+              </span>
             )}
           </div>
         </div>
@@ -63,29 +75,22 @@ export default async function CustomerDetailPage({
           >
             Edit
           </Link>
-          <DeleteCustomerButton customerId={id} customerName={customer.name} />
+          <DeleteCustomerButton
+            customerId={id}
+            customerName={customer.name}
+          />
         </div>
       </div>
 
-      {customer.notes && (
-        <div className="mt-4 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-          {customer.notes}
-        </div>
-      )}
-
-      <div className="mt-8 grid gap-8 lg:grid-cols-2">
-        <div>
-          <ContactsList
-            customerId={id}
-            contacts={customer.customer_contacts ?? []}
-          />
-        </div>
-        <div>
-          <SitesList
-            customerId={id}
-            sites={customer.customer_sites ?? []}
-          />
-        </div>
+      <div className="mt-6">
+        <CustomerDetailTabs
+          customerId={id}
+          customer={customer}
+          contacts={customer.customer_contacts ?? []}
+          sites={customer.customer_sites ?? []}
+          jobs={jobs as any}
+          notes={notes as any}
+        />
       </div>
     </div>
   );
