@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { StatusTransition } from "./status-transition";
 import { QuickActions } from "./quick-actions";
+import { JobChecklist } from "./job-checklist";
 import { WorkLog } from "./work-log";
 import { JobTabs } from "./job-tabs";
 
@@ -14,7 +15,7 @@ export default async function JobDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [jobResult, statusesResult, staffResult, workResult, notesResult, timeResult, nbnResult] =
+  const [jobResult, statusesResult, staffResult, workResult, notesResult, timeResult, nbnResult, checklistResult, templatesResult] =
     await Promise.all([
       supabase
         .from("jobs")
@@ -48,6 +49,16 @@ export default async function JobDetailPage({
         .select("*")
         .eq("job_id", id)
         .order("step_number"),
+      supabase
+        .from("job_checklist_items")
+        .select("*")
+        .eq("job_id", id)
+        .order("sort_order"),
+      supabase
+        .from("checklist_templates")
+        .select("*")
+        .eq("is_active", true)
+        .order("name"),
     ]);
 
   if (jobResult.error || !jobResult.data) {
@@ -160,7 +171,16 @@ export default async function JobDetailPage({
         </p>
       )}
 
-      {/* ── Work Log ── */}
+      {/* ── Checklist ── */}
+      <div className="mt-6">
+        <JobChecklist
+          jobId={id}
+          items={(checklistResult.data ?? []) as any}
+          templates={(templatesResult.data ?? []) as any}
+        />
+      </div>
+
+      {/* ── Work Log (additional work not in checklist) ── */}
       <div className="mt-6">
         <WorkLog jobId={id} entries={workResult.data ?? []} />
       </div>
