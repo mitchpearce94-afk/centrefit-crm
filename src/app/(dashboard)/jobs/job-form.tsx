@@ -26,7 +26,6 @@ interface JobFormProps {
   categories: Category[];
   statuses: Status[];
   staff: StaffOption[];
-  job?: any;
 }
 
 export function JobForm({
@@ -34,29 +33,22 @@ export function JobForm({
   categories,
   statuses,
   staff,
-  job,
 }: JobFormProps) {
   const router = useRouter();
   const supabase = createClient();
-  const isEditing = !!job;
 
-  const [customerId, setCustomerId] = useState(job?.customer_id ?? "");
-  const [siteId, setSiteId] = useState(job?.site_id ?? "");
-  const [reference, setReference] = useState(job?.reference ?? "");
-  const [description, setDescription] = useState(job?.description ?? "");
-  const [category1Id, setCategory1Id] = useState(job?.category_1_id ?? "");
-  const [category2Id, setCategory2Id] = useState(job?.category_2_id ?? "");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [customerId, setCustomerId] = useState("");
+  const [siteId, setSiteId] = useState("");
+  const [reference, setReference] = useState("");
+  const [description, setDescription] = useState("");
+  const [category1Id, setCategory1Id] = useState("");
+  const [category2Id, setCategory2Id] = useState("");
   const [statusId, setStatusId] = useState(
-    job?.status_id ?? statuses.find((s) => s.name === "Lead / Unassigned")?.id ?? ""
+    statuses.find((s) => s.name === "Lead / Unassigned")?.id ?? ""
   );
-  const [estimatedValue, setEstimatedValue] = useState(
-    job?.estimated_value?.toString() ?? ""
-  );
-  const [dueDate, setDueDate] = useState(job?.due_date ?? "");
-  const [selectedStaff, setSelectedStaff] = useState<string[]>(
-    job?.job_staff?.map((js: any) => js.staff_id) ?? []
-  );
-  const [customerSearch, setCustomerSearch] = useState("");
+  const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
+  const [showStaffPicker, setShowStaffPicker] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -64,16 +56,41 @@ export function JobForm({
   const jobTypes = categories.filter((c) => c.type === "job_type");
   const businessUnits = categories.filter((c) => c.type === "business_unit");
 
-  // Get sites for selected customer
-  const selectedCustomer = customers.find((c) => c.id === customerId);
-  const sites = selectedCustomer?.customer_sites ?? [];
+  // Unified search across customer names AND site names
+  const searchResults = useMemo(() => {
+    if (!searchQuery || searchQuery.length < 2) return [];
+    const q = searchQuery.toLowerCase();
+    const results: { customerId: string; customerName: string; siteId?: string; siteName?: string; label: string }[] = [];
 
-  // Filter customers by search
-  const filteredCustomers = useMemo(() => {
-    if (!customerSearch) return customers;
-    const q = customerSearch.toLowerCase();
-    return customers.filter((c) => c.name.toLowerCase().includes(q));
-  }, [customers, customerSearch]);
+    for (const customer of customers) {
+      // Match customer name
+      if (customer.name.toLowerCase().includes(q)) {
+        results.push({
+          customerId: customer.id,
+          customerName: customer.name,
+          label: customer.name,
+        });
+      }
+      // Match site names
+      for (const site of customer.customer_sites) {
+        if (site.name.toLowerCase().includes(q)) {
+          results.push({
+            customerId: customer.id,
+            customerName: customer.name,
+            siteId: site.id,
+            siteName: site.name,
+            label: `${site.name}`,
+          });
+        }
+      }
+    }
+    return results.slice(0, 20);
+  }, [customers, searchQuery]);
+
+  // Get display text for selected customer/site
+  const selectedCustomer = customers.find((c) => c.id === customerId);
+  const selectedSite = selectedCustomer?.customer_sites.find((s) => s.id === siteId);
+  const sites = selectedCustomer?.customer_sites ?? [];
 
   // Group statuses by phase
   const statusesByPhase = useMemo(() => {
@@ -93,6 +110,18 @@ export function JobForm({
     completion: "Completion",
   };
 
+  function selectResult(result: typeof searchResults[0]) {
+    setCustomerId(result.customerId);
+    setSiteId(result.siteId ?? "");
+    setSearchQuery("");
+  }
+
+  function clearSelection() {
+    setCustomerId("");
+    setSiteId("");
+    setSearchQuery("");
+  }
+
   function toggleStaff(staffId: string) {
     setSelectedStaff((prev) =>
       prev.includes(staffId)
@@ -111,142 +140,133 @@ export function JobForm({
       setSaving(false);
       return;
     }
-    if (!statusId) {
-      setError("Status is required");
-      setSaving(false);
-      return;
-    }
 
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
-    const payload: Record<string, any> = {
-      customer_id: customerId,
-      site_id: siteId || null,
-      reference: reference.trim() || null,
-      description: description.trim() || null,
-      category_1_id: category1Id || null,
-      category_2_id: category2Id || null,
-      status_id: statusId,
-      estimated_value: estimatedValue ? parseFloat(estimatedValue) : null,
-      due_date: dueDate || null,
-    };
+    const { data: newJob, error: err } = await supabase
+      .from("jobs")
+      .insert({
+        customer_id: customerId,
+        site_id: siteId || null,
+        reference: reference.trim() || null,
+        description: description.trim() || null,
+        category_1_id: category1Id || null,
+        category_2_id: category2Id || null,
+        status_id: statusId,
+        created_by: user?.id ?? null,
+      })
+      .select()
+      .single();
 
-    if (!isEditing && user) {
-      payload.created_by = user.id;
+    if (err || !newJob) {
+      setError(err?.message ?? "Failed to create job");
+      setSaving(false);
+      return;
     }
 
-    if (isEditing) {
-      const { error: err } = await supabase
-        .from("jobs")
-        .update(payload)
-        .eq("id", job.id);
-
-      if (err) {
-        setError(err.message);
-        setSaving(false);
-        return;
-      }
-
-      // Update staff assignments
-      await supabase.from("job_staff").delete().eq("job_id", job.id);
-      if (selectedStaff.length > 0) {
-        await supabase.from("job_staff").insert(
-          selectedStaff.map((staffId) => ({
-            job_id: job.id,
-            staff_id: staffId,
-          }))
-        );
-      }
-
-      router.push(`/jobs/${job.id}`);
-      router.refresh();
-    } else {
-      const { data: newJob, error: err } = await supabase
-        .from("jobs")
-        .insert(payload)
-        .select()
-        .single();
-
-      if (err || !newJob) {
-        setError(err?.message ?? "Failed to create job");
-        setSaving(false);
-        return;
-      }
-
-      // Add staff assignments
-      if (selectedStaff.length > 0) {
-        await supabase.from("job_staff").insert(
-          selectedStaff.map((staffId) => ({
-            job_id: newJob.id,
-            staff_id: staffId,
-          }))
-        );
-      }
-
-      router.push(`/jobs/${newJob.id}`);
-      router.refresh();
+    if (selectedStaff.length > 0) {
+      await supabase.from("job_staff").insert(
+        selectedStaff.map((staffId) => ({
+          job_id: newJob.id,
+          staff_id: staffId,
+        }))
+      );
     }
+
+    router.push(`/jobs/${newJob.id}`);
+    router.refresh();
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-xl space-y-6">
+    <form onSubmit={handleSubmit} className="max-w-2xl space-y-6">
       {error && (
         <div className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}
 
-      {/* Customer Selection */}
+      {/* Customer / Site Search */}
       <div>
         <label className="block text-sm font-medium">
-          Customer <span className="text-destructive">*</span>
+          Customer / Site <span className="text-destructive">*</span>
         </label>
-        <input
-          type="text"
-          placeholder="Search customers..."
-          value={
-            customerId
-              ? customers.find((c) => c.id === customerId)?.name ?? customerSearch
-              : customerSearch
-          }
-          onChange={(e) => {
-            setCustomerSearch(e.target.value);
-            if (customerId) {
-              setCustomerId("");
-              setSiteId("");
-            }
-          }}
-          className={inputClass}
-        />
-        {customerSearch && !customerId && (
-          <div className="mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-card">
-            {filteredCustomers.slice(0, 20).map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => {
-                  setCustomerId(c.id);
-                  setCustomerSearch("");
-                }}
-                className="block w-full px-3 py-2 text-left text-sm hover:bg-accent transition-colors"
-              >
-                {c.name}
-              </button>
-            ))}
-            {filteredCustomers.length === 0 && (
-              <div className="px-3 py-2 text-sm text-muted-foreground">
-                No customers found
+
+        {customerId ? (
+          <div className="mt-1 flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">
+            <div className="flex-1">
+              <span className="text-sm font-medium">
+                {selectedCustomer?.name}
+              </span>
+              {selectedSite && (
+                <span className="text-sm text-muted-foreground">
+                  {" "}— {selectedSite.name}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Change
+            </button>
+          </div>
+        ) : (
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search by customer name or site name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              autoFocus
+              className={inputClass}
+            />
+            {searchResults.length > 0 && (
+              <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-card shadow-xl">
+                {searchResults.map((result, i) => (
+                  <button
+                    key={`${result.customerId}-${result.siteId ?? "no-site"}-${i}`}
+                    type="button"
+                    onClick={() => selectResult(result)}
+                    className="flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm hover:bg-accent transition-colors border-b border-border last:border-0"
+                  >
+                    <div>
+                      {result.siteName ? (
+                        <>
+                          <span className="font-medium">{result.siteName}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            Customer: {result.customerName}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="font-medium">{result.customerName}</span>
+                      )}
+                    </div>
+                    {result.siteName && (
+                      <span className="ml-auto shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        Site
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+            {searchQuery.length >= 2 && searchResults.length === 0 && (
+              <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-border bg-card px-3 py-3 text-sm text-muted-foreground shadow-xl">
+                No customers or sites found
               </div>
             )}
           </div>
         )}
 
-        {/* Site selection — only if customer has sites */}
-        {customerId && sites.length > 0 && (
-          <div className="mt-3">
-            <label className="block text-sm font-medium">Site</label>
+        {/* Site picker if customer selected but no site picked via search */}
+        {customerId && !siteId && sites.length > 0 && (
+          <div className="mt-2">
+            <label className="block text-xs font-medium text-muted-foreground mb-1">
+              Select site
+            </label>
             <select
               value={siteId}
               onChange={(e) => setSiteId(e.target.value)}
@@ -263,64 +283,61 @@ export function JobForm({
         )}
       </div>
 
-      {/* Reference & Description */}
-      <div className="space-y-3 border-t border-border pt-5">
-        <div>
-          <label className="block text-sm font-medium">Reference</label>
-          <input
-            value={reference}
-            onChange={(e) => setReference(e.target.value)}
-            className={inputClass}
-            placeholder="e.g. PO-12345 or brief title"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium">Description</label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            className={`${inputClass} resize-none`}
-            placeholder="Scope of work, key details..."
-          />
-        </div>
+      {/* Reference */}
+      <div>
+        <label className="block text-sm font-medium">Reference</label>
+        <input
+          value={reference}
+          onChange={(e) => setReference(e.target.value)}
+          className={inputClass}
+          placeholder="PO number, brief title, or job reference"
+        />
+      </div>
+
+      {/* Description — big and prominent */}
+      <div>
+        <label className="block text-sm font-medium">Description</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={8}
+          className={`${inputClass} resize-y`}
+          placeholder="Scope of work, key details, special instructions..."
+        />
       </div>
 
       {/* Categories & Status */}
-      <div className="space-y-3 border-t border-border pt-5">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium">Job Type</label>
-            <select
-              value={category1Id}
-              onChange={(e) => setCategory1Id(e.target.value)}
-              className={inputClass}
-            >
-              <option value="">Select type</option>
-              {jobTypes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Business Unit</label>
-            <select
-              value={category2Id}
-              onChange={(e) => setCategory2Id(e.target.value)}
-              className={inputClass}
-            >
-              <option value="">Select unit</option>
-              {businessUnits.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm font-medium">Job Type</label>
+          <select
+            value={category1Id}
+            onChange={(e) => setCategory1Id(e.target.value)}
+            className={inputClass}
+          >
+            <option value="">Select type</option>
+            {jobTypes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
         </div>
-
+        <div>
+          <label className="block text-sm font-medium">Business Unit</label>
+          <select
+            value={category2Id}
+            onChange={(e) => setCategory2Id(e.target.value)}
+            className={inputClass}
+          >
+            <option value="">Select unit</option>
+            {businessUnits.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
         <div>
           <label className="block text-sm font-medium">Status</label>
           <select
@@ -339,66 +356,79 @@ export function JobForm({
             ))}
           </select>
         </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium">
-              Estimated Value
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={estimatedValue}
-              onChange={(e) => setEstimatedValue(e.target.value)}
-              className={inputClass}
-              placeholder="$0.00"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Due Date</label>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className={inputClass}
-            />
-          </div>
-        </div>
       </div>
 
       {/* Staff Assignment */}
-      <div className="border-t border-border pt-5">
+      <div>
         <label className="block text-sm font-medium mb-2">Assign Staff</label>
-        <div className="flex flex-wrap gap-2">
-          {staff.map((s) => {
-            const isSelected = selectedStaff.includes(s.id);
+        <div className="flex flex-wrap items-center gap-2">
+          {selectedStaff.map((id) => {
+            const member = staff.find((s) => s.id === id);
+            if (!member) return null;
             return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => toggleStaff(s.id)}
-                className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-sm transition-colors border ${
-                  isSelected
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
-                }`}
+              <span
+                key={id}
+                className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1 text-sm"
               >
                 <span
                   className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-medium text-white"
-                  style={{ backgroundColor: s.colour }}
+                  style={{ backgroundColor: member.colour }}
                 >
-                  {s.initials}
+                  {member.initials}
                 </span>
-                {s.display_name}
-              </button>
+                {member.display_name}
+                <button
+                  type="button"
+                  onClick={() => toggleStaff(id)}
+                  className="ml-0.5 text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  ×
+                </button>
+              </span>
             );
           })}
-          {staff.length === 0 && (
-            <span className="text-sm text-muted-foreground">
-              No staff members yet
-            </span>
-          )}
+
+          {/* + button */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowStaffPicker(!showStaffPicker)}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+            >
+              +
+            </button>
+            {showStaffPicker && (
+              <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-lg border border-border bg-card shadow-xl overflow-hidden">
+                {staff
+                  .filter((s) => !selectedStaff.includes(s.id))
+                  .map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => {
+                        toggleStaff(s.id);
+                        setShowStaffPicker(false);
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent transition-colors"
+                    >
+                      <span
+                        className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-medium text-white"
+                        style={{ backgroundColor: s.colour }}
+                      >
+                        {s.initials}
+                      </span>
+                      {s.display_name}
+                    </button>
+                  ))}
+                {staff.filter((s) => !selectedStaff.includes(s.id)).length ===
+                  0 && (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">
+                    All staff assigned
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -409,11 +439,7 @@ export function JobForm({
           disabled={saving}
           className="rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
         >
-          {saving
-            ? "Saving..."
-            : isEditing
-              ? "Update Job"
-              : "Create Job"}
+          {saving ? "Creating..." : "Create Job"}
         </button>
         <button
           type="button"

@@ -1,10 +1,14 @@
 "use client";
 
+import { useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
 import { Tabs } from "@/components/tabs";
 import { NotesPanel } from "./notes-panel";
 import { TimePanel } from "./time-panel";
 import { StaffPanel } from "./staff-panel";
 import { NbnPanel } from "./nbn-panel";
+import type { Category, Status } from "@/lib/types";
 
 interface StaffOption {
   id: string;
@@ -13,6 +17,9 @@ interface StaffOption {
   colour: string;
 }
 
+const inputClass =
+  "block w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
+
 export function JobDetailTabs({
   jobId,
   job,
@@ -20,6 +27,7 @@ export function JobDetailTabs({
   timeEntries,
   nbnSteps,
   allStaff,
+  categories,
 }: {
   jobId: string;
   job: any;
@@ -27,8 +35,8 @@ export function JobDetailTabs({
   timeEntries: any[];
   nbnSteps: any[];
   allStaff: StaffOption[];
+  categories: Category[];
 }) {
-  // Check if this is an NBN job (category name contains "NBN")
   const isNbnJob = job.category_1?.name?.includes("NBN") ?? false;
   const showNbn = isNbnJob || nbnSteps.length > 0;
 
@@ -51,7 +59,13 @@ export function JobDetailTabs({
       {(activeTab) => {
         switch (activeTab) {
           case "details":
-            return <DetailsTab job={job} />;
+            return (
+              <DetailsTab
+                jobId={jobId}
+                job={job}
+                categories={categories}
+              />
+            );
           case "notes":
             return <NotesPanel jobId={jobId} notes={notes} />;
           case "time":
@@ -80,58 +94,154 @@ export function JobDetailTabs({
   );
 }
 
-function DetailsTab({ job }: { job: any }) {
+function DetailsTab({
+  jobId,
+  job,
+  categories,
+}: {
+  jobId: string;
+  job: any;
+  categories: Category[];
+}) {
+  const router = useRouter();
+  const supabase = createClient();
+
+  const [reference, setReference] = useState(job.reference ?? "");
+  const [description, setDescription] = useState(job.description ?? "");
+  const [category1Id, setCategory1Id] = useState(job.category_1_id ?? "");
+  const [category2Id, setCategory2Id] = useState(job.category_2_id ?? "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const jobTypes = categories.filter((c) => c.type === "job_type");
+  const businessUnits = categories.filter((c) => c.type === "business_unit");
+
+  async function handleSave() {
+    setSaving(true);
+    setSaved(false);
+
+    const { error } = await supabase
+      .from("jobs")
+      .update({
+        reference: reference.trim() || null,
+        description: description.trim() || null,
+        category_1_id: category1Id || null,
+        category_2_id: category2Id || null,
+      })
+      .eq("id", jobId);
+
+    if (error) {
+      alert(error.message);
+    } else {
+      setSaved(true);
+      router.refresh();
+      setTimeout(() => setSaved(false), 2000);
+    }
+    setSaving(false);
+  }
+
+  // Auto-save on blur for text fields
+  function handleBlur() {
+    if (
+      reference !== (job.reference ?? "") ||
+      description !== (job.description ?? "")
+    ) {
+      handleSave();
+    }
+  }
+
   return (
     <div className="max-w-2xl space-y-5">
-      {job.description && (
-        <div>
-          <h3 className="text-sm font-medium text-muted-foreground mb-1">
-            Description
-          </h3>
-          <p className="text-sm whitespace-pre-wrap">{job.description}</p>
-        </div>
-      )}
+      {/* Reference — inline editable */}
+      <div>
+        <label className="block text-xs font-medium text-muted-foreground mb-1">
+          Reference
+        </label>
+        <input
+          value={reference}
+          onChange={(e) => setReference(e.target.value)}
+          onBlur={handleBlur}
+          className={inputClass}
+          placeholder="PO number, brief title, or job reference"
+        />
+      </div>
 
-      {job.site && (
+      {/* Description — big editable textarea */}
+      <div>
+        <label className="block text-xs font-medium text-muted-foreground mb-1">
+          Description
+        </label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          onBlur={handleBlur}
+          rows={10}
+          className={`${inputClass} resize-y`}
+          placeholder="Scope of work, key details, special instructions, completion notes..."
+        />
+      </div>
+
+      {/* Categories — inline editable */}
+      <div className="grid grid-cols-2 gap-4">
         <div>
-          <h3 className="text-sm font-medium text-muted-foreground mb-1">
-            Site
-          </h3>
-          <p className="text-sm">{job.site.name}</p>
-          {job.site.address && (
-            <p className="text-sm text-muted-foreground">
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
+            Job Type
+          </label>
+          <select
+            value={category1Id}
+            onChange={(e) => {
+              setCategory1Id(e.target.value);
+              // Save immediately on category change
+              setTimeout(() => handleSave(), 0);
+            }}
+            className={inputClass}
+          >
+            <option value="">No type</option>
+            {jobTypes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
+            Business Unit
+          </label>
+          <select
+            value={category2Id}
+            onChange={(e) => {
+              setCategory2Id(e.target.value);
+              setTimeout(() => handleSave(), 0);
+            }}
+            className={inputClass}
+          >
+            <option value="">No unit</option>
+            {businessUnits.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Info row */}
+      <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border text-sm">
+        <div>
+          <span className="text-muted-foreground">Customer</span>
+          <p className="font-medium">{job.customer?.name ?? "—"}</p>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Site</span>
+          <p className="font-medium">{job.site?.name ?? "—"}</p>
+          {job.site?.address && (
+            <p className="text-xs text-muted-foreground">
               {[job.site.address, job.site.suburb, job.site.state, job.site.postcode]
                 .filter(Boolean)
                 .join(", ")}
             </p>
           )}
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-4 text-sm">
-        <div>
-          <span className="text-muted-foreground">Job Type</span>
-          <p className="font-medium">{job.category_1?.name ?? "—"}</p>
-        </div>
-        <div>
-          <span className="text-muted-foreground">Business Unit</span>
-          <p className="font-medium">{job.category_2?.name ?? "—"}</p>
-        </div>
-        <div>
-          <span className="text-muted-foreground">Estimated Value</span>
-          <p className="font-medium">
-            {job.estimated_value
-              ? `$${Number(job.estimated_value).toLocaleString()}`
-              : "—"}
-          </p>
-        </div>
-        <div>
-          <span className="text-muted-foreground">Due Date</span>
-          <p className="font-medium">
-            {job.due_date
-              ? new Date(job.due_date).toLocaleDateString("en-AU")
-              : "—"}
-          </p>
         </div>
         <div>
           <span className="text-muted-foreground">Created</span>
@@ -147,30 +257,10 @@ function DetailsTab({ job }: { job: any }) {
         </div>
       </div>
 
-      {/* Assigned Staff */}
-      {job.job_staff?.length > 0 && (
-        <div>
-          <h3 className="text-sm font-medium text-muted-foreground mb-2">
-            Assigned Staff
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {job.job_staff.map((js: any) => (
-              <div
-                key={js.id}
-                className="flex items-center gap-2 rounded-full border border-border px-3 py-1"
-              >
-                <span
-                  className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-medium text-white"
-                  style={{
-                    backgroundColor: js.staff?.colour ?? "#3b82f6",
-                  }}
-                >
-                  {js.staff?.initials}
-                </span>
-                <span className="text-sm">{js.staff?.display_name}</span>
-              </div>
-            ))}
-          </div>
+      {/* Save indicator */}
+      {(saving || saved) && (
+        <div className="text-xs text-muted-foreground">
+          {saving ? "Saving..." : "Saved"}
         </div>
       )}
     </div>
