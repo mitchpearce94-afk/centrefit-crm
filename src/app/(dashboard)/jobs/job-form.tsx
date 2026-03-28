@@ -117,7 +117,11 @@ export function JobForm({
       return;
     }
 
-    const payload = {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const payload: Record<string, any> = {
       customer_id: customerId,
       site_id: siteId || null,
       reference: reference.trim() || null,
@@ -128,6 +132,10 @@ export function JobForm({
       estimated_value: estimatedValue ? parseFloat(estimatedValue) : null,
       due_date: dueDate || null,
     };
+
+    if (!isEditing && user) {
+      payload.created_by = user.id;
+    }
 
     if (isEditing) {
       const { error: err } = await supabase

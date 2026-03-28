@@ -4,6 +4,7 @@ import { Tabs } from "@/components/tabs";
 import { NotesPanel } from "./notes-panel";
 import { TimePanel } from "./time-panel";
 import { StaffPanel } from "./staff-panel";
+import { NbnPanel } from "./nbn-panel";
 
 interface StaffOption {
   id: string;
@@ -17,14 +18,20 @@ export function JobDetailTabs({
   job,
   notes,
   timeEntries,
+  nbnSteps,
   allStaff,
 }: {
   jobId: string;
   job: any;
   notes: any[];
   timeEntries: any[];
+  nbnSteps: any[];
   allStaff: StaffOption[];
 }) {
+  // Check if this is an NBN job (category name contains "NBN")
+  const isNbnJob = job.category_1?.name?.includes("NBN") ?? false;
+  const showNbn = isNbnJob || nbnSteps.length > 0;
+
   const tabs = [
     { id: "details", label: "Details" },
     { id: "notes", label: "Notes", count: notes.length },
@@ -34,6 +41,9 @@ export function JobDetailTabs({
       label: "Staff",
       count: job.job_staff?.length ?? 0,
     },
+    ...(showNbn
+      ? [{ id: "nbn", label: "NBN Steps", count: nbnSteps.length }]
+      : []),
   ];
 
   return (
@@ -52,6 +62,14 @@ export function JobDetailTabs({
                 jobId={jobId}
                 assignedStaff={job.job_staff ?? []}
                 allStaff={allStaff}
+              />
+            );
+          case "nbn":
+            return (
+              <NbnPanel
+                jobId={jobId}
+                steps={nbnSteps}
+                isNbnJob={isNbnJob}
               />
             );
           default:

@@ -12,12 +12,12 @@ export default async function JobDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [jobResult, statusesResult, staffResult, notesResult, timeResult] =
+  const [jobResult, statusesResult, staffResult, notesResult, timeResult, nbnResult] =
     await Promise.all([
       supabase
         .from("jobs")
         .select(
-          "*, customer:customers(id, name), site:customer_sites(id, name, address, suburb, state, postcode), status:statuses(*), category_1:categories!category_1_id(id, name), category_2:categories!category_2_id(id, name), job_staff(id, role, staff:staff(id, display_name, initials, colour, email, phone)), created_by_staff:staff!created_by(display_name)"
+          "*, customer:customers(id, name), site:customer_sites(id, name, address, suburb, state, postcode), status:statuses(*), category_1:categories!category_1_id(id, name, type), category_2:categories!category_2_id(id, name, type), job_staff(id, role, staff:staff(id, display_name, initials, colour, email, phone)), created_by_staff:staff!created_by(display_name)"
         )
         .eq("id", id)
         .single(),
@@ -36,6 +36,11 @@ export default async function JobDetailPage({
         .select("*, staff:staff(display_name, initials, colour)")
         .eq("job_id", id)
         .order("start_time", { ascending: false }),
+      supabase
+        .from("nbn_steps")
+        .select("*")
+        .eq("job_id", id)
+        .order("step_number"),
     ]);
 
   if (jobResult.error || !jobResult.data) {
@@ -143,6 +148,7 @@ export default async function JobDetailPage({
           job={job}
           notes={notesResult.data ?? []}
           timeEntries={timeResult.data ?? []}
+          nbnSteps={nbnResult.data ?? []}
           allStaff={staffResult.data ?? []}
         />
       </div>
