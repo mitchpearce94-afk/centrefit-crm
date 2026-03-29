@@ -11,12 +11,14 @@ export function QuickActions({
   openTimerId,
   allStatuses,
   currentStatusName,
+  siteAddress,
 }: {
   jobId: string;
   hasOpenTimer: boolean;
   openTimerId?: string;
   allStatuses: Status[];
   currentStatusName?: string;
+  siteAddress?: string | null;
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -114,6 +116,19 @@ export function QuickActions({
           {busy === "complete" ? "Completing..." : "Complete Job"}
         </button>
       )}
+
+      {/* Navigate to Site */}
+      {siteAddress && (
+        <a
+          href={`https://maps.google.com/?daddr=${encodeURIComponent(siteAddress)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 rounded-lg border border-primary/30 bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-primary/10"
+        >
+          <NavigateIcon className="h-4 w-4 text-primary" />
+          Navigate
+        </a>
+      )}
     </div>
   );
 }
@@ -130,6 +145,14 @@ function CheckIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function NavigateIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="3 11 22 2 13 21 11 13 3 11" />
     </svg>
   );
 }

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/toast";
 
 export function TimePanel({
   jobId,
@@ -13,6 +14,7 @@ export function TimePanel({
 }) {
   const [clockingIn, setClockingIn] = useState(false);
   const router = useRouter();
+  const { toast } = useToast();
   const supabase = createClient();
 
   // Check if user has an open time entry for this job
@@ -29,7 +31,7 @@ export function TimePanel({
     } = await supabase.auth.getUser();
 
     if (!user) {
-      alert("Not authenticated");
+      toast("Not authenticated", "error");
       setClockingIn(false);
       return;
     }
@@ -42,7 +44,7 @@ export function TimePanel({
     });
 
     if (error) {
-      alert(error.message);
+      toast(error.message, "error");
     } else {
       router.refresh();
     }
@@ -57,7 +59,7 @@ export function TimePanel({
       .eq("id", entryId);
 
     if (error) {
-      alert(error.message);
+      toast(error.message, "error");
     } else {
       router.refresh();
     }

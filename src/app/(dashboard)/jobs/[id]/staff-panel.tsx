@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/toast";
 
 interface StaffOption {
   id: string;
@@ -22,6 +23,7 @@ export function StaffPanel({
 }) {
   const [adding, setAdding] = useState(false);
   const router = useRouter();
+  const { toast } = useToast();
   const supabase = createClient();
 
   const assignedIds = assignedStaff.map((js: any) => js.staff?.id);
@@ -35,7 +37,7 @@ export function StaffPanel({
     });
 
     if (error) {
-      alert(error.message);
+      toast(error.message, "error");
     } else {
       router.refresh();
     }
@@ -49,7 +51,7 @@ export function StaffPanel({
       .eq("id", assignmentId);
 
     if (error) {
-      alert(error.message);
+      toast(error.message, "error");
     } else {
       router.refresh();
     }

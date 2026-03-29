@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/toast";
 import type { Status } from "@/lib/types";
 
 const phaseLabels: Record<string, string> = {
@@ -26,6 +27,7 @@ export function StatusTransition({
   const [updating, setUpdating] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const { toast } = useToast();
   const supabase = createClient();
 
   // Close on click outside
@@ -47,7 +49,7 @@ export function StatusTransition({
       .eq("id", jobId);
 
     if (error) {
-      alert(`Failed to update status: ${error.message}`);
+      toast(error.message, "error");
     } else {
       // Add system note for status change
       const newStatus = allStatuses.find((s) => s.id === newStatusId);

@@ -1,8 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
 import { JobForm } from "../job-form";
 
-export default async function NewJobPage() {
+export default async function NewJobPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
   const supabase = await createClient();
+  const params = await searchParams;
 
   const [customersResult, categoriesResult, statusesResult, staffResult] =
     await Promise.all([
@@ -24,11 +29,25 @@ export default async function NewJobPage() {
         .order("display_name"),
     ]);
 
+  // Pre-fill from pipeline deal
+  const prefill = params.from_deal
+    ? {
+        fromDealId: params.from_deal,
+        customerId: params.customer_id,
+        reference: params.reference,
+        description: params.description,
+      }
+    : undefined;
+
   return (
     <div>
-      <h1 className="text-2xl font-bold tracking-tight">New Job</h1>
+      <h1 className="text-2xl font-bold tracking-tight">
+        {prefill ? "Convert Deal to Job" : "New Job"}
+      </h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Job number will be assigned automatically
+        {prefill
+          ? "Review the details below and create the job"
+          : "Job number will be assigned automatically"}
       </p>
       <div className="mt-6">
         <JobForm
@@ -36,6 +55,7 @@ export default async function NewJobPage() {
           categories={categoriesResult.data ?? []}
           statuses={statusesResult.data ?? []}
           staff={staffResult.data ?? []}
+          prefill={prefill}
         />
       </div>
     </div>

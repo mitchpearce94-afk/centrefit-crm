@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/toast";
 
 export function DeleteCustomerButton({
   customerId,
@@ -13,6 +14,7 @@ export function DeleteCustomerButton({
 }) {
   const [confirming, setConfirming] = useState(false);
   const router = useRouter();
+  const { toast } = useToast();
   const supabase = createClient();
 
   async function handleDelete() {
@@ -22,7 +24,7 @@ export function DeleteCustomerButton({
       .eq("id", customerId);
 
     if (error) {
-      alert(`Failed to archive: ${error.message}`);
+      toast(error.message, "error");
     } else {
       router.push("/customers");
       router.refresh();

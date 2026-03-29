@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/toast";
 
 interface ChecklistItem {
   id: string;
@@ -31,15 +32,26 @@ export function JobChecklist({
   templates: Template[];
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const supabase = createClient();
   const [applying, setApplying] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showActions, setShowActions] = useState(false);
 
   const completedCount = items.filter((i) => i.is_completed).length;
   const totalCount = items.length;
 
   async function applyTemplate(template: Template) {
     setApplying(true);
+
+    // Remove existing items first if any
+    if (items.length > 0) {
+      await supabase
+        .from("job_checklist_items")
+        .delete()
+        .eq("job_id", jobId);
+    }
+
     const rows = template.items.map((item, i) => ({
       job_id: jobId,
       template_id: template.id,
@@ -51,9 +63,26 @@ export function JobChecklist({
 
     const { error } = await supabase.from("job_checklist_items").insert(rows);
     if (error) {
-      alert(error.message);
+      toast(error.message, "error");
     } else {
       setShowTemplates(false);
+      setShowActions(false);
+      router.refresh();
+    }
+    setApplying(false);
+  }
+
+  async function removeChecklist() {
+    if (!confirm("Remove the checklist from this job? This can't be undone.")) return;
+    setApplying(true);
+    const { error } = await supabase
+      .from("job_checklist_items")
+      .delete()
+      .eq("job_id", jobId);
+    if (error) {
+      toast(error.message, "error");
+    } else {
+      setShowActions(false);
       router.refresh();
     }
     setApplying(false);
@@ -64,7 +93,6 @@ export function JobChecklist({
       data: { user },
     } = await supabase.auth.getUser();
 
-    // Get current staff info for initials
     let completedText: string | null = null;
     if (!item.is_completed) {
       const { data: staff } = await supabase
@@ -92,7 +120,7 @@ export function JobChecklist({
       .eq("id", item.id);
 
     if (error) {
-      alert(error.message);
+      toast(error.message, "error");
     } else {
       router.refresh();
     }
@@ -105,8 +133,8 @@ export function JobChecklist({
       .eq("id", itemId);
   }
 
-  // No checklist yet — show template picker
-  if (items.length === 0) {
+  // ── No checklist — show picker ──
+  if (items.length === 0 && !showTemplates) {
     return (
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -114,62 +142,71 @@ export function JobChecklist({
             Checklist
           </h2>
         </div>
-
-        {!showTemplates ? (
-          <div className="rounded-lg border border-dashed border-border py-6 text-center">
-            <p className="text-sm text-muted-foreground mb-2">
-              No checklist applied to this job.
-            </p>
-            <button
-              onClick={() => setShowTemplates(true)}
-              className="text-sm text-primary hover:text-primary/80 transition-colors"
-            >
-              Apply a template
-            </button>
-          </div>
-        ) : (
-          <div className="rounded-lg border border-primary/30 bg-card p-4">
-            <p className="text-sm font-medium mb-3">Choose a template:</p>
-            <div className="space-y-2">
-              {templates.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => applyTemplate(t)}
-                  disabled={applying}
-                  className="flex w-full items-start gap-3 rounded-lg border border-border p-3 text-left hover:bg-accent transition-colors disabled:opacity-50"
-                >
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{t.name}</p>
-                    {t.description && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {t.description}
-                      </p>
-                    )}
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {t.items.length} tasks
-                    </p>
-                  </div>
-                </button>
-              ))}
-              {templates.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  No templates created yet.
-                </p>
-              )}
-            </div>
-            <button
-              onClick={() => setShowTemplates(false)}
-              className="mt-3 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
+        <div className="rounded-lg border border-dashed border-border py-6 text-center">
+          <p className="text-sm text-muted-foreground mb-2">
+            No checklist applied to this job.
+          </p>
+          <button
+            onClick={() => setShowTemplates(true)}
+            className="text-sm text-primary hover:text-primary/80 transition-colors"
+          >
+            Apply a template
+          </button>
+        </div>
       </div>
     );
   }
 
-  // Checklist exists — show tasks
+  // ── Template picker (for empty or change) ──
+  if (showTemplates) {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {items.length > 0 ? "Change Checklist Template" : "Apply Checklist"}
+          </h2>
+        </div>
+        <div className="rounded-lg border border-primary/30 bg-card p-4">
+          <p className="text-sm font-medium mb-3">Choose a template:</p>
+          <div className="space-y-2">
+            {templates.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => applyTemplate(t)}
+                disabled={applying}
+                className="flex w-full items-start gap-3 rounded-lg border border-border p-3 text-left hover:bg-accent transition-colors disabled:opacity-50"
+              >
+                <div className="flex-1">
+                  <p className="text-sm font-medium">{t.name}</p>
+                  {t.description && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {t.description}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t.items.length} tasks
+                  </p>
+                </div>
+              </button>
+            ))}
+            {templates.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                No templates created yet.
+              </p>
+            )}
+          </div>
+          <button
+            onClick={() => setShowTemplates(false)}
+            className="mt-3 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Checklist with tasks ──
   const progress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   return (
@@ -178,13 +215,49 @@ export function JobChecklist({
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Checklist
         </h2>
-        <span className="text-xs font-medium text-muted-foreground">
-          {completedCount}/{totalCount} complete
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-medium text-muted-foreground">
+            {completedCount}/{totalCount} complete
+          </span>
+          {/* Actions menu */}
+          <div className="relative">
+            <button
+              onClick={() => setShowActions(!showActions)}
+              className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
+            >
+              <MoreIcon className="h-3.5 w-3.5" />
+            </button>
+            {showActions && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowActions(false)} />
+                <div className="absolute right-0 top-full z-50 mt-1 w-44 rounded-lg border border-border bg-card shadow-xl overflow-hidden">
+                  <button
+                    onClick={() => {
+                      setShowActions(false);
+                      setShowTemplates(true);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                  >
+                    <SwapIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                    Change Template
+                  </button>
+                  <button
+                    onClick={removeChecklist}
+                    disabled={applying}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                  >
+                    <TrashIcon className="h-3.5 w-3.5" />
+                    Remove Checklist
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Progress bar */}
-      <div className="h-1.5 rounded-full bg-muted overflow-hidden mb-4">
+      <div className="h-1.5 rounded-full bg-muted overflow-hidden mb-3">
         <div
           className={`h-full rounded-full transition-all duration-300 ${
             progress === 100 ? "bg-success" : "bg-primary"
@@ -193,18 +266,20 @@ export function JobChecklist({
         />
       </div>
 
-      {/* Tasks */}
-      <div className="space-y-1">
-        {items
-          .sort((a, b) => a.task_number - b.task_number)
-          .map((item) => (
-            <ChecklistTask
-              key={item.id}
-              item={item}
-              onToggle={() => toggleItem(item)}
-              onUpdateText={(text) => updateCompletedText(item.id, text)}
-            />
-          ))}
+      {/* Scrollable task list */}
+      <div className="max-h-[400px] overflow-y-auto rounded-lg border border-border">
+        <div className="space-y-0">
+          {items
+            .sort((a, b) => a.task_number - b.task_number)
+            .map((item) => (
+              <ChecklistTask
+                key={item.id}
+                item={item}
+                onToggle={() => toggleItem(item)}
+                onUpdateText={(text) => updateCompletedText(item.id, text)}
+              />
+            ))}
+        </div>
       </div>
     </div>
   );
@@ -224,10 +299,8 @@ function ChecklistTask({
 
   return (
     <div
-      className={`rounded-lg border p-3 transition-colors ${
-        item.is_completed
-          ? "border-success/20 bg-success/5"
-          : "border-border bg-card"
+      className={`border-b border-border last:border-0 px-4 py-3 transition-colors ${
+        item.is_completed ? "bg-success/5" : "bg-card"
       }`}
     >
       <div className="flex gap-3">
@@ -248,19 +321,16 @@ function ChecklistTask({
         </button>
 
         <div className="flex-1 min-w-0">
-          {/* Task header */}
-          <div className="flex items-start justify-between gap-2">
-            <p
-              className={`text-sm font-medium ${
-                item.is_completed ? "text-muted-foreground" : ""
-              }`}
-            >
-              <span className="text-muted-foreground mr-1.5">
-                {item.task_number}.
-              </span>
-              {item.title}
-            </p>
-          </div>
+          <p
+            className={`text-sm font-medium ${
+              item.is_completed ? "text-muted-foreground" : ""
+            }`}
+          >
+            <span className="text-muted-foreground mr-1.5">
+              {item.task_number}.
+            </span>
+            {item.title}
+          </p>
 
           {/* Sub-items */}
           {item.sub_items.length > 0 && (
@@ -311,5 +381,31 @@ function ChecklistTask({
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Icons ──
+
+function MoreIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" />
+    </svg>
+  );
+}
+
+function SwapIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" />
+    </svg>
+  );
+}
+
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    </svg>
   );
 }

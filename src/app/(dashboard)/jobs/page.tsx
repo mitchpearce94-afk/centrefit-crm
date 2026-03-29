@@ -5,21 +5,52 @@ import { JobFilters } from "./job-filters";
 export default async function JobsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; phase?: string; status?: string; category?: string }>;
+  searchParams: Promise<{ q?: string; phase?: string; status?: string; category?: string; period?: string; staff?: string; view?: string }>;
 }) {
   const params = await searchParams;
   const supabase = await createClient();
 
-  // Fetch statuses and categories for filters
-  const [statusesResult, categoriesResult] = await Promise.all([
+  // Get current user for "My Jobs" default
+  const { data: { user } } = await supabase.auth.getUser();
+  const currentUserId = user?.id ?? "";
+
+  // Defaults: active view + my jobs (unless user has explicitly set filters)
+  const hasAnyFilter = params.q || params.phase || params.status || params.category || params.period || params.staff || params.view;
+  const isActiveView = !params.view || params.view === "active";
+  const effectiveStaff = hasAnyFilter ? params.staff : currentUserId;
+
+  function localISO(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  const now = new Date();
+  const todayISO = localISO(now);
+  const day = now.getDay();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - day + (day === 0 ? -6 : 1));
+  const mondayISO = localISO(monday);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const sundayISO = localISO(sunday);
+
+  const [statusesResult, categoriesResult, staffResult, scheduleResult] = await Promise.all([
     supabase.from("statuses").select("*").order("sort_order"),
     supabase.from("categories").select("*").eq("is_active", true).order("sort_order"),
+    supabase.from("staff").select("id, display_name, initials, colour").eq("is_active", true).order("display_name"),
+    // Fetch schedule entries for today/this week to filter jobs by scheduled date
+    params.period
+      ? supabase
+          .from("schedule_entries")
+          .select("job_id, schedule_date")
+          .gte("schedule_date", params.period === "today" ? todayISO : mondayISO)
+          .lte("schedule_date", params.period === "today" ? todayISO : sundayISO)
+      : Promise.resolve({ data: null }),
   ]);
 
   let query = supabase
     .from("jobs")
     .select(
-      "*, customer:customers(id, name), site:customer_sites(id, name), status:statuses(id, name, colour, phase), category_1:categories!category_1_id(id, name), category_2:categories!category_2_id(id, name), job_staff(staff:staff(id, display_name, initials, colour))"
+      "*, customer:customers(id, name), site:customer_sites(id, name), status:statuses(id, name, colour, phase), category_1:categories!category_1_id(id, name), category_2:categories!category_2_id(id, name), job_staff(staff:staff(id, display_name, initials, colour)), schedule_entries(schedule_date, start_time, end_time)"
     )
     .order("created_at", { ascending: false })
     .limit(100);
@@ -48,13 +79,38 @@ export default async function JobsPage({
     );
   }
 
-  // Phase filter — applied client-side via the status phase
-  const filteredJobs = params.phase
-    ? jobs?.filter((j: any) => j.status?.phase === params.phase)
-    : jobs;
+  // Client-side filters: phase, period, assigned staff, active view
+  const HIDDEN_STATUSES = ["Complete", "Cancelled", "Invoice Sent"];
+  let filteredJobs = jobs ?? [];
+
+  // Active view: hide completed/cancelled/invoice sent
+  if (isActiveView) {
+    filteredJobs = filteredJobs.filter(
+      (j: any) => !HIDDEN_STATUSES.includes(j.status?.name)
+    );
+  }
+
+  if (params.phase) {
+    filteredJobs = filteredJobs.filter((j: any) => j.status?.phase === params.phase);
+  }
+
+  // Staff filter (uses effectiveStaff which defaults to current user)
+  if (effectiveStaff) {
+    filteredJobs = filteredJobs.filter((j: any) =>
+      j.job_staff?.some((js: any) => js.staff?.id === effectiveStaff)
+    );
+  }
+
+  if (params.period && scheduleResult.data) {
+    const scheduledJobIds = new Set(
+      (scheduleResult.data as any[]).map((se: any) => se.job_id)
+    );
+    filteredJobs = filteredJobs.filter((j: any) => scheduledJobIds.has(j.id));
+  }
 
   const statuses = statusesResult.data ?? [];
   const categories = categoriesResult.data ?? [];
+  const staffList = staffResult.data ?? [];
 
   return (
     <div>
@@ -76,10 +132,15 @@ export default async function JobsPage({
       <JobFilters
         statuses={statuses}
         categories={categories}
+        staff={staffList}
+        currentUserId={currentUserId}
         defaultQuery={params.q}
         defaultPhase={params.phase}
         defaultStatus={params.status}
         defaultCategory={params.category}
+        defaultPeriod={params.period}
+        defaultStaff={effectiveStaff}
+        defaultView={isActiveView ? "active" : "all"}
       />
 
       <div className="mt-4 overflow-hidden rounded-lg border border-border">
@@ -105,7 +166,7 @@ export default async function JobsPage({
                 Assigned
               </th>
               <th className="px-4 py-3 text-right font-medium text-muted-foreground hidden md:table-cell">
-                Created
+                Scheduled
               </th>
             </tr>
           </thead>
@@ -177,7 +238,25 @@ export default async function JobsPage({
                   </div>
                 </td>
                 <td className="px-4 py-3 text-right text-muted-foreground hidden md:table-cell">
-                  {new Date(job.created_at).toLocaleDateString("en-AU")}
+                  {(() => {
+                    const entries = (job.schedule_entries ?? []) as any[];
+                    const upcoming = entries
+                      .filter((e: any) => e.schedule_date >= new Date().toISOString().split("T")[0])
+                      .sort((a: any, b: any) => a.schedule_date.localeCompare(b.schedule_date));
+                    const next = upcoming[0];
+                    if (!next) {
+                      const past = entries.sort((a: any, b: any) => b.schedule_date.localeCompare(a.schedule_date));
+                      if (past[0]) return <span className="opacity-50">{new Date(past[0].schedule_date + "T00:00:00").toLocaleDateString("en-AU")}</span>;
+                      return <span className="opacity-30">—</span>;
+                    }
+                    const isToday = next.schedule_date === new Date().toISOString().split("T")[0];
+                    return (
+                      <span className={isToday ? "text-primary font-medium" : ""}>
+                        {isToday ? "Today" : new Date(next.schedule_date + "T00:00:00").toLocaleDateString("en-AU")}
+                        {next.start_time && <span className="ml-1 text-[10px]">{next.start_time.slice(0, 5)}</span>}
+                      </span>
+                    );
+                  })()}
                 </td>
               </tr>
             ))}

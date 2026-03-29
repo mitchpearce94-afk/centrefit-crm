@@ -1,14 +1,25 @@
-export default function SuppliersPage() {
+import { createClient } from "@/lib/supabase/server";
+import { SuppliersList } from "./suppliers-list";
+
+export default async function SuppliersPage() {
+  const supabase = await createClient();
+
+  const { data: suppliers } = await supabase
+    .from("suppliers")
+    .select("*, parts:parts(count)")
+    .order("name");
+
   return (
     <div>
-      <h1 className="text-2xl font-bold tracking-tight">Suppliers & Parts</h1>
+      <h1 className="text-2xl font-bold tracking-tight">
+        Suppliers & Parts
+      </h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Supplier management, parts catalogue, and procurement.
+        {suppliers?.length ?? 0} suppliers
       </p>
-      <div className="mt-8 flex items-center justify-center rounded-lg border border-dashed border-border py-20">
-        <p className="text-sm text-muted-foreground">
-          Coming in Phase 3
-        </p>
+
+      <div className="mt-5">
+        <SuppliersList suppliers={(suppliers ?? []) as any} />
       </div>
     </div>
   );

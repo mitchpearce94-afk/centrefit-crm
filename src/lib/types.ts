@@ -5,6 +5,7 @@ export type JobPhase = 'pre_work' | 'quoting' | 'in_progress' | 'tracking_hold' 
 export type NoteType = 'note' | 'email' | 'call' | 'system';
 export type NbnStepStatus = 'pending' | 'in_progress' | 'complete' | 'skipped';
 export type CategoryType = 'job_type' | 'business_unit';
+export type DealStage = 'lead' | 'quote_sent' | 'accepted';
 export type CustomerType = 'commercial' | 'residential' | 'government' | 'internal';
 
 export interface Staff {
@@ -155,4 +156,48 @@ export interface NbnStep {
   completed_at: string | null;
   notes: string | null;
   created_at: string;
+}
+
+export interface PipelineDeal {
+  id: string;
+  customer_id: string | null;
+  title: string;
+  description: string | null;
+  stage: DealStage;
+  value: number | null;
+  probability: number;
+  expected_close: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  lost_reason: string | null;
+  won_job_id: string | null;
+  assigned_to: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  customer?: { id: string; name: string };
+  assigned_staff?: { id: string; display_name: string; initials: string; colour: string };
+}
+
+export interface ScheduleEntry {
+  id: string;
+  job_id: string;
+  staff_id: string;
+  schedule_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  job?: {
+    id: string;
+    number: string;
+    reference: string | null;
+    customer?: { id: string; name: string };
+    site?: { id: string; name: string };
+    status?: { id: string; name: string; colour: string };
+  };
+  staff?: Staff;
 }

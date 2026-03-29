@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import type { CustomerContact } from "@/lib/types";
+import { useToast } from "@/components/ui/toast";
 
 export function ContactsList({
   customerId,
@@ -95,7 +96,10 @@ function ContactForm({
 }) {
   const router = useRouter();
   const supabase = createClient();
+  const { toast } = useToast();
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState(contact?.name ?? "");
   const [role, setRole] = useState(contact?.role ?? "");
@@ -106,7 +110,12 @@ function ContactForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!name.trim()) {
+      setError("Name is required");
+      return;
+    }
     setSaving(true);
+    setError(null);
 
     const payload = {
       customer_id: customerId,
@@ -117,8 +126,6 @@ function ContactForm({
       mobile: mobile.trim() || null,
       is_primary: isPrimary,
     };
-
-    if (!payload.name) return;
 
     let result;
     if (contact) {
@@ -131,8 +138,9 @@ function ContactForm({
     }
 
     if (result.error) {
-      alert(result.error.message);
+      setError(result.error.message);
     } else {
+      toast(contact ? "Contact updated" : "Contact added");
       onDone();
       router.refresh();
     }
@@ -141,13 +149,14 @@ function ContactForm({
 
   async function handleDelete() {
     if (!contact) return;
-    const { error } = await supabase
+    const { error: err } = await supabase
       .from("customer_contacts")
       .delete()
       .eq("id", contact.id);
-    if (error) {
-      alert(error.message);
+    if (err) {
+      setError(err.message);
     } else {
+      toast("Contact deleted");
       onDone();
       router.refresh();
     }
@@ -158,6 +167,9 @@ function ContactForm({
       onSubmit={handleSubmit}
       className="mt-2 rounded-lg border border-primary/30 bg-card p-3 space-y-2"
     >
+      {error && (
+        <p className="text-xs text-destructive">{error}</p>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <input
           placeholder="Name *"
@@ -218,14 +230,20 @@ function ContactForm({
         >
           Cancel
         </button>
-        {contact && (
+        {contact && !confirmDelete && (
           <button
             type="button"
-            onClick={handleDelete}
+            onClick={() => setConfirmDelete(true)}
             className="ml-auto rounded-md px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10"
           >
             Delete
           </button>
+        )}
+        {contact && confirmDelete && (
+          <div className="ml-auto flex gap-1">
+            <button type="button" onClick={handleDelete} className="rounded-md bg-destructive px-3 py-1.5 text-xs text-white hover:bg-destructive/90">Confirm</button>
+            <button type="button" onClick={() => setConfirmDelete(false)} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent">No</button>
+          </div>
         )}
       </div>
     </form>

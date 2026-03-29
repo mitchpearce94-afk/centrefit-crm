@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/toast";
 import type { NbnStepStatus } from "@/lib/types";
 
 const DEFAULT_STEPS = [
@@ -46,6 +47,7 @@ export function NbnPanel({
   isNbnJob: boolean;
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const supabase = createClient();
   const [initialising, setInitialising] = useState(false);
 
@@ -63,7 +65,7 @@ export function NbnPanel({
       }))
     );
     if (error) {
-      alert(error.message);
+      toast(error.message, "error");
     } else {
       router.refresh();
     }
@@ -84,7 +86,7 @@ export function NbnPanel({
       .eq("id", stepId);
 
     if (error) {
-      alert(error.message);
+      toast(error.message, "error");
     } else {
       router.refresh();
     }

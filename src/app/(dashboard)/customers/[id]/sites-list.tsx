@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import type { CustomerSite } from "@/lib/types";
+import { useToast } from "@/components/ui/toast";
 
 export function SitesList({
   customerId,
@@ -89,7 +90,10 @@ function SiteForm({
 }) {
   const router = useRouter();
   const supabase = createClient();
+  const { toast } = useToast();
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState(site?.name ?? "");
   const [address, setAddress] = useState(site?.address ?? "");
@@ -100,7 +104,12 @@ function SiteForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!name.trim()) {
+      setError("Site name is required");
+      return;
+    }
     setSaving(true);
+    setError(null);
 
     const payload = {
       customer_id: customerId,
@@ -111,8 +120,6 @@ function SiteForm({
       postcode: postcode.trim() || null,
       notes: notes.trim() || null,
     };
-
-    if (!payload.name) return;
 
     let result;
     if (site) {
@@ -125,8 +132,9 @@ function SiteForm({
     }
 
     if (result.error) {
-      alert(result.error.message);
+      setError(result.error.message);
     } else {
+      toast(site ? "Site updated" : "Site added");
       onDone();
       router.refresh();
     }
@@ -135,13 +143,14 @@ function SiteForm({
 
   async function handleDelete() {
     if (!site) return;
-    const { error } = await supabase
+    const { error: err } = await supabase
       .from("customer_sites")
       .delete()
       .eq("id", site.id);
-    if (error) {
-      alert(error.message);
+    if (err) {
+      setError(err.message);
     } else {
+      toast("Site deleted");
       onDone();
       router.refresh();
     }
@@ -152,6 +161,9 @@ function SiteForm({
       onSubmit={handleSubmit}
       className="mt-2 rounded-lg border border-primary/30 bg-card p-3 space-y-2"
     >
+      {error && (
+        <p className="text-xs text-destructive">{error}</p>
+      )}
       <input
         placeholder="Site Name *"
         value={name}
@@ -215,14 +227,20 @@ function SiteForm({
         >
           Cancel
         </button>
-        {site && (
+        {site && !confirmDelete && (
           <button
             type="button"
-            onClick={handleDelete}
+            onClick={() => setConfirmDelete(true)}
             className="ml-auto rounded-md px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10"
           >
             Delete
           </button>
+        )}
+        {site && confirmDelete && (
+          <div className="ml-auto flex gap-1">
+            <button type="button" onClick={handleDelete} className="rounded-md bg-destructive px-3 py-1.5 text-xs text-white hover:bg-destructive/90">Confirm</button>
+            <button type="button" onClick={() => setConfirmDelete(false)} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent">No</button>
+          </div>
         )}
       </div>
     </form>

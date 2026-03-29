@@ -2,9 +2,6 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { StatusTransition } from "./status-transition";
-import { QuickActions } from "./quick-actions";
-import { JobChecklist } from "./job-checklist";
-import { WorkLog } from "./work-log";
 import { JobTabs } from "./job-tabs";
 
 export default async function JobDetailPage({
@@ -15,7 +12,7 @@ export default async function JobDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [jobResult, statusesResult, staffResult, workResult, notesResult, timeResult, nbnResult, checklistResult, templatesResult] =
+  const [jobResult, statusesResult, staffResult, workResult, notesResult, timeResult, nbnResult, checklistResult, templatesResult, scheduleResult] =
     await Promise.all([
       supabase
         .from("jobs")
@@ -59,6 +56,12 @@ export default async function JobDetailPage({
         .select("*")
         .eq("is_active", true)
         .order("name"),
+      supabase
+        .from("schedule_entries")
+        .select("id, schedule_date, start_time, end_time, notes, staff_id, staff:staff!schedule_entries_staff_id_fkey(display_name, initials, colour)")
+        .eq("job_id", id)
+        .order("schedule_date", { ascending: false })
+        .limit(10),
     ]);
 
   if (jobResult.error || !jobResult.data) {
@@ -71,7 +74,7 @@ export default async function JobDetailPage({
 
   return (
     <div>
-      {/* ── Header ── */}
+      {/* ── Compact header ── */}
       <div className="flex items-center gap-2 text-sm">
         <Link
           href="/jobs"
@@ -93,108 +96,23 @@ export default async function JobDetailPage({
         />
       </div>
 
-      {/* ── Job metadata row ── */}
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-        <Link
-          href={`/customers/${job.customer?.id}`}
-          className="font-medium text-foreground hover:text-primary transition-colors"
-        >
-          {job.customer?.name}
-        </Link>
-        {job.site && (
-          <>
-            <span className="text-muted-foreground">·</span>
-            <span className="text-muted-foreground">{job.site.name}</span>
-          </>
-        )}
-        {job.site?.address && (
-          <span className="text-xs text-muted-foreground">
-            ({[job.site.address, job.site.suburb, job.site.state].filter(Boolean).join(", ")})
-          </span>
-        )}
-      </div>
-
-      {/* ── Categories + Staff ── */}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        {job.category_1 && (
-          <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-            {job.category_1.name}
-          </span>
-        )}
-        {job.category_2 && (
-          <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-            {job.category_2.name}
-          </span>
-        )}
-        {job.job_staff?.length > 0 && (
-          <>
-            <span className="text-muted-foreground mx-1">·</span>
-            <div className="flex -space-x-1">
-              {job.job_staff.map((js: any) => (
-                <span
-                  key={js.id}
-                  className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-medium text-white ring-2 ring-background"
-                  style={{ backgroundColor: js.staff?.colour ?? "#3b82f6" }}
-                  title={js.staff?.display_name}
-                >
-                  {js.staff?.initials}
-                </span>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* ── Quick Actions ── */}
-      <QuickActions
-        jobId={id}
-        hasOpenTimer={hasOpenTimer}
-        openTimerId={(timeResult.data ?? []).find((t: any) => !t.end_time)?.id}
-        allStatuses={statusesResult.data ?? []}
-        currentStatusName={(job.status as any)?.name}
-      />
-
-      {/* ── Description (read-only scope) ── */}
-      {job.description && (
-        <div className="mt-5">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
-            Scope / Description
-          </h2>
-          <div className="rounded-lg border border-border bg-card p-4 text-sm whitespace-pre-wrap">
-            {job.description}
-          </div>
-        </div>
-      )}
-      {job.reference && (
-        <p className="mt-2 text-xs text-muted-foreground">
-          Ref: {job.reference}
-        </p>
-      )}
-
-      {/* ── Checklist ── */}
-      <div className="mt-6">
-        <JobChecklist
-          jobId={id}
-          items={(checklistResult.data ?? []) as any}
-          templates={(templatesResult.data ?? []) as any}
-        />
-      </div>
-
-      {/* ── Work Log (additional work not in checklist) ── */}
-      <div className="mt-6">
-        <WorkLog jobId={id} entries={workResult.data ?? []} />
-      </div>
-
-      {/* ── Tabs: Notes, Time, Staff, NBN ── */}
-      <div className="mt-8">
+      {/* ── Full tab interface ── */}
+      <div className="mt-4">
         <JobTabs
           jobId={id}
           job={job}
+          allStatuses={statusesResult.data ?? []}
+          allStaff={staffResult.data ?? []}
           notes={notesResult.data ?? []}
           timeEntries={timeResult.data ?? []}
           nbnSteps={nbnResult.data ?? []}
-          allStaff={staffResult.data ?? []}
+          workEntries={workResult.data ?? []}
+          checklistItems={(checklistResult.data ?? []) as any}
+          templates={(templatesResult.data ?? []) as any}
           isNbnJob={isNbnJob}
+          hasOpenTimer={hasOpenTimer}
+          openTimerId={(timeResult.data ?? []).find((t: any) => !t.end_time)?.id}
+          scheduleEntries={scheduleResult.data ?? []}
         />
       </div>
     </div>

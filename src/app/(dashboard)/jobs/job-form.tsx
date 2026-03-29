@@ -21,11 +21,19 @@ interface StaffOption {
   colour: string;
 }
 
+interface Prefill {
+  fromDealId: string;
+  customerId?: string;
+  reference?: string;
+  description?: string;
+}
+
 interface JobFormProps {
   customers: CustomerOption[];
   categories: Category[];
   statuses: Status[];
   staff: StaffOption[];
+  prefill?: Prefill;
 }
 
 export function JobForm({
@@ -33,15 +41,16 @@ export function JobForm({
   categories,
   statuses,
   staff,
+  prefill,
 }: JobFormProps) {
   const router = useRouter();
   const supabase = createClient();
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [customerId, setCustomerId] = useState("");
+  const [customerId, setCustomerId] = useState(prefill?.customerId ?? "");
   const [siteId, setSiteId] = useState("");
-  const [reference, setReference] = useState("");
-  const [description, setDescription] = useState("");
+  const [reference, setReference] = useState(prefill?.reference ?? "");
+  const [description, setDescription] = useState(prefill?.description ?? "");
   const [category1Id, setCategory1Id] = useState("");
   const [category2Id, setCategory2Id] = useState("");
   const [statusId, setStatusId] = useState(
@@ -173,6 +182,14 @@ export function JobForm({
           staff_id: staffId,
         }))
       );
+    }
+
+    // Link the pipeline deal to this job and archive it off the board
+    if (prefill?.fromDealId) {
+      await supabase
+        .from("pipeline_deals")
+        .update({ won_job_id: newJob.id, stage: "accepted" })
+        .eq("id", prefill.fromDealId);
     }
 
     router.push(`/jobs/${newJob.id}`);

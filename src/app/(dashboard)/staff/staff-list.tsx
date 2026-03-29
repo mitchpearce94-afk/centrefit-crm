@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/toast";
 import type { Staff, StaffRole } from "@/lib/types";
 
 const roleLabels: Record<StaffRole, string> = {
@@ -117,6 +118,7 @@ function StaffEditForm({
   onDone: () => void;
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const supabase = createClient();
   const [saving, setSaving] = useState(false);
 
@@ -144,7 +146,7 @@ function StaffEditForm({
       .eq("id", member.id);
 
     if (error) {
-      alert(error.message);
+      toast(error.message, "error");
     } else {
       onDone();
       router.refresh();
