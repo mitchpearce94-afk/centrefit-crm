@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 import {
   DEVICE_TYPES,
@@ -237,6 +237,16 @@ export function QuoteWizard({
     const totalDevices = Object.values(plan.device_counts || {}).reduce((a, b) => a + (b as number), 0);
     toast(`Loaded ${totalDevices} devices from plan`);
   }
+
+  // Auto-select plan from URL params (sent from Plan Builder's "Complete Plan")
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const planParam = searchParams.get("plan");
+    if (planParam && !selectedPlanId) {
+      const plan = plans.find((p) => p.id === planParam);
+      if (plan) selectPlan(planParam);
+    }
+  }, []);
 
   // Upload .cfq file — saves to DB as a plan, then loads it
   async function handlePlanImport(e: React.ChangeEvent<HTMLInputElement>) {

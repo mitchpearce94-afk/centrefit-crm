@@ -1,5 +1,5 @@
 -- Billing settings table — configurable rates for quoting and invoicing
-CREATE TABLE public.billing_settings (
+CREATE TABLE IF NOT EXISTS public.billing_settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   -- Labour rates
   labour_cost_rate NUMERIC(10,2) NOT NULL DEFAULT 75.00,
