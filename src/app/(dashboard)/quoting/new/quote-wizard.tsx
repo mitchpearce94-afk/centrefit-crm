@@ -3,6 +3,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
+import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 import { useToast } from "@/components/ui/toast";
 import {
   DEVICE_TYPES,
@@ -89,14 +90,17 @@ export function QuoteWizard({
   plans,
   existingQuote,
   billingSettings,
+  jobs = [],
 }: {
   customers: CustomerOption[];
   products: QuoteProduct[];
   plans: PlanFile[];
   existingQuote?: ExistingQuote;
   billingSettings?: any;
+  jobs?: { id: string; number: string; customer_name: string | null }[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
   const { toast } = useToast();
   const isEditing = !!existingQuote;
@@ -108,6 +112,9 @@ export function QuoteWizard({
   const [quoteType, setQuoteType] = useState<"full" | "progress">(
     (existingQuote?.quoteType as "full" | "progress") || "full"
   );
+
+  // Job linking
+  const [linkedJobId, setLinkedJobId] = useState(searchParams.get("job") || "");
 
   // Step 1: Client
   const [customerId, setCustomerId] = useState(existingQuote?.customerId || "");
@@ -239,7 +246,6 @@ export function QuoteWizard({
   }
 
   // Auto-select plan from URL params (sent from Plan Builder's "Complete Plan")
-  const searchParams = useSearchParams();
   useEffect(() => {
     const planParam = searchParams.get("plan");
     if (planParam && !selectedPlanId) {
@@ -461,6 +467,15 @@ export function QuoteWizard({
       await supabase.from("plan_files").update({ quote_id: quoteId }).eq("id", selectedPlanId);
     }
 
+    // Link to job and auto-transition status
+    if (linkedJobId && !isEditing) {
+      console.log(`[Auto-transition] Linking quote ${quoteId} to job ${linkedJobId}`);
+      const { error: linkError } = await supabase.from("quotes").update({ job_id: linkedJobId }).eq("id", quoteId);
+      if (linkError) console.error('[Auto-transition] Link error:', linkError);
+      const result = await autoTransitionJobStatus(linkedJobId, "quote_created", supabase);
+      console.log('[Auto-transition] Result:', result);
+    }
+
     toast(isEditing ? "Quote updated" : "Quote saved");
     router.push(isEditing ? `/quoting/${quoteId}` : "/quoting");
     router.refresh();
@@ -535,6 +550,19 @@ export function QuoteWizard({
                 </button>
               </div>
             )}
+          </div>
+
+          {/* Link to Job */}
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Link to Job</label>
+            <select value={linkedJobId} onChange={(e) => setLinkedJobId(e.target.value)} className={inputClass}>
+              <option value="">No job linked</option>
+              {jobs.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.number}{j.customer_name ? ` — ${j.customer_name}` : ''}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Quote Type */}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions";
 
 export async function POST(req: NextRequest) {
   const { token, action } = await req.json();
@@ -8,7 +9,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  // Use service-role-like client — this is a public endpoint
   const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
   const { data: quote, error } = await supabase
     .from("quotes")
-    .select("id, status, ref")
+    .select("id, status, ref, job_id")
     .eq("response_token", token)
     .single();
 
@@ -37,6 +37,12 @@ export async function POST(req: NextRequest) {
   };
 
   await supabase.from("quotes").update(update).eq("id", quote.id);
+
+  // Auto-transition linked job
+  if (quote.job_id) {
+    const jobAction = action === "accept" ? "quote_accepted" : "quote_declined";
+    await autoTransitionJobStatusServer(quote.job_id, jobAction, supabase);
+  }
 
   return NextResponse.json({ success: true, status: newStatus, ref: quote.ref });
 }

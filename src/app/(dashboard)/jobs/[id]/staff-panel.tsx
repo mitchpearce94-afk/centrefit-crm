@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
+import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 
 interface StaffOption {
   id: string;
@@ -39,6 +40,7 @@ export function StaffPanel({
     if (error) {
       toast(error.message, "error");
     } else {
+      await autoTransitionJobStatus(jobId, "staff_assigned", supabase);
       router.refresh();
     }
     setAdding(false);

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 import type { Status } from "@/lib/types";
 
 export function QuickActions({
@@ -39,6 +40,8 @@ export function QuickActions({
       start_time: new Date().toISOString(),
       billable: true,
     });
+    // Auto-transition to "In Progress" if currently in pre-work/quoting phase
+    await autoTransitionJobStatus(jobId, "work_started", supabase);
     router.refresh();
     setBusy(null);
   }

@@ -23,11 +23,16 @@ export default async function QuoteDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [quoteResult, lineItemsResult, extrasResult] = await Promise.all([
+  const [quoteResult, lineItemsResult, extrasResult, jobsResult] = await Promise.all([
     supabase.from("quotes").select("*, customer:customers(id, name, customer_contacts(*))").eq("id", id).single(),
     supabase.from("quote_line_items").select("*").eq("quote_id", id).order("sort_order"),
     supabase.from("quote_extras").select("*").eq("quote_id", id).order("sort_order"),
+    supabase.from("jobs").select("id, number, customer:customers(name)").order("number", { ascending: false }).limit(200),
   ]);
+  const jobs = (jobsResult.data ?? []).map((j: any) => ({
+    id: j.id, number: j.number,
+    customer_name: Array.isArray(j.customer) ? j.customer[0]?.name : j.customer?.name || null,
+  }));
 
   if (quoteResult.error || !quoteResult.data) notFound();
 
@@ -101,6 +106,8 @@ export default async function QuoteDetailPage({
             separate_studio_zone: quote.separate_studio_zone ?? false,
           }}
           contactEmail={quote.customer?.customer_contacts?.find((c: any) => c.is_primary)?.email ?? null}
+          jobId={quote.job_id ?? null}
+          jobs={jobs}
         />
       </div>
 

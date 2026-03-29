@@ -4,6 +4,7 @@ import { useState, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
+import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 
 const QUICK_LINES = [
   "Left KGSQ at __:__ and travelled to site",
@@ -342,6 +343,7 @@ function WorkEntryForm({
       });
       if (error) { toast(error.message, "error"); setSaving(false); return; }
       toast("Entry saved");
+      await autoTransitionJobStatus(jobId, "work_started", supabase);
     }
 
     onSaved();

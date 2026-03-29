@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { LoadPlanButton } from './load-plan-button';
 import { OpenPlanButton } from './open-plan-button';
+import { StateFolder } from './state-folder';
 
 const AU_STATES = ['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT'];
 
@@ -51,75 +52,61 @@ export default async function PlansPage() {
     }
   }
 
-  // Only show states that have plans
-  const activeStates = AU_STATES.filter(s => byState[s]);
+  // States with active plans
+  const activeStates = AU_STATES.filter(s => byState[s] && byState[s].active.length > 0);
+  // States with completed plans
+  const completedStates = AU_STATES.filter(s => byState[s] && byState[s].completed.length > 0);
+  const totalCompleted = completedStates.reduce((sum, s) => sum + byState[s].completed.length, 0);
+  const hasAnyPlans = activeStates.length > 0 || completedStates.length > 0;
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground">Plans</h1>
-        <div className="flex items-center gap-2">
-          <LoadPlanButton />
+      </div>
+
+      {/* Quick actions */}
+      <div className="bg-card border border-border rounded-lg p-6 mb-6">
+        <div className="flex items-center justify-center gap-4">
+          <LoadPlanButton label="Load .cfp" />
           <Link href="/plans/new" className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity">
             New Plan
           </Link>
         </div>
       </div>
 
-      {activeStates.length === 0 ? (
+      {!hasAnyPlans ? (
         <div className="bg-card border border-border rounded-lg p-8 text-center">
-          <div className="text-4xl mb-3">📐</div>
-          <h2 className="text-lg font-semibold text-foreground mb-1">No Plans Yet</h2>
-          <p className="text-muted-foreground text-sm mb-4">
-            Plans appear here when you save from the Plan Builder. Organised by state.
+          <p className="text-muted-foreground text-sm">
+            No plans saved yet. Plans appear here when you save from the Plan Builder.
           </p>
-          <div className="flex items-center justify-center gap-3">
-            <LoadPlanButton label="Load Existing (.cfp)" />
-            <Link href="/plans/new" className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity">
-              Create New Plan
-            </Link>
-          </div>
         </div>
       ) : (
         <div className="space-y-4">
-          {activeStates.map(state => {
-            const { active, completed } = byState[state];
-            return (
-              <div key={state} className="bg-card border border-border rounded-lg overflow-hidden">
-                {/* State header */}
-                <div className="px-4 py-3 border-b border-border bg-accent/30">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-foreground">{state}</span>
-                    <span className="text-xs text-muted-foreground">{active.length + completed.length} plan{active.length + completed.length !== 1 ? 's' : ''}</span>
+          {/* Active plans by state */}
+          {activeStates.map(state => (
+            <StateFolder key={state} state={state} count={byState[state].active.length}>
+              {byState[state].active.map((plan: any) => (
+                <PlanRow key={plan.id} plan={plan} countDevices={countDevices} formatDate={formatDate} />
+              ))}
+            </StateFolder>
+          ))}
+
+          {/* Completed plans — separate section at the bottom */}
+          {completedStates.length > 0 && (
+            <StateFolder state="Completed" count={totalCompleted}>
+              {completedStates.map(state => (
+                <div key={state}>
+                  <div className="px-4 py-2 border-b border-border bg-accent/20">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{state}</span>
                   </div>
+                  {byState[state].completed.map((plan: any) => (
+                    <PlanRow key={plan.id} plan={plan} countDevices={countDevices} formatDate={formatDate} completed />
+                  ))}
                 </div>
-
-                {/* Active plans */}
-                {active.length > 0 && (
-                  <div>
-                    <div className="px-4 py-2 border-b border-border">
-                      <span className="text-xs font-medium text-emerald-500 uppercase tracking-wider">Active</span>
-                    </div>
-                    {active.map((plan: any) => (
-                      <PlanRow key={plan.id} plan={plan} countDevices={countDevices} formatDate={formatDate} />
-                    ))}
-                  </div>
-                )}
-
-                {/* Completed plans */}
-                {completed.length > 0 && (
-                  <div>
-                    <div className="px-4 py-2 border-b border-border">
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Completed</span>
-                    </div>
-                    {completed.map((plan: any) => (
-                      <PlanRow key={plan.id} plan={plan} countDevices={countDevices} formatDate={formatDate} completed />
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              ))}
+            </StateFolder>
+          )}
         </div>
       )}
     </div>
@@ -158,12 +145,15 @@ function PlanRow({ plan, countDevices, formatDate, completed }: { plan: any; cou
         {plan.cfp_url && (
           <OpenPlanButton cfpUrl={plan.cfp_url} planId={plan.id} />
         )}
-        {plan.pdf_url && (
-          <a href={plan.pdf_url + '?t=' + new Date(plan.updated_at || plan.created_at).getTime()} target="_blank" rel="noopener noreferrer" download
-            className="px-2.5 py-1.5 bg-green-600/10 text-green-500 hover:bg-green-600/20 rounded text-xs font-medium transition-colors">
-            PDF
-          </a>
-        )}
+        {plan.pdf_url && (() => {
+          const pdfName = [plan.state, plan.client_name, plan.site_name, plan.revision ? 'Rev ' + plan.revision : null].filter(Boolean).join(' - ').replace(/[^a-zA-Z0-9\-_ ]/g, '') + '.pdf';
+          return (
+            <a href={plan.pdf_url + '?t=' + new Date(plan.updated_at || plan.created_at).getTime()} download={pdfName}
+              className="px-2.5 py-1.5 bg-green-600/10 text-green-500 hover:bg-green-600/20 rounded text-xs font-medium transition-colors">
+              PDF
+            </a>
+          );
+        })()}
         {plan.cfp_url && (
           <a href={plan.cfp_url} download className="px-2.5 py-1.5 bg-accent text-muted-foreground hover:text-foreground rounded text-xs transition-colors">
             .cfp

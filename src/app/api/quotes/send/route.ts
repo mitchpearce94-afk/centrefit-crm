@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { Resend } from "resend";
 import { generateScopeOfWorks } from "@/lib/quote-engine";
+import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions";
 import crypto from "crypto";
 
 function getResend() {
@@ -46,6 +47,11 @@ export async function POST(req: NextRequest) {
     sent_to_email: email,
     response_token: responseToken,
   }).eq("id", quoteId);
+
+  // Auto-transition linked job to "Quote Sent"
+  if (quote.job_id) {
+    await autoTransitionJobStatusServer(quote.job_id, "quote_sent", supabase);
+  }
 
   const clientName = quote.customer?.name || quote.client_name;
   const isProgress = quote.quote_type === "progress";

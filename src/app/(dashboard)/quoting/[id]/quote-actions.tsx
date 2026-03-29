@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 import { generateScopeOfWorks } from "@/lib/quote-engine";
+import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 import type { SiteInfo } from "@/lib/quote-engine";
 
 function fmt(n: number): string {
@@ -25,15 +26,18 @@ interface Props {
   createdAt: string;
   siteInfo: SiteInfo;
   contactEmail: string | null;
+  jobId: string | null;
+  jobs?: { id: string; number: string; customer_name: string | null }[];
 }
 
 export function QuoteActions({
   quoteId, status, quoteRef, clientName, siteName, siteAddress,
   quoteType, pricing, deviceCounts, lineItems, createdAt,
-  siteInfo, contactEmail,
+  siteInfo, contactEmail, jobId, jobs = [],
 }: Props) {
   const router = useRouter();
   const supabase = createClient();
+  const [currentJobId, setCurrentJobId] = useState(jobId);
   const { toast } = useToast();
   const [updating, setUpdating] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -43,8 +47,17 @@ export function QuoteActions({
   async function updateStatus(newStatus: string, extra?: Record<string, unknown>) {
     setUpdating(true);
     const { error } = await supabase.from("quotes").update({ status: newStatus, ...extra }).eq("id", quoteId);
-    if (error) toast(error.message, "error");
-    else { toast(`Quote marked as ${newStatus}`); router.refresh(); }
+    if (error) {
+      toast(error.message, "error");
+    } else {
+      // Auto-transition linked job status
+      if (currentJobId) {
+        const actionMap: Record<string, string> = { sent: "quote_sent", accepted: "quote_accepted", declined: "quote_declined" };
+        if (actionMap[newStatus]) await autoTransitionJobStatus(currentJobId, actionMap[newStatus], supabase);
+      }
+      toast(`Quote marked as ${newStatus}`);
+      router.refresh();
+    }
     setUpdating(false);
   }
 
@@ -82,7 +95,8 @@ export function QuoteActions({
 
   async function handleDelete() {
     setUpdating(true);
-    // Delete line items and extras first (cascade should handle but be safe)
+    // Unlink plan_files, delete line items and extras first
+    await supabase.from("plan_files").update({ quote_id: null }).eq("quote_id", quoteId);
     await supabase.from("quote_line_items").delete().eq("quote_id", quoteId);
     await supabase.from("quote_extras").delete().eq("quote_id", quoteId);
     const { error } = await supabase.from("quotes").delete().eq("id", quoteId);
@@ -151,6 +165,25 @@ export function QuoteActions({
         {(status === "sent" || status === "declined" || status === "accepted") && (
           <button onClick={revertToDraft} disabled={updating} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 transition-colors">Revert to Draft</button>
         )}
+
+        {/* Link to Job */}
+        <select
+          value={currentJobId || ""}
+          onChange={async (e) => {
+            const newJobId = e.target.value || null;
+            setCurrentJobId(newJobId);
+            await supabase.from("quotes").update({ job_id: newJobId }).eq("id", quoteId);
+            router.refresh();
+          }}
+          className="h-8 rounded-md border border-border bg-input px-2 text-xs text-foreground focus:border-primary focus:outline-none"
+        >
+          <option value="">No job linked</option>
+          {jobs.map((j) => (
+            <option key={j.id} value={j.id}>
+              {j.number}{j.customer_name ? ` — ${j.customer_name}` : ''}
+            </option>
+          ))}
+        </select>
 
         {/* Delete */}
         {!confirmDelete ? (
