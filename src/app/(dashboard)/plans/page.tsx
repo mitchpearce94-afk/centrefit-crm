@@ -135,15 +135,14 @@ function PlanRow({ plan, countDevices, formatDate, completed }: { plan: any; cou
       {/* Plan info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-sm text-foreground truncate">{plan.name}</span>
+          <span className="font-medium text-sm text-foreground truncate">{[plan.client_name, plan.site_name].filter(Boolean).join(' — ') || plan.name}</span>
           <span className="flex-shrink-0 px-1.5 py-0.5 bg-amber-500/10 text-amber-500 rounded text-xs font-medium">Rev {plan.revision || 'A'}</span>
         </div>
         <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
-          {plan.site_name && <span>{plan.site_name}</span>}
+          <span>{formatDate(plan.updated_at || plan.created_at)}</span>
           {job && (
             <Link href={`/jobs/${job.id}`} className="text-primary hover:underline">{job.number}</Link>
           )}
-          <span>{formatDate(plan.updated_at || plan.created_at)}</span>
         </div>
       </div>
 
@@ -157,10 +156,10 @@ function PlanRow({ plan, countDevices, formatDate, completed }: { plan: any; cou
       {/* Actions */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
         {plan.cfp_url && (
-          <OpenPlanButton cfpUrl={plan.cfp_url} />
+          <OpenPlanButton cfpUrl={plan.cfp_url} planId={plan.id} />
         )}
         {plan.pdf_url && (
-          <a href={plan.pdf_url} target="_blank" rel="noopener noreferrer"
+          <a href={plan.pdf_url + '?t=' + new Date(plan.updated_at || plan.created_at).getTime()} target="_blank" rel="noopener noreferrer" download
             className="px-2.5 py-1.5 bg-green-600/10 text-green-500 hover:bg-green-600/20 rounded text-xs font-medium transition-colors">
             PDF
           </a>

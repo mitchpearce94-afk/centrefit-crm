@@ -4,16 +4,17 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlanStore } from "@/store/planStore";
 
-export function OpenPlanButton({ cfpUrl }: { cfpUrl: string }) {
+export function OpenPlanButton({ cfpUrl, planId }: { cfpUrl: string; planId: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
   const handleOpen = async () => {
     setLoading(true);
     try {
-      const res = await fetch(cfpUrl);
+      const res = await fetch(cfpUrl + '?t=' + Date.now());
       const text = await res.text();
       usePlanStore.getState().loadProject(text);
+      usePlanStore.setState({ planFileId: planId });
       router.push("/plans/new");
     } catch (err) {
       console.error("Failed to load plan:", err);

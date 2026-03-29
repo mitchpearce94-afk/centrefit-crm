@@ -66,6 +66,7 @@ export interface TitleBlockInfo {
   drawingNumber: string;
   revision: string;
   date: string;
+  notes: string;
 }
 
 export interface LayerVisibility {

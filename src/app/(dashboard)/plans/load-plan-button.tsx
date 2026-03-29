@@ -27,7 +27,7 @@ export function LoadPlanButton({ label }: { label?: string }) {
       <input
         ref={fileRef}
         type="file"
-        accept=".cfp,.json"
+        accept=".cfp,.json,application/json"
         className="hidden"
         onChange={handleFile}
       />

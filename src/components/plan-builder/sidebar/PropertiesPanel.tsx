@@ -76,6 +76,16 @@ export default function PropertiesPanel() {
             </div>
           ))}
           <div className="pt-2 border-t border-gray-700 mt-2">
+            <div className="text-gray-500 mb-0.5">Notes</div>
+            <textarea
+              value={titleBlock.notes || ''}
+              onChange={e => updateTitleBlock({ notes: e.target.value })}
+              rows={4}
+              placeholder="Plan notes..."
+              className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500 resize-y"
+            />
+          </div>
+          <div className="pt-2 border-t border-gray-700 mt-2">
             <div className="text-gray-500 mb-1">Client Logo</div>
             <input ref={logoInputRef} type="file" accept="image/*" className="hidden"
               onChange={(e) => {

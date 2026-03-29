@@ -93,6 +93,7 @@ const DEFAULT_TITLE_BLOCK: TitleBlockInfo = {
   drawingNumber: 'CF-001',
   revision: 'A',
   date: new Date().toLocaleDateString('en-AU'),
+  notes: '',
 };
 
 function renumberDevices(devices: PlacedDevice[]): PlacedDevice[] {

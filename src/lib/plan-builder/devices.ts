@@ -35,10 +35,10 @@ export const DEVICE_CATALOG: DeviceDefinition[] = [
   { id: 'cat6-data', name: 'Cat6 Ethernet Data Point', category: 'data', cableType: 'cat6', symbolType: 'triangle-open', strokeColor: '#3399ff', symbolImage: '/plan-builder/symbols/cat6-ethernet.png' },
   { id: 'rg6-coax', name: 'RG6 Coaxial Point', category: 'data', cableType: 'cat6', symbolType: 'triangle-filled', fillColor: '#cc0000', strokeColor: '#ff4444', symbolImage: '/plan-builder/symbols/rg6-coaxial.png' },
   { id: 'integration-cable', name: 'Integration Cable', category: 'security', cableType: 'sixcore', symbolType: 'arrows-square', fillColor: '#0066cc', strokeColor: '#3399ff', symbolImage: '/plan-builder/symbols/cable-integration.png' },
-  { id: 'server-9ru', name: 'Server Cabinet 9RU', category: 'data', cableType: 'none', symbolType: 'x-square', fillColor: '#0055aa', strokeColor: '#3399ff', label: '9RU', symbolImage: '/plan-builder/symbols/server-9ru.png', symbolScale: 3.0 },
-  { id: 'server-27ru', name: 'Server Cabinet 27RU', category: 'data', cableType: 'none', symbolType: 'x-square', fillColor: '#aa0000', strokeColor: '#ff4444', label: '27RU', symbolImage: '/plan-builder/symbols/server-27ru.png', symbolScale: 3.0 },
-  { id: 'server-32ru', name: 'Server Cabinet 32RU', category: 'data', cableType: 'none', symbolType: 'x-square', fillColor: '#006600', strokeColor: '#00cc00', label: '32RU', symbolImage: '/plan-builder/symbols/server-32ru.png', symbolScale: 3.0 },
-  { id: 'server-42ru', name: 'Server Cabinet 42RU', category: 'data', cableType: 'none', symbolType: 'x-square', fillColor: '#884400', strokeColor: '#ff8800', label: '42RU', symbolImage: '/plan-builder/symbols/server-42ru.png', symbolScale: 3.0 },
+  { id: 'server-9ru', name: 'Server Cabinet 9RU', category: 'data', cableType: 'none', symbolType: 'x-square', fillColor: '#0055aa', strokeColor: '#3399ff', label: '9RU', symbolImage: '/plan-builder/symbols/server-9ru.png', symbolScale: 2.0 },
+  { id: 'server-27ru', name: 'Server Cabinet 27RU', category: 'data', cableType: 'none', symbolType: 'x-square', fillColor: '#aa0000', strokeColor: '#ff4444', label: '27RU', symbolImage: '/plan-builder/symbols/server-27ru.png', symbolScale: 2.0 },
+  { id: 'server-32ru', name: 'Server Cabinet 32RU', category: 'data', cableType: 'none', symbolType: 'x-square', fillColor: '#006600', strokeColor: '#00cc00', label: '32RU', symbolImage: '/plan-builder/symbols/server-32ru.png', symbolScale: 2.0 },
+  { id: 'server-42ru', name: 'Server Cabinet 42RU', category: 'data', cableType: 'none', symbolType: 'x-square', fillColor: '#884400', strokeColor: '#ff8800', label: '42RU', symbolImage: '/plan-builder/symbols/server-42ru.png', symbolScale: 2.0 },
 
   // AV
   { id: 'intercom-master', name: 'Video Intercom Master', category: 'av', cableType: 'cat6', symbolType: 'intercom-grid', fillColor: '#cc1166', strokeColor: '#ff66aa', label: 'M', symbolImage: '/plan-builder/symbols/intercom-master.png' },

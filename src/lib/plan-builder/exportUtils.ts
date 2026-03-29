@@ -91,7 +91,7 @@ function buildDaisyChain(deviceList: PlacedDevice[], startX: number, startY: num
   return chain;
 }
 
-async function loadAndInjectSvg(pageNum: number, titleBlock: TitleBlockInfo, clientLogo?: string | null, revisions?: RevisionEntry[]): Promise<string> {
+async function loadAndInjectSvg(pageNum: number, titleBlock: TitleBlockInfo, clientLogo?: string | null, revisions?: RevisionEntry[], notes?: string): Promise<string> {
   const response = await fetch(`/plan-builder/templates/page-${pageNum}.svg`);
   let svgText = await response.text();
 
@@ -117,6 +117,42 @@ async function loadAndInjectSvg(pageNum: number, titleBlock: TitleBlockInfo, cli
     for (let ri = 0; ri < revsToShow.length; ri++) {
       const rev = revsToShow[ri];
       injection += `<text x="200" y="${revStartY + ri * revLineH}" font-family="Arial, sans-serif" font-size="75" fill="black">${escapeXml(`${rev.revision} - ${rev.notes}`)}</text>\n`;
+    }
+  }
+
+  // Notes — injected into the right panel notes area (heading already on template)
+  // Box bounds: x 18500–21100, approx 2600 units wide
+  if (notes && notes.trim()) {
+    const noteStartY = 9350;
+    const noteLineH = 130;
+    const noteX = 18600;
+    const noteFontSize = 95;
+    const noteBoxRight = 21600; // right edge of notes box — extended for full width
+    const maxLineWidth = noteBoxRight - noteX; // 2400 units, matching left padding on right side
+    const charsPerLine = Math.floor(maxLineWidth / (noteFontSize * 0.52));
+
+    // Word-wrap each line to fit within the box
+    const wrappedLines: string[] = [];
+    for (const rawLine of notes.trim().split('\n')) {
+      if (rawLine.length <= charsPerLine) {
+        wrappedLines.push(rawLine);
+      } else {
+        const words = rawLine.split(' ');
+        let current = '';
+        for (const word of words) {
+          if ((current + ' ' + word).trim().length > charsPerLine) {
+            if (current) wrappedLines.push(current);
+            current = word;
+          } else {
+            current = current ? current + ' ' + word : word;
+          }
+        }
+        if (current) wrappedLines.push(current);
+      }
+    }
+
+    for (let ni = 0; ni < wrappedLines.length && ni < 14; ni++) {
+      injection += `<text x="${noteX}" y="${noteStartY + ni * noteLineH}" font-family="Arial, sans-serif" font-size="${noteFontSize}" fill="black">${escapeXml(wrappedLines[ni])}</text>\n`;
     }
   }
 
@@ -161,7 +197,7 @@ function drawRunBadge(page: PDFPage, x: number, y: number, label: string, color:
   page.drawText(label, { x: x - textW / 2, y: y - fontSize / 3, size: fontSize, font, color });
 }
 
-export async function exportToPdf(): Promise<void> {
+export async function exportToPdf(): Promise<Blob | null> {
   const store = usePlanStore.getState();
   const { titleBlock, clientLogo, revisions } = store;
 
@@ -172,7 +208,7 @@ export async function exportToPdf(): Promise<void> {
   );
 
   const exportFloors = syncedFloors.filter(f => f.backgroundImage);
-  if (exportFloors.length === 0) { alert('No plan loaded. Please upload a floor plan PDF first.'); return; }
+  if (exportFloors.length === 0) { alert('No plan loaded. Please upload a floor plan PDF first.'); return null; }
 
   const multiFloor = exportFloors.length > 1;
   const outputDoc = await PDFDocument.create();
@@ -222,7 +258,7 @@ export async function exportToPdf(): Promise<void> {
     const labelOffsets = floorLabelOffsets.get(floor.id) || {};
 
     for (const pageDef of DEVICE_PAGES) {
-      const svgText = await loadAndInjectSvg(pageDef.svgPage, titleBlock, clientLogo, revisions);
+      const svgText = await loadAndInjectSvg(pageDef.svgPage, titleBlock, clientLogo, revisions, titleBlock.notes);
       const templatePng = await renderSvgToPng(svgText);
       const templateBytes = await dataUrlToBytes(templatePng);
       const templateImage = await outputDoc.embedPng(templateBytes);
@@ -273,18 +309,18 @@ export async function exportToPdf(): Promise<void> {
 
           if (comesFromPrevFloor && chain.length > 0) {
             const first = chain[0]; const fx = mapper.toX(first.x); const fy = mapper.toY(first.y);
-            const noteSize = mapper.toSize(6); const noteText = 'LINK FROM PREVIOUS LEVEL';
+            const noteSize = mapper.toSize(18); const noteText = 'LINK FROM PREVIOUS LEVEL';
             const noteW = fontBold.widthOfTextAtSize(noteText, noteSize); const noteBoxH = noteSize + 6;
-            const noteY = fy + mapper.toSize(SYMBOL_SIZE) + mapper.toSize(20);
+            const noteY = fy + mapper.toSize(SYMBOL_SIZE) + mapper.toSize(50);
             page.drawLine({ start: { x: fx, y: fy + mapper.toSize(SYMBOL_SIZE / 2) }, end: { x: fx, y: noteY }, thickness: 0.8, color: zoneColor, dashArray: [3, 2] });
             page.drawRectangle({ x: fx - noteW / 2 - 4, y: noteY - 1, width: noteW + 8, height: noteBoxH, color: rgb(1, 1, 1), borderColor: zoneColor, borderWidth: 0.8 });
             page.drawText(noteText, { x: fx - noteW / 2, y: noteY + 2, size: noteSize, font: fontBold, color: zoneColor });
           }
           if (goesToNextFloor && chain.length > 0) {
             const last = chain[chain.length - 1]; const lx2 = mapper.toX(last.x); const ly2 = mapper.toY(last.y);
-            const noteSize = mapper.toSize(6); const noteText = 'LINK TO NEXT LEVEL';
+            const noteSize = mapper.toSize(18); const noteText = 'LINK TO NEXT LEVEL';
             const noteW = fontBold.widthOfTextAtSize(noteText, noteSize); const noteBoxH = noteSize + 6;
-            const noteY = ly2 + mapper.toSize(SYMBOL_SIZE) + mapper.toSize(20);
+            const noteY = ly2 + mapper.toSize(SYMBOL_SIZE) + mapper.toSize(50);
             page.drawLine({ start: { x: lx2, y: ly2 + mapper.toSize(SYMBOL_SIZE / 2) }, end: { x: lx2, y: noteY }, thickness: 0.8, color: zoneColor, dashArray: [3, 2] });
             page.drawRectangle({ x: lx2 - noteW / 2 - 4, y: noteY - 1, width: noteW + 8, height: noteBoxH, color: rgb(1, 1, 1), borderColor: zoneColor, borderWidth: 0.8 });
             page.drawText(noteText, { x: lx2 - noteW / 2, y: noteY + 2, size: noteSize, font: fontBold, color: zoneColor });
@@ -350,7 +386,7 @@ export async function exportToPdf(): Promise<void> {
 
   for (let p = 5; p <= TOTAL_TEMPLATE_PAGES; p++) {
     try {
-      const svgText = await loadAndInjectSvg(p, titleBlock, clientLogo, revisions);
+      const svgText = await loadAndInjectSvg(p, titleBlock, clientLogo, revisions, titleBlock.notes);
       const templatePng = await renderSvgToPng(svgText);
       const templateBytes = await dataUrlToBytes(templatePng);
       const templateImage = await outputDoc.embedPng(templateBytes);
@@ -368,4 +404,6 @@ export async function exportToPdf(): Promise<void> {
   a.download = filenameParts.length > 0 ? `${filenameParts.join(' - ').replace(/[^a-zA-Z0-9\-_ \/]/g, '')}.pdf` : 'centrefit-plan.pdf';
   a.click();
   URL.revokeObjectURL(url);
+
+  return blob;
 }

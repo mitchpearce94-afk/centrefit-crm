@@ -99,7 +99,12 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => { if (ev.target?.result) loadProject(ev.target.result as string); };
+    reader.onload = (ev) => {
+      if (ev.target?.result) {
+        loadProject(ev.target.result as string);
+        usePlanStore.setState({ planFileId: null }); // new local file, not linked to existing DB row
+      }
+    };
     reader.readAsText(file);
     e.target.value = '';
   };
@@ -130,6 +135,7 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
 
       // Upload .cfp to Storage
       const planId = store.planFileId || crypto.randomUUID();
+      console.log(`[Plan Builder] Saving to cloud: planFileId=${store.planFileId}, using=${planId}`);
       const cfpBlob = new Blob([cfpData], { type: 'application/json' });
       const cfpPath = `plans/${planId}.cfp`;
       await supabase.storage.from('plan-files').upload(cfpPath, cfpBlob, { upsert: true });
@@ -172,13 +178,31 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
 
   const handleExport = async () => {
     await saveToCloud();
-    usePlanStore.getState().saveProject();
-    await exportToPdf();
+    const pdfBlob = await exportToPdf();
+
+    // Upload PDF to Supabase Storage
+    if (pdfBlob) {
+      try {
+        const store = usePlanStore.getState();
+        const planId = store.planFileId;
+        if (planId) {
+          const supabase = createClient();
+          const pdfPath = `plans/${planId}.pdf`;
+          await supabase.storage.from('plan-files').upload(pdfPath, pdfBlob, { upsert: true, contentType: 'application/pdf' });
+          const { data: pdfUrlData } = supabase.storage.from('plan-files').getPublicUrl(pdfPath);
+          if (pdfUrlData?.publicUrl) {
+            await supabase.from('plan_files').update({ pdf_url: pdfUrlData.publicUrl, updated_at: new Date().toISOString() }).eq('id', planId);
+            console.log('[Plan Builder] PDF uploaded to storage');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to upload PDF to storage:', err);
+      }
+    }
   };
 
   const handleCompletePlan = async () => {
     await saveToCloud();
-    usePlanStore.getState().saveProject();
     setShowCompletePlan(true);
   };
 
