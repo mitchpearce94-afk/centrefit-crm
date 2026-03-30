@@ -95,20 +95,7 @@ export function BillingSettings({ settings }: { settings: Settings | null }) {
         </Field>
       </Section>
 
-      <Section title="Fixed Costs">
-        <Field label="Callout Fee">
-          <input type="number" step="0.01" value={s.callout_fee_sell} onChange={e => set("callout_fee_sell", parseFloat(e.target.value) || 0)} className={inputClass} />
-        </Field>
-        <Field label="Admin (Cost)">
-          <input type="number" step="0.01" value={s.admin_rate_cost} onChange={e => set("admin_rate_cost", parseFloat(e.target.value) || 0)} className={inputClass} />
-        </Field>
-        <Field label="Admin (Sell)">
-          <input type="number" step="0.01" value={s.admin_rate_sell} onChange={e => set("admin_rate_sell", parseFloat(e.target.value) || 0)} className={inputClass} />
-        </Field>
-        <Field label="Incidentals (Hardware)">
-          <input type="number" step="0.01" value={s.incidentals_cost} onChange={e => set("incidentals_cost", parseFloat(e.target.value) || 0)} className={inputClass} />
-        </Field>
-      </Section>
+      {/* Callout, Admin, Incidentals removed — now variable per-quote items in the Other labour section */}
 
       <Section title="Markup & Tax">
         <Field label="Default Product Markup" suffix="%">

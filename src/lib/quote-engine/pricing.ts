@@ -183,6 +183,6 @@ export function calculateQuoteSummary(
     fullPriceExGST,
     fullPriceIncGST,
     targetExGST,
-    profit: pp2Base,
+    profit: displayExGST - pp1Total,
   }
 }

@@ -26,6 +26,7 @@ interface PlanState {
   selectedDeviceId: string | null;
   activeTool: ActiveTool;
   deviceToPlace: string | null;
+  deviceScale: number;
   layers: LayerVisibility;
   activePlan: 'master' | 'cat6' | 'sixcore' | 'speaker';
   titleBlock: TitleBlockInfo;
@@ -59,6 +60,7 @@ interface PlanState {
   setStageTransform: (scale: number, x: number, y: number) => void;
   setStageRef: (ref: React.RefObject<any>) => void;
   setActiveTool: (tool: ActiveTool) => void;
+  setDeviceScale: (scale: number) => void;
   setDeviceToPlace: (deviceId: string | null) => void;
   placeDevice: (deviceId: string, x: number, y: number) => void;
   moveDevice: (instanceId: string, x: number, y: number) => void;
@@ -147,6 +149,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   whitewashRects: [],
   selectedDeviceId: null,
   activeTool: 'select',
+  deviceScale: 1,
   deviceToPlace: null,
   layers: { master: true, cat6: true, sixcore: true, speaker: true },
   activePlan: 'master',
@@ -246,6 +249,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   setStageTransform: (scale, x, y) => set({ stageScale: scale, stageX: x, stageY: y }),
   setStageRef: (ref) => set({ stageRef: ref }),
   setActiveTool: (tool) => set({ activeTool: tool, deviceToPlace: null }),
+  setDeviceScale: (scale) => set({ deviceScale: scale }),
   setDeviceToPlace: (deviceId) => set({ deviceToPlace: deviceId, activeTool: deviceId ? 'place' : 'select' }),
 
   placeDevice: (deviceId, x, y) => {
@@ -445,6 +449,9 @@ export const usePlanStore = create<PlanState>((set, get) => ({
       titleBlock: state.titleBlock,
       clientLogo: state.clientLogo,
       revisions: state.revisions,
+      deviceScale: state.deviceScale,
+      linkedJobId: state.linkedJobId,
+      linkedJobNumber: state.linkedJobNumber,
     });
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -471,6 +478,8 @@ export const usePlanStore = create<PlanState>((set, get) => ({
           pdfFileName: active.pdfFileName || '', devices: active.devices || [], commsRackId: active.commsRackId || null,
           whitewashRects: active.whitewashRects || [], titleBlock: { ...DEFAULT_TITLE_BLOCK, ...(parsed.titleBlock || {}) },
           clientLogo: parsed.clientLogo || null, revisions: parsed.revisions || [], cableRuns,
+          deviceScale: parsed.deviceScale || 1,
+          linkedJobId: parsed.linkedJobId || null, linkedJobNumber: parsed.linkedJobNumber || null,
           history: [{ devices: active.devices || [], commsRackId: active.commsRackId || null, whitewashRects: active.whitewashRects || [] }], historyIndex: 0,
         });
       } else {
@@ -486,6 +495,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
           backgroundImage: floor.backgroundImage, backgroundWidth: floor.backgroundWidth, backgroundHeight: floor.backgroundHeight,
           pdfFileName: floor.pdfFileName, titleBlock: { ...DEFAULT_TITLE_BLOCK, ...(parsed.titleBlock || {}) },
           clientLogo: parsed.clientLogo || null, revisions: [], cableRuns,
+          linkedJobId: parsed.linkedJobId || null, linkedJobNumber: parsed.linkedJobNumber || null,
           history: [{ devices: floor.devices, commsRackId: floor.commsRackId, whitewashRects: floor.whitewashRects }], historyIndex: 0,
         });
       }

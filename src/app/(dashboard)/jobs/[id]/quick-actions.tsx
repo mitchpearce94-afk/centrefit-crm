@@ -10,7 +10,6 @@ export function QuickActions({
   jobId,
   hasOpenTimer,
   openTimerId,
-  allStatuses,
   currentStatusName,
   siteAddress,
 }: {
@@ -25,8 +24,6 @@ export function QuickActions({
   const supabase = createClient();
   const [busy, setBusy] = useState<string | null>(null);
 
-  const completeStatus = allStatuses.find((s) => s.name === "Complete");
-  const invoiceStatus = allStatuses.find((s) => s.name === "Ready to Invoice");
   const isComplete = currentStatusName === "Complete" || currentStatusName === "Cancelled";
 
   async function clockIn() {
@@ -58,20 +55,10 @@ export function QuickActions({
   }
 
   async function markComplete() {
-    const targetStatus = invoiceStatus ?? completeStatus;
-    if (!targetStatus) return;
     setBusy("complete");
 
-    await supabase
-      .from("jobs")
-      .update({ status_id: targetStatus.id })
-      .eq("id", jobId);
-
-    await supabase.from("job_notes").insert({
-      job_id: jobId,
-      content: `Status changed to "${targetStatus.name}"`,
-      type: "system",
-    });
+    // Auto-transition via centralised rules (→ Ready to Invoice)
+    await autoTransitionJobStatus(jobId, "job_completed", supabase);
 
     // Clock out if timer is running
     if (openTimerId) {

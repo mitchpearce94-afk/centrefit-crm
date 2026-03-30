@@ -128,8 +128,12 @@ function calculateCustomQuantity(key: string, deviceCounts: DeviceCounts, siteIn
       const total = cardio + tvs + ceilingTvs
       return total > 0 ? Math.ceil(total / 8) : 0
     }
+    case 'av_rg6_crimps': {
+      const total = (si.cardio_count || 0) + (si.tv_count || 0) + (si.ceiling_tv_count || 0)
+      return total > 0 ? Math.max(1, Math.ceil(total / 50)) : 1
+    }
     case 'av_pal_adapters': {
-      return (si.tv_count || 0) + (si.ceiling_tv_count || 0) + (si.cardio_count || 0)
+      return ((si.tv_count || 0) + (si.ceiling_tv_count || 0)) * 2
     }
     case 'av_fly_leads': {
       return (si.tv_count || 0) + (si.ceiling_tv_count || 0)
@@ -411,9 +415,9 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, zoneExp, { id: ruleId(), trigger_code: pirTrigger, trigger_condition: 'range', trigger_min: 13, trigger_max: 20, quantity_mode: 'fixed', quantity_value: 2, description: 'Zone expansion (2x) for 13-20 PIRs', preset, is_active: true })
   pushRule(rules, smallConn, { id: ruleId(), trigger_code: pirTrigger, trigger_condition: 'range', trigger_min: 13, trigger_max: 20, quantity_mode: 'fixed', quantity_value: 1, description: 'Small connector board for 13-20 PIRs', preset, is_active: true })
   pushRule(rules, zoneExp, { id: ruleId(), trigger_code: pirTrigger, trigger_condition: 'range', trigger_min: 21, trigger_max: 28, quantity_mode: 'fixed', quantity_value: 3, description: 'Zone expansion (3x) for 21-28 PIRs', preset, is_active: true })
-  pushRule(rules, smallConn, { id: ruleId(), trigger_code: pirTrigger, trigger_condition: 'range', trigger_min: 21, trigger_max: 28, quantity_mode: 'fixed', quantity_value: 1, description: 'Small connector board for 21-28 PIRs', preset, is_active: true })
+  pushRule(rules, smallConn, { id: ruleId(), trigger_code: pirTrigger, trigger_condition: 'range', trigger_min: 21, trigger_max: 28, quantity_mode: 'fixed', quantity_value: 2, description: 'Small connector board (2x) for 21-28 PIRs', preset, is_active: true })
   pushRule(rules, zoneExp, { id: ruleId(), trigger_code: pirTrigger, trigger_condition: 'range', trigger_min: 29, trigger_max: 36, quantity_mode: 'fixed', quantity_value: 4, description: 'Zone expansion (4x) for 29-36 PIRs', preset, is_active: true })
-  pushRule(rules, smallConn, { id: ruleId(), trigger_code: pirTrigger, trigger_condition: 'range', trigger_min: 29, trigger_max: 36, quantity_mode: 'fixed', quantity_value: 1, description: 'Small connector board for 29-36 PIRs', preset, is_active: true })
+  pushRule(rules, smallConn, { id: ruleId(), trigger_code: pirTrigger, trigger_condition: 'range', trigger_min: 29, trigger_max: 36, quantity_mode: 'fixed', quantity_value: 3, description: 'Small connector board (3x) for 29-36 PIRs', preset, is_active: true })
   pushRule(rules, mw350, { id: ruleId(), trigger_code: pirTrigger, trigger_condition: 'range', trigger_min: 29, trigger_max: 36, quantity_mode: 'fixed', quantity_value: 1, description: 'MW350 additional enclosure for 29-36 PIRs', preset, is_active: true })
 
   // === PENDANT RULES ===
@@ -475,7 +479,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('DA44', 'DA44'), { ...avAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'DA44 amplifier for AV distribution' })
   pushRule(rules, find('PSK18M', 'PSK18M'), { ...avAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Kingray 18V power supply for DA44 amplifier' })
   pushRule(rules, find('18VDC', '18VDC1600F'), { ...avAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '18VDC 1.6A power supply for active tap' })
-  pushRule(rules, find('COMP CRIMP', 'APFTRSF6L'), { ...avAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'F-type crimp connectors for RG6' })
+  pushRule(rules, find('COMP CRIMP', 'APFTRSF6L'), { ...avAlways, id: ruleId(), quantity_mode: 'custom', quantity_custom_key: 'av_rg6_crimps', description: 'F-type crimp connectors — CEIL((cardio + TVs) / 50), min 1' })
   pushRule(rules, find('Attenuator', 'ATF20PP'), { ...avAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 4, description: 'Attenuator 20db (4x standard)' })
   pushRule(rules, find('Attenuator 10db', 'ATF10PP'), { ...avAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Attenuator 10db (2x standard)' })
 

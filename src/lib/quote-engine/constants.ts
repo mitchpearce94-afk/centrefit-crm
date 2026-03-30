@@ -43,8 +43,7 @@ export interface SiteInfo {
 // ---------------------------------------------------------------------------
 
 export const DEVICE_TYPES: DeviceType[] = [
-  { code: 'camera_black', legend: 'Black Digital Surveillance Camera', cable: 'cat6', category: 'Digital Surveillance' },
-  { code: 'camera_white', legend: 'White Digital Surveillance Camera', cable: 'cat6', category: 'Digital Surveillance' },
+  // Security System (10) — tall card, column 1
   { code: 'tailgate_system', legend: 'FelixGate Tailgating System', cable: 'cat6', category: 'Security System' },
   { code: 'alarm_panel', legend: 'Alarm Panel', cable: '6core_security', category: 'Security System' },
   { code: 'pir_360_roof', legend: 'Movement Sensors 360 Roof', cable: '6core_security', category: 'Security System' },
@@ -56,10 +55,16 @@ export const DEVICE_TYPES: DeviceType[] = [
   { code: 'duress_button', legend: 'Duress Button', cable: '6core_security', category: 'Security System' },
   { code: 'duress_intercom', legend: 'Duress Intercom', cable: '6core_security', category: 'Security System' },
   { code: 'light_siren', legend: 'External Light and Siren', cable: '6core_security', category: 'Security System' },
+  // Digital Surveillance (2) — short card, column 2 top
+  { code: 'camera_black', legend: 'Black Digital Surveillance Camera', cable: 'cat6', category: 'Digital Surveillance' },
+  { code: 'camera_white', legend: 'White Digital Surveillance Camera', cable: 'cat6', category: 'Digital Surveillance' },
+  // Data System (2) — column 2
   { code: 'wap', legend: 'Wi-Fi Access Point', cable: 'cat6', category: 'Data System' },
   { code: 'data_point', legend: 'Cat 6 Ethernet - DATA', cable: 'cat6', category: 'Data System' },
+  // Audio System (2) — column 2
   { code: 'speaker_roof', legend: 'Speaker Roof Mount', cable: 'speaker_cable', category: 'Audio System' },
   { code: 'speaker_wall', legend: 'Speaker Wall Mount', cable: 'speaker_cable', category: 'Audio System' },
+  // Infrastructure (4) — column 2
   { code: 'cabinet_9ru', legend: 'Server Cabinet 9RU', cable: 'n-a', category: 'Infrastructure' },
   { code: 'cabinet_27ru', legend: 'Server Cabinet 27RU', cable: 'n-a', category: 'Infrastructure' },
   { code: 'cabinet_32ru', legend: 'Server Cabinet 32RU', cable: 'n-a', category: 'Infrastructure' },

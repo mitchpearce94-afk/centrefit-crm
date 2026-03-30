@@ -44,6 +44,7 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
     linkedJobId, setLinkedJob,
     selectedElementIds, deleteSelectedElements,
     setPdfSource, setPdfElements,
+    deviceScale, setDeviceScale,
   } = usePlanStore();
 
   const [loadingPdf, setLoadingPdf] = useState(false);
@@ -128,6 +129,8 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
       const cfpData = JSON.stringify({
         version: 2, floors: syncedFloors, activeFloorId: store.activeFloorId,
         titleBlock: tb, clientLogo: store.clientLogo, revisions: store.revisions,
+        deviceScale: store.deviceScale,
+        linkedJobId: store.linkedJobId, linkedJobNumber: store.linkedJobNumber,
       });
 
       const planName = [tb.client, tb.projectName, tb.revision].filter(Boolean).join(' - ') || 'Untitled Plan';
@@ -279,6 +282,14 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
           onClick={() => zoomAtCenter(Math.max(stageScale / 1.2, 0.1))}>−</button>
         <button className="px-2.5 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded"
           onClick={handleFitToScreen} title="Fit to screen">⊡</button>
+      </div>
+
+      <div className="flex items-center gap-1 pr-3 border-r border-gray-700" title="Device size scale">
+        <span className="text-gray-500 text-xs">Size:</span>
+        <input type="range" min="0.5" max="4" step="0.25" value={deviceScale}
+          onChange={(e) => setDeviceScale(parseFloat(e.target.value))}
+          className="w-20 h-1 accent-blue-500 cursor-pointer" />
+        <span className="text-gray-400 text-xs w-8 text-center">{deviceScale}x</span>
       </div>
 
       <div className="flex items-center gap-1 pr-3 border-r border-gray-700">

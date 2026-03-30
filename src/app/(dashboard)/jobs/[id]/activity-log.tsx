@@ -29,7 +29,7 @@ export function ActivityLog({
 
   // System notes = status changes & auto events
   for (const note of notes) {
-    if (note.type === "system") {
+    if (note.type === "system" || note.is_system) {
       events.push({
         type: "status",
         description: note.content,

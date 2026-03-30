@@ -66,8 +66,8 @@ export default function QuoteResponsePage() {
             </h1>
             <p style={{ fontSize: "14px", color: "#64748b", lineHeight: "1.6" }}>{message}</p>
             <div style={{ marginTop: "24px", padding: "16px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
-              <p style={{ fontSize: "12px", color: "#94a3b8", margin: 0 }}>CentreFit Services Pty Ltd</p>
-              <p style={{ fontSize: "12px", color: "#94a3b8", margin: "2px 0 0" }}>(07) 3205 0440 · admin@centrefitgroup.com.au</p>
+              <p style={{ fontSize: "12px", color: "#94a3b8", margin: 0 }}>Centrefit Group Pty Ltd</p>
+              <p style={{ fontSize: "12px", color: "#94a3b8", margin: "2px 0 0" }}>(07) 3188 5115 · admin@centrefit.com.au</p>
             </div>
           </>
         )}

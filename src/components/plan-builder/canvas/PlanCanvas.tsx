@@ -18,9 +18,9 @@ export default function PlanCanvas() {
   const {
     backgroundImage, backgroundWidth, backgroundHeight,
     devices, commsRackId,
-    selectedDeviceId, activeTool, deviceToPlace,
+    selectedDeviceId, activeTool, deviceToPlace, deviceScale,
     stageScale, stageX, stageY,
-    layers, activePlan,
+    layers, activePlan, pdfFileName,
     whitewashRects, addWhitewashRect, removeWhitewashRect,
     setStageTransform, selectDevice, placeDevice, moveDevice, deleteDevice,
     setStageRef, cropBackground,
@@ -32,6 +32,13 @@ export default function PlanCanvas() {
   const selectedWhitewashRef = useRef<string | null>(null);
   selectedWhitewashRef.current = selectedWhitewashId;
 
+  const initialFitDoneRef = useRef(false);
+  const lastPdfFileNameRef = useRef('');
+  // Reset fit-to-view flag when a new PDF file is loaded (not on element deletion re-renders)
+  if (pdfFileName !== lastPdfFileNameRef.current) {
+    lastPdfFileNameRef.current = pdfFileName;
+    initialFitDoneRef.current = false;
+  }
   const [showRulers, setShowRulers] = useState(false);
   const [guides, setGuides] = useState<Array<{ id: string; orientation: 'h' | 'v'; pos: number }>>([]);
   const [draggingGuide, setDraggingGuide] = useState<{ orientation: 'h' | 'v'; pos: number } | null>(null);
@@ -61,6 +68,9 @@ export default function PlanCanvas() {
 
   useEffect(() => {
     if (!bgImage || !containerSize.width) return;
+    // Only fit-to-view on initial PDF load, not after element deletion re-renders
+    if (initialFitDoneRef.current) return;
+    initialFitDoneRef.current = true;
     const scaleX = (containerSize.width * 0.9) / backgroundWidth;
     const scaleY = (containerSize.height * 0.9) / backgroundHeight;
     const scale = Math.min(scaleX, scaleY, 1);
@@ -314,7 +324,7 @@ export default function PlanCanvas() {
         <Layer>
           {activePlan !== 'master' && filteredDevices.map(device => {
             if (device.instanceId === commsRackId) return null;
-            return <Circle key={`coverage-${device.instanceId}`} x={device.x} y={device.y} radius={80}
+            return <Circle key={`coverage-${device.instanceId}`} x={device.x} y={device.y} radius={80 * deviceScale}
               fill="rgba(255, 150, 150, 0.12)" stroke="rgba(255, 150, 150, 0.25)" strokeWidth={1} listening={false} />;
           })}
           {showSpeakerLines && <CableLines devices={devices} commsRackId={commsRackId} />}
@@ -329,6 +339,7 @@ export default function PlanCanvas() {
               <DeviceSymbol key={device.instanceId} def={def} x={device.x} y={device.y} rotation={device.rotation}
                 selected={device.instanceId === selectedDeviceId}
                 labelNum={activePlan === 'master' || isCommsRack || device.labelNum === 0 ? undefined : device.labelNum}
+                size={14 * deviceScale}
                 draggable={activeTool === 'select'}
                 onDragEnd={(x, y) => {
                   const snapThreshold = 8 / stageScale;

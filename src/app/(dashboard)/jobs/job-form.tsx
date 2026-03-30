@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 import type { Category, Status } from "@/lib/types";
 
 const inputClass =
@@ -182,6 +183,7 @@ export function JobForm({
           staff_id: staffId,
         }))
       );
+      await autoTransitionJobStatus(newJob.id, "staff_assigned", supabase);
     }
 
     // Link the pipeline deal to this job and archive it off the board

@@ -16,6 +16,9 @@ export interface LabourItem {
   formula: string
   defaultHours: number
   hours: number
+  unitRate?: number     // e.g. 80 — priced per unit instead of hourly rate (callout $80/day)
+  unitLabel?: string    // e.g. "days" — replaces "hrs" in the UI
+  isDollarInput?: boolean  // if true, "hours" field IS the dollar amount (incidentals)
 }
 
 export interface FixedCost {
@@ -59,16 +62,29 @@ function fixedItem(name: string, hours: number): LabourItem {
   return { name, formula: `Fixed ${hours} hrs`, defaultHours: hours, hours }
 }
 
+function itemSell(item: LabourItem, sellRate: number): number {
+  if (item.isDollarInput) return item.hours
+  if (item.unitRate) return item.hours * item.unitRate
+  return item.hours * sellRate
+}
+
+function itemCost(item: LabourItem, costRate: number): number {
+  if (item.isDollarInput) return item.hours
+  if (item.unitRate) return item.hours * item.unitRate
+  return item.hours * costRate
+}
+
 function buildSectionFromItems(name: string, items: LabourItem[], mandatory: boolean, costRate = LABOUR_COST_RATE, sellRate = LABOUR_SELL_RATE): LabourSection {
-  const totalHours = round(items.reduce((sum, i) => sum + i.hours, 0))
+  const hourItems = items.filter(i => !i.unitRate && !i.isDollarInput)
+  const totalHours = round(hourItems.reduce((sum, i) => sum + i.hours, 0))
   return {
     name,
     mandatory,
     warning: null,
     items,
     totalHours,
-    totalCost: round(totalHours * costRate),
-    totalSell: round(totalHours * sellRate),
+    totalCost: round(items.reduce((sum, i) => sum + itemCost(i, costRate), 0)),
+    totalSell: round(items.reduce((sum, i) => sum + itemSell(i, sellRate), 0)),
   }
 }
 
@@ -179,7 +195,7 @@ export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo =
   const fitOffDefaultTotal = fitOffItems.reduce((sum, i) => sum + i.defaultHours, 0)
   const hasFitOffWork = fitOffDefaultTotal > 0
 
-  const fitOffSection = buildSection('Fit Off', fitOffItems, true)
+  const fitOffSection = buildSection('Fit Off', fitOffItems, false)
   if (fitOffSection.totalHours === 0 && hasFitOffWork) {
     fitOffSection.warning = 'THIS IS WHAT GOT MISSED ON TOTAL FUSION DOCKLANDS'
   }
@@ -247,17 +263,20 @@ export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo =
 
   // === 4. OTHER ===
 
+  const roughInHours = sections[0]?.totalHours || 0
+  const fitOffHours = sections[1]?.totalHours || 0
+  const calloutDays = Math.max(1, Math.ceil((roughInHours + fitOffHours) / 10))
+
   sections.push(buildSection('Other', [
     fixedItem('Plan design & quotation', 4),
+    { name: 'Callout', formula: `(${roughInHours}h + ${fitOffHours}h) ÷ 10hr days = ${calloutDays} days × $80`, defaultHours: calloutDays, hours: calloutDays, unitRate: 80, unitLabel: 'days' },
+    { name: 'Hardware Incidentals', formula: 'Flat dollar amount', defaultHours: 200, hours: 200, isDollarInput: true },
+    { name: 'Administration', formula: 'Fixed 2 hrs × $120/hr', defaultHours: 2, hours: 2, unitRate: 120, unitLabel: 'hrs' },
   ], false))
 
   // === 5. FIXED COSTS ===
 
-  const fixedCosts: FixedCost[] = [
-    { name: 'Callout', cost: rates.calloutCost ?? 640, sell: rates.calloutSell ?? 640 },
-    { name: 'Hardware Incidentals', cost: rates.incidentalsCost ?? 200, sell: rates.incidentalsSell ?? 200 },
-    { name: 'Administration', cost: rates.adminCost ?? 140, sell: rates.adminSell ?? 240 },
-  ]
+  const fixedCosts: FixedCost[] = []
 
   // === GRAND TOTALS ===
 

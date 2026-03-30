@@ -82,7 +82,7 @@ export function generateQuoteExport(): QuoteExportData {
       if (!quoteCode) continue;
       globalCounts[quoteCode] = (globalCounts[quoteCode] || 0) + 1;
       floorCounts[quoteCode] = (floorCounts[quoteCode] || 0) + 1;
-      if (device.deviceId === 'door-lock') doorCount++;
+      if (device.deviceId === 'door-lock' || device.deviceId === 'integration-cable') doorCount++;
     }
 
     const floorTgSystems = Math.max(floorTgCameras, floorTgSensors);

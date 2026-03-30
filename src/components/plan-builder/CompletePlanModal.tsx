@@ -6,6 +6,7 @@ import { usePlanStore } from '@/store/planStore';
 import { generateQuoteExport } from '@/lib/plan-builder/quoteExport';
 import { CATEGORY_LABELS } from '@/lib/plan-builder/devices';
 import { createClient } from '@/lib/supabase/client';
+import { autoTransitionJobStatus } from '@/lib/job-status-transitions';
 
 interface Props {
   onClose: () => void;
@@ -46,7 +47,7 @@ const DEVICE_LABELS: Record<string, { name: string; category: string }> = {
 export default function CompletePlanModal({ onClose }: Props) {
   const router = useRouter();
   const [sending, setSending] = useState(false);
-  const { titleBlock, linkedJobId, linkedJobNumber } = usePlanStore();
+  const { titleBlock, linkedJobId, linkedJobNumber, planFileId } = usePlanStore();
 
   const exportData = generateQuoteExport();
   const { deviceCounts } = exportData;
@@ -76,28 +77,39 @@ export default function CompletePlanModal({ onClose }: Props) {
       const planName = [titleBlock.client, titleBlock.projectName, titleBlock.revision]
         .filter(Boolean).join(' - ') || 'Untitled Plan';
 
-      // Write to plan_files table so the quote wizard can pick it up
-      const { data: newPlan, error } = await supabase.from('plan_files').insert({
-        name: planName,
-        client_name: titleBlock.client || null,
-        site_name: titleBlock.projectName || null,
-        site_address: titleBlock.worksAddress || null,
-        device_counts: exportData.deviceCounts,
-        site_info: exportData.siteInfo,
-        floor_data: exportData.floors,
-        raw_data: exportData,
-        uploaded_by: user?.id ?? null,
-      }).select('id').single();
+      // Use existing plan_files row (already saved by saveToCloud before modal opened)
+      // If somehow missing, insert a new one
+      let usePlanId: string | null = planFileId;
+      if (!usePlanId) {
+        const { data: newPlan, error } = await supabase.from('plan_files').insert({
+          name: planName,
+          client_name: titleBlock.client || null,
+          site_name: titleBlock.projectName || null,
+          site_address: titleBlock.worksAddress || null,
+          state: titleBlock.state || 'QLD',
+          device_counts: exportData.deviceCounts,
+          site_info: exportData.siteInfo,
+          floor_data: exportData.floors,
+          raw_data: exportData,
+          uploaded_by: user?.id ?? null,
+        }).select('id').single();
 
-      if (error) {
-        alert('Failed to save plan: ' + error.message);
-        setSending(false);
-        return;
+        if (error || !newPlan) {
+          alert('Failed to save plan: ' + (error?.message ?? 'Unknown error'));
+          setSending(false);
+          return;
+        }
+        usePlanId = newPlan.id;
+      }
+
+      // Transition linked job to "Quote Draft"
+      if (linkedJobId) {
+        await autoTransitionJobStatus(linkedJobId, 'quote_created', supabase);
       }
 
       // Navigate to quote wizard with plan pre-selected and job linked
       const params = new URLSearchParams();
-      if (newPlan?.id) params.set('plan', newPlan.id);
+      if (usePlanId) params.set('plan', usePlanId);
       if (linkedJobId) params.set('job', linkedJobId);
 
       router.push(`/quoting/new?${params.toString()}`);

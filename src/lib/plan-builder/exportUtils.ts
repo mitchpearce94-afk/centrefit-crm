@@ -31,7 +31,7 @@ const TB = {
   clientY: 11500, projectY: 11960, addressY: 12500,
   dateY: 13310, drawingNoY: 13642, revisionY: 13930,
   mainFontSize: 130, smallFontSize: 80,
-  logoX: 9800, logoY: 12850, logoW: 3600, logoH: 1200,
+  logoX: 9000, logoY: 12550, logoW: 5400, logoH: 1800,
 };
 
 function hexToRgb(hex: string) {
@@ -110,13 +110,13 @@ async function loadAndInjectSvg(pageNum: number, titleBlock: TitleBlockInfo, cli
   }
   if (clientLogo) injection += `<image x="${TB.logoX}" y="${TB.logoY}" width="${TB.logoW}" height="${TB.logoH}" href="${clientLogo}" preserveAspectRatio="xMidYMid meet"/>\n`;
 
-  injection += `<rect x="100" y="13150" width="5900" height="900" fill="white"/>\n`;
+  injection += `<rect x="160" y="13150" width="5750" height="900" fill="white"/>\n`;
   if (revisions && revisions.length > 0) {
-    const revStartY = 13280, revLineH = 110, maxRevisions = 7;
+    const revStartY = 13280, revLineH = 150, maxRevisions = 5;
     const revsToShow = revisions.slice(-maxRevisions);
     for (let ri = 0; ri < revsToShow.length; ri++) {
       const rev = revsToShow[ri];
-      injection += `<text x="200" y="${revStartY + ri * revLineH}" font-family="Arial, sans-serif" font-size="75" fill="black">${escapeXml(`${rev.revision} - ${rev.notes}`)}</text>\n`;
+      injection += `<text x="200" y="${revStartY + ri * revLineH}" font-family="Arial, sans-serif" font-size="112" fill="black">${escapeXml(`${rev.revision} - ${rev.notes}`)}</text>\n`;
     }
   }
 
@@ -127,8 +127,8 @@ async function loadAndInjectSvg(pageNum: number, titleBlock: TitleBlockInfo, cli
     const noteLineH = 130;
     const noteX = 18600;
     const noteFontSize = 95;
-    const noteBoxRight = 21600; // right edge of notes box — extended for full width
-    const maxLineWidth = noteBoxRight - noteX; // 2400 units, matching left padding on right side
+    const noteBoxRight = 21300; // right edge of notes box — pulled in 10% from border
+    const maxLineWidth = noteBoxRight - noteX;
     const charsPerLine = Math.floor(maxLineWidth / (noteFontSize * 0.52));
 
     // Word-wrap each line to fit within the box
@@ -273,11 +273,12 @@ export async function exportToPdf(): Promise<Blob | null> {
       }
 
       const visibleDevices = getVisibleDevices(devices, pageDef.view, commsRackId);
+      const dScale = usePlanStore.getState().deviceScale;
 
       if (pageDef.view !== 'master') {
         for (const device of visibleDevices) {
           if (device.instanceId === commsRackId) continue;
-          page.drawCircle({ x: mapper.toX(device.x), y: mapper.toY(device.y), size: mapper.toSize(COVERAGE_RADIUS), color: rgb(1, 0.59, 0.59), opacity: 0.22, borderColor: rgb(1, 0.59, 0.59), borderWidth: 1, borderOpacity: 0.45 });
+          page.drawCircle({ x: mapper.toX(device.x), y: mapper.toY(device.y), size: mapper.toSize(COVERAGE_RADIUS * dScale), color: rgb(1, 0.59, 0.59), opacity: 0.22, borderColor: rgb(1, 0.59, 0.59), borderWidth: 1, borderOpacity: 0.45 });
         }
       }
 
@@ -331,7 +332,7 @@ export async function exportToPdf(): Promise<Blob | null> {
       for (const device of visibleDevices) {
         const def = getDeviceById(device.deviceId); if (!def) continue;
         const px = mapper.toX(device.x); const py = mapper.toY(device.y);
-        const sz = mapper.toSize(SYMBOL_SIZE * (def.symbolScale || 1));
+        const sz = mapper.toSize(SYMBOL_SIZE * (def.symbolScale || 1) * dScale);
         if (def.symbolImage && symbolCache.has(def.symbolImage)) {
           const img = symbolCache.get(def.symbolImage)!;
           if (device.rotation && device.rotation !== 0) {
@@ -357,14 +358,14 @@ export async function exportToPdf(): Promise<Blob | null> {
             if (groupIds.includes(device.deviceId)) { globalNum = device.labelNum + (labelOffsets[groupName] || 0); break; }
           }
           const labelText = String(globalNum);
-          const labelSize = mapper.toSize(40);
-          const bubbleR = mapper.toSize(32);
+          const labelSize = mapper.toSize(40 * dScale);
+          const bubbleR = mapper.toSize(32 * dScale);
           // Position label center on the edge of the coverage circle, in the device's facing direction
           // Device PNGs face RIGHT at rotation 0. Konva rotation is CW in screen coords (Y-down).
           // Rotating the "right" vector (1, 0) by θ: x' = cos(θ), y' = sin(θ)
           const rotRad = ((device.rotation || 0) * Math.PI) / 180;
-          const canvasLabelX = device.x + COVERAGE_RADIUS * Math.cos(rotRad);
-          const canvasLabelY = device.y + COVERAGE_RADIUS * Math.sin(rotRad);
+          const canvasLabelX = device.x + COVERAGE_RADIUS * dScale * Math.cos(rotRad);
+          const canvasLabelY = device.y + COVERAGE_RADIUS * dScale * Math.sin(rotRad);
           const bubbleX = mapper.toX(canvasLabelX);
           const bubbleY = mapper.toY(canvasLabelY);
           page.drawCircle({ x: bubbleX, y: bubbleY, size: bubbleR, color: rgb(1, 1, 1), borderColor: rgb(0, 0, 0), borderWidth: 2 });

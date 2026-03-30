@@ -61,6 +61,20 @@ interface QuoteProduct {
 
 const STEPS = ["Client", "Devices", "BOM", "Labour", "Extras", "Summary"];
 
+const DRAFT_KEY = "centrefit-quote-draft";
+
+interface ManualBomItem {
+  product_id: string | null;
+  product_name: string;
+  sku: string;
+  category: string;
+  supplier: string;
+  quantity: number;
+  cost_price: number;
+  sell_price: number;
+  isCustom: boolean;
+}
+
 const inputClass =
   "block w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
 
@@ -150,6 +164,20 @@ export function QuoteWizard({
 
   // Step 6
   const [discountPercent, setDiscountPercent] = useState(existingQuote?.discountPercent ?? 0);
+
+  // Quote mode: plan-based or manual
+  const [quoteMode, setQuoteMode] = useState<"plan" | "manual">("plan");
+
+  // Manual mode state
+  const [manualScope, setManualScope] = useState("");
+  const [manualBomItems, setManualBomItems] = useState<ManualBomItem[]>([]);
+  const [manualLabourHours, setManualLabourHours] = useState(0);
+  const [manualLabourAmount, setManualLabourAmount] = useState(0);
+  const [manualCalloutDays, setManualCalloutDays] = useState(0);
+  const [manualBomSearch, setManualBomSearch] = useState("");
+
+  // Draft persistence
+  const [showDraftBanner, setShowDraftBanner] = useState(false);
 
   // Map products
   const products: Product[] = useMemo(() =>
@@ -254,6 +282,81 @@ export function QuoteWizard({
     }
   }, []);
 
+  // ── Draft persistence (new quotes only) ──
+  // Restore draft on mount
+  useEffect(() => {
+    if (isEditing || searchParams.get("plan")) return;
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) setShowDraftBanner(true);
+    } catch {}
+  }, []);
+
+  function resumeDraft() {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      if (d.step != null) setStep(d.step);
+      if (d.quoteMode) setQuoteMode(d.quoteMode);
+      if (d.customerId) setCustomerId(d.customerId);
+      if (d.clientName) setClientName(d.clientName);
+      if (d.siteName) setSiteName(d.siteName);
+      if (d.siteAddress) setSiteAddress(d.siteAddress);
+      if (d.siteInfo) setSiteInfo(d.siteInfo);
+      if (d.deviceCounts) setDeviceCounts(d.deviceCounts);
+      if (d.bomItems) setBomItems(d.bomItems);
+      if (d.labourData) setLabourData(d.labourData);
+      if (d.extras) setExtras(d.extras);
+      if (d.discountPercent != null) setDiscountPercent(d.discountPercent);
+      if (d.quoteType) setQuoteType(d.quoteType);
+      if (d.linkedJobId) setLinkedJobId(d.linkedJobId);
+      if (d.selectedPlanId) setSelectedPlanId(d.selectedPlanId);
+      if (d.manualScope) setManualScope(d.manualScope);
+      if (d.manualBomItems) setManualBomItems(d.manualBomItems);
+      if (d.manualLabourHours != null) setManualLabourHours(d.manualLabourHours);
+      if (d.manualLabourAmount != null) setManualLabourAmount(d.manualLabourAmount);
+      if (d.manualCalloutDays != null) setManualCalloutDays(d.manualCalloutDays);
+    } catch {}
+    setShowDraftBanner(false);
+  }
+
+  function discardDraft() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+    setShowDraftBanner(false);
+  }
+
+  // Save draft on meaningful state changes
+  useEffect(() => {
+    if (isEditing) return;
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({
+          step, quoteMode, customerId, clientName, siteName, siteAddress, siteInfo,
+          deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
+          linkedJobId, selectedPlanId, manualScope, manualBomItems,
+          manualLabourHours, manualLabourAmount, manualCalloutDays,
+        }));
+      } catch {}
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [step, quoteMode, customerId, clientName, siteName, siteAddress, siteInfo,
+    deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
+    linkedJobId, selectedPlanId, manualScope, manualBomItems,
+    manualLabourHours, manualLabourAmount, manualCalloutDays]);
+
+  // Warn on unload
+  useEffect(() => {
+    if (isEditing) return;
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (step > 0) {
+        e.preventDefault();
+      }
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isEditing, step]);
+
   // Upload .cfq file — saves to DB as a plan, then loads it
   async function handlePlanImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -278,6 +381,7 @@ export function QuoteWizard({
           client_name: data.project?.client || null,
           site_name: data.project?.projectName || null,
           site_address: data.project?.worksAddress || null,
+          state: data.project?.state || 'QLD',
           device_counts: data.deviceCounts || {},
           site_info: data.siteInfo || {},
           floor_data: data.floors || null,
@@ -313,24 +417,21 @@ export function QuoteWizard({
   }
 
   function enterStep(newStep: number) {
-    if (newStep === 2 && !bomGenerated) {
-      const rules = getSnapFitnessRules(products);
-      setBomItems(generateBOM(deviceCounts, products, rules, siteInfo));
-      setBomGenerated(true);
-    }
-    if (newStep === 3 && !labourData) {
-      setLabourData(calculateLabour(deviceCounts, siteInfo, billingSettings ? {
-        labourCostRate: billingSettings.labour_cost_rate,
-        labourSellRate: billingSettings.labour_sell_rate,
-        calloutCost: billingSettings.callout_fee_cost,
-        calloutSell: billingSettings.callout_fee_sell,
-        incidentalsCost: billingSettings.incidentals_cost,
-        incidentalsSell: billingSettings.incidentals_sell,
-        adminCost: billingSettings.admin_rate_cost,
-        adminSell: billingSettings.admin_rate_sell,
-      } : {}));
+    if (quoteMode === "plan") {
+      if (newStep === 2 && !bomGenerated) {
+        const rules = getSnapFitnessRules(products);
+        setBomItems(generateBOM(deviceCounts, products, rules, siteInfo));
+        setBomGenerated(true);
+      }
+      if (newStep === 3 && !labourData) {
+        setLabourData(calculateLabour(deviceCounts, siteInfo, billingSettings ? {
+          labourCostRate: billingSettings.labour_cost_rate,
+          labourSellRate: billingSettings.labour_sell_rate,
+        } : {}));
+      }
     }
     setStep(newStep);
+    document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function regenerateBOM() {
@@ -341,12 +442,82 @@ export function QuoteWizard({
 
   const bomTotals = useMemo(() => calculateBOMTotals(bomItems), [bomItems]);
 
+  // Manual BOM totals
+  const manualBomTotals = useMemo(() => {
+    let totalCost = 0, totalSell = 0;
+    for (const item of manualBomItems) {
+      totalCost += item.cost_price * item.quantity;
+      totalSell += item.sell_price * item.quantity;
+    }
+    return { totalCost, totalSell, totalProfit: totalSell - totalCost, itemCount: manualBomItems.reduce((s, i) => s + i.quantity, 0) };
+  }, [manualBomItems]);
+
+  // Manual labour data builder
+  const costRate = billingSettings?.labour_cost_rate ?? 85;
+  const sellRate = billingSettings?.labour_sell_rate ?? 150;
+
+  const calloutTotal = manualCalloutDays * 80;
+  const manualLabourData: LabourData = useMemo(() => ({
+    sections: [{
+      name: "Labour",
+      mandatory: false,
+      warning: null,
+      items: [
+        { name: "Labour", formula: `${manualLabourHours} hrs × $${sellRate}`, defaultHours: manualLabourHours, hours: manualLabourHours },
+        { name: "Callout", formula: `${manualCalloutDays} days × $80`, defaultHours: manualCalloutDays, hours: manualCalloutDays, unitRate: 80, unitLabel: "days" },
+      ],
+      totalHours: manualLabourHours,
+      totalCost: manualLabourHours * costRate + calloutTotal,
+      totalSell: manualLabourHours * sellRate + calloutTotal,
+    }],
+    fixedCosts: [],
+    grandTotalHours: manualLabourHours,
+    grandTotalCost: manualLabourHours * costRate + manualLabourAmount + calloutTotal,
+    grandTotalSell: manualLabourHours * sellRate + manualLabourAmount + calloutTotal,
+    costRate,
+    sellRate,
+  }), [manualLabourHours, manualLabourAmount, manualCalloutDays, calloutTotal, costRate, sellRate]);
+
+  // Manual BOM items converted to BOMItem format for summary calculation
+  const manualBomAsBomItems: BOMItem[] = useMemo(() =>
+    manualBomItems.map((item) => ({
+      device_type_code: null,
+      device_type_legend: null,
+      category: item.category || "Manual",
+      product_id: item.product_id,
+      product_name: item.product_name,
+      sku: item.sku,
+      supplier: item.supplier,
+      quantity: item.quantity,
+      cost_price: item.cost_price,
+      markup: item.sell_price > 0 && item.cost_price > 0 ? (item.sell_price / item.cost_price) - 1 : 0,
+      sell_price: item.sell_price,
+      notes: "",
+      auto_added: false,
+      rule_description: null,
+    })), [manualBomItems]);
+
+  // Product search for manual BOM
+  const manualBomSearchResults = useMemo(() => {
+    if (!manualBomSearch || manualBomSearch.length < 2) return [];
+    const q = manualBomSearch.toLowerCase();
+    return products.filter((p) =>
+      p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+    ).slice(0, 10);
+  }, [products, manualBomSearch]);
+
   const summary: QuoteSummary | null = useMemo(() => {
+    if (quoteMode === "manual") {
+      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, extras, { discountPercent });
+    }
     if (!labourData) return null;
     return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent });
-  }, [bomItems, labourData, extras, discountPercent]);
+  }, [quoteMode, bomItems, labourData, extras, discountPercent, manualBomAsBomItems, manualLabourData]);
 
-  const labourWarnings = useMemo(() => labourData ? checkMandatoryLabour(labourData) : [], [labourData]);
+  const labourWarnings = useMemo(() => {
+    if (quoteMode === "manual") return [];
+    return labourData ? checkMandatoryLabour(labourData) : [];
+  }, [quoteMode, labourData]);
 
   function setSI(field: keyof SiteInfo, value: number | boolean) {
     setSiteInfo((prev) => ({ ...prev, [field]: value }));
@@ -374,7 +545,8 @@ export function QuoteWizard({
   }
 
   async function handleSave() {
-    if (!summary || !labourData) return;
+    const effectiveLabourData = quoteMode === "manual" ? manualLabourData : labourData;
+    if (!summary || !effectiveLabourData) return;
     setSaving(true);
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -396,10 +568,16 @@ export function QuoteWizard({
       ceiling_tv_mount_count: siteInfo.ceiling_tv_mount_count || 0,
       separate_studio_zone: siteInfo.separate_studio_zone || false,
       device_counts: deviceCounts,
-      labour_data: labourData,
+      labour_data: {
+        ...effectiveLabourData,
+        ...(quoteMode === "manual" ? { scope_of_works: manualScope, quote_mode: "manual" } : { quote_mode: "plan" }),
+      },
       discount_percent: discountPercent,
       quote_type: quoteType,
-      pricing_snapshot: summary,
+      pricing_snapshot: {
+        ...summary,
+        ...(quoteMode === "manual" ? { scope_of_works: manualScope, quote_mode: "manual" } : { quote_mode: "plan" }),
+      },
       expires_at: new Date(Date.now() + (billingSettings?.quote_validity_days ?? 30) * 86400000).toISOString(),
     };
 
@@ -438,9 +616,10 @@ export function QuoteWizard({
       quoteId = newQuote.id;
     }
 
-    if (bomItems.length > 0) {
+    const lineItemsToSave = quoteMode === "manual" ? manualBomAsBomItems : bomItems;
+    if (lineItemsToSave.length > 0) {
       await supabase.from("quote_line_items").insert(
-        bomItems.map((item, i) => ({
+        lineItemsToSave.map((item, i) => ({
           quote_id: quoteId, product_id: item.product_id,
           device_type_code: item.device_type_code, device_type_legend: item.device_type_legend,
           category: item.category, product_name: item.product_name,
@@ -476,6 +655,11 @@ export function QuoteWizard({
       console.log('[Auto-transition] Result:', result);
     }
 
+    // Clear draft on successful save
+    if (!isEditing) {
+      try { localStorage.removeItem(DRAFT_KEY); } catch {}
+    }
+
     toast(isEditing ? "Quote updated" : "Quote saved");
     router.push(isEditing ? `/quoting/${quoteId}` : "/quoting");
     router.refresh();
@@ -503,6 +687,17 @@ export function QuoteWizard({
 
   return (
     <div>
+      {/* Draft resume banner */}
+      {showDraftBanner && (
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
+          <p className="text-sm">You have an unsaved draft. Resume where you left off?</p>
+          <div className="flex gap-2">
+            <button onClick={resumeDraft} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors">Resume</button>
+            <button onClick={discardDraft} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Discard</button>
+          </div>
+        </div>
+      )}
+
       {/* Step indicator */}
       <div className="flex gap-1 mb-6">
         {STEPS.map((name, i) => (
@@ -515,7 +710,31 @@ export function QuoteWizard({
       {/* STEP 1: CLIENT */}
       {step === 0 && (
         <div className="space-y-4 max-w-2xl">
-          {/* Plan Selection */}
+          {/* Quote Mode Toggle */}
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-2">Quote Mode</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setQuoteMode("plan")}
+                className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${quoteMode === "plan" ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground"}`}
+              >
+                <p className="text-sm font-medium">Plan-Based Quote</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Auto-generate BOM and labour from device counts</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuoteMode("manual")}
+                className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${quoteMode === "manual" ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground"}`}
+              >
+                <p className="text-sm font-medium">Manual Quote</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Manually select products and set labour hours</p>
+              </button>
+            </div>
+          </div>
+
+          {/* Plan Selection — plan mode only */}
+          {quoteMode === "plan" && (
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Start From</label>
             {plans.length > 0 ? (
@@ -551,6 +770,21 @@ export function QuoteWizard({
               </div>
             )}
           </div>
+          )}
+
+          {/* Manual Scope of Works — manual mode only */}
+          {quoteMode === "manual" && (
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Scope of Works</label>
+              <textarea
+                value={manualScope}
+                onChange={(e) => setManualScope(e.target.value)}
+                rows={5}
+                placeholder="Describe the scope of works for this quote..."
+                className={inputClass}
+              />
+            </div>
+          )}
 
           {/* Link to Job */}
           <div>
@@ -714,148 +948,421 @@ export function QuoteWizard({
       {/* STEP 2: DEVICES */}
       {step === 1 && (
         <div className="space-y-6">
-          {/* Device count summary */}
-          {Object.values(deviceCounts).some((v) => v > 0) && (
-            <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
-              <p className="text-xs font-medium text-primary mb-1">
-                {Object.values(deviceCounts).reduce((a, b) => a + b, 0)} devices selected
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(deviceCounts).filter(([, v]) => v > 0).map(([code, count]) => {
-                  const dt = DEVICE_TYPES.find((d) => d.code === code);
-                  return (
-                    <span key={code} className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                      {count}x {dt?.legend || code}
-                    </span>
-                  );
-                })}
+          {quoteMode === "manual" ? (
+            <>
+              <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+                <p className="text-sm text-primary">Manual quote — device counts not required. Enter site info for dependency rules if applicable.</p>
               </div>
-            </div>
-          )}
+              <h3 className="text-sm font-semibold">Site Info</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-2xl">
+                {([["site_sqm","Site Area (sqm)"],["door_count","Door Count"],["external_camera_count","External Cameras"],["concrete_mount_black","Concrete Mounts (Black)"],["concrete_mount_white","Concrete Mounts (White)"],["cardio_count","Cardio Machines"],["tv_count","Wall TVs"],["ceiling_tv_count","Ceiling TVs"],["wall_tv_mount_count","Wall TV Mounts"],["ceiling_tv_mount_count","Ceiling TV Mounts"]] as [keyof SiteInfo, string][]).map(([field, label]) => (
+                  <div key={field}>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1">{label}</label>
+                    <input type="number" min="0" value={(siteInfo[field] as number) || ""} onChange={(e) => setSI(field, parseInt(e.target.value) || 0)} className={`${inputClass} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`} />
+                  </div>
+                ))}
+              </div>
+              <label className="flex items-center gap-2 text-sm mt-2">
+                <button type="button" onClick={() => setSI("separate_studio_zone", !siteInfo.separate_studio_zone)} className={`relative h-5 w-9 rounded-full transition-colors ${siteInfo.separate_studio_zone ? "bg-primary" : "bg-muted"}`}>
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${siteInfo.separate_studio_zone ? "left-[18px]" : "left-0.5"}`} />
+                </button>
+                Separate Studio Zone
+              </label>
+            </>
+          ) : (
+            <>
+              {/* Device count summary */}
+              {Object.values(deviceCounts).some((v) => v > 0) && (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+                  <p className="text-xs font-medium text-primary mb-1">
+                    {Object.values(deviceCounts).reduce((a, b) => a + b, 0)} devices selected
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(deviceCounts).filter(([, v]) => v > 0).map(([code, count]) => {
+                      const dt = DEVICE_TYPES.find((d) => d.code === code);
+                      return (
+                        <span key={code} className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                          {count}x {dt?.legend || code}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            {Array.from(devicesByCategory).map(([category, types]) => (
-              <div key={category} className="rounded-lg border border-border bg-card overflow-hidden">
-                <div className="bg-muted/50 px-4 py-2 border-b border-border">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{category}</h3>
-                </div>
-                <div className="divide-y divide-border">
-                  {types.map((dt) => {
-                    const count = deviceCounts[dt.code] || 0;
-                    return (
-                      <div key={dt.code} className={`flex items-center justify-between px-4 py-2.5 ${count > 0 ? "bg-primary/[0.03]" : ""}`}>
-                        <span className="text-sm">{dt.legend}</span>
-                        <input
-                          type="number"
-                          min="0"
-                          value={count || ""}
-                          onChange={(e) => setDC(dt.code, parseInt(e.target.value) || 0)}
-                          placeholder="0"
-                          className={`w-16 rounded-md border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary ${count > 0 ? "border-primary/40 text-foreground" : "border-border text-muted-foreground"}`}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
+              <div className="lg:columns-2 gap-6 space-y-6">
+                {Array.from(devicesByCategory).map(([category, types]) => (
+                  <div key={category} className="rounded-lg border border-border bg-card overflow-hidden break-inside-avoid">
+                    <div className="bg-muted/50 px-4 py-2 border-b border-border">
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{category}</h3>
+                    </div>
+                    <div className="divide-y divide-border">
+                      {types.map((dt) => {
+                        const count = deviceCounts[dt.code] || 0;
+                        return (
+                          <div key={dt.code} className={`flex items-center justify-between px-4 py-2.5 ${count > 0 ? "bg-primary/[0.03]" : ""}`}>
+                            <span className="text-sm">{dt.legend}</span>
+                            <input
+                              type="number"
+                              min="0"
+                              value={count || ""}
+                              onChange={(e) => setDC(dt.code, parseInt(e.target.value) || 0)}
+                              placeholder="0"
+                              className={`w-16 rounded-md border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary ${count > 0 ? "border-primary/40 text-foreground" : "border-border text-muted-foreground"}`}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </div>
       )}
 
       {/* STEP 3: BOM */}
       {step === 2 && (
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-sm text-muted-foreground">{bomItems.length} line items · {bomTotals.itemCount} total units</p>
-            </div>
-            <button onClick={regenerateBOM} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Regenerate BOM</button>
-          </div>
-
-          {/* BOM totals card at top */}
-          <div className="grid grid-cols-3 gap-3 mb-6">
-            <div className="rounded-lg border border-border bg-card p-4 text-center">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase">Total Cost</p>
-              <p className="text-lg font-bold font-mono mt-1">${fmt(bomTotals.totalCost)}</p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-4 text-center">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase">Total Sell</p>
-              <p className="text-lg font-bold font-mono mt-1">${fmt(bomTotals.totalSell)}</p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-4 text-center">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase">Profit</p>
-              <p className="text-lg font-bold font-mono text-emerald-400 mt-1">${fmt(bomTotals.totalProfit)}</p>
-            </div>
-          </div>
-
-          {/* Category sections */}
-          {Array.from(bomByCategory).map(([category, items]) => {
-            const catCost = items.reduce((s, i) => s + i.cost_price * i.quantity, 0);
-            const catSell = items.reduce((s, i) => s + i.sell_price * i.quantity, 0);
-            return (
-              <div key={category} className="mb-5 rounded-lg border border-border overflow-hidden">
-                {/* Category header */}
-                <div className="flex items-center justify-between bg-muted/50 px-4 py-2.5 border-b border-border">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{category}</h3>
-                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{items.length}</span>
+          {quoteMode === "manual" ? (
+            <>
+              {/* Manual BOM — Product search */}
+              <div className="relative mb-4">
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Search Products</label>
+                <input
+                  type="text"
+                  value={manualBomSearch}
+                  onChange={(e) => setManualBomSearch(e.target.value)}
+                  placeholder="Search by product name or SKU..."
+                  className={inputClass}
+                />
+                {manualBomSearchResults.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-card shadow-xl">
+                    {manualBomSearchResults.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setManualBomItems((prev) => {
+                            const existing = prev.find((b) => b.product_id === p.id);
+                            if (existing) return prev.map((b) => b.product_id === p.id ? { ...b, quantity: b.quantity + 1 } : b);
+                            return [...prev, { product_id: p.id, product_name: p.name, sku: p.sku, category: p.category, supplier: p.supplier, quantity: 1, cost_price: p.cost_price, sell_price: p.sell_price, isCustom: false }];
+                          });
+                          setManualBomSearch("");
+                        }}
+                        className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm hover:bg-accent transition-colors border-b border-border last:border-0"
+                      >
+                        <div>
+                          <span className="font-medium">{p.name}</span>
+                          <span className="ml-2 text-[11px] text-muted-foreground font-mono">{p.sku}</span>
+                          <span className="block text-[11px] text-muted-foreground">{p.category} · {p.supplier}</span>
+                        </div>
+                        <span className="text-xs font-mono text-muted-foreground">${fmt(p.sell_price)}</span>
+                      </button>
+                    ))}
                   </div>
-                  <span className="text-xs font-mono text-muted-foreground">${fmt(catSell)}</span>
+                )}
+              </div>
+
+              {/* Add Custom Item button */}
+              <div className="mb-4">
+                <button
+                  type="button"
+                  onClick={() => setManualBomItems((prev) => [...prev, { product_id: null, product_name: "", sku: "", category: "", supplier: "", quantity: 1, cost_price: 0, sell_price: 0, isCustom: true }])}
+                  className="rounded-md border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                >
+                  + Add Custom Item
+                </button>
+              </div>
+
+              {/* Manual BOM totals */}
+              <div className="grid grid-cols-3 gap-3 mb-6">
+                <div className="rounded-lg border border-border bg-card p-4 text-center">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase">Total Cost</p>
+                  <p className="text-lg font-bold font-mono mt-1">${fmt(manualBomTotals.totalCost)}</p>
                 </div>
-
-                {/* Items */}
-                <div className="divide-y divide-border">
-                  {items.map((item, i) => (
-                    <div key={`${item.product_id}-${i}`} className="px-4 py-3">
-                      <div className="flex items-start justify-between gap-4">
-                        {/* Product info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-medium truncate">{item.product_name}</p>
-                            {item.auto_added && (
-                              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Auto</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-3 mt-0.5">
-                            {item.sku && <span className="text-[11px] text-muted-foreground font-mono">{item.sku}</span>}
-                            {item.supplier && <span className="text-[11px] text-muted-foreground">{item.supplier}</span>}
-                          </div>
-                        </div>
-
-                        {/* Qty + Pricing — right aligned, consistent widths */}
-                        <div className="flex items-center gap-4 shrink-0">
-                          <input
-                            type="number"
-                            min="0"
-                            value={item.quantity}
-                            onChange={(e) => {
-                              const idx = bomItems.indexOf(item);
-                              setBomItems((prev) => prev.map((b, bi) => bi === idx ? { ...b, quantity: parseInt(e.target.value) || 0 } : b));
-                            }}
-                            className="w-14 rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none"
-                          />
-                          <div className="hidden sm:block w-20 text-right">
-                            <p className="text-[10px] text-muted-foreground">Unit</p>
-                            <p className="text-xs font-mono">${fmt(item.sell_price)}</p>
-                          </div>
-                          <div className="w-24 text-right">
-                            <p className="text-[10px] text-muted-foreground">Line Total</p>
-                            <p className="text-sm font-mono font-medium">${fmt(item.sell_price * item.quantity)}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div className="rounded-lg border border-border bg-card p-4 text-center">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase">Total Sell</p>
+                  <p className="text-lg font-bold font-mono mt-1">${fmt(manualBomTotals.totalSell)}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-card p-4 text-center">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase">Profit</p>
+                  <p className="text-lg font-bold font-mono text-emerald-400 mt-1">${fmt(manualBomTotals.totalProfit)}</p>
                 </div>
               </div>
-            );
-          })}
+
+              {/* Manual BOM table */}
+              {manualBomItems.length > 0 && (
+                <div className="rounded-lg border border-border overflow-hidden">
+                  <div className="grid grid-cols-[1fr_70px_90px_90px_100px_40px] gap-2 bg-muted/50 px-4 py-2.5 border-b border-border">
+                    <span className="text-xs font-medium text-muted-foreground">Product</span>
+                    <span className="text-xs font-medium text-muted-foreground text-center">Qty</span>
+                    <span className="text-xs font-medium text-muted-foreground text-center">Cost</span>
+                    <span className="text-xs font-medium text-muted-foreground text-center">Sell</span>
+                    <span className="text-xs font-medium text-muted-foreground text-right">Total</span>
+                    <span></span>
+                  </div>
+                  <div className="divide-y divide-border">
+                    {manualBomItems.map((item, i) => (
+                      <div key={i} className="grid grid-cols-[1fr_70px_90px_90px_100px_40px] gap-2 items-center px-4 py-2.5">
+                        <div className="min-w-0">
+                          {item.isCustom ? (
+                            <input
+                              type="text"
+                              value={item.product_name}
+                              onChange={(e) => setManualBomItems((prev) => prev.map((b, bi) => bi === i ? { ...b, product_name: e.target.value } : b))}
+                              placeholder="Custom item name"
+                              className={`${inputClass} text-sm`}
+                            />
+                          ) : (
+                            <div>
+                              <p className="text-sm font-medium truncate">{item.product_name}</p>
+                              <p className="text-[11px] text-muted-foreground font-mono truncate">{item.sku}</p>
+                            </div>
+                          )}
+                        </div>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={(e) => setManualBomItems((prev) => prev.map((b, bi) => bi === i ? { ...b, quantity: parseInt(e.target.value) || 1 } : b))}
+                          className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.cost_price || ""}
+                          onChange={(e) => setManualBomItems((prev) => prev.map((b, bi) => bi === i ? { ...b, cost_price: parseFloat(e.target.value) || 0 } : b))}
+                          placeholder="$0"
+                          className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.sell_price || ""}
+                          onChange={(e) => setManualBomItems((prev) => prev.map((b, bi) => bi === i ? { ...b, sell_price: parseFloat(e.target.value) || 0 } : b))}
+                          placeholder="$0"
+                          className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <p className="text-sm font-mono font-medium text-right">${fmt(item.sell_price * item.quantity)}</p>
+                        <button
+                          type="button"
+                          onClick={() => setManualBomItems((prev) => prev.filter((_, bi) => bi !== i))}
+                          className="text-muted-foreground hover:text-red-400 transition-colors text-center"
+                          title="Remove"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Totals row */}
+                  <div className="grid grid-cols-[1fr_70px_90px_90px_100px_40px] gap-2 items-center px-4 py-2.5 bg-muted/30 border-t border-border">
+                    <span className="text-xs font-medium text-muted-foreground">Total ({manualBomItems.length} items)</span>
+                    <span className="text-xs font-mono text-center">{manualBomTotals.itemCount}</span>
+                    <span className="text-xs font-mono text-center">${fmt(manualBomTotals.totalCost)}</span>
+                    <span className="text-xs font-mono text-center">${fmt(manualBomTotals.totalSell)}</span>
+                    <span className="text-sm font-mono font-medium text-right">${fmt(manualBomTotals.totalSell)}</span>
+                    <span></span>
+                  </div>
+                </div>
+              )}
+
+              {manualBomItems.length === 0 && (
+                <div className="rounded-lg border border-dashed border-border bg-card/50 px-4 py-8 text-center">
+                  <p className="text-sm text-muted-foreground">No items added yet. Search for products above or add a custom item.</p>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">{bomItems.length} line items · {bomTotals.itemCount} total units</p>
+                </div>
+                <button onClick={regenerateBOM} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Regenerate BOM</button>
+              </div>
+
+              {/* BOM totals card at top */}
+              <div className="grid grid-cols-3 gap-3 mb-6">
+                <div className="rounded-lg border border-border bg-card p-4 text-center">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase">Total Cost</p>
+                  <p className="text-lg font-bold font-mono mt-1">${fmt(bomTotals.totalCost)}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-card p-4 text-center">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase">Total Sell</p>
+                  <p className="text-lg font-bold font-mono mt-1">${fmt(bomTotals.totalSell)}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-card p-4 text-center">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase">Profit</p>
+                  <p className="text-lg font-bold font-mono text-emerald-400 mt-1">${fmt(bomTotals.totalProfit)}</p>
+                </div>
+              </div>
+
+              {/* Category sections */}
+              {Array.from(bomByCategory).map(([category, items]) => {
+                const catCost = items.reduce((s, i) => s + i.cost_price * i.quantity, 0);
+                const catSell = items.reduce((s, i) => s + i.sell_price * i.quantity, 0);
+                return (
+                  <div key={category} className="mb-5 rounded-lg border border-border overflow-hidden">
+                    {/* Category header */}
+                    <div className="flex items-center justify-between bg-muted/50 px-4 py-2.5 border-b border-border">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{category}</h3>
+                        <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{items.length}</span>
+                      </div>
+                      <span className="text-xs font-mono text-muted-foreground">${fmt(catSell)}</span>
+                    </div>
+
+                    {/* Items */}
+                    <div className="divide-y divide-border">
+                      {items.map((item, i) => (
+                        <div key={`${item.product_id}-${i}`} className="px-4 py-3">
+                          <div className="flex items-start justify-between gap-4">
+                            {/* Product info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium truncate">{item.product_name}</p>
+                                {item.auto_added && (
+                                  <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Auto</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 mt-0.5">
+                                {item.sku && <span className="text-[11px] text-muted-foreground font-mono">{item.sku}</span>}
+                                {item.supplier && <span className="text-[11px] text-muted-foreground">{item.supplier}</span>}
+                              </div>
+                            </div>
+
+                            {/* Qty + Pricing — right aligned, consistent widths */}
+                            <div className="flex items-center gap-4 shrink-0">
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.quantity}
+                                onChange={(e) => {
+                                  const idx = bomItems.indexOf(item);
+                                  setBomItems((prev) => prev.map((b, bi) => bi === idx ? { ...b, quantity: parseInt(e.target.value) || 0 } : b));
+                                }}
+                                className="w-14 rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none"
+                              />
+                              <div className="hidden sm:block w-20 text-right">
+                                <p className="text-[10px] text-muted-foreground">Unit</p>
+                                <p className="text-xs font-mono">${fmt(item.sell_price)}</p>
+                              </div>
+                              <div className="w-24 text-right">
+                                <p className="text-[10px] text-muted-foreground">Line Total</p>
+                                <p className="text-sm font-mono font-medium">${fmt(item.sell_price * item.quantity)}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
         </div>
       )}
 
       {/* STEP 4: LABOUR */}
-      {step === 3 && labourData && (
+      {step === 3 && quoteMode === "manual" && (
+        <div className="space-y-5 max-w-2xl">
+          <div className="grid grid-cols-4 gap-3">
+            <div className="rounded-lg border border-border bg-card p-4 text-center">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase">Total Hours</p>
+              <p className="text-lg font-bold font-mono mt-1">{manualLabourHours}h</p>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4 text-center">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase">Labour Rate</p>
+              <p className="text-lg font-bold font-mono mt-1">${fmt(sellRate)}/hr</p>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4 text-center">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase">Callout</p>
+              <p className="text-lg font-bold font-mono mt-1">${fmt(calloutTotal)}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4 text-center">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase">Labour Total</p>
+              <p className="text-lg font-bold font-mono mt-1">${fmt(manualLabourHours * sellRate + calloutTotal + manualLabourAmount)}</p>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border overflow-hidden">
+            <div className="bg-muted/50 px-4 py-2.5 border-b border-border">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Labour</h3>
+            </div>
+            <div className="divide-y divide-border">
+              <div className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <p className="text-sm">Labour Hours</p>
+                  <p className="text-[10px] text-muted-foreground">Rate: ${fmt(sellRate)}/hr (cost: ${fmt(costRate)}/hr)</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.25"
+                    value={manualLabourHours || ""}
+                    onChange={(e) => setManualLabourHours(parseFloat(e.target.value) || 0)}
+                    placeholder="0"
+                    className="w-20 rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <span className="text-[10px] text-muted-foreground w-6">hrs</span>
+                  <span className="w-24 text-right text-sm font-mono">${fmt(manualLabourHours * sellRate)}</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <p className="text-sm">Callout</p>
+                  <p className="text-[10px] text-muted-foreground">$80 per day on site</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={manualCalloutDays || ""}
+                    onChange={(e) => setManualCalloutDays(parseInt(e.target.value) || 0)}
+                    placeholder="0"
+                    className="w-20 rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <span className="text-[10px] text-muted-foreground w-6">days</span>
+                  <span className="w-24 text-right text-sm font-mono">${fmt(manualCalloutDays * 80)}</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <p className="text-sm">Additional Costs</p>
+                  <p className="text-[10px] text-muted-foreground">Flat amount for misc labour costs</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={manualLabourAmount || ""}
+                    onChange={(e) => setManualLabourAmount(parseFloat(e.target.value) || 0)}
+                    placeholder="$0"
+                    className="w-20 rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <span className="text-[10px] text-muted-foreground w-6">$</span>
+                  <span className="w-24 text-right text-sm font-mono">${fmt(manualLabourAmount)}</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between px-4 py-2.5 bg-muted/30 border-t border-border">
+              <span className="text-xs font-medium text-muted-foreground">Total Labour (sell)</span>
+              <span className="text-sm font-mono font-medium">${fmt(manualLabourHours * sellRate + calloutTotal + manualLabourAmount)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {step === 3 && quoteMode === "plan" && labourData && (
         <div className="space-y-5">
           {/* Docklands warning */}
           {labourWarnings.length > 0 && (
@@ -911,18 +1418,20 @@ export function QuoteWizard({
                       <p className="text-[10px] text-muted-foreground">{item.formula}</p>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 w-[7.5rem] justify-end">
                         <input
                           type="number"
                           min="0"
-                          step="0.25"
+                          step={item.isDollarInput ? "1" : item.unitRate ? "1" : "0.25"}
                           value={item.hours}
                           onChange={(e) => updateLabourHours(si, ii, parseFloat(e.target.value) || 0)}
-                          className="w-16 rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none"
+                          className="w-20 rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
-                        <span className="text-[10px] text-muted-foreground">hrs</span>
+                        <span className="text-[10px] text-muted-foreground w-6">{item.isDollarInput ? '$' : item.unitLabel || 'hrs'}</span>
                       </div>
-                      <span className="w-20 text-right text-sm font-mono">${fmt(item.hours * 150)}</span>
+                      <span className="w-20 text-right text-sm font-mono">
+                        ${fmt(item.isDollarInput ? item.hours : item.unitRate ? item.hours * item.unitRate : item.hours * (labourData?.sellRate || 150))}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -931,6 +1440,7 @@ export function QuoteWizard({
           ))}
 
           {/* Fixed costs */}
+          {labourData.fixedCosts.length > 0 && (
           <div className="rounded-lg border border-border overflow-hidden">
             <div className="bg-muted/50 px-4 py-2.5 border-b border-border">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Fixed Costs</h3>
@@ -947,6 +1457,7 @@ export function QuoteWizard({
               ))}
             </div>
           </div>
+          )}
         </div>
       )}
 
@@ -956,15 +1467,14 @@ export function QuoteWizard({
           <p className="text-xs text-muted-foreground mb-4">Freight, travel, accommodation, and other costs. Leave at $0 for items not applicable.</p>
           <div className="rounded-lg border border-border overflow-hidden">
             {/* Header */}
-            <div className="grid grid-cols-[1fr_100px_100px] gap-3 bg-muted/50 px-4 py-2.5 border-b border-border">
+            <div className="grid grid-cols-[1fr_120px] gap-3 bg-muted/50 px-4 py-2.5 border-b border-border">
               <span className="text-xs font-medium text-muted-foreground">Item</span>
-              <span className="text-xs font-medium text-muted-foreground text-right">Cost</span>
-              <span className="text-xs font-medium text-muted-foreground text-right">Sell</span>
+              <span className="text-xs font-medium text-muted-foreground text-center">Amount</span>
             </div>
             {/* Rows */}
             <div className="divide-y divide-border">
               {extras.map((extra, i) => (
-                <div key={i} className="grid grid-cols-[1fr_100px_100px] gap-3 items-center px-4 py-2.5">
+                <div key={i} className="grid grid-cols-[1fr_120px] gap-3 items-center px-4 py-2.5">
                   <div>
                     <span className="text-sm">{extra.description}</span>
                     <span className="ml-2 text-[10px] text-muted-foreground">{extra.category}</span>
@@ -972,27 +1482,18 @@ export function QuoteWizard({
                   <input
                     type="number"
                     min="0"
-                    value={extra.cost || ""}
-                    onChange={(e) => setExtras((prev) => prev.map((ex, ei) => ei === i ? { ...ex, cost: parseFloat(e.target.value) || 0 } : ex))}
-                    placeholder="$0"
-                    className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-right font-mono focus:border-primary focus:outline-none"
-                  />
-                  <input
-                    type="number"
-                    min="0"
                     value={extra.sell || ""}
-                    onChange={(e) => setExtras((prev) => prev.map((ex, ei) => ei === i ? { ...ex, sell: parseFloat(e.target.value) || 0 } : ex))}
+                    onChange={(e) => { const v = parseFloat(e.target.value) || 0; setExtras((prev) => prev.map((ex, ei) => ei === i ? { ...ex, cost: v, sell: v } : ex)); }}
                     placeholder="$0"
-                    className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-right font-mono focus:border-primary focus:outline-none"
+                    className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
               ))}
             </div>
             {/* Totals */}
-            {extras.some((e) => e.cost > 0 || e.sell > 0) && (
-              <div className="grid grid-cols-[1fr_100px_100px] gap-3 items-center px-4 py-2.5 bg-muted/30 border-t border-border">
+            {extras.some((e) => e.sell > 0) && (
+              <div className="grid grid-cols-[1fr_120px] gap-3 items-center px-4 py-2.5 bg-muted/30 border-t border-border">
                 <span className="text-xs font-medium text-muted-foreground">Total Extras</span>
-                <span className="text-sm font-mono text-right">${fmt(extras.reduce((s, e) => s + e.cost, 0))}</span>
                 <span className="text-sm font-mono text-right">${fmt(extras.reduce((s, e) => s + e.sell, 0))}</span>
               </div>
             )}
@@ -1003,12 +1504,23 @@ export function QuoteWizard({
       {/* STEP 6: SUMMARY */}
       {step === 5 && summary && (
         <div className="space-y-6">
-          {/* Quote type badge */}
+          {/* Quote type / mode badges */}
           <div className="flex items-center gap-2">
             <span className={`rounded-full px-3 py-1 text-xs font-medium ${quoteType === "progress" ? "bg-primary/10 text-primary" : "bg-muted text-foreground"}`}>
               {quoteType === "progress" ? "Progress Payments" : "Full Quote"}
             </span>
+            {quoteMode === "manual" && (
+              <span className="rounded-full px-3 py-1 text-xs font-medium bg-muted text-foreground">Manual Quote</span>
+            )}
           </div>
+
+          {/* Manual scope of works preview */}
+          {quoteMode === "manual" && manualScope && (
+            <div className="rounded-lg border border-border bg-card p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Scope of Works</h3>
+              <p className="text-sm whitespace-pre-wrap">{manualScope}</p>
+            </div>
+          )}
 
           {/* Internal breakdown — always shown */}
           <div className="rounded-lg border border-border bg-card p-4">

@@ -95,8 +95,8 @@ export function QuoteActions({
 
   async function handleDelete() {
     setUpdating(true);
-    // Unlink plan_files, delete line items and extras first
-    await supabase.from("plan_files").update({ quote_id: null }).eq("quote_id", quoteId);
+    // Delete linked plan_files, line items and extras first
+    await supabase.from("plan_files").delete().eq("quote_id", quoteId);
     await supabase.from("quote_line_items").delete().eq("quote_id", quoteId);
     await supabase.from("quote_extras").delete().eq("quote_id", quoteId);
     const { error } = await supabase.from("quotes").delete().eq("id", quoteId);
@@ -173,6 +173,11 @@ export function QuoteActions({
             const newJobId = e.target.value || null;
             setCurrentJobId(newJobId);
             await supabase.from("quotes").update({ job_id: newJobId }).eq("id", quoteId);
+            // Auto-transition the newly linked job based on current quote status
+            if (newJobId) {
+              const actionMap: Record<string, string> = { draft: "quote_created", sent: "quote_sent", accepted: "quote_accepted", declined: "quote_declined" };
+              if (actionMap[status]) await autoTransitionJobStatus(newJobId, actionMap[status], supabase);
+            }
             router.refresh();
           }}
           className="h-8 rounded-md border border-border bg-input px-2 text-xs text-foreground focus:border-primary focus:outline-none"
@@ -260,7 +265,7 @@ export function QuoteActions({
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
                     <img src="/centrefit-logo.png" alt="CentreFit" style={{ height: "48px", marginBottom: "12px" }} />
-                    <p style={{ fontSize: "11px", color: "#94a3b8", margin: 0 }}>CentreFit Services Pty Ltd</p>
+                    <p style={{ fontSize: "11px", color: "#94a3b8", margin: 0 }}>Centrefit Group Pty Ltd</p>
                     <p style={{ fontSize: "11px", color: "#94a3b8", margin: 0 }}>ABN: 55 168 413 161</p>
                   </div>
                   <div style={{ textAlign: "right" }}>
@@ -283,9 +288,9 @@ export function QuoteActions({
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <p style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "1px", color: "#64748b", margin: "0 0 4px" }}>Contact</p>
-                  <p style={{ fontSize: "12px", color: "#475569", margin: "2px 0 0" }}>(07) 3205 0440</p>
-                  <p style={{ fontSize: "12px", color: "#475569", margin: "2px 0 0" }}>admin@centrefitgroup.com.au</p>
-                  <p style={{ fontSize: "12px", color: "#475569", margin: "2px 0 0" }}>3/131 Aberdare St, Darra QLD 4076</p>
+                  <p style={{ fontSize: "12px", color: "#475569", margin: "2px 0 0" }}>(07) 3188 5115</p>
+                  <p style={{ fontSize: "12px", color: "#475569", margin: "2px 0 0" }}>admin@centrefit.com.au</p>
+                  <p style={{ fontSize: "12px", color: "#475569", margin: "2px 0 0" }}>1/25 Paisley Drive, Lawnton QLD 4501</p>
                 </div>
               </div>
 
@@ -401,8 +406,8 @@ export function QuoteActions({
               {/* Footer */}
               <div className="quote-footer" style={{ background: "#f8fafc", borderTop: "1px solid #e2e8f0", padding: "20px 48px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ fontSize: "10px", color: "#94a3b8" }}>
-                  <p style={{ margin: 0 }}>CentreFit Services Pty Ltd · ABN 55 168 413 161</p>
-                  <p style={{ margin: "2px 0 0" }}>3/131 Aberdare St, Darra QLD 4076 · (07) 3205 0440</p>
+                  <p style={{ margin: 0 }}>Centrefit Group Pty Ltd · ABN 55 168 413 161</p>
+                  <p style={{ margin: "2px 0 0" }}>1/25 Paisley Drive, Lawnton QLD 4501 · (07) 3188 5115</p>
                 </div>
                 <img src="/centrefit-badge.png" alt="" style={{ height: "32px", opacity: 0.5 }} />
               </div>

@@ -6,21 +6,22 @@ import { createClient } from '@/lib/supabase/client';
  * If the job's current status isn't in the 'from' list, no transition happens.
  */
 const AUTO_TRANSITIONS: Record<string, { from: string[]; to: string }> = {
-  // Quote lifecycle
+  // Quote lifecycle — each step includes earlier statuses so transitions
+  // still fire even if a previous step in the chain was skipped
   quote_created: {
-    from: ['Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled'],
+    from: ['Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Follow Up', 'On Hold', 'Design Phase', 'Awaiting Approval'],
     to: 'Quote Draft',
   },
   quote_sent: {
-    from: ['Quote Draft', 'Sub-Quote Needed'],
+    from: ['Quote Draft', 'Sub-Quote Needed', 'Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Follow Up', 'On Hold', 'Design Phase', 'Awaiting Approval'],
     to: 'Quote Sent',
   },
   quote_accepted: {
-    from: ['Quote Draft', 'Quote Sent', 'Quote Expired'],
+    from: ['Quote Draft', 'Quote Sent', 'Quote Expired', 'Sub-Quote Needed', 'Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Follow Up', 'On Hold', 'Design Phase', 'Awaiting Approval'],
     to: 'Pending Schedule',
   },
   quote_declined: {
-    from: ['Quote Draft', 'Quote Sent'],
+    from: ['Quote Draft', 'Quote Sent', 'Quote Expired', 'Sub-Quote Needed', 'Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Design Phase', 'Awaiting Approval'],
     to: 'Follow Up',
   },
 
@@ -30,15 +31,20 @@ const AUTO_TRANSITIONS: Record<string, { from: string[]; to: string }> = {
     to: 'Assigned',
   },
   job_scheduled: {
-    from: ['Lead / Unassigned', 'Assigned', 'Pending Schedule'],
+    from: ['Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Follow Up'],
     to: 'Scheduled',
   },
   work_started: {
-    from: ['Scheduled', 'Assigned', 'Pending Schedule'],
+    from: ['Scheduled', 'Assigned', 'Pending Schedule', 'Quote Draft', 'Quote Sent', 'Quote Expired'],
     to: 'In Progress',
   },
   job_completed: {
-    from: ['In Progress', 'Rough In', 'Fit Off', 'Equipment Build', 'IT Service Active', 'NBN Active', 'Design Phase', 'Awaiting Approval', 'Scheduled'],
+    from: [
+      'In Progress', 'Rough In', 'Fit Off', 'Equipment Build',
+      'IT Service Active', 'NBN Active', 'Design Phase', 'Awaiting Approval',
+      'Scheduled', 'Assigned', 'Pending Schedule',
+      'Follow Up', 'On Hold', 'Parts Dispatched', 'Parts Needed', 'Pending Tech',
+    ],
     to: 'Ready to Invoice',
   },
   invoice_sent: {
@@ -102,6 +108,7 @@ export async function autoTransitionJobStatus(
   await sb.from('job_notes').insert({
     job_id: jobId,
     content: `Status auto-changed from "${currentStatus.name}" to "${targetStatus.name}"`,
+    type: 'system',
     is_system: true,
   });
 
@@ -142,6 +149,7 @@ export async function autoTransitionJobStatusServer(
   await supabase.from('job_notes').insert({
     job_id: jobId,
     content: `Status auto-changed from "${currentStatus.name}" to "${targetStatus.name}"`,
+    type: 'system',
     is_system: true,
   });
 

@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 
 interface JobOption {
   id: string;
@@ -132,37 +133,8 @@ export function AssignJobModal({
       }
     }
 
-    // Auto-transition job to "Scheduled" if still in early pre-work (runs on insert AND edit)
-    const { data: scheduledStatus } = await supabase
-      .from("statuses")
-      .select("id")
-      .eq("name", "Scheduled")
-      .single();
-
-    if (scheduledStatus) {
-      const { data: job } = await supabase
-        .from("jobs")
-        .select("id, status_id")
-        .eq("id", jobId)
-        .single();
-
-      if (job) {
-        // Get current status name
-        const { data: currentSt } = await supabase
-          .from("statuses")
-          .select("name")
-          .eq("id", job.status_id)
-          .single();
-
-        const preScheduleStatuses = ["Lead / Unassigned", "Assigned", "Pending Schedule"];
-        if (currentSt && preScheduleStatuses.includes(currentSt.name)) {
-          await supabase
-            .from("jobs")
-            .update({ status_id: scheduledStatus.id })
-            .eq("id", jobId);
-        }
-      }
-    }
+    // Auto-transition job to "Scheduled" if still in pre-work phase
+    await autoTransitionJobStatus(jobId, "job_scheduled", supabase);
 
     onSaved();
   }

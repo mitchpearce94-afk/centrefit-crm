@@ -48,7 +48,7 @@ export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelN
   const fill = def.fillColor || '#888888';
   const stroke = def.strokeColor || '#ffffff';
   const s = size;
-  const scaledSize = SYMBOL_SIZE * (def.symbolScale || 1);
+  const scaledSize = SYMBOL_SIZE * (def.symbolScale || 1) * (size / SZ);
 
   const renderSymbol = () => {
     if (def.symbolImage && img) {

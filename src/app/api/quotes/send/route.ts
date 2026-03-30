@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
   <!-- Header -->
   <tr><td style="background:linear-gradient(135deg,#0f172a,#1e293b);padding:32px 40px;color:#ffffff">
     <table width="100%"><tr>
-      <td><p style="font-size:11px;color:#94a3b8;margin:0">CentreFit Services Pty Ltd</p><p style="font-size:11px;color:#94a3b8;margin:0">ABN: 55 168 413 161</p></td>
+      <td><p style="font-size:11px;color:#94a3b8;margin:0">Centrefit Group Pty Ltd</p><p style="font-size:11px;color:#94a3b8;margin:0">ABN: 55 168 413 161</p></td>
       <td style="text-align:right"><p style="font-size:24px;font-weight:700;margin:0;letter-spacing:-0.5px">QUOTATION</p><p style="font-size:14px;color:#60a5fa;font-weight:600;margin:4px 0 0">${quote.ref}</p><p style="font-size:11px;color:#94a3b8;margin:4px 0 0">${new Date(quote.created_at).toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })}</p></td>
     </tr></table>
   </td></tr>
@@ -202,8 +202,8 @@ export async function POST(req: NextRequest) {
 
   <!-- Footer -->
   <tr><td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 40px;text-align:center">
-    <p style="font-size:10px;color:#94a3b8;margin:0">CentreFit Services Pty Ltd · ABN 55 168 413 161</p>
-    <p style="font-size:10px;color:#94a3b8;margin:2px 0 0">3/131 Aberdare St, Darra QLD 4076 · (07) 3205 0440</p>
+    <p style="font-size:10px;color:#94a3b8;margin:0">Centrefit Group Pty Ltd · ABN 55 168 413 161</p>
+    <p style="font-size:10px;color:#94a3b8;margin:2px 0 0">1/25 Paisley Drive, Lawnton QLD 4501 · (07) 3188 5115</p>
   </td></tr>
 
 </table>

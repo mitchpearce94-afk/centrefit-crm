@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
+import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 
 export function TimePanel({
   jobId,
@@ -46,6 +47,7 @@ export function TimePanel({
     if (error) {
       toast(error.message, "error");
     } else {
+      await autoTransitionJobStatus(jobId, "work_started", supabase);
       router.refresh();
     }
     setClockingIn(false);
