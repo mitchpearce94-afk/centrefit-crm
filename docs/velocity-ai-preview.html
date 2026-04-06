@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Velocity AI - Preview</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide-react@0.383.0/dist/umd/lucide-react.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+const {
+  Zap, Clock, BarChart3, Calendar, MessageSquare, Phone,
+  ArrowRight, CheckCircle2, ChevronDown, Star, TrendingUp,
+  Users, Timer, Wrench, ShieldCheck, Rocket, Brain,
+  Mail, MapPin, Linkedin, Twitter, Menu, X,
+  FileText, Mic, LayoutDashboard, Megaphone, Bot,
+  AlertTriangle, HelpCircle, Target, Lightbulb, Gauge,
+  Play, ChevronRight, Award, Globe, Sparkles
+} = lucideReact;
+
+/* ─────────────────── Intersection Observer Hook ─────────────────── */
+function useInView(options = {}) {
+  const [isInView, setIsInView] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { setIsInView(true); observer.unobserve(el); } },
+      { threshold: 0.15, ...options }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, isInView];
+}
+
+/* ─────────────────── Animated Counter ─────────────────── */
+function AnimatedCounter({ end, suffix = "", duration = 2000 }) {
+  const [count, setCount] = useState(0);
+  const [ref, isInView] = useInView();
+  useEffect(() => {
+    if (!isInView) return;
+    let start = 0;
+    const step = end / (duration / 16);
+    const timer = setInterval(() => {
+      start += step;
+      if (start >= end) { setCount(end); clearInterval(timer); }
+      else setCount(Math.floor(start));
+    }, 16);
+    return () => clearInterval(timer);
+  }, [isInView, end, duration]);
+  return <span ref={ref}>{count}{suffix}</span>;
+}
+
+/* ─────────────────── Animated Gradient Orbs (Hero BG) ─────────────────── */
+function HeroBackground() {
+  return (
+    <div className="absolute inset-0 overflow-hidden">
+      <div className="absolute inset-0 bg-[#0f172a]" />
+      <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full opacity-20"
+        style={{
+          background: "radial-gradient(circle, #3b82f6 0%, transparent 70%)",
+          animation: "float1 8s ease-in-out infinite",
+        }} />
+      <div className="absolute bottom-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full opacity-15"
+        style={{
+          background: "radial-gradient(circle, #f59e0b 0%, transparent 70%)",
+          animation: "float2 10s ease-in-out infinite",
+        }} />
+      <div className="absolute top-[40%] right-[20%] w-[400px] h-[400px] rounded-full opacity-10"
+        style={{
+          background: "radial-gradient(circle, #3b82f6 0%, transparent 70%)",
+          animation: "float3 12s ease-in-out infinite",
+        }} />
+      <div className="absolute inset-0 opacity-[0.03]"
+        style={{
+          backgroundImage: "linear-gradient(#3b82f6 1px, transparent 1px), linear-gradient(90deg, #3b82f6 1px, transparent 1px)",
+          backgroundSize: "60px 60px",
+        }} />
+      <style>{`
+        @keyframes float1 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(60px,40px) scale(1.1)} }
+        @keyframes float2 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-40px,-60px) scale(1.15)} }
+        @keyframes float3 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(30px,-30px) scale(1.05)} }
+      `}</style>
+    </div>
+  );
+}
+
+/* ─────────────────── FadeIn Wrapper ─────────────────── */
+function FadeIn({ children, delay = 0, direction = "up", className = "" }) {
+  const [ref, isInView] = useInView();
+  const transforms = {
+    up: "translateY(40px)", down: "translateY(-40px)",
+    left: "translateX(40px)", right: "translateX(-40px)", none: "none",
+  };
+  return (
+    <div ref={ref} className={className}
+      style={{
+        opacity: isInView ? 1 : 0,
+        transform: isInView ? "none" : transforms[direction],
+        transition: `opacity 0.7s cubic-bezier(0.16,1,0.3,1) ${delay}s, transform 0.7s cubic-bezier(0.16,1,0.3,1) ${delay}s`,
+      }}>
+      {children}
+    </div>
+  );
+}
+
+/* ─────────────────── Navigation ─────────────────── */
+function Navigation() {
+  const [scrolled, setScrolled] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  useEffect(() => {
+    const handler = () => setScrolled(window.scrollY > 20);
+    window.addEventListener("scroll", handler, { passive: true });
+    return () => window.removeEventListener("scroll", handler);
+  }, []);
+  const scrollTo = (id) => { setMobileOpen(false); document.getElementById(id)?.scrollIntoView({ behavior: "smooth" }); };
+  const links = [
+    { label: "Services", id: "solutions" },
+    { label: "How It Works", id: "process" },
+    { label: "Pricing", id: "pricing" },
+    { label: "Results", id: "results" },
+  ];
+  return (
+    <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${scrolled ? "bg-[#0f172a]/90 backdrop-blur-xl shadow-2xl shadow-black/10 border-b border-white/5" : "bg-transparent"}`}>
+      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} className="flex items-center gap-2.5 group">
+          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#3b82f6] to-[#2563eb] flex items-center justify-center shadow-lg shadow-blue-500/25 group-hover:shadow-blue-500/40 transition-shadow">
+            <Zap className="w-5 h-5 text-white" strokeWidth={2.5} />
+          </div>
+          <span className="text-xl font-bold text-white tracking-tight">Velocity<span className="text-[#3b82f6]">AI</span></span>
+        </button>
+        <div className="hidden md:flex items-center gap-1">
+          {links.map(link => (
+            <button key={link.id} onClick={() => scrollTo(link.id)}
+              className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white rounded-lg hover:bg-white/5 transition-all duration-200">
+              {link.label}
+            </button>
+          ))}
+        </div>
+        <div className="hidden md:flex items-center gap-3">
+          <button onClick={() => scrollTo("cta")}
+            className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-[#3b82f6] to-[#2563eb] rounded-xl hover:shadow-lg hover:shadow-blue-500/25 hover:-translate-y-0.5 transition-all duration-300">
+            Book a Call
+          </button>
+        </div>
+        <button onClick={() => setMobileOpen(!mobileOpen)} className="md:hidden text-white p-2">
+          {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
+      </div>
+      {mobileOpen && (
+        <div className="md:hidden bg-[#0f172a]/95 backdrop-blur-xl border-t border-white/5 px-6 py-6 space-y-2">
+          {links.map(link => (
+            <button key={link.id} onClick={() => scrollTo(link.id)}
+              className="block w-full text-left px-4 py-3 text-slate-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors text-base font-medium">
+              {link.label}
+            </button>
+          ))}
+          <button onClick={() => scrollTo("cta")}
+            className="w-full mt-4 px-5 py-3 text-sm font-semibold text-white bg-gradient-to-r from-[#3b82f6] to-[#2563eb] rounded-xl">
+            Book a Discovery Call
+          </button>
+        </div>
+      )}
+    </nav>
+  );
+}
+
+/* ─────────────────── Hero Section ─────────────────── */
+function HeroSection() {
+  const scrollTo = (id) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+  return (
+    <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
+      <HeroBackground />
+      <div className="relative z-10 max-w-7xl mx-auto px-6 pt-32 pb-24 text-center">
+        <FadeIn delay={0.1}>
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-sm mb-8">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-sm font-medium text-slate-300">Now serving Australian trade businesses</span>
+          </div>
+        </FadeIn>
+        <FadeIn delay={0.2}>
+          <h1 className="text-5xl sm:text-6xl lg:text-7xl xl:text-8xl font-extrabold text-white leading-[1.05] tracking-tight mb-8 max-w-5xl mx-auto"
+            style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+            Your trade business,{" "}
+            <span className="relative">
+              <span className="bg-gradient-to-r from-[#3b82f6] via-[#60a5fa] to-[#f59e0b] bg-clip-text text-transparent">accelerated by AI</span>
+              <svg className="absolute -bottom-2 left-0 w-full" viewBox="0 0 300 12" fill="none">
+                <path d="M2 8 Q75 2 150 6 Q225 10 298 4" stroke="url(#underline-grad)" strokeWidth="3" strokeLinecap="round"
+                  style={{ strokeDasharray: 300, strokeDashoffset: 300, animation: "draw 1.5s ease forwards 0.8s" }} />
+                <defs><linearGradient id="underline-grad" x1="0" y1="0" x2="300" y2="0"><stop offset="0%" stopColor="#3b82f6" /><stop offset="100%" stopColor="#f59e0b" /></linearGradient></defs>
+              </svg>
+            </span>
+          </h1>
+        </FadeIn>
+        <FadeIn delay={0.4}>
+          <p className="text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto mb-12 leading-relaxed font-normal">
+            We build your complete AI operations system in 2 weeks. CRM, quoting, scheduling, marketing — all automated. So you can build momentum, not manage admin.
+          </p>
+        </FadeIn>
+        <FadeIn delay={0.55}>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <button onClick={() => scrollTo("cta")}
+              className="group relative px-8 py-4 text-base font-semibold text-white bg-gradient-to-r from-[#3b82f6] to-[#2563eb] rounded-2xl shadow-xl shadow-blue-500/20 hover:shadow-2xl hover:shadow-blue-500/30 hover:-translate-y-1 transition-all duration-300 flex items-center gap-3">
+              Book a Discovery Call
+              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-[#60a5fa] to-[#3b82f6] opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10 blur-xl" />
+            </button>
+            <button onClick={() => scrollTo("process")}
+              className="group px-8 py-4 text-base font-semibold text-slate-300 hover:text-white border border-white/10 hover:border-white/20 rounded-2xl hover:bg-white/5 transition-all duration-300 flex items-center gap-3">
+              See How It Works
+              <ChevronDown className="w-5 h-5 group-hover:translate-y-1 transition-transform" />
+            </button>
+          </div>
+        </FadeIn>
+        <FadeIn delay={0.7}>
+          <div className="mt-20 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-sm text-slate-500">
+            <div className="flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-emerald-500" /><span>SOC 2 Compliant</span></div>
+            <div className="flex items-center gap-2"><Clock className="w-4 h-4 text-[#3b82f6]" /><span>2-Week Setup</span></div>
+            <div className="flex items-center gap-2"><Wrench className="w-4 h-4 text-[#f59e0b]" /><span>Built for Trades</span></div>
+            <div className="flex items-center gap-2"><Globe className="w-4 h-4 text-emerald-500" /><span>100% Australian</span></div>
+          </div>
+        </FadeIn>
+      </div>
+      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10">
+        <div className="w-6 h-10 rounded-full border-2 border-white/20 flex justify-center pt-2">
+          <div className="w-1 h-3 rounded-full bg-white/40 animate-bounce" />
+        </div>
+      </div>
+      <style>{`@keyframes draw { to { stroke-dashoffset: 0; } }`}</style>
+    </section>
+  );
+}
+
+/* ─────────────────── Problem Section ─────────────────── */
+function ProblemSection() {
+  const pains = [
+    { icon: AlertTriangle, title: "Buried in admin", desc: "Spending evenings on paperwork instead of with family. The never-ending pile of invoices, quotes, and job sheets." },
+    { icon: Timer, title: "Slow lead response", desc: "Missed calls and enquiries going cold because you're on-site. Every hour of delay costs you jobs." },
+    { icon: FileText, title: "Manual quoting", desc: "Hours spent creating quotes from scratch, copy-pasting details, chasing up clients for approvals." },
+    { icon: Calendar, title: "Scheduling chaos", desc: "Double bookings, no-shows, and confused crews. Whiteboards and spreadsheets aren't cutting it anymore." },
+    { icon: HelpCircle, title: "Marketing guesswork", desc: "Know you should be doing more marketing but no idea where to start. Paying for ads with no tracking." },
+    { icon: Gauge, title: "Zero visibility", desc: "No idea which jobs are profitable, where your leads come from, or how your business is actually performing." },
+  ];
+  return (
+    <section className="relative py-28 lg:py-36 bg-[#fafaf9]">
+      <div className="max-w-7xl mx-auto px-6">
+        <FadeIn>
+          <div className="text-center max-w-3xl mx-auto mb-20">
+            <span className="inline-block text-sm font-bold text-[#f59e0b] tracking-widest uppercase mb-4">The Problem</span>
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-[#0f172a] tracking-tight mb-6">Sound familiar?</h2>
+            <p className="text-lg text-slate-500 leading-relaxed">
+              You're great at your trade. But running a business means drowning in admin, losing leads, and working <em>in</em> the business instead of <em>on</em> it.
+            </p>
+          </div>
+        </FadeIn>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {pains.map((p, i) => (
+            <FadeIn key={i} delay={i * 0.08}>
+              <div className="group relative p-8 rounded-2xl bg-white border border-slate-100 hover:border-slate-200 shadow-sm hover:shadow-xl transition-all duration-500 hover:-translate-y-1">
+                <div className="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center mb-5 group-hover:bg-red-100 transition-colors">
+                  <p.icon className="w-6 h-6 text-red-500" />
+                </div>
+                <h3 className="text-lg font-bold text-[#0f172a] mb-3">{p.title}</h3>
+                <p className="text-slate-500 leading-relaxed text-[15px]">{p.desc}</p>
+              </div>
+            </FadeIn>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─────────────────── Solutions Section ─────────────────── */
+function SolutionsSection() {
+  const services = [
+    { icon: Users, title: "AI-Powered CRM", desc: "Every lead, customer, and job in one place. Auto-capture enquiries, track follow-ups, never lose a lead again.", color: "from-blue-500 to-blue-600", bg: "bg-blue-50", text: "text-blue-600" },
+    { icon: FileText, title: "Smart Quoting", desc: "Generate professional quotes in seconds. Auto-populate pricing, send to customers, track approvals — all automated.", color: "from-emerald-500 to-emerald-600", bg: "bg-emerald-50", text: "text-emerald-600" },
+    { icon: Calendar, title: "Intelligent Scheduling", desc: "Drag-drop calendar, auto-dispatch to nearest crew, conflict detection, and real-time updates for your team.", color: "from-violet-500 to-violet-600", bg: "bg-violet-50", text: "text-violet-600" },
+    { icon: Megaphone, title: "Marketing Automation", desc: "Social media posts, email campaigns, Google review requests — all running on autopilot, bringing in new leads.", color: "from-amber-500 to-amber-600", bg: "bg-amber-50", text: "text-amber-600" },
+    { icon: Phone, title: "AI Voice Agent", desc: "Never miss a call again. AI answers inbound calls, qualifies leads, books jobs — even after hours.", color: "from-rose-500 to-rose-600", bg: "bg-rose-50", text: "text-rose-600" },
+    { icon: BarChart3, title: "Business Intelligence", desc: "Real-time dashboards showing revenue, job profitability, lead sources, and team performance. Know your numbers.", color: "from-cyan-500 to-cyan-600", bg: "bg-cyan-50", text: "text-cyan-600" },
+  ];
+  return (
+    <section id="solutions" className="relative py-28 lg:py-36 bg-[#0f172a] overflow-hidden">
+      <div className="absolute top-0 right-0 w-96 h-96 rounded-full opacity-5" style={{ background: "radial-gradient(circle, #3b82f6 0%, transparent 70%)" }} />
+      <div className="relative max-w-7xl mx-auto px-6">
+        <FadeIn>
+          <div className="text-center max-w-3xl mx-auto mb-20">
+            <span className="inline-block text-sm font-bold text-[#3b82f6] tracking-widest uppercase mb-4">The Solution</span>
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight mb-6">
+              Everything you need, <span className="bg-gradient-to-r from-[#3b82f6] to-[#f59e0b] bg-clip-text text-transparent">automated</span>
+            </h2>
+            <p className="text-lg text-slate-400 leading-relaxed">One integrated AI operations platform, custom-built for your trade business. No more duct-taping apps together.</p>
+          </div>
+        </FadeIn>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {services.map((s, i) => (
+            <FadeIn key={i} delay={i * 0.08}>
+              <div className="group relative p-8 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] hover:border-white/[0.12] transition-all duration-500 hover:-translate-y-1 backdrop-blur-sm">
+                <div className={`w-12 h-12 rounded-xl ${s.bg} flex items-center justify-center mb-5`}>
+                  <s.icon className={`w-6 h-6 ${s.text}`} />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-3">{s.title}</h3>
+                <p className="text-slate-400 leading-relaxed text-[15px]">{s.desc}</p>
+                <div className={`absolute bottom-0 left-8 right-8 h-[2px] bg-gradient-to-r ${s.color} opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-full`} />
+              </div>
+            </FadeIn>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─────────────────── How It Works Section ─────────────────── */
+function ProcessSection() {
+  const steps = [
+    { num: "01", title: "Discovery Call", desc: "30 minutes with our founder. We map your operations, identify bottlenecks, and design your custom AI system.", icon: Phone, accent: "#3b82f6" },
+    { num: "02", title: "Build", desc: "Our team builds your complete AI operations system. CRM, automations, integrations — everything tailored to your business.", icon: Wrench, accent: "#8b5cf6" },
+    { num: "03", title: "Launch", desc: "Go live in 2 weeks. We handle training for you and your team, data migration, and ensure everything runs smooth.", icon: Rocket, accent: "#f59e0b" },
+    { num: "04", title: "Scale", desc: "Ongoing optimisation, new automations as you grow. AI handles the operations so you can focus on what you do best.", icon: TrendingUp, accent: "#10b981" },
+  ];
+  return (
+    <section id="process" className="relative py-28 lg:py-36 bg-[#fafaf9]">
+      <div className="max-w-7xl mx-auto px-6">
+        <FadeIn>
+          <div className="text-center max-w-3xl mx-auto mb-20">
+            <span className="inline-block text-sm font-bold text-[#3b82f6] tracking-widest uppercase mb-4">How It Works</span>
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-[#0f172a] tracking-tight mb-6">From standstill to full speed in <span className="text-[#3b82f6]">4 steps</span></h2>
+            <p className="text-lg text-slate-500 leading-relaxed">We handle the heavy lifting. You just show up to a discovery call and we do the rest.</p>
+          </div>
+        </FadeIn>
+        <div className="relative">
+          <div className="hidden lg:block absolute top-[88px] left-[calc(12.5%+24px)] right-[calc(12.5%+24px)] h-[2px]">
+            <div className="w-full h-full bg-gradient-to-r from-[#3b82f6] via-[#8b5cf6] via-[#f59e0b] to-[#10b981] opacity-20 rounded-full" />
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-6">
+            {steps.map((s, i) => (
+              <FadeIn key={i} delay={i * 0.12}>
+                <div className="text-center group">
+                  <div className="relative inline-flex mb-8">
+                    <div className="w-20 h-20 rounded-2xl bg-white shadow-lg shadow-slate-200/50 flex items-center justify-center border border-slate-100 group-hover:shadow-xl group-hover:-translate-y-1 transition-all duration-500"
+                      style={{ borderColor: `${s.accent}15` }}>
+                      <s.icon className="w-8 h-8" style={{ color: s.accent }} />
+                    </div>
+                    <div className="absolute -top-2 -right-2 w-7 h-7 rounded-lg text-white text-xs font-bold flex items-center justify-center shadow-lg"
+                      style={{ background: s.accent }}>{s.num}</div>
+                  </div>
+                  <h3 className="text-xl font-bold text-[#0f172a] mb-3">{s.title}</h3>
+                  <p className="text-slate-500 leading-relaxed text-[15px] max-w-xs mx-auto">{s.desc}</p>
+                </div>
+              </FadeIn>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─────────────────── Pricing Section ─────────────────── */
+function PricingSection() {
+  const tiers = [
+    { name: "Solo", price: "499", setup: "2,500", desc: "For 1–2 person trade operations", features: ["AI-Powered CRM","Smart Quoting System","Intelligent Scheduling","Basic Automations (5 workflows)","Email & SMS Notifications","Mobile App Access","Standard Support"], cta: "Get Started", popular: false },
+    { name: "Professional", price: "899", setup: "5,500", desc: "For growing teams of 3–10", features: ["Everything in Solo, plus:","Marketing Automation Suite","AI Voice Agent (inbound/outbound)","Advanced Reporting & Dashboards","Unlimited Automations","Google Review Automation","Priority Support & Training"], cta: "Get Started", popular: true },
+    { name: "Enterprise", price: "1,499", setup: "10,000", desc: "For established ops of 10+", features: ["Everything in Professional, plus:","Custom Integrations (Xero, MYOB, etc.)","Dedicated Account Manager","Unlimited Automations & Workflows","Custom AI Training","SLA & Uptime Guarantee","White-Glove Onboarding"], cta: "Contact Sales", popular: false },
+  ];
+  return (
+    <section id="pricing" className="relative py-28 lg:py-36 bg-[#0f172a] overflow-hidden">
+      <div className="absolute top-20 left-10 w-72 h-72 rounded-full opacity-10" style={{ background: "radial-gradient(circle, #f59e0b 0%, transparent 70%)" }} />
+      <div className="relative max-w-7xl mx-auto px-6">
+        <FadeIn>
+          <div className="text-center max-w-3xl mx-auto mb-20">
+            <span className="inline-block text-sm font-bold text-[#f59e0b] tracking-widest uppercase mb-4">Pricing</span>
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight mb-6">
+              Transparent pricing, <span className="bg-gradient-to-r from-[#f59e0b] to-[#fbbf24] bg-clip-text text-transparent">real value</span>
+            </h2>
+            <p className="text-lg text-slate-400 leading-relaxed">Every plan includes a full AI operations system built and launched in 2 weeks. No hidden fees.</p>
+          </div>
+        </FadeIn>
+        <div className="grid lg:grid-cols-3 gap-6 lg:gap-5 max-w-6xl mx-auto items-start">
+          {tiers.map((t, i) => (
+            <FadeIn key={i} delay={i * 0.1}>
+              <div className={`relative rounded-3xl p-8 lg:p-10 transition-all duration-500 hover:-translate-y-1 ${
+                t.popular ? "bg-gradient-to-b from-[#1e3a5f] to-[#172554] border-2 border-[#3b82f6]/30 shadow-2xl shadow-blue-500/10 lg:scale-105" : "bg-white/[0.03] border border-white/[0.08] hover:bg-white/[0.05]"
+              }`}>
+                {t.popular && (
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-5 py-1.5 bg-gradient-to-r from-[#3b82f6] to-[#2563eb] text-white text-xs font-bold rounded-full shadow-lg shadow-blue-500/30 tracking-wide uppercase">Most Popular</div>
+                )}
+                <div className="mb-8">
+                  <h3 className="text-xl font-bold text-white mb-2">{t.name}</h3>
+                  <p className="text-slate-400 text-sm mb-6">{t.desc}</p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-sm text-slate-400">$</span>
+                    <span className="text-5xl font-extrabold text-white tracking-tight">{t.price}</span>
+                    <span className="text-slate-400 text-sm">/mo</span>
+                  </div>
+                  <p className="text-sm text-slate-500 mt-2">+ ${t.setup} one-time setup</p>
+                </div>
+                <div className="space-y-4 mb-10">
+                  {t.features.map((f, fi) => (
+                    <div key={fi} className="flex items-start gap-3">
+                      <CheckCircle2 className={`w-5 h-5 mt-0.5 flex-shrink-0 ${t.popular ? "text-[#3b82f6]" : "text-emerald-500"}`} />
+                      <span className="text-slate-300 text-sm leading-relaxed">{f}</span>
+                    </div>
+                  ))}
+                </div>
+                <button className={`w-full py-4 rounded-xl font-semibold text-sm transition-all duration-300 hover:-translate-y-0.5 ${
+                  t.popular ? "bg-gradient-to-r from-[#3b82f6] to-[#2563eb] text-white shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/30" : "bg-white/5 text-white border border-white/10 hover:bg-white/10 hover:border-white/20"
+                }`}>{t.cta}</button>
+              </div>
+            </FadeIn>
+          ))}
+        </div>
+        <FadeIn delay={0.4}>
+          <p className="text-center text-slate-500 text-sm mt-12 max-w-lg mx-auto">All prices in AUD. Plans are month-to-month with no lock-in contracts. Setup includes full system build, data migration, and team training.</p>
+        </FadeIn>
+      </div>
+    </section>
+  );
+}
+
+/* ─────────────────── Results ─────────────────── */
+function ResultsSection() {
+  const metrics = [
+    { value: 14, suffix: "+", label: "Hours saved per week", sublabel: "on admin & operations", icon: Clock, color: "#3b82f6" },
+    { value: 3, suffix: "x", label: "Faster lead response", sublabel: "vs. industry average", icon: Zap, color: "#f59e0b" },
+    { value: 40, suffix: "%", label: "More jobs completed", sublabel: "through optimised scheduling", icon: TrendingUp, color: "#10b981" },
+    { value: 2, suffix: "", label: "Weeks to launch", sublabel: "fully operational system", icon: Rocket, color: "#8b5cf6" },
+  ];
+  const testimonials = [
+    { quote: "We went from spreadsheets and whiteboards to a fully automated operation. The AI voice agent alone pays for itself — we haven't missed a call in months.", name: "James R.", role: "Director, JR Electrical", avatar: "JR" },
+    { quote: "Velocity AI set up everything in under two weeks. Our quoting time went from 2 hours to 10 minutes. The team couldn't believe it.", name: "Sarah M.", role: "Operations Manager, CoolFlow HVAC", avatar: "SM" },
+    { quote: "Finally, I can see exactly how my business is performing. Revenue, lead sources, job margins — it's all there in real-time. Game changer.", name: "Tom W.", role: "Owner, Westside Plumbing", avatar: "TW" },
+  ];
+  return (
+    <section id="results" className="relative py-28 lg:py-36 bg-[#fafaf9] overflow-hidden">
+      <div className="max-w-7xl mx-auto px-6">
+        <FadeIn>
+          <div className="text-center max-w-3xl mx-auto mb-20">
+            <span className="inline-block text-sm font-bold text-[#10b981] tracking-widest uppercase mb-4">Results</span>
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-[#0f172a] tracking-tight mb-6">Built for <span className="text-[#3b82f6]">forward momentum</span></h2>
+            <p className="text-lg text-slate-500 leading-relaxed">Typical results our AI operations systems deliver for trade businesses across Australia.</p>
+          </div>
+        </FadeIn>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-24">
+          {metrics.map((m, i) => (
+            <FadeIn key={i} delay={i * 0.1}>
+              <div className="relative text-center p-8 rounded-2xl bg-white border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-500 group">
+                <div className="w-14 h-14 rounded-2xl mx-auto mb-5 flex items-center justify-center transition-colors duration-300" style={{ background: `${m.color}10` }}>
+                  <m.icon className="w-7 h-7" style={{ color: m.color }} />
+                </div>
+                <div className="text-4xl sm:text-5xl font-extrabold text-[#0f172a] mb-2"><AnimatedCounter end={m.value} suffix={m.suffix} /></div>
+                <p className="font-semibold text-[#0f172a] mb-1">{m.label}</p>
+                <p className="text-sm text-slate-400">{m.sublabel}</p>
+              </div>
+            </FadeIn>
+          ))}
+        </div>
+        <FadeIn><div className="text-center mb-12"><h3 className="text-2xl font-bold text-[#0f172a]">What our clients say</h3></div></FadeIn>
+        <div className="grid md:grid-cols-3 gap-6">
+          {testimonials.map((t, i) => (
+            <FadeIn key={i} delay={i * 0.1}>
+              <div className="p-8 rounded-2xl bg-white border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-500 hover:-translate-y-1 flex flex-col">
+                <div className="flex gap-1 mb-5">{[...Array(5)].map((_, si) => <Star key={si} className="w-4 h-4 text-[#f59e0b] fill-[#f59e0b]" />)}</div>
+                <p className="text-slate-600 leading-relaxed mb-6 flex-1 text-[15px]">"{t.quote}"</p>
+                <div className="flex items-center gap-3 pt-5 border-t border-slate-100">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#3b82f6] to-[#2563eb] flex items-center justify-center text-white text-sm font-bold">{t.avatar}</div>
+                  <div><p className="font-semibold text-[#0f172a] text-sm">{t.name}</p><p className="text-xs text-slate-400">{t.role}</p></div>
+                </div>
+              </div>
+            </FadeIn>
+          ))}
+        </div>
+        <FadeIn delay={0.4}><p className="text-center text-xs text-slate-400 mt-8 max-w-md mx-auto">* Results represent projected outcomes based on our AI operations methodology and typical trade business workflows. Individual results may vary.</p></FadeIn>
+      </div>
+    </section>
+  );
+}
+
+/* ─────────────────── CTA Section ─────────────────── */
+function CTASection() {
+  return (
+    <section id="cta" className="relative py-28 lg:py-36 overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#0f172a]" />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[800px] rounded-full opacity-10" style={{ background: "radial-gradient(circle, #3b82f6 0%, transparent 60%)" }} />
+      <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full opacity-10" style={{ background: "radial-gradient(circle, #f59e0b 0%, transparent 60%)" }} />
+      <div className="relative max-w-4xl mx-auto px-6 text-center">
+        <FadeIn>
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 mb-8">
+            <Sparkles className="w-4 h-4 text-[#f59e0b]" />
+            <span className="text-sm font-medium text-slate-300">Limited spots available each month</span>
+          </div>
+        </FadeIn>
+        <FadeIn delay={0.1}>
+          <h2 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight mb-6">
+            Ready to accelerate your <span className="bg-gradient-to-r from-[#3b82f6] to-[#f59e0b] bg-clip-text text-transparent">operations?</span>
+          </h2>
+        </FadeIn>
+        <FadeIn delay={0.2}>
+          <p className="text-lg sm:text-xl text-slate-400 mb-12 max-w-2xl mx-auto leading-relaxed">
+            Book a free 30-minute discovery call with our founder. We'll map your operations and show you exactly how AI can transform your trade business.
+          </p>
+        </FadeIn>
+        <FadeIn delay={0.3}>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <button className="group relative px-10 py-5 text-lg font-semibold text-white bg-gradient-to-r from-[#3b82f6] to-[#2563eb] rounded-2xl shadow-xl shadow-blue-500/25 hover:shadow-2xl hover:shadow-blue-500/35 hover:-translate-y-1 transition-all duration-300 flex items-center gap-3">
+              Book Your Discovery Call
+              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-[#60a5fa] to-[#3b82f6] opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10 blur-xl" />
+            </button>
+          </div>
+        </FadeIn>
+        <FadeIn delay={0.4}>
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-8 text-sm text-slate-500">
+            <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" /><span>Free, no obligation</span></div>
+            <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" /><span>30 minutes</span></div>
+            <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" /><span>Custom operations plan</span></div>
+          </div>
+        </FadeIn>
+      </div>
+    </section>
+  );
+}
+
+/* ─────────────────── Footer ─────────────────── */
+function Footer() {
+  const scrollTo = (id) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+  return (
+    <footer className="bg-[#0f172a] border-t border-white/5">
+      <div className="max-w-7xl mx-auto px-6 py-16">
+        <div className="grid md:grid-cols-4 gap-12 mb-16">
+          <div className="md:col-span-1">
+            <div className="flex items-center gap-2.5 mb-5">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#3b82f6] to-[#2563eb] flex items-center justify-center shadow-lg shadow-blue-500/20">
+                <Zap className="w-5 h-5 text-white" strokeWidth={2.5} />
+              </div>
+              <span className="text-xl font-bold text-white tracking-tight">Velocity<span className="text-[#3b82f6]">AI</span></span>
+            </div>
+            <p className="text-slate-500 text-sm leading-relaxed mb-6">Accelerate your operations. AI-powered business systems for Australian trade companies.</p>
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10">
+              <span className="text-lg">🇦🇺</span>
+              <span className="text-xs font-medium text-slate-400">Built in Australia</span>
+            </div>
+          </div>
+          <div>
+            <h4 className="text-sm font-semibold text-white mb-5 uppercase tracking-wider">Services</h4>
+            <ul className="space-y-3">
+              {["AI-Powered CRM","Smart Quoting","Intelligent Scheduling","Marketing Automation","AI Voice Agent","Business Intelligence"].map(s => (
+                <li key={s}><button onClick={() => scrollTo("solutions")} className="text-slate-500 hover:text-white text-sm transition-colors">{s}</button></li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h4 className="text-sm font-semibold text-white mb-5 uppercase tracking-wider">Company</h4>
+            <ul className="space-y-3">
+              {[{label:"How It Works",id:"process"},{label:"Pricing",id:"pricing"},{label:"Results",id:"results"}].map(l => (
+                <li key={l.id}><button onClick={() => scrollTo(l.id)} className="text-slate-500 hover:text-white text-sm transition-colors">{l.label}</button></li>
+              ))}
+              <li><span className="text-slate-500 text-sm">Privacy Policy</span></li>
+              <li><span className="text-slate-500 text-sm">Terms of Service</span></li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="text-sm font-semibold text-white mb-5 uppercase tracking-wider">Get in Touch</h4>
+            <ul className="space-y-3">
+              <li className="flex items-center gap-2 text-slate-500 text-sm"><Mail className="w-4 h-4" /> hello@velocityai.com.au</li>
+              <li className="flex items-center gap-2 text-slate-500 text-sm"><Phone className="w-4 h-4" /> 1300 VELOCITY</li>
+              <li className="flex items-center gap-2 text-slate-500 text-sm"><MapPin className="w-4 h-4" /> Sydney, Australia</li>
+            </ul>
+            <div className="flex gap-3 mt-6">
+              <a href="#" className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-all"><Linkedin className="w-4 h-4" /></a>
+              <a href="#" className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-all"><Twitter className="w-4 h-4" /></a>
+            </div>
+          </div>
+        </div>
+        <div className="pt-8 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="text-slate-600 text-sm">© 2026 Velocity AI Pty Ltd. All rights reserved.</p>
+          <p className="text-slate-600 text-xs">ABN 00 000 000 000 | Australian-owned and operated</p>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+/* ─────────────────── Main App ─────────────────── */
+function VelocityAILanding() {
+  return (
+    <div className="min-h-screen bg-[#fafaf9] antialiased" style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
+      <Navigation />
+      <HeroSection />
+      <ProblemSection />
+      <SolutionsSection />
+      <ProcessSection />
+      <PricingSection />
+      <ResultsSection />
+      <CTASection />
+      <Footer />
+    </div>
+  );
+}
+
+ReactDOM.render(<VelocityAILanding />, document.getElementById("root"));
+</script>
+</body>
+</html>
