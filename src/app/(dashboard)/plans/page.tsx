@@ -69,7 +69,7 @@ export default async function PlansPage() {
       <div className="bg-card border border-border rounded-lg p-6 mb-6">
         <div className="flex items-center justify-center gap-4">
           <LoadPlanButton label="Load .cfp" />
-          <Link href="/plans/new" className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity">
+          <Link href="/plans/new?fresh=1" className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity">
             New Plan
           </Link>
         </div>
