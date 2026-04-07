@@ -479,7 +479,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
           whitewashRects: active.whitewashRects || [], titleBlock: { ...DEFAULT_TITLE_BLOCK, ...(parsed.titleBlock || {}) },
           clientLogo: parsed.clientLogo || null, revisions: parsed.revisions || [], cableRuns,
           deviceScale: parsed.deviceScale || 1,
-          linkedJobId: parsed.linkedJobId || null, linkedJobNumber: parsed.linkedJobNumber || null,
+          linkedJobId: parsed.linkedJobId || null, linkedJobNumber: parsed.linkedJobNumber || null, planFileId: null,
           history: [{ devices: active.devices || [], commsRackId: active.commsRackId || null, whitewashRects: active.whitewashRects || [] }], historyIndex: 0,
         });
       } else {
@@ -495,7 +495,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
           backgroundImage: floor.backgroundImage, backgroundWidth: floor.backgroundWidth, backgroundHeight: floor.backgroundHeight,
           pdfFileName: floor.pdfFileName, titleBlock: { ...DEFAULT_TITLE_BLOCK, ...(parsed.titleBlock || {}) },
           clientLogo: parsed.clientLogo || null, revisions: [], cableRuns,
-          linkedJobId: parsed.linkedJobId || null, linkedJobNumber: parsed.linkedJobNumber || null,
+          linkedJobId: parsed.linkedJobId || null, linkedJobNumber: parsed.linkedJobNumber || null, planFileId: null,
           history: [{ devices: floor.devices, commsRackId: floor.commsRackId, whitewashRects: floor.whitewashRects }], historyIndex: 0,
         });
       }

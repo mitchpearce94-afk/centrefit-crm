@@ -16,7 +16,6 @@ export function LoadPlanButton({ label }: { label?: string }) {
     reader.onload = (ev) => {
       if (!ev.target?.result) return;
       usePlanStore.getState().loadProject(ev.target.result as string);
-      usePlanStore.setState({ planFileId: null });
       router.push("/plans/new");
     };
     reader.readAsText(file);
