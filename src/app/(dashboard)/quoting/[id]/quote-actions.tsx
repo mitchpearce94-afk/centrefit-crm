@@ -95,8 +95,8 @@ export function QuoteActions({
 
   async function handleDelete() {
     setUpdating(true);
-    // Delete linked plan_files, line items and extras first
-    await supabase.from("plan_files").delete().eq("quote_id", quoteId);
+    // Unlink plan_files (plans outlive quotes), then delete line items and extras
+    await supabase.from("plan_files").update({ quote_id: null }).eq("quote_id", quoteId);
     await supabase.from("quote_line_items").delete().eq("quote_id", quoteId);
     await supabase.from("quote_extras").delete().eq("quote_id", quoteId);
     const { error } = await supabase.from("quotes").delete().eq("id", quoteId);
