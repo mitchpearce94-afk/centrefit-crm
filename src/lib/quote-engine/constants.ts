@@ -96,7 +96,6 @@ export const DEFAULT_EXTRAS: ExtraItem[] = [
   { category: 'Travel', description: 'Car Hire', cost: 0, sell: 0 },
   { category: 'Sundries', description: 'Ladder Hire', cost: 0, sell: 0 },
   { category: 'Travel', description: 'Going Away Allowance', cost: 0, sell: 0 },
-  { category: 'Electrician', description: 'Electrician Quotation', cost: 0, sell: 0 },
 ];
 
 // ---------------------------------------------------------------------------

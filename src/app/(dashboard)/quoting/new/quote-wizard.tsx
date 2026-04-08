@@ -95,6 +95,7 @@ interface ExistingQuote {
   deviceCounts: DeviceCounts;
   labourData: LabourData | null;
   discountPercent: number;
+  electricianCost?: number;
   lineItems: any[];
   extras: any[];
 }
@@ -164,6 +165,9 @@ export function QuoteWizard({
       ? existingQuote.extras.map((e: any) => ({ category: e.category, description: e.description, cost: e.cost, sell: e.sell }))
       : DEFAULT_EXTRAS.map((e) => ({ ...e }))
   );
+
+  // Electrician
+  const [electricianCost, setElectricianCost] = useState(existingQuote?.electricianCost ?? 0);
 
   // Step 6
   const [discountPercent, setDiscountPercent] = useState(existingQuote?.discountPercent ?? 0);
@@ -329,6 +333,7 @@ export function QuoteWizard({
       if (d.manualLabourHours != null) setManualLabourHours(d.manualLabourHours);
       if (d.manualLabourAmount != null) setManualLabourAmount(d.manualLabourAmount);
       if (d.manualCalloutDays != null) setManualCalloutDays(d.manualCalloutDays);
+      if (d.electricianCost != null) setElectricianCost(d.electricianCost);
     } catch {}
     setShowDraftBanner(false);
   }
@@ -347,7 +352,7 @@ export function QuoteWizard({
           step, quoteMode, customerId, clientName, siteName, siteAddress, siteInfo,
           deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
           linkedJobId, selectedPlanId, manualScope, manualBomItems,
-          manualLabourHours, manualLabourAmount, manualCalloutDays,
+          manualLabourHours, manualLabourAmount, manualCalloutDays, electricianCost,
         }));
       } catch {}
     }, 500);
@@ -355,7 +360,7 @@ export function QuoteWizard({
   }, [step, quoteMode, customerId, clientName, siteName, siteAddress, siteInfo,
     deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
     linkedJobId, selectedPlanId, manualScope, manualBomItems,
-    manualLabourHours, manualLabourAmount, manualCalloutDays]);
+    manualLabourHours, manualLabourAmount, manualCalloutDays, electricianCost]);
 
   // Warn on unload
   useEffect(() => {
@@ -520,11 +525,11 @@ export function QuoteWizard({
 
   const summary: QuoteSummary | null = useMemo(() => {
     if (quoteMode === "manual") {
-      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, extras, { discountPercent });
+      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, extras, { discountPercent, electricianCost });
     }
     if (!labourData) return null;
-    return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent });
-  }, [quoteMode, bomItems, labourData, extras, discountPercent, manualBomAsBomItems, manualLabourData]);
+    return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent, electricianCost });
+  }, [quoteMode, bomItems, labourData, extras, discountPercent, electricianCost, manualBomAsBomItems, manualLabourData]);
 
   const labourWarnings = useMemo(() => {
     if (quoteMode === "manual") return [];
@@ -585,6 +590,7 @@ export function QuoteWizard({
         ...(quoteMode === "manual" ? { scope_of_works: manualScope, quote_mode: "manual" } : { quote_mode: "plan" }),
       },
       discount_percent: discountPercent,
+      electrician_cost: electricianCost || 0,
       quote_type: quoteType,
       pricing_snapshot: {
         ...summary,
@@ -1509,6 +1515,33 @@ export function QuoteWizard({
                 <span className="text-sm font-mono text-right">${fmt(extras.reduce((s, e) => s + e.sell, 0))}</span>
               </div>
             )}
+          </div>
+
+          {/* Electrician */}
+          <div className="mt-6">
+            <h3 className="text-sm font-semibold text-foreground mb-2">Electrician</h3>
+            <p className="text-xs text-muted-foreground mb-3">Enter the electrician&apos;s quoted cost. A 30% margin is applied automatically.</p>
+            <div className="rounded-lg border border-border overflow-hidden">
+              <div className="grid grid-cols-[1fr_120px_120px] gap-3 bg-muted/50 px-4 py-2.5 border-b border-border">
+                <span className="text-xs font-medium text-muted-foreground">Item</span>
+                <span className="text-xs font-medium text-muted-foreground text-center">Cost</span>
+                <span className="text-xs font-medium text-muted-foreground text-center">Sell (+ 30%)</span>
+              </div>
+              <div className="grid grid-cols-[1fr_120px_120px] gap-3 items-center px-4 py-2.5">
+                <span className="text-sm">Electrician Quotation</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={electricianCost || ""}
+                  onChange={(e) => setElectricianCost(parseFloat(e.target.value) || 0)}
+                  placeholder="$0"
+                  className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+                <span className="text-sm font-mono text-center text-muted-foreground">
+                  ${fmt(Math.round(electricianCost * 1.3 * 100) / 100)}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       )}
