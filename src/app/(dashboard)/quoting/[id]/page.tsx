@@ -227,7 +227,7 @@ export default async function QuoteDetailPage({
         <div className="mt-6">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Labour</h2>
           {(quote.labour_data.sections || []).map((section: any) => (
-            section.totalHours > 0 && (
+            section.totalSell > 0 && (
               <div key={section.name} className="mb-3 rounded-lg border border-border overflow-hidden">
                 <div className="flex items-center justify-between bg-muted/50 px-4 py-2.5 border-b border-border">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{section.name}</h3>
@@ -244,8 +244,8 @@ export default async function QuoteDetailPage({
                         <p className="text-[10px] text-muted-foreground">{item.formula}</p>
                       </div>
                       <div className="flex items-center gap-4 text-sm font-mono">
-                        <span className="text-muted-foreground">{item.hours}h</span>
-                        <span className="w-20 text-right">${fmt(item.hours * 150)}</span>
+                        <span className="text-muted-foreground">{item.hours}{item.isDollarInput ? '' : item.unitLabel ? ` ${item.unitLabel}` : 'h'}</span>
+                        <span className="w-20 text-right">${fmt(item.isDollarInput ? item.hours : item.unitRate ? item.hours * item.unitRate : item.hours * (quote.labour_data.sellRate || 150))}</span>
                       </div>
                     </div>
                   ))}
