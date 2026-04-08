@@ -40,6 +40,7 @@ interface PlanFile {
   client_name: string | null;
   site_name: string | null;
   site_address: string | null;
+  state: string | null;
   device_counts: Record<string, number>;
   site_info: Record<string, number | boolean>;
   customer_id: string | null;
@@ -262,13 +263,12 @@ export function QuoteWizard({
       selectCustomer(plan.customer_id);
     }
 
-    // Fill site info
-    if (plan.site_info) {
-      setSiteInfo((prev) => ({
-        ...prev,
-        door_count: (plan.site_info.door_count as number) || prev.door_count,
-      }));
-    }
+    // Fill site info + state
+    setSiteInfo((prev) => ({
+      ...prev,
+      ...(plan.site_info ? { door_count: (plan.site_info.door_count as number) || prev.door_count } : {}),
+      state: plan.state || prev.state || 'QLD',
+    }));
 
     // Fill device counts
     if (plan.device_counts && Object.keys(plan.device_counts).length > 0) {

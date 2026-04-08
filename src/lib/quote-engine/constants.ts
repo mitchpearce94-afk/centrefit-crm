@@ -36,6 +36,7 @@ export interface SiteInfo {
   wall_tv_mount_count?: number;
   ceiling_tv_mount_count?: number;
   separate_studio_zone?: boolean;
+  state?: string;
 }
 
 // ---------------------------------------------------------------------------

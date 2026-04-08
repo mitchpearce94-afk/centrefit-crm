@@ -279,14 +279,21 @@ export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo =
 
   const roughInHours = sections[0]?.totalHours || 0
   const fitOffHours = sections[1]?.totalHours || 0
-  const calloutDays = Math.max(1, Math.ceil((roughInHours + fitOffHours) / 10))
+  const isQLD = !s.state || s.state === 'QLD'
+  const calloutDays = isQLD ? Math.max(1, Math.ceil((roughInHours + fitOffHours) / 10)) : 0
 
-  sections.push(buildSection('Other', [
+  const otherItems: LabourItem[] = [
     fixedItem('Plan design & quotation', 4),
-    { name: 'Callout', formula: `(${roughInHours}h + ${fitOffHours}h) ÷ 10hr days = ${calloutDays} days × $80`, defaultHours: calloutDays, hours: calloutDays, unitRate: 80, unitLabel: 'days' },
+  ]
+  if (isQLD) {
+    otherItems.push({ name: 'Callout', formula: `(${roughInHours}h + ${fitOffHours}h) ÷ 10hr days = ${calloutDays} days × $80`, defaultHours: calloutDays, hours: calloutDays, unitRate: 80, unitLabel: 'days' })
+  }
+  otherItems.push(
     { name: 'Hardware Incidentals', formula: 'Flat dollar amount', defaultHours: 200, hours: 200, isDollarInput: true },
     { name: 'Administration', formula: 'Fixed 2 hrs × $120/hr', defaultHours: 2, hours: 2, unitRate: 120, unitLabel: 'hrs' },
-  ], false))
+  )
+
+  sections.push(buildSection('Other', otherItems, false))
 
   // === 5. FIXED COSTS ===
 

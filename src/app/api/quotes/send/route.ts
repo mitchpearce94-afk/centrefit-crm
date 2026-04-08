@@ -153,7 +153,11 @@ export async function POST(req: NextRequest) {
         <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin-top:16px">
           <div style="padding:20px 24px">
             <table width="100%">
-              <tr><td style="font-size:14px;color:#64748b">Total (ex GST)</td><td style="text-align:right;font-size:16px;font-weight:600;color:#0f172a;font-family:monospace">$${fmt(pricing.totalExGST)}</td></tr>
+              ${pricing.discount?.percent > 0 ? `
+              <tr><td style="font-size:14px;color:#94a3b8">Subtotal (ex GST)</td><td style="text-align:right;font-size:14px;color:#94a3b8;font-family:monospace;text-decoration:line-through">$${fmt(pricing.fullPriceExGST)}</td></tr>
+              <tr><td style="font-size:14px;color:#16a34a;padding-top:4px">${pricing.discount.percent}% Discount</td><td style="text-align:right;font-size:14px;color:#16a34a;font-family:monospace;padding-top:4px">-$${fmt(pricing.discount.amount)}</td></tr>
+              ` : ''}
+              <tr><td style="font-size:14px;color:#64748b${pricing.discount?.percent > 0 ? ';padding-top:8px;border-top:1px solid #e2e8f0' : ''}">Total (ex GST)</td><td style="text-align:right;font-size:16px;font-weight:600;color:#0f172a;font-family:monospace${pricing.discount?.percent > 0 ? ';padding-top:8px;border-top:1px solid #e2e8f0' : ''}">$${fmt(pricing.totalExGST)}</td></tr>
               <tr><td style="font-size:14px;color:#64748b;padding-top:4px">GST (10%)</td><td style="text-align:right;font-size:14px;color:#475569;font-family:monospace;padding-top:4px">$${fmt(pricing.gst)}</td></tr>
             </table>
           </div>
