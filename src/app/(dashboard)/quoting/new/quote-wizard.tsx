@@ -276,9 +276,18 @@ export function QuoteWizard({
   // Auto-select plan from URL params (sent from Plan Builder's "Complete Plan")
   useEffect(() => {
     const planParam = searchParams.get("plan");
-    if (planParam && !selectedPlanId) {
-      const plan = plans.find((p) => p.id === planParam);
-      if (plan) selectPlan(planParam);
+    if (!planParam || selectedPlanId) return;
+    const plan = plans.find((p) => p.id === planParam);
+    if (plan) {
+      selectPlan(planParam);
+    } else {
+      // Plan may already have a quote_id (re-quoting) — fetch it directly
+      supabase.from("plan_files").select("*").eq("id", planParam).single().then(({ data }) => {
+        if (data) {
+          plans.push(data);
+          selectPlan(planParam);
+        }
+      });
     }
   }, []);
 
