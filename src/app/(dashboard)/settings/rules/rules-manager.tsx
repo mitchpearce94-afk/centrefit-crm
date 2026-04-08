@@ -40,24 +40,101 @@ interface ProductOption {
 
 const inputClass = "block w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
 
+// ── Human-readable labels ──
+
+function deviceLabel(code: string | null): string {
+  if (!code) return "any device";
+  const specials: Record<string, string> = {
+    _cameras: "cameras (any type)",
+    _pirs: "PIR sensors (any type)",
+    _speakers: "speakers (any type)",
+    _cabinets: "server cabinets (any size)",
+  };
+  if (specials[code]) return specials[code];
+  const dt = DEVICE_TYPES.find(d => d.code === code);
+  return dt ? dt.legend : code;
+}
+
+function conditionText(rule: DbRule): string {
+  const device = deviceLabel(rule.trigger_code);
+  switch (rule.trigger_condition) {
+    case "always":
+      return `When **${device}** are on the plan`;
+    case "greater_than":
+      return `When more than **${rule.trigger_value}** ${device}`;
+    case "greater_than_or_equal":
+      return `When **${rule.trigger_value}+** ${device}`;
+    case "equals":
+      return `When exactly **${rule.trigger_value}** ${device}`;
+    case "range":
+      return `When **${rule.trigger_min}–${rule.trigger_max}** ${device}`;
+    case "site_conditional":
+      return `When ${device} and site has ${rule.trigger_site_field}`;
+    case "site_boolean":
+      return `When site has **${rule.trigger_site_field}** enabled`;
+    case "compound":
+      return `When combined **${device}** count triggers`;
+    default:
+      return `When ${device} detected`;
+  }
+}
+
+function quantityText(rule: DbRule, products: ProductOption[]): string {
+  const product = products.find(p => p.id === rule.auto_add_product_id);
+  const productName = product ? product.name : "unknown product";
+  switch (rule.quantity_mode) {
+    case "fixed":
+      return `add **${rule.quantity_value || 1}x** ${productName}`;
+    case "match_trigger":
+      return `add **1 per device** — ${productName}`;
+    case "match_site_field":
+      return `add **1 per ${rule.quantity_site_field || "site field"}** — ${productName}`;
+    case "per_n":
+      return `add **1 per ${rule.quantity_divisor || 1} devices** — ${productName}`;
+    case "formula":
+      return `add (formula) — ${productName}`;
+    case "custom":
+      return `add (custom) — ${productName}`;
+    default:
+      return `add ${productName}`;
+  }
+}
+
+function RuleSentence({ rule, products }: { rule: DbRule; products: ProductOption[] }) {
+  const condition = conditionText(rule);
+  const qty = quantityText(rule, products);
+  // Render markdown-style **bold** as <strong>
+  const render = (text: string) => {
+    const parts = text.split(/\*\*(.*?)\*\*/g);
+    return parts.map((part, i) => i % 2 === 1 ? <strong key={i} className="text-foreground">{part}</strong> : <span key={i}>{part}</span>);
+  };
+  return (
+    <p className="text-sm text-muted-foreground">
+      {render(condition)} → {render(qty)}
+    </p>
+  );
+}
+
+// ── Friendly form labels ──
+
 const TRIGGER_CONDITIONS = [
-  { value: "always", label: "Always (any count > 0)" },
-  { value: "greater_than", label: "Greater Than" },
-  { value: "greater_than_or_equal", label: "Greater Than or Equal" },
-  { value: "equals", label: "Equals" },
-  { value: "range", label: "Range (min-max)" },
-  { value: "site_conditional", label: "Site Conditional" },
-  { value: "site_boolean", label: "Site Boolean" },
-  { value: "compound", label: "Compound (sum of codes)" },
+  { value: "always", label: "Any are on the plan", help: "Triggers when at least 1 is placed" },
+  { value: "greater_than", label: "More than a specific count", help: "e.g. more than 8 cameras" },
+  { value: "greater_than_or_equal", label: "At least a specific count", help: "e.g. 9 or more cameras" },
+  { value: "equals", label: "Exactly a specific count", help: "e.g. exactly 4 speakers" },
+  { value: "range", label: "Between a range", help: "e.g. between 5 and 12 cameras" },
+  { value: "site_conditional", label: "Based on a site setting", help: "Advanced: uses site info fields" },
+  { value: "site_boolean", label: "Site toggle is on", help: "Advanced: e.g. separate studio zone" },
+  { value: "compound", label: "Combined device count", help: "Advanced: sums multiple device types" },
 ];
 
 const QUANTITY_MODES = [
-  { value: "fixed", label: "Fixed Quantity" },
-  { value: "match_trigger", label: "Match Trigger Count" },
-  { value: "match_site_field", label: "Match Site Field" },
-  { value: "per_n", label: "Per N (ceil divide)" },
-  { value: "formula", label: "Formula" },
-  { value: "custom", label: "Custom Key" },
+  { value: "fixed", label: "Add a fixed number", help: "e.g. always add 1x NVR" },
+  { value: "match_trigger", label: "1 for each device", help: "e.g. 1 bracket per camera" },
+  { value: "match_site_field", label: "Match a site info field", help: "e.g. match TV count" },
+  { value: "per_n", label: "1 for every N devices", help: "e.g. 1 NVR per 8 cameras" },
+  { value: "formula", label: "Custom formula", help: "Advanced: custom calculation" },
+  { value: "custom", label: "Custom key", help: "Advanced: special logic" },
 ];
 
 export function RulesManager({ dbRules, products }: { dbRules: DbRule[]; products: ProductOption[] }) {
@@ -73,64 +150,36 @@ export function RulesManager({ dbRules, products }: { dbRules: DbRule[]; product
   async function seedRulesFromEngine() {
     setSeeding(true);
     try {
-      // Load full product data (need cost/sell for the engine)
-      const { data: fullProducts } = await supabase
-        .from("quote_products")
-        .select("*")
-        .eq("is_active", true);
-
+      const { data: fullProducts } = await supabase.from("quote_products").select("*").eq("is_active", true);
       if (!fullProducts || fullProducts.length === 0) {
         toast("No products found — seed products first", "error");
         setSeeding(false);
         return;
       }
-
-      // Generate rules from the code engine
       const snapRules = getSnapFitnessRules(fullProducts);
       const basicRules = getBasicRules(fullProducts);
       const allRules = [...snapRules, ...basicRules];
-
-      // Clear existing rules
       await supabase.from("quote_dependency_rules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-
-      // Map to DB rows
       const rows = allRules
-        .filter((r: DependencyRule) => r.auto_add_product_id) // skip rules where product wasn't found
+        .filter((r: DependencyRule) => r.auto_add_product_id)
         .map((rule: DependencyRule, i: number) => ({
-          preset: rule.preset,
-          description: rule.description,
-          is_active: rule.is_active,
-          trigger_code: rule.trigger_code,
-          trigger_condition: rule.trigger_condition,
-          trigger_value: rule.trigger_value ?? null,
-          trigger_min: rule.trigger_min ?? null,
-          trigger_max: rule.trigger_max ?? null,
-          trigger_site_field: rule.trigger_site_field ?? null,
-          trigger_site_value: rule.trigger_site_value ?? null,
-          trigger_site_op: rule.trigger_site_op ?? null,
-          quantity_mode: rule.quantity_mode,
-          quantity_value: rule.quantity_value ?? null,
-          quantity_site_field: rule.quantity_site_field ?? null,
-          quantity_multiplier: rule.quantity_multiplier ?? null,
-          quantity_divisor: rule.quantity_divisor ?? null,
-          quantity_formula: rule.quantity_formula ?? null,
-          quantity_custom_key: rule.quantity_custom_key ?? null,
-          auto_add_product_id: rule.auto_add_product_id ?? null,
+          preset: rule.preset, description: rule.description, is_active: rule.is_active,
+          trigger_code: rule.trigger_code, trigger_condition: rule.trigger_condition,
+          trigger_value: rule.trigger_value ?? null, trigger_min: rule.trigger_min ?? null, trigger_max: rule.trigger_max ?? null,
+          trigger_site_field: rule.trigger_site_field ?? null, trigger_site_value: rule.trigger_site_value ?? null, trigger_site_op: rule.trigger_site_op ?? null,
+          quantity_mode: rule.quantity_mode, quantity_value: rule.quantity_value ?? null,
+          quantity_site_field: rule.quantity_site_field ?? null, quantity_multiplier: rule.quantity_multiplier ?? null,
+          quantity_divisor: rule.quantity_divisor ?? null, quantity_formula: rule.quantity_formula ?? null,
+          quantity_custom_key: rule.quantity_custom_key ?? null, auto_add_product_id: rule.auto_add_product_id ?? null,
           sort_order: i,
         }));
-
-      // Insert in batches
       let inserted = 0;
       for (let i = 0; i < rows.length; i += 50) {
         const batch = rows.slice(i, i + 50);
         const { error } = await supabase.from("quote_dependency_rules").insert(batch);
-        if (error) {
-          toast(`Error at batch ${i}: ${error.message}`, "error");
-          break;
-        }
+        if (error) { toast(`Error at batch ${i}: ${error.message}`, "error"); break; }
         inserted += batch.length;
       }
-
       toast(`Seeded ${inserted} rules (${allRules.length - rows.length} skipped — product not found)`);
       router.refresh();
     } catch (err: any) {
@@ -149,15 +198,11 @@ export function RulesManager({ dbRules, products }: { dbRules: DbRule[]; product
     if (presetFilter) list = list.filter(r => r.preset === presetFilter);
     if (search.length >= 2) {
       const q = search.toLowerCase();
-      list = list.filter(r =>
-        r.description.toLowerCase().includes(q) ||
-        (r.trigger_code ?? "").toLowerCase().includes(q)
-      );
+      list = list.filter(r => r.description.toLowerCase().includes(q) || (r.trigger_code ?? "").toLowerCase().includes(q));
     }
     return list;
   }, [dbRules, search, presetFilter]);
 
-  // Group by trigger code
   const grouped = useMemo(() => {
     const map = new Map<string, DbRule[]>();
     for (const rule of filtered) {
@@ -181,16 +226,6 @@ export function RulesManager({ dbRules, products }: { dbRules: DbRule[]; product
     else { toast("Rule deleted"); router.refresh(); }
   }
 
-  function openEdit(rule: DbRule) {
-    setEditingRule(rule);
-    setShowForm(true);
-  }
-
-  function openNew() {
-    setEditingRule(null);
-    setShowForm(true);
-  }
-
   return (
     <div>
       {/* Toolbar */}
@@ -200,19 +235,16 @@ export function RulesManager({ dbRules, products }: { dbRules: DbRule[]; product
           <option value="">All Presets</option>
           {presets.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
-        <button onClick={openNew} className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/10">
+        <button onClick={() => { setEditingRule(null); setShowForm(true); }} className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/10">
           <span className="text-lg leading-none">+</span> Add Rule
         </button>
-        <button
-          onClick={seedRulesFromEngine}
-          disabled={seeding}
-          className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm font-medium text-amber-400 transition-colors hover:bg-amber-500/10 disabled:opacity-50"
-        >
+        <button onClick={seedRulesFromEngine} disabled={seeding}
+          className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm font-medium text-amber-400 transition-colors hover:bg-amber-500/10 disabled:opacity-50">
           {seeding ? "Seeding..." : "Seed from Quote Engine"}
         </button>
       </div>
 
-      <p className="text-xs text-muted-foreground mb-4">{filtered.length} rules</p>
+      <p className="text-xs text-muted-foreground mb-4">{filtered.length} rules — these automatically add products to quotes when devices are detected on a plan.</p>
 
       {/* Rule form */}
       {showForm && (
@@ -224,53 +256,39 @@ export function RulesManager({ dbRules, products }: { dbRules: DbRule[]; product
         />
       )}
 
-      {/* Rules grouped by trigger */}
-      {Array.from(grouped).map(([triggerCode, rules]) => {
-        const dt = DEVICE_TYPES.find(d => d.code === triggerCode);
-        const label = dt ? dt.legend : triggerCode;
-
-        return (
-          <div key={triggerCode} className="mb-4">
-            <div className="flex items-center gap-2 mb-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</h3>
-              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{rules.length}</span>
-            </div>
-            <div className="rounded-lg border border-border overflow-hidden divide-y divide-border">
-              {rules.map(rule => (
-                <div key={rule.id} className={`px-4 py-3 flex items-start justify-between gap-4 ${!rule.is_active ? "opacity-40" : ""}`}>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">{rule.description}</p>
-                    <div className="flex flex-wrap items-center gap-2 mt-1">
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">{rule.trigger_condition}</span>
-                      {rule.trigger_value != null && (
-                        <span className="text-[10px] text-muted-foreground">value: {rule.trigger_value}</span>
-                      )}
-                      <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">{rule.quantity_mode}</span>
-                      {rule.quantity_value != null && (
-                        <span className="text-[10px] text-muted-foreground">qty: {rule.quantity_value}</span>
-                      )}
-                      <span className="text-[10px] text-muted-foreground">{rule.preset}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button onClick={() => toggleActive(rule.id, rule.is_active)} className={`text-xs transition-colors ${rule.is_active ? "text-muted-foreground hover:text-amber-400" : "text-emerald-500 hover:text-emerald-400"}`}>
-                      {rule.is_active ? "Disable" : "Enable"}
-                    </button>
-                    <button onClick={() => openEdit(rule)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Edit</button>
-                    <button onClick={() => deleteRule(rule.id)} className="text-xs text-muted-foreground hover:text-red-400 transition-colors">Delete</button>
-                  </div>
-                </div>
-              ))}
-            </div>
+      {/* Rules grouped by trigger device */}
+      {Array.from(grouped).map(([triggerCode, rules]) => (
+        <div key={triggerCode} className="mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{deviceLabel(triggerCode)}</h3>
+            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{rules.length}</span>
           </div>
-        );
-      })}
+          <div className="rounded-lg border border-border overflow-hidden divide-y divide-border">
+            {rules.map(rule => (
+              <div key={rule.id} className={`px-4 py-3 flex items-start justify-between gap-4 ${!rule.is_active ? "opacity-40" : ""}`}>
+                <div className="flex-1 min-w-0">
+                  <RuleSentence rule={rule} products={products} />
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">{rule.description}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => toggleActive(rule.id, rule.is_active)}
+                    className={`px-2 py-1 rounded text-xs transition-colors ${rule.is_active ? "bg-muted text-muted-foreground hover:bg-amber-500/10 hover:text-amber-400" : "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"}`}>
+                    {rule.is_active ? "Disable" : "Enable"}
+                  </button>
+                  <button onClick={() => { setEditingRule(rule); setShowForm(true); }} className="px-2 py-1 rounded text-xs bg-muted text-muted-foreground hover:text-foreground transition-colors">Edit</button>
+                  <button onClick={() => deleteRule(rule.id)} className="px-2 py-1 rounded text-xs bg-muted text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition-colors">Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
 
       {filtered.length === 0 && !showForm && (
         <div className="rounded-lg border border-dashed border-border py-16 text-center">
-          <p className="text-sm text-muted-foreground">No rules in database yet.</p>
-          <p className="text-xs text-muted-foreground mt-1">70+ Snap Fitness rules are loaded from code. Add custom rules here to override or extend them.</p>
-          <button onClick={openNew} className="mt-3 text-sm text-primary hover:text-primary/80 transition-colors">Add the first rule</button>
+          <p className="text-sm text-muted-foreground">No rules yet.</p>
+          <p className="text-xs text-muted-foreground mt-1">Rules automatically add products to quotes when certain devices are on a plan.</p>
+          <button onClick={() => { setEditingRule(null); setShowForm(true); }} className="mt-3 text-sm text-primary hover:text-primary/80 transition-colors">Add the first rule</button>
         </div>
       )}
     </div>
@@ -307,24 +325,14 @@ function RuleForm({ rule, products, onSaved, onCancel }: {
     e.preventDefault();
     if (!description.trim() || !triggerCode) return;
     setSaving(true);
-
     const payload = {
-      preset,
-      description: description.trim(),
-      trigger_code: triggerCode,
-      trigger_condition: triggerCondition,
+      preset, description: description.trim(), trigger_code: triggerCode, trigger_condition: triggerCondition,
       trigger_value: triggerValue ? parseInt(triggerValue) : null,
-      trigger_min: triggerMin ? parseInt(triggerMin) : null,
-      trigger_max: triggerMax ? parseInt(triggerMax) : null,
-      quantity_mode: quantityMode,
-      quantity_value: quantityValue ? parseInt(quantityValue) : null,
-      quantity_divisor: quantityDivisor ? parseInt(quantityDivisor) : null,
-      quantity_formula: quantityFormula || null,
-      auto_add_product_id: productId || null,
-      sort_order: parseInt(sortOrder) || 0,
-      is_active: true,
+      trigger_min: triggerMin ? parseInt(triggerMin) : null, trigger_max: triggerMax ? parseInt(triggerMax) : null,
+      quantity_mode: quantityMode, quantity_value: quantityValue ? parseInt(quantityValue) : null,
+      quantity_divisor: quantityDivisor ? parseInt(quantityDivisor) : null, quantity_formula: quantityFormula || null,
+      auto_add_product_id: productId || null, sort_order: parseInt(sortOrder) || 0, is_active: true,
     };
-
     if (isEditing && rule) {
       const { error } = await supabase.from("quote_dependency_rules").update(payload).eq("id", rule.id);
       if (error) { toast(error.message, "error"); setSaving(false); return; }
@@ -337,92 +345,127 @@ function RuleForm({ rule, products, onSaved, onCancel }: {
     onSaved();
   }
 
+  const selectedCondition = TRIGGER_CONDITIONS.find(c => c.value === triggerCondition);
+  const selectedQtyMode = QUANTITY_MODES.find(m => m.value === quantityMode);
+
   return (
-    <form onSubmit={handleSubmit} className="mb-5 rounded-lg border border-primary/30 bg-card p-4 space-y-3">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <div className="col-span-2 md:col-span-3">
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Description *</label>
-          <input value={description} onChange={(e) => setDescription(e.target.value)} className={inputClass} placeholder="e.g. Add NVR when cameras detected" required />
-        </div>
+    <form onSubmit={handleSubmit} className="mb-5 rounded-lg border border-primary/30 bg-card p-5 space-y-5">
+      <h3 className="text-sm font-semibold text-foreground">{isEditing ? "Edit Rule" : "New Rule"}</h3>
 
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Preset</label>
-          <input value={preset} onChange={(e) => setPreset(e.target.value)} className={inputClass} />
-        </div>
+      {/* What does this rule do? */}
+      <div>
+        <label className="block text-xs font-medium text-muted-foreground mb-1">What does this rule do?</label>
+        <input value={description} onChange={(e) => setDescription(e.target.value)} className={inputClass} placeholder="e.g. Add an NVR when cameras are placed on the plan" required />
+        <p className="text-[10px] text-muted-foreground mt-1">A short description so anyone can understand what this rule does.</p>
+      </div>
 
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Trigger Device *</label>
-          <select value={triggerCode} onChange={(e) => setTriggerCode(e.target.value)} className={inputClass} required>
-            <option value="">Select device...</option>
-            {DEVICE_TYPES.map(d => <option key={d.code} value={d.code}>{d.legend}</option>)}
-            <option value="_cameras">Sum: All Cameras</option>
-            <option value="_pirs">Sum: All PIRs</option>
-            <option value="_speakers">Sum: All Speakers</option>
-            <option value="_cabinets">Sum: All Cabinets</option>
-          </select>
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        {/* LEFT: When does it trigger? */}
+        <div className="space-y-3 p-4 rounded-lg bg-muted/30 border border-border">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">When...</p>
 
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Condition</label>
-          <select value={triggerCondition} onChange={(e) => setTriggerCondition(e.target.value)} className={inputClass}>
-            {TRIGGER_CONDITIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
-        </div>
-
-        {["greater_than", "greater_than_or_equal", "equals"].includes(triggerCondition) && (
           <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Trigger Value</label>
-            <input type="number" value={triggerValue} onChange={(e) => setTriggerValue(e.target.value)} className={inputClass} />
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Which device triggers this rule?</label>
+            <select value={triggerCode} onChange={(e) => setTriggerCode(e.target.value)} className={inputClass} required>
+              <option value="">Pick a device...</option>
+              <optgroup label="Individual Devices">
+                {DEVICE_TYPES.map(d => <option key={d.code} value={d.code}>{d.legend}</option>)}
+              </optgroup>
+              <optgroup label="Device Groups">
+                <option value="_cameras">All cameras combined</option>
+                <option value="_pirs">All PIR sensors combined</option>
+                <option value="_speakers">All speakers combined</option>
+                <option value="_cabinets">All server cabinets combined</option>
+              </optgroup>
+            </select>
           </div>
-        )}
 
-        {triggerCondition === "range" && (
-          <>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Min</label>
-              <input type="number" value={triggerMin} onChange={(e) => setTriggerMin(e.target.value)} className={inputClass} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Max</label>
-              <input type="number" value={triggerMax} onChange={(e) => setTriggerMax(e.target.value)} className={inputClass} />
-            </div>
-          </>
-        )}
-
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Quantity Mode</label>
-          <select value={quantityMode} onChange={(e) => setQuantityMode(e.target.value)} className={inputClass}>
-            {QUANTITY_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-          </select>
-        </div>
-
-        {["fixed", "per_n"].includes(quantityMode) && (
           <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">{quantityMode === "per_n" ? "Divisor" : "Quantity"}</label>
-            <input type="number" value={quantityMode === "per_n" ? quantityDivisor : quantityValue} onChange={(e) => quantityMode === "per_n" ? setQuantityDivisor(e.target.value) : setQuantityValue(e.target.value)} className={inputClass} />
+            <label className="block text-xs font-medium text-muted-foreground mb-1">When should it trigger?</label>
+            <select value={triggerCondition} onChange={(e) => setTriggerCondition(e.target.value)} className={inputClass}>
+              {TRIGGER_CONDITIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+            {selectedCondition && <p className="text-[10px] text-muted-foreground mt-1">{selectedCondition.help}</p>}
           </div>
-        )}
 
-        {quantityMode === "formula" && (
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Formula</label>
-            <input value={quantityFormula} onChange={(e) => setQuantityFormula(e.target.value)} className={inputClass} placeholder="e.g. ceil(cardio + tvs / 8)" />
-          </div>
-        )}
+          {["greater_than", "greater_than_or_equal", "equals"].includes(triggerCondition) && (
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">How many?</label>
+              <input type="number" value={triggerValue} onChange={(e) => setTriggerValue(e.target.value)} className={inputClass} placeholder="e.g. 8" />
+            </div>
+          )}
 
-        <div className="col-span-2 md:col-span-3">
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Product to Auto-Add</label>
-          <select value={productId} onChange={(e) => setProductId(e.target.value)} className={inputClass}>
-            <option value="">Select product...</option>
-            {products.map(p => <option key={p.id} value={p.id}>{p.name} {p.sku ? `(${p.sku})` : ""} — {p.category}</option>)}
-          </select>
+          {triggerCondition === "range" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">From</label>
+                <input type="number" value={triggerMin} onChange={(e) => setTriggerMin(e.target.value)} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">To</label>
+                <input type="number" value={triggerMax} onChange={(e) => setTriggerMax(e.target.value)} className={inputClass} />
+              </div>
+            </div>
+          )}
         </div>
 
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Sort Order</label>
-          <input type="number" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className={inputClass} />
+        {/* RIGHT: What does it add? */}
+        <div className="space-y-3 p-4 rounded-lg bg-muted/30 border border-border">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Then add...</p>
+
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Which product gets added?</label>
+            <select value={productId} onChange={(e) => setProductId(e.target.value)} className={inputClass}>
+              <option value="">Pick a product...</option>
+              {products.map(p => <option key={p.id} value={p.id}>{p.name}{p.sku ? ` (${p.sku})` : ""}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">How many to add?</label>
+            <select value={quantityMode} onChange={(e) => setQuantityMode(e.target.value)} className={inputClass}>
+              {QUANTITY_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+            {selectedQtyMode && <p className="text-[10px] text-muted-foreground mt-1">{selectedQtyMode.help}</p>}
+          </div>
+
+          {quantityMode === "fixed" && (
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Quantity</label>
+              <input type="number" value={quantityValue} onChange={(e) => setQuantityValue(e.target.value)} className={inputClass} placeholder="1" />
+            </div>
+          )}
+
+          {quantityMode === "per_n" && (
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">For every how many devices?</label>
+              <input type="number" value={quantityDivisor} onChange={(e) => setQuantityDivisor(e.target.value)} className={inputClass} placeholder="e.g. 8 (1 per 8 cameras)" />
+            </div>
+          )}
+
+          {quantityMode === "formula" && (
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Formula</label>
+              <input value={quantityFormula} onChange={(e) => setQuantityFormula(e.target.value)} className={inputClass} placeholder="e.g. ceil(cardio + tvs / 8)" />
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Advanced / meta */}
+      <details className="text-xs">
+        <summary className="text-muted-foreground cursor-pointer hover:text-foreground transition-colors">Advanced options</summary>
+        <div className="grid grid-cols-2 gap-3 mt-3">
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Preset group</label>
+            <input value={preset} onChange={(e) => setPreset(e.target.value)} className={inputClass} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Sort order</label>
+            <input type="number" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className={inputClass} />
+          </div>
+        </div>
+      </details>
 
       <div className="flex justify-end gap-2 pt-2">
         <button type="button" onClick={onCancel} className="rounded-md border border-border px-4 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors">Cancel</button>
