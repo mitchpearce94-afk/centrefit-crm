@@ -212,6 +212,17 @@ export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo =
       }
     })
 
+  const tvCount = s.tv_count || 0
+  if (tvCount > 0) {
+    const tvHrs = round(tvCount * 2)
+    fitOffItems.push({
+      name: 'Mount TVs',
+      formula: `${tvCount} TVs × 1 hr × 2 techs`,
+      defaultHours: tvHrs,
+      hours: tvHrs,
+    })
+  }
+
   fitOffItems.push(fixedItem('Site setup', 2))
   fitOffItems.push(fixedItem('Cleanup', 2))
   if (hasCabinet) fitOffItems.push(fixedItem('Server rack wiring in', 12))
