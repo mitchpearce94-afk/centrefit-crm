@@ -13,10 +13,11 @@ export default async function NewPlanPage({ searchParams }: { searchParams: Prom
     .order('number', { ascending: false })
     .limit(200);
 
-  return (
-    <>
-      {params.fresh && <PlanStoreInit />}
+  return params.fresh ? (
+    <PlanStoreInit>
       <PlanEditor jobs={jobs ?? []} />
-    </>
+    </PlanStoreInit>
+  ) : (
+    <PlanEditor jobs={jobs ?? []} />
   );
 }

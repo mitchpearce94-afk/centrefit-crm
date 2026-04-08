@@ -512,6 +512,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
       linkedJobId: null, linkedJobNumber: null, planFileId: null,
       pdfFile: null, pdfPageNumber: 1, pdfElements: [], deletedOpIndices: [],
       selectedElementIds: [], hoveredElementId: null,
+      titleBlock: DEFAULT_TITLE_BLOCK, deviceScale: 1,
       floors: [{ id: 'floor-1', name: 'Ground Floor', backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, pdfFileName: '', devices: [], commsRackId: null, whitewashRects: [] }],
       activeFloorId: 'floor-1', revisions: [],
       history: [{ devices: [], commsRackId: null, whitewashRects: [] }], historyIndex: 0,

@@ -1,11 +1,14 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { usePlanStore } from '@/store/planStore';
 
-export function PlanStoreInit() {
+export function PlanStoreInit({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     usePlanStore.getState().clearProject();
+    setReady(true);
   }, []);
-  return null;
+  if (!ready) return null;
+  return <>{children}</>;
 }
