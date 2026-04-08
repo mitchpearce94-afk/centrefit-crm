@@ -25,6 +25,7 @@ import type {
   Product,
   QuoteSummary,
   LabourTimingOverrides,
+  ElecOptions,
 } from "@/lib/quote-engine";
 
 interface CustomerOption {
@@ -97,6 +98,8 @@ interface ExistingQuote {
   labourData: LabourData | null;
   discountPercent: number;
   electricianCost?: number;
+  elecDoingRoughIn?: boolean;
+  elecDoingFitOff?: boolean;
   lineItems: any[];
   extras: any[];
 }
@@ -169,6 +172,9 @@ export function QuoteWizard({
 
   // Electrician
   const [electricianCost, setElectricianCost] = useState(existingQuote?.electricianCost ?? 0);
+  const [elecDoingRoughIn, setElecDoingRoughIn] = useState(existingQuote?.elecDoingRoughIn ?? false);
+  const [elecDoingFitOff, setElecDoingFitOff] = useState(existingQuote?.elecDoingFitOff ?? false);
+  const isInterstate = siteInfo.state ? siteInfo.state !== 'QLD' : false;
 
   // Step 6
   const [discountPercent, setDiscountPercent] = useState(existingQuote?.discountPercent ?? 0);
@@ -334,6 +340,8 @@ export function QuoteWizard({
       if (d.manualLabourAmount != null) setManualLabourAmount(d.manualLabourAmount);
       if (d.manualCalloutDays != null) setManualCalloutDays(d.manualCalloutDays);
       if (d.electricianCost != null) setElectricianCost(d.electricianCost);
+      if (d.elecDoingRoughIn != null) setElecDoingRoughIn(d.elecDoingRoughIn);
+      if (d.elecDoingFitOff != null) setElecDoingFitOff(d.elecDoingFitOff);
     } catch {}
     setShowDraftBanner(false);
   }
@@ -353,6 +361,7 @@ export function QuoteWizard({
           deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
           linkedJobId, selectedPlanId, manualScope, manualBomItems,
           manualLabourHours, manualLabourAmount, manualCalloutDays, electricianCost,
+          elecDoingRoughIn, elecDoingFitOff,
         }));
       } catch {}
     }, 500);
@@ -360,7 +369,8 @@ export function QuoteWizard({
   }, [step, quoteMode, customerId, clientName, siteName, siteAddress, siteInfo,
     deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
     linkedJobId, selectedPlanId, manualScope, manualBomItems,
-    manualLabourHours, manualLabourAmount, manualCalloutDays, electricianCost]);
+    manualLabourHours, manualLabourAmount, manualCalloutDays, electricianCost,
+    elecDoingRoughIn, elecDoingFitOff]);
 
   // Warn on unload
   useEffect(() => {
@@ -433,6 +443,13 @@ export function QuoteWizard({
     e.target.value = "";
   }
 
+  function regenerateLabour() {
+    setLabourData(calculateLabour(deviceCounts, siteInfo, billingSettings ? {
+      labourCostRate: billingSettings.labour_cost_rate,
+      labourSellRate: billingSettings.labour_sell_rate,
+    } : {}, labourTimings, { elecDoingRoughIn, elecDoingFitOff }));
+  }
+
   function enterStep(newStep: number) {
     if (quoteMode === "plan") {
       if (newStep === 2 && !bomGenerated) {
@@ -441,10 +458,11 @@ export function QuoteWizard({
         setBomGenerated(true);
       }
       if (newStep === 3 && !labourData) {
-        setLabourData(calculateLabour(deviceCounts, siteInfo, billingSettings ? {
-          labourCostRate: billingSettings.labour_cost_rate,
-          labourSellRate: billingSettings.labour_sell_rate,
-        } : {}, labourTimings));
+        regenerateLabour();
+      }
+      // Regenerate labour before summary in case elec toggles changed on extras step
+      if (newStep === 5) {
+        regenerateLabour();
       }
     }
     setStep(newStep);
@@ -525,11 +543,11 @@ export function QuoteWizard({
 
   const summary: QuoteSummary | null = useMemo(() => {
     if (quoteMode === "manual") {
-      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, extras, { discountPercent, electricianCost });
+      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, extras, { discountPercent, electricianCost, isInterstate });
     }
     if (!labourData) return null;
-    return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent, electricianCost });
-  }, [quoteMode, bomItems, labourData, extras, discountPercent, electricianCost, manualBomAsBomItems, manualLabourData]);
+    return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent, electricianCost, isInterstate });
+  }, [quoteMode, bomItems, labourData, extras, discountPercent, electricianCost, isInterstate, manualBomAsBomItems, manualLabourData]);
 
   const labourWarnings = useMemo(() => {
     if (quoteMode === "manual") return [];
@@ -591,6 +609,8 @@ export function QuoteWizard({
       },
       discount_percent: discountPercent,
       electrician_cost: electricianCost || 0,
+      elec_doing_rough_in: elecDoingRoughIn,
+      elec_doing_fit_off: elecDoingFitOff,
       quote_type: quoteType,
       pricing_snapshot: {
         ...summary,
@@ -1519,13 +1539,43 @@ export function QuoteWizard({
 
           {/* Electrician */}
           <div className="mt-6">
-            <h3 className="text-sm font-semibold text-foreground mb-2">Electrician</h3>
-            <p className="text-xs text-muted-foreground mb-3">Enter the electrician&apos;s quoted cost. A 30% margin is applied automatically.</p>
+            <div className="flex items-center gap-2 mb-2">
+              <h3 className="text-sm font-semibold text-foreground">Electrician</h3>
+              {isInterstate && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500">REQUIRED — Interstate</span>}
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              {isInterstate
+                ? "Interstate job — electrician quote is mandatory. Cost is doubled (2x). Select what the electrician is covering below."
+                : "Enter the electrician's quoted cost. A 30% margin is applied automatically."}
+            </p>
+
+            {/* Electrician scope toggles — interstate only */}
+            {isInterstate && (
+              <div className="flex gap-4 mb-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={elecDoingRoughIn} onChange={(e) => setElecDoingRoughIn(e.target.checked)}
+                    className="rounded border-border text-primary focus:ring-primary" />
+                  <span className="text-sm">Electrician doing Rough In</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={elecDoingFitOff} onChange={(e) => setElecDoingFitOff(e.target.checked)}
+                    className="rounded border-border text-primary focus:ring-primary" />
+                  <span className="text-sm">Electrician doing Fit Off</span>
+                </label>
+              </div>
+            )}
+
+            {isInterstate && electricianCost === 0 && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 mb-3">
+                <p className="text-xs text-amber-500 font-medium">Electrician quote is required for interstate jobs. Enter the cost below.</p>
+              </div>
+            )}
+
             <div className="rounded-lg border border-border overflow-hidden">
               <div className="grid grid-cols-[1fr_120px_120px] gap-3 bg-muted/50 px-4 py-2.5 border-b border-border">
                 <span className="text-xs font-medium text-muted-foreground">Item</span>
                 <span className="text-xs font-medium text-muted-foreground text-center">Cost</span>
-                <span className="text-xs font-medium text-muted-foreground text-center">Sell (+ 30%)</span>
+                <span className="text-xs font-medium text-muted-foreground text-center">Sell ({isInterstate ? "2x" : "+ 30%"})</span>
               </div>
               <div className="grid grid-cols-[1fr_120px_120px] gap-3 items-center px-4 py-2.5">
                 <span className="text-sm">Electrician Quotation</span>
@@ -1538,7 +1588,7 @@ export function QuoteWizard({
                   className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
                 <span className="text-sm font-mono text-center text-muted-foreground">
-                  ${fmt(Math.round(electricianCost * 1.3 * 100) / 100)}
+                  ${fmt(Math.round(electricianCost * (isInterstate ? 2 : 1.3) * 100) / 100)}
                 </span>
               </div>
             </div>

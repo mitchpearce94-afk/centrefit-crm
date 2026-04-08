@@ -30,6 +30,7 @@ export type {
   LabourData,
   RateOverrides,
   LabourTimingOverrides,
+  ElecOptions,
 } from './labour-engine'
 
 // BOM engine

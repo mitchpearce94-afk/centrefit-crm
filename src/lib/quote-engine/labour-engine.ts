@@ -103,7 +103,12 @@ export interface RateOverrides {
 
 export type LabourTimingOverrides = Record<string, number> // code → minutes_per
 
-export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo = {}, rates: RateOverrides = {}, timingOverrides: LabourTimingOverrides = {}): LabourData {
+export interface ElecOptions {
+  elecDoingRoughIn?: boolean
+  elecDoingFitOff?: boolean
+}
+
+export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo = {}, rates: RateOverrides = {}, timingOverrides: LabourTimingOverrides = {}, elecOptions: ElecOptions = {}): LabourData {
   const c = deviceCounts || {}
   const s = siteInfo || {}
   const sections: LabourSection[] = []
@@ -125,15 +130,20 @@ export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo =
     (c.tailgate_system || 0)
 
   const roughInItems: LabourItem[] = []
+  const elecRoughIn = elecOptions.elecDoingRoughIn || false
+  const elecFitOff = elecOptions.elecDoingFitOff || false
 
   if (totalCableRuns > 0) {
-    const pullHrs = round((totalCableRuns * 60) / 60)
-    roughInItems.push({
-      name: 'Cable pulling',
-      formula: `${totalCableRuns} runs × 60 min (1 hr per run, 2-person crew)`,
-      defaultHours: pullHrs,
-      hours: pullHrs,
-    })
+    // Skip cable pulling if electrician is handling rough in
+    if (!elecRoughIn) {
+      const pullHrs = round((totalCableRuns * 60) / 60)
+      roughInItems.push({
+        name: 'Cable pulling',
+        formula: `${totalCableRuns} runs × 60 min (1 hr per run, 2-person crew)`,
+        defaultHours: pullHrs,
+        hours: pullHrs,
+      })
+    }
 
     const termHrs = round((totalCableRuns * 8) / 60)
     roughInItems.push({
@@ -189,7 +199,8 @@ export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo =
     { name: 'Tailgate system', minutesPer: t('tailgate_system', 90), count: c.tailgate_system || 0 },
   ]
 
-  const fitOffItems: LabourItem[] = fitOffDefs
+  // If electrician is doing fit off, skip all device mounting items
+  const fitOffItems: LabourItem[] = elecFitOff ? [] : fitOffDefs
     .filter((d) => d.count > 0)
     .map((d) => {
       const hrs = round((d.count * d.minutesPer) / 60)

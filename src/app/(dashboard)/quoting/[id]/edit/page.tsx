@@ -55,6 +55,8 @@ export default async function EditQuotePage({
     labourData: quote.labour_data || null,
     discountPercent: quote.discount_percent ?? 0,
     electricianCost: quote.electrician_cost ?? 0,
+    elecDoingRoughIn: quote.elec_doing_rough_in ?? false,
+    elecDoingFitOff: quote.elec_doing_fit_off ?? false,
     lineItems: lineItemsResult.data ?? [],
     extras: extrasResult.data ?? [],
   };

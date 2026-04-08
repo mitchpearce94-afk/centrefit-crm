@@ -61,9 +61,9 @@ export function calculateQuoteSummary(
   bomItems: BOMItem[],
   labourData: LabourData,
   extras: ExtraItem[],
-  options: { discountPercent?: number; electricianCost?: number } = {}
+  options: { discountPercent?: number; electricianCost?: number; isInterstate?: boolean } = {}
 ): QuoteSummary {
-  const { discountPercent = 0, electricianCost = 0 } = options
+  const { discountPercent = 0, electricianCost = 0, isInterstate = false } = options
 
   // Materials
   const materialsCost = bomItems.reduce((sum, item) => sum + (item.cost_price || 0) * (item.quantity || 0), 0)
@@ -106,9 +106,10 @@ export function calculateQuoteSummary(
     extrasSell += item.sell || 0
   })
 
-  // Electrician — 30% margin
+  // Electrician — interstate: 2x (double), QLD: 1.3x (30% margin)
   if (electricianCost > 0) {
-    const elecSell = Math.round(electricianCost * 1.3 * 100) / 100
+    const elecMultiplier = isInterstate ? 2 : 1.3
+    const elecSell = Math.round(electricianCost * elecMultiplier * 100) / 100
     extrasCost += electricianCost
     extrasSell += elecSell
   }
