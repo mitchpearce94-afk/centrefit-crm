@@ -197,6 +197,15 @@ export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo =
     { name: 'Ceiling speaker', minutesPer: t('speaker_roof', 40), count: c.speaker_roof || 0 },
     { name: 'Wall speaker', minutesPer: t('speaker_wall', 30), count: c.speaker_wall || 0 },
     { name: 'Tailgate system', minutesPer: t('tailgate_system', 90), count: c.tailgate_system || 0 },
+    { name: 'Card reader', minutesPer: t('card_reader', 30), count: c.card_reader || 0 },
+    { name: 'Door lock', minutesPer: t('door_lock', 30), count: c.door_lock || 0 },
+    { name: 'Integration cable', minutesPer: t('integration_cable', 30), count: c.integration_cable || 0 },
+    { name: 'Alarm keypad', minutesPer: t('alarm_keypad', 20), count: c.alarm_keypad || 0 },
+    { name: 'RF receiver', minutesPer: t('rf_receiver', 20), count: c.rf_receiver || 0 },
+    { name: 'Data point', minutesPer: t('data_point', 15), count: c.data_point || 0 },
+    { name: 'Coax point', minutesPer: t('coax_point', 15), count: c.coax_point || 0 },
+    { name: 'Intercom master', minutesPer: t('intercom_master', 20), count: c.intercom_master || 0 },
+    { name: 'Intercom slave', minutesPer: t('intercom_slave', 30), count: c.intercom_slave || 0 },
   ]
 
   // If electrician is doing fit off, skip all device mounting items
