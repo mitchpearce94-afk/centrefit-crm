@@ -101,13 +101,16 @@ export interface RateOverrides {
   adminSell?: number
 }
 
-export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo = {}, rates: RateOverrides = {}): LabourData {
+export type LabourTimingOverrides = Record<string, number> // code → minutes_per
+
+export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo = {}, rates: RateOverrides = {}, timingOverrides: LabourTimingOverrides = {}): LabourData {
   const c = deviceCounts || {}
   const s = siteInfo || {}
   const sections: LabourSection[] = []
   const cr = rates.labourCostRate ?? LABOUR_COST_RATE
   const sr = rates.labourSellRate ?? LABOUR_SELL_RATE
   const buildSection = (name: string, items: LabourItem[], mandatory: boolean) => buildSectionFromItems(name, items, mandatory, cr, sr)
+  const t = (code: string, fallback: number) => timingOverrides[code] ?? fallback
 
   // === 1. ROUGH IN ===
 
@@ -139,6 +142,17 @@ export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo =
       defaultHours: termHrs,
       hours: termHrs,
     })
+
+    const avTermCount = (s.tv_count || 0) + (s.cardio_count || 0)
+    if (avTermCount > 0) {
+      const avTermHrs = round((avTermCount * 2) / 60)
+      roughInItems.push({
+        name: 'AV termination',
+        formula: `${avTermCount} AV points (${s.tv_count || 0} TVs + ${s.cardio_count || 0} cardio) × 2 min`,
+        defaultHours: avTermHrs,
+        hours: avTermHrs,
+      })
+    }
   }
 
   sections.push(buildSection('Rough In', roughInItems, false))
@@ -160,19 +174,19 @@ export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo =
   // === 2. FIT OFF ===
 
   const fitOffDefs = [
-    { name: 'Camera install (plaster)', minutesPer: 45, count: plasterCameras },
-    { name: 'Camera install (concrete)', minutesPer: 55, count: concreteCameras },
-    { name: 'PIR 360° ceiling', minutesPer: 35, count: c.pir_360_roof || 0 },
-    { name: 'PIR wall', minutesPer: 35, count: c.pir_wall || 0 },
-    { name: 'Reed switch', minutesPer: 25, count: c.reed_switch || 0 },
-    { name: 'Duress button + faceplate', minutesPer: 40, count: c.duress_button || 0 },
-    { name: 'Duress intercom', minutesPer: 40, count: c.duress_intercom || 0 },
-    { name: 'REX button', minutesPer: 55, count: c.rex_button || 0 },
-    { name: 'External siren', minutesPer: 40, count: c.light_siren || 0 },
-    { name: 'WAP', minutesPer: 40, count: c.wap || 0 },
-    { name: 'Ceiling speaker', minutesPer: 40, count: c.speaker_roof || 0 },
-    { name: 'Wall speaker', minutesPer: 30, count: c.speaker_wall || 0 },
-    { name: 'Tailgate system', minutesPer: 90, count: c.tailgate_system || 0 },
+    { name: 'Camera install (plaster)', minutesPer: t('camera_plaster', 30), count: plasterCameras },
+    { name: 'Camera install (concrete)', minutesPer: t('camera_concrete', 45), count: concreteCameras },
+    { name: 'PIR 360° ceiling', minutesPer: t('pir_360_roof', 20), count: c.pir_360_roof || 0 },
+    { name: 'PIR wall', minutesPer: t('pir_wall', 20), count: c.pir_wall || 0 },
+    { name: 'Reed switch', minutesPer: t('reed_switch', 25), count: c.reed_switch || 0 },
+    { name: 'Duress button + faceplate', minutesPer: t('duress_button', 40), count: c.duress_button || 0 },
+    { name: 'Duress intercom', minutesPer: t('duress_intercom', 30), count: c.duress_intercom || 0 },
+    { name: 'REX button', minutesPer: t('rex_button', 60), count: c.rex_button || 0 },
+    { name: 'External siren', minutesPer: t('light_siren', 40), count: c.light_siren || 0 },
+    { name: 'WAP', minutesPer: t('wap', 30), count: c.wap || 0 },
+    { name: 'Ceiling speaker', minutesPer: t('speaker_roof', 40), count: c.speaker_roof || 0 },
+    { name: 'Wall speaker', minutesPer: t('speaker_wall', 30), count: c.speaker_wall || 0 },
+    { name: 'Tailgate system', minutesPer: t('tailgate_system', 90), count: c.tailgate_system || 0 },
   ]
 
   const fitOffItems: LabourItem[] = fitOffDefs

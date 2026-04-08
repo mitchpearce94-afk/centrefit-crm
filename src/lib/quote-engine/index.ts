@@ -29,6 +29,7 @@ export type {
   LabourSection,
   LabourData,
   RateOverrides,
+  LabourTimingOverrides,
 } from './labour-engine'
 
 // BOM engine

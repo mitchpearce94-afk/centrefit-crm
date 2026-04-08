@@ -24,6 +24,7 @@ import type {
   ExtraItem,
   Product,
   QuoteSummary,
+  LabourTimingOverrides,
 } from "@/lib/quote-engine";
 
 interface CustomerOption {
@@ -105,6 +106,7 @@ export function QuoteWizard({
   existingQuote,
   billingSettings,
   jobs = [],
+  labourTimings = {},
 }: {
   customers: CustomerOption[];
   products: QuoteProduct[];
@@ -112,6 +114,7 @@ export function QuoteWizard({
   existingQuote?: ExistingQuote;
   billingSettings?: any;
   jobs?: { id: string; number: string; customer_name: string | null }[];
+  labourTimings?: LabourTimingOverrides;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -436,7 +439,7 @@ export function QuoteWizard({
         setLabourData(calculateLabour(deviceCounts, siteInfo, billingSettings ? {
           labourCostRate: billingSettings.labour_cost_rate,
           labourSellRate: billingSettings.labour_sell_rate,
-        } : {}));
+        } : {}, labourTimings));
       }
     }
     setStep(newStep);

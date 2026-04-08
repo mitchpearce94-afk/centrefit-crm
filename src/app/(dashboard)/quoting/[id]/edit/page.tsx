@@ -10,7 +10,7 @@ export default async function EditQuotePage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [quoteResult, lineItemsResult, extrasResult, customersResult, productsResult, plansResult, billingResult] = await Promise.all([
+  const [quoteResult, lineItemsResult, extrasResult, customersResult, productsResult, plansResult, billingResult, timingsResult] = await Promise.all([
     supabase.from("quotes").select("*").eq("id", id).single(),
     supabase.from("quote_line_items").select("*").eq("quote_id", id).order("sort_order"),
     supabase.from("quote_extras").select("*").eq("quote_id", id).order("sort_order"),
@@ -18,6 +18,7 @@ export default async function EditQuotePage({
     supabase.from("quote_products").select("*").eq("is_active", true).order("category, name"),
     supabase.from("plan_files").select("*").is("quote_id", null).order("created_at", { ascending: false }),
     supabase.from("billing_settings").select("*").single(),
+    supabase.from("labour_timings").select("code, minutes_per").order("sort_order"),
   ]);
 
   if (quoteResult.error || !quoteResult.data) notFound();
@@ -68,6 +69,7 @@ export default async function EditQuotePage({
           plans={plansResult.data ?? []}
           existingQuote={existingData}
           billingSettings={billingResult.data}
+          labourTimings={Object.fromEntries((timingsResult.data ?? []).map((t: any) => [t.code, t.minutes_per]))}
         />
       </div>
     </div>
