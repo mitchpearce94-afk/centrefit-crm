@@ -11,7 +11,7 @@ export default async function PlansPage() {
 
   const { data: plans } = await supabase
     .from('plan_files')
-    .select('id, name, client_name, site_name, state, revision, device_counts, cfp_url, pdf_url, created_at, updated_at, quote_id, quote:quotes(id, job_id, job:jobs(id, number, status:statuses(id, name)))')
+    .select('id, name, client_name, site_name, state, revision, device_counts, cfp_url, pdf_url, created_at, updated_at, quote_id, job_id, job:jobs(id, number, status:statuses(id, name)), quote:quotes(id, job_id, job:jobs(id, number, status:statuses(id, name)))')
     .order('updated_at', { ascending: false });
 
   const allPlans = plans ?? [];
@@ -39,8 +39,11 @@ export default async function PlansPage() {
     const state = plan.state || 'QLD';
     if (!byState[state]) byState[state] = { active: [], completed: [] };
 
+    // Prefer direct job link, fall back to quote → job chain
+    const directJob = plan.job ? (Array.isArray(plan.job) ? plan.job[0] : plan.job) : null;
     const quote = Array.isArray(plan.quote) ? plan.quote[0] : plan.quote;
-    const job = quote?.job ? (Array.isArray(quote.job) ? quote.job[0] : quote.job) : null;
+    const quoteJob = quote?.job ? (Array.isArray(quote.job) ? quote.job[0] : quote.job) : null;
+    const job = directJob || quoteJob;
     const jobStatus = job?.status ? (Array.isArray(job.status) ? job.status[0] : job.status) : null;
     const isCompleted = jobStatus && completionIds.has(jobStatus.id);
 

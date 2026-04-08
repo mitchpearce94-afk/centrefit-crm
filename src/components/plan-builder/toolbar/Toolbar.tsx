@@ -158,6 +158,7 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
         floor_data: exportData.floors,
         cfp_url: cfpUrlData?.publicUrl || null,
         uploaded_by: user?.id ?? null,
+        job_id: store.linkedJobId || null,
         updated_at: new Date().toISOString(),
       };
 
