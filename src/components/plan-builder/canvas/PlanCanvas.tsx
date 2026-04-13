@@ -339,6 +339,8 @@ export default function PlanCanvas() {
               <DeviceSymbol key={device.instanceId} def={def} x={device.x} y={device.y} rotation={device.rotation}
                 selected={device.instanceId === selectedDeviceId}
                 labelNum={activePlan === 'master' || isCommsRack || device.labelNum === 0 ? undefined : device.labelNum}
+                concreteMounted={device.concreteMounted}
+                provisional={device.provisional}
                 size={14 * deviceScale}
                 draggable={activeTool === 'select'}
                 onDragEnd={(x, y) => {

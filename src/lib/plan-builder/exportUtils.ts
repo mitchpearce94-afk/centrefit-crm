@@ -393,6 +393,17 @@ export async function exportToPdf(): Promise<Blob | null> {
           page.drawText(labelText, { x: bubbleX - labelW / 2, y: bubbleY - labelSize * 0.35, size: labelSize, font: fontBold, color: rgb(0, 0, 0) });
         }
 
+        // Concrete mounted badge
+        if (device.concreteMounted && pageDef.view !== 'master') {
+          const cBadgeR = mapper.toSize(12 * dScale);
+          const cBadgeX = px + sz / 2 + cBadgeR * 0.3;
+          const cBadgeY = py - sz / 2 - cBadgeR * 0.3;
+          page.drawCircle({ x: cBadgeX, y: cBadgeY, size: cBadgeR, color: rgb(0.2, 0.6, 1), borderColor: rgb(1, 1, 1), borderWidth: 0.5 });
+          const cSize = cBadgeR * 1.2;
+          const cW = fontBold.widthOfTextAtSize('C', cSize);
+          page.drawText('C', { x: cBadgeX - cW / 2, y: cBadgeY - cSize * 0.35, size: cSize, font: fontBold, color: rgb(1, 1, 1) });
+        }
+
         // Provisional label
         if (device.provisional && pageDef.view !== 'master') {
           const provText = 'Provisional Cable Run Only';

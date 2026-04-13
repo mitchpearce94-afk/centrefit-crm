@@ -11,6 +11,8 @@ interface Props {
   rotation?: number;
   selected?: boolean;
   labelNum?: number;
+  concreteMounted?: boolean;
+  provisional?: boolean;
   size?: number;
   draggable?: boolean;
   onDragEnd?: (x: number, y: number) => void;
@@ -43,7 +45,7 @@ function useSymbolImage(src: string | undefined): HTMLImageElement | null {
   return image;
 }
 
-export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelNum, size = SZ, draggable, onDragEnd, onClick }: Props) {
+export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelNum, concreteMounted, provisional, size = SZ, draggable, onDragEnd, onClick }: Props) {
   const img = useSymbolImage(def.symbolImage);
   const fill = def.fillColor || '#888888';
   const stroke = def.strokeColor || '#ffffff';
@@ -82,6 +84,20 @@ export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelN
           <Circle x={0} y={s * 1.6} radius={s * 0.75} fill="#ffffff" stroke="#000000" strokeWidth={1.2} listening={false} />
           <Text text={String(labelNum)} fontSize={s * 0.8} fill="#000000" fontStyle="bold" align="center" verticalAlign="middle"
             x={-s} y={s * 1.6 - s * 0.4} width={s * 2} height={s * 0.8} listening={false} />
+        </Group>
+      )}
+      {concreteMounted && (
+        <Group x={0} y={0} rotation={-rotation}>
+          <Circle x={s * 1.4} y={s * 1.4} radius={s * 0.6} fill="#3399ff" stroke="#ffffff" strokeWidth={0.8} listening={false} />
+          <Text text="C" fontSize={s * 0.7} fill="#ffffff" fontStyle="bold" align="center" verticalAlign="middle"
+            x={s * 1.4 - s * 0.5} y={s * 1.4 - s * 0.35} width={s} height={s * 0.7} listening={false} />
+        </Group>
+      )}
+      {provisional && (
+        <Group x={0} y={0} rotation={-rotation}>
+          <Circle x={s * -1.4} y={s * 1.4} radius={s * 0.6} fill="#f59e0b" stroke="#ffffff" strokeWidth={0.8} listening={false} />
+          <Text text="P" fontSize={s * 0.7} fill="#ffffff" fontStyle="bold" align="center" verticalAlign="middle"
+            x={s * -1.4 - s * 0.5} y={s * 1.4 - s * 0.35} width={s} height={s * 0.7} listening={false} />
         </Group>
       )}
     </Group>
