@@ -298,9 +298,29 @@ export async function exportToPdf(): Promise<Blob | null> {
           const zoneColor = hexToRgb(zoneColors[(zone - 1) % zoneColors.length]);
           const zoneLabel = String.fromCharCode(64 + zone);
           let prevX: number, prevY: number, startIdx: number, chain: PlacedDevice[];
-          if (comesFromPrevFloor) { const first = zoneSpeakers[0]; chain = buildDaisyChain(zoneSpeakers, first.x, first.y); prevX = mapper.toX(chain[0].x); prevY = mapper.toY(chain[0].y); startIdx = 1; }
-          else if (rackDevice) { chain = buildDaisyChain(zoneSpeakers, rackDevice.x, rackDevice.y); prevX = mapper.toX(rackDevice.x); prevY = mapper.toY(rackDevice.y); startIdx = 0; }
-          else { const first = zoneSpeakers[0]; chain = buildDaisyChain(zoneSpeakers, first.x, first.y); prevX = mapper.toX(chain[0].x); prevY = mapper.toY(chain[0].y); startIdx = 1; }
+
+          // Volume controls go first in the chain (inline before speakers)
+          const volumeControls = zoneSpeakers.filter(d => { const def = getDeviceById(d.deviceId); return def?.isVolumeControl; });
+          const speakers = zoneSpeakers.filter(d => { const def = getDeviceById(d.deviceId); return !def?.isVolumeControl; });
+
+          if (comesFromPrevFloor) {
+            const first = zoneSpeakers[0];
+            const vcChain = buildDaisyChain(volumeControls, first.x, first.y);
+            const lastVc = vcChain[vcChain.length - 1];
+            const spkChain = buildDaisyChain(speakers, lastVc?.x ?? first.x, lastVc?.y ?? first.y);
+            chain = [...vcChain, ...spkChain];
+            prevX = mapper.toX(chain[0].x); prevY = mapper.toY(chain[0].y); startIdx = 1;
+          } else if (rackDevice) {
+            const vcChain = buildDaisyChain(volumeControls, rackDevice.x, rackDevice.y);
+            const lastVc = vcChain[vcChain.length - 1];
+            const spkChain = buildDaisyChain(speakers, lastVc?.x ?? rackDevice.x, lastVc?.y ?? rackDevice.y);
+            chain = [...vcChain, ...spkChain];
+            prevX = mapper.toX(rackDevice.x); prevY = mapper.toY(rackDevice.y); startIdx = 0;
+          } else {
+            const first = zoneSpeakers[0];
+            chain = buildDaisyChain(zoneSpeakers, first.x, first.y);
+            prevX = mapper.toX(chain[0].x); prevY = mapper.toY(chain[0].y); startIdx = 1;
+          }
 
           for (let si = startIdx; si < chain.length; si++) {
             const chainDevice = chain[si]; const dx = mapper.toX(chainDevice.x); const dy = mapper.toY(chainDevice.y);

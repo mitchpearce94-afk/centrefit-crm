@@ -25,7 +25,7 @@ export const DEVICE_CATALOG: DeviceDefinition[] = [
   { id: 'rex', name: 'REX Request to Exit', category: 'security', cableType: 'sixcore', symbolType: 'flag', fillColor: '#1a1a1a', strokeColor: '#1a1a1a', symbolImage: '/plan-builder/symbols/rex.png' },
 
   // AUDIO
-  { id: 'volume-control', name: 'Volume Control', category: 'audio', cableType: 'speaker', symbolType: 'volume-control', fillColor: '#6600cc', strokeColor: '#9933ff', isVolumeControl: true, symbolImage: '/plan-builder/symbols/volume-control.svg' },
+  { id: 'volume-control', name: 'Volume Control', category: 'audio', cableType: 'speaker', symbolType: 'volume-control', fillColor: '#6600cc', strokeColor: '#9933ff', isVolumeControl: true, symbolImage: '/plan-builder/symbols/volume-control.png' },
   { id: 'speaker-roof', name: 'Speaker Roof Mount', category: 'audio', cableType: 'speaker', symbolType: 'speaker-circle', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-roof-1.png' },
   { id: 'speaker-roof-gear', name: 'Speaker Roof Mount (Gear)', category: 'audio', cableType: 'speaker', symbolType: 'speaker-gear', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-roof-2.png' },
   { id: 'speaker-wall', name: 'Speaker Wall Mount', category: 'audio', cableType: 'speaker', symbolType: 'speaker-wall-outline', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-wall-1.png' },
