@@ -103,7 +103,7 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
     reader.onload = (ev) => {
       if (ev.target?.result) {
         loadProject(ev.target.result as string);
-        usePlanStore.setState({ planFileId: null }); // new local file, not linked to existing DB row
+        // planFileId is now restored from the .cfp file itself — no need to null it
       }
     };
     reader.readAsText(file);
@@ -126,18 +126,19 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
           ? { ...f, backgroundImage: store.backgroundImage, backgroundWidth: store.backgroundWidth, backgroundHeight: store.backgroundHeight, pdfFileName: store.pdfFileName, devices: store.devices, commsRackId: store.commsRackId, whitewashRects: store.whitewashRects }
           : f
       );
+      const planId = store.planFileId || crypto.randomUUID();
       const cfpData = JSON.stringify({
         version: 2, floors: syncedFloors, activeFloorId: store.activeFloorId,
         titleBlock: tb, clientLogo: store.clientLogo, revisions: store.revisions,
         deviceScale: store.deviceScale,
         linkedJobId: store.linkedJobId, linkedJobNumber: store.linkedJobNumber,
+        planFileId: planId,
       });
 
       const planName = [tb.client, tb.projectName, tb.revision].filter(Boolean).join(' - ') || 'Untitled Plan';
       const exportData = generateQuoteExport();
 
       // Upload .cfp to Storage
-      const planId = store.planFileId || crypto.randomUUID();
       console.log(`[Plan Builder] Saving to cloud: planFileId=${store.planFileId}, using=${planId}`);
       const cfpBlob = new Blob([cfpData], { type: 'application/json' });
       const cfpPath = `plans/${planId}.cfp`;
