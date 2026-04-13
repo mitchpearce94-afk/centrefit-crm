@@ -100,14 +100,63 @@ const DEFAULT_TITLE_BLOCK: TitleBlockInfo = {
   notes: '',
 };
 
-function renumberDevices(devices: PlacedDevice[]): PlacedDevice[] {
-  // Number each group left-to-right (by X position)
-  const labelMap = new Map<string, number>(); // instanceId -> labelNum
-  for (const [groupName, groupIds] of Object.entries(NUMBERED_GROUPS)) {
-    const groupDevices = devices.filter(d => groupIds.includes(d.deviceId));
-    const sorted = [...groupDevices].sort((a, b) => a.x - b.x);
-    sorted.forEach((d, i) => labelMap.set(d.instanceId, i + 1));
+function nearestNeighbourChain(deviceList: PlacedDevice[], startX: number, startY: number): PlacedDevice[] {
+  if (deviceList.length === 0) return [];
+  const remaining = [...deviceList];
+  const chain: PlacedDevice[] = [];
+  let cx = startX, cy = startY;
+  while (remaining.length > 0) {
+    let nearestIdx = 0, nearestDist = Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const dx = remaining[i].x - cx, dy = remaining[i].y - cy;
+      const dist = dx * dx + dy * dy;
+      if (dist < nearestDist) { nearestDist = dist; nearestIdx = i; }
+    }
+    const nearest = remaining.splice(nearestIdx, 1)[0];
+    chain.push(nearest);
+    cx = nearest.x; cy = nearest.y;
   }
+  return chain;
+}
+
+function renumberDevices(devices: PlacedDevice[], commsRackId?: string | null): PlacedDevice[] {
+  const labelMap = new Map<string, number>(); // instanceId -> labelNum
+
+  for (const [groupName, groupIds] of Object.entries(NUMBERED_GROUPS)) {
+    if (groupName === 'speakers') {
+      // Speakers: number per zone, following cable run order
+      const speakerDevices = devices.filter(d => groupIds.includes(d.deviceId));
+      const rackDevice = commsRackId ? devices.find(d => d.instanceId === commsRackId) : null;
+      const startX = rackDevice?.x ?? 0;
+      const startY = rackDevice?.y ?? 0;
+
+      // Group by zone
+      const zoneMap = new Map<number, PlacedDevice[]>();
+      for (const d of speakerDevices) {
+        const zone = d.speakerZone || 1;
+        if (!zoneMap.has(zone)) zoneMap.set(zone, []);
+        zoneMap.get(zone)!.push(d);
+      }
+
+      // Number each zone's speakers in cable run order, starting at 1
+      for (const [, zoneSpeakers] of zoneMap) {
+        // Volume controls first, then speakers — same as CableLines
+        const vcs = zoneSpeakers.filter(d => { const def = getDeviceById(d.deviceId); return def?.isVolumeControl; });
+        const spks = zoneSpeakers.filter(d => { const def = getDeviceById(d.deviceId); return !def?.isVolumeControl; });
+        const vcChain = nearestNeighbourChain(vcs, startX, startY);
+        const lastVc = vcChain[vcChain.length - 1];
+        const spkChain = nearestNeighbourChain(spks, lastVc?.x ?? startX, lastVc?.y ?? startY);
+        const chain = [...vcChain, ...spkChain];
+        chain.forEach((d, i) => labelMap.set(d.instanceId, i + 1));
+      }
+    } else {
+      // Cameras, PIRs: left-to-right by X position
+      const groupDevices = devices.filter(d => groupIds.includes(d.deviceId));
+      const sorted = [...groupDevices].sort((a, b) => a.x - b.x);
+      sorted.forEach((d, i) => labelMap.set(d.instanceId, i + 1));
+    }
+  }
+
   return devices.map(d => {
     const num = labelMap.get(d.instanceId);
     if (num !== undefined) return { ...d, labelNum: num };
@@ -260,10 +309,10 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     const state = get();
     const instanceId = `device-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const newDevice: PlacedDevice = { instanceId, deviceId, x, y, rotation: 0, labelNum: 0 };
-    const newDevices = renumberDevices([...state.devices, newDevice]);
     const def = getDeviceById(deviceId);
     const isCommsRack = def?.isCommsRack ?? false;
     const newCommsRackId = isCommsRack ? instanceId : state.commsRackId;
+    const newDevices = renumberDevices([...state.devices, newDevice], newCommsRackId);
     const newHistory = state.history.slice(0, state.historyIndex + 1);
     newHistory.push({ devices: newDevices, commsRackId: newCommsRackId, whitewashRects: state.whitewashRects });
     const cableRuns = buildCableRuns(newDevices, newCommsRackId, getDeviceById);
@@ -272,7 +321,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
 
   moveDevice: (instanceId, x, y) => {
     const state = get();
-    const newDevices = renumberDevices(state.devices.map(d => d.instanceId === instanceId ? { ...d, x, y } : d));
+    const newDevices = renumberDevices(state.devices.map(d => d.instanceId === instanceId ? { ...d, x, y } : d), state.commsRackId);
     const cableRuns = buildCableRuns(newDevices, state.commsRackId, getDeviceById);
     const newHistory = state.history.slice(0, state.historyIndex + 1);
     newHistory.push({ devices: newDevices, commsRackId: state.commsRackId, whitewashRects: state.whitewashRects });
@@ -288,8 +337,8 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   deleteDevice: (instanceId) => {
     const state = get();
     const filtered = state.devices.filter(d => d.instanceId !== instanceId);
-    const newDevices = renumberDevices(filtered);
     const newCommsRackId = state.commsRackId === instanceId ? null : state.commsRackId;
+    const newDevices = renumberDevices(filtered, newCommsRackId);
     const cableRuns = buildCableRuns(newDevices, newCommsRackId, getDeviceById);
     const newHistory = state.history.slice(0, state.historyIndex + 1);
     newHistory.push({ devices: newDevices, commsRackId: newCommsRackId, whitewashRects: state.whitewashRects });
@@ -333,8 +382,8 @@ export const usePlanStore = create<PlanState>((set, get) => ({
 
   setSpeakerZone: (instanceId, zone) => {
     const state = get();
-    const newDevices = state.devices.map(d => d.instanceId === instanceId ? { ...d, speakerZone: zone } : d);
-    set({ devices: newDevices });
+    const updated = state.devices.map(d => d.instanceId === instanceId ? { ...d, speakerZone: zone } : d);
+    set({ devices: renumberDevices(updated, state.commsRackId) });
   },
 
   setConcreteMounted: (instanceId, value) => {
