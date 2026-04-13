@@ -428,11 +428,12 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     );
     const target = updatedFloors.find(f => f.id === floorId);
     if (!target) return;
-    const cableRuns = buildCableRuns(target.devices, target.commsRackId, getDeviceById);
+    const targetDevices = renumberDevices(target.devices, target.commsRackId);
+    const cableRuns = buildCableRuns(targetDevices, target.commsRackId, getDeviceById);
     set({
       floors: updatedFloors, activeFloorId: floorId,
       backgroundImage: target.backgroundImage, backgroundWidth: target.backgroundWidth, backgroundHeight: target.backgroundHeight,
-      pdfFileName: target.pdfFileName, devices: target.devices, commsRackId: target.commsRackId, cableRuns,
+      pdfFileName: target.pdfFileName, devices: targetDevices, commsRackId: target.commsRackId, cableRuns,
       whitewashRects: target.whitewashRects, selectedDeviceId: null,
       history: [{ devices: target.devices, commsRackId: target.commsRackId, whitewashRects: target.whitewashRects }], historyIndex: 0,
     });
@@ -528,11 +529,12 @@ export const usePlanStore = create<PlanState>((set, get) => ({
         const floors: FloorData[] = parsed.floors;
         const activeId = parsed.activeFloorId || floors[0]?.id || 'floor-1';
         const active = floors.find(f => f.id === activeId) || floors[0];
-        const cableRuns = buildCableRuns(active.devices || [], active.commsRackId || null, getDeviceById);
+        const activeDevices = renumberDevices(active.devices || [], active.commsRackId || null);
+        const cableRuns = buildCableRuns(activeDevices, active.commsRackId || null, getDeviceById);
         set({
           floors, activeFloorId: activeId,
           backgroundImage: active.backgroundImage || null, backgroundWidth: active.backgroundWidth || 1200, backgroundHeight: active.backgroundHeight || 800,
-          pdfFileName: active.pdfFileName || '', devices: active.devices || [], commsRackId: active.commsRackId || null,
+          pdfFileName: active.pdfFileName || '', devices: activeDevices, commsRackId: active.commsRackId || null,
           whitewashRects: active.whitewashRects || [], titleBlock: { ...DEFAULT_TITLE_BLOCK, ...(parsed.titleBlock || {}) },
           clientLogo: parsed.clientLogo || null, revisions: parsed.revisions || [], cableRuns,
           deviceScale: parsed.deviceScale || 1,
@@ -540,11 +542,12 @@ export const usePlanStore = create<PlanState>((set, get) => ({
           history: [{ devices: active.devices || [], commsRackId: active.commsRackId || null, whitewashRects: active.whitewashRects || [] }], historyIndex: 0,
         });
       } else {
-        const cableRuns = buildCableRuns(parsed.devices || [], parsed.commsRackId || null, getDeviceById);
+        const v1Devices = renumberDevices(parsed.devices || [], parsed.commsRackId || null);
+        const cableRuns = buildCableRuns(v1Devices, parsed.commsRackId || null, getDeviceById);
         const floor: FloorData = {
           id: 'floor-1', name: 'Ground Floor',
           backgroundImage: parsed.backgroundImage || null, backgroundWidth: parsed.backgroundWidth || 1200, backgroundHeight: parsed.backgroundHeight || 800,
-          pdfFileName: parsed.pdfFileName || '', devices: parsed.devices || [], commsRackId: parsed.commsRackId || null, whitewashRects: parsed.whitewashRects || [],
+          pdfFileName: parsed.pdfFileName || '', devices: v1Devices, commsRackId: parsed.commsRackId || null, whitewashRects: parsed.whitewashRects || [],
         };
         set({
           floors: [floor], activeFloorId: 'floor-1',
