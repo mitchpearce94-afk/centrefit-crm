@@ -73,6 +73,8 @@ interface PlanState {
   updateTitleBlock: (info: Partial<TitleBlockInfo>) => void;
   setClientLogo: (logo: string | null) => void;
   setSpeakerZone: (instanceId: string, zone: number) => void;
+  setConcreteMounted: (instanceId: string, value: boolean) => void;
+  setProvisional: (instanceId: string, value: boolean) => void;
   addWhitewashRect: (x: number, y: number, width: number, height: number) => void;
   removeWhitewashRect: (id: string) => void;
   addFloor: (name: string) => void;
@@ -338,6 +340,16 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     const state = get();
     const newDevices = state.devices.map(d => d.instanceId === instanceId ? { ...d, speakerZone: zone } : d);
     set({ devices: newDevices });
+  },
+
+  setConcreteMounted: (instanceId, value) => {
+    const state = get();
+    set({ devices: state.devices.map(d => d.instanceId === instanceId ? { ...d, concreteMounted: value } : d) });
+  },
+
+  setProvisional: (instanceId, value) => {
+    const state = get();
+    set({ devices: state.devices.map(d => d.instanceId === instanceId ? { ...d, provisional: value } : d) });
   },
 
   updateTitleBlock: (info) => {

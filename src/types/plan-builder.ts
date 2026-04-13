@@ -51,6 +51,8 @@ export interface PlacedDevice {
   rotation: number;
   labelNum: number;
   speakerZone?: number;
+  concreteMounted?: boolean;
+  provisional?: boolean;
 }
 
 export interface CableRun {

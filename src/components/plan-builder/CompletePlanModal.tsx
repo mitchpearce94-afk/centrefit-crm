@@ -42,6 +42,7 @@ const DEVICE_LABELS: Record<string, { name: string; category: string }> = {
   cabinet_42ru: { name: '42RU Cabinet', category: 'data' },
   intercom_master: { name: 'Intercom Master', category: 'av' },
   intercom_slave: { name: 'Intercom Slave', category: 'av' },
+  volume_control: { name: 'Volume Control', category: 'audio' },
 };
 
 export default function CompletePlanModal({ onClose }: Props) {

@@ -34,6 +34,7 @@ const PLAN_TO_QUOTE_MAP: Record<string, string> = {
   'server-42ru': 'cabinet_42ru',
   'intercom-master': 'intercom_master',
   'intercom-slave': 'intercom_slave',
+  'volume-control': 'volume_control',
 };
 
 export interface QuoteExportData {
@@ -48,7 +49,7 @@ export interface QuoteExportData {
     date: string;
   };
   deviceCounts: Record<string, number>;
-  siteInfo: { door_count: number };
+  siteInfo: { door_count: number; concrete_mount_black?: number; concrete_mount_white?: number };
   floors: Array<{ name: string; deviceCounts: Record<string, number> }>;
 }
 
@@ -67,6 +68,8 @@ export function generateQuoteExport(): QuoteExportData {
   let doorCount = 0;
   let totalTgCameras = 0;
   let totalTgSensors = 0;
+  let concreteMountBlack = 0;
+  let concreteMountWhite = 0;
 
   for (const floor of syncedFloors) {
     const floorCounts: Record<string, number> = {};
@@ -76,6 +79,8 @@ export function generateQuoteExport(): QuoteExportData {
     for (const device of floor.devices) {
       const def = getDeviceById(device.deviceId);
       if (!def || def.isCommsRack) continue;
+      // Provisional devices = cable run only, not counted in quote
+      if (device.provisional) continue;
       if (device.deviceId === 'cam-tg') { floorTgCameras++; totalTgCameras++; continue; }
       if (device.deviceId === 'sensor-tg') { floorTgSensors++; totalTgSensors++; continue; }
       const quoteCode = PLAN_TO_QUOTE_MAP[device.deviceId];
@@ -83,6 +88,11 @@ export function generateQuoteExport(): QuoteExportData {
       globalCounts[quoteCode] = (globalCounts[quoteCode] || 0) + 1;
       floorCounts[quoteCode] = (floorCounts[quoteCode] || 0) + 1;
       if (device.deviceId === 'door-lock' || device.deviceId === 'integration-cable') doorCount++;
+      // Count concrete mounted cameras by colour
+      if (device.concreteMounted) {
+        if (device.deviceId === 'cam-black') concreteMountBlack++;
+        else if (device.deviceId === 'cam-white') concreteMountWhite++;
+      }
     }
 
     const floorTgSystems = Math.max(floorTgCameras, floorTgSensors);
@@ -105,7 +115,7 @@ export function generateQuoteExport(): QuoteExportData {
       date: titleBlock.date,
     },
     deviceCounts: globalCounts,
-    siteInfo: { door_count: doorCount },
+    siteInfo: { door_count: doorCount, concrete_mount_black: concreteMountBlack, concrete_mount_white: concreteMountWhite },
     floors: floorBreakdowns,
   };
 }

@@ -65,6 +65,7 @@ export const DEVICE_TYPES: DeviceType[] = [
   // Audio System (2) — column 2
   { code: 'speaker_roof', legend: 'Speaker Roof Mount', cable: 'speaker_cable', category: 'Audio System' },
   { code: 'speaker_wall', legend: 'Speaker Wall Mount', cable: 'speaker_cable', category: 'Audio System' },
+  { code: 'volume_control', legend: 'Volume Control', cable: 'speaker_cable', category: 'Audio System' },
   // Infrastructure (4) — column 2
   { code: 'cabinet_9ru', legend: 'Server Cabinet 9RU', cable: 'n-a', category: 'Infrastructure' },
   { code: 'cabinet_27ru', legend: 'Server Cabinet 27RU', cable: 'n-a', category: 'Infrastructure' },

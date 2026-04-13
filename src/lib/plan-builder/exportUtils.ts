@@ -392,6 +392,17 @@ export async function exportToPdf(): Promise<Blob | null> {
           const labelW = fontBold.widthOfTextAtSize(labelText, labelSize);
           page.drawText(labelText, { x: bubbleX - labelW / 2, y: bubbleY - labelSize * 0.35, size: labelSize, font: fontBold, color: rgb(0, 0, 0) });
         }
+
+        // Provisional label
+        if (device.provisional && pageDef.view !== 'master') {
+          const provText = 'Provisional Cable Run Only';
+          const provSize = mapper.toSize(18);
+          const provW = fontBold.widthOfTextAtSize(provText, provSize);
+          const provBoxH = provSize + 6;
+          const provY = py - sz / 2 - mapper.toSize(20) - provBoxH;
+          page.drawRectangle({ x: px - provW / 2 - 4, y: provY, width: provW + 8, height: provBoxH, color: rgb(1, 1, 1), borderColor: rgb(0.95, 0.6, 0.1), borderWidth: 0.8 });
+          page.drawText(provText, { x: px - provW / 2, y: provY + 2, size: provSize, font: fontBold, color: rgb(0.95, 0.6, 0.1) });
+        }
       }
 
       if (multiFloor) {

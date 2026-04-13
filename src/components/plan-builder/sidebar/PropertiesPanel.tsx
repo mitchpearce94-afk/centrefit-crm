@@ -11,7 +11,7 @@ export default function PropertiesPanel() {
     titleBlock, updateTitleBlock,
     clientLogo, setClientLogo,
     rotateDevice, deleteDevice, setCommsRack,
-    setSpeakerZone,
+    setSpeakerZone, setConcreteMounted, setProvisional,
   } = usePlanStore();
 
   const selectedDevice = selectedDeviceId ? devices.find(d => d.instanceId === selectedDeviceId) : null;
@@ -39,6 +39,22 @@ export default function PropertiesPanel() {
                   className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500">
                   {[1, 2, 3, 4, 5, 6].map(z => <option key={z} value={z}>Zone {z}{z === 1 ? ' (A)' : ` (${String.fromCharCode(64 + z)})`}</option>)}
                 </select>
+              </div>
+            )}
+            {!isCommsRack && (
+              <div className="bg-gray-800 rounded p-2 space-y-1.5">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={!!selectedDevice.concreteMounted}
+                    onChange={e => setConcreteMounted(selectedDevice.instanceId, e.target.checked)}
+                    className="accent-blue-500 cursor-pointer" />
+                  <span className="text-gray-300">Concrete Mounted</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={!!selectedDevice.provisional}
+                    onChange={e => setProvisional(selectedDevice.instanceId, e.target.checked)}
+                    className="accent-amber-500 cursor-pointer" />
+                  <span className="text-gray-300">Provisional</span>
+                </label>
               </div>
             )}
             <div className="flex flex-col gap-1 pt-1">
