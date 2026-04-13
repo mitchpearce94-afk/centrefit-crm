@@ -25,7 +25,8 @@ export type SymbolType =
   | 'labeled-square'
   | 'intercom-grid'
   | 'circle-arrow'
-  | 'flag';
+  | 'flag'
+  | 'volume-control';
 
 export interface DeviceDefinition {
   id: string;
@@ -37,6 +38,7 @@ export interface DeviceDefinition {
   strokeColor?: string;
   label?: string;
   isCommsRack?: boolean;
+  isVolumeControl?: boolean;
   symbolImage?: string;
   symbolScale?: number;
 }

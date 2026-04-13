@@ -64,7 +64,23 @@ export default function CableLines({ devices, commsRackId }: Props) {
   const allSegments: Array<{ fromX: number; fromY: number; toX: number; toY: number; label: string; color: string; key: string }> = [];
 
   for (const [zone, zoneSpeakers] of zoneMap) {
-    const chain = buildDaisyChain(zoneSpeakers, rackDevice.x, rackDevice.y);
+    // Volume controls go first in the chain (inline before speakers)
+    const volumeControls = zoneSpeakers.filter(d => {
+      const def = getDeviceById(d.deviceId);
+      return def?.isVolumeControl;
+    });
+    const speakers = zoneSpeakers.filter(d => {
+      const def = getDeviceById(d.deviceId);
+      return !def?.isVolumeControl;
+    });
+    // Route: comms rack → volume control(s) → speakers (daisy chained)
+    const vcChain = buildDaisyChain(volumeControls, rackDevice.x, rackDevice.y);
+    const lastVc = vcChain[vcChain.length - 1];
+    const spkStartX = lastVc?.x ?? rackDevice.x;
+    const spkStartY = lastVc?.y ?? rackDevice.y;
+    const spkChain = buildDaisyChain(speakers, spkStartX, spkStartY);
+    const chain = [...vcChain, ...spkChain];
+
     const zoneColor = ZONE_COLORS[(zone - 1) % ZONE_COLORS.length];
     const zoneLabel = String.fromCharCode(64 + zone);
     let prevX = rackDevice.x;

@@ -33,7 +33,7 @@ export default function PropertiesPanel() {
             </div>
             {isSpeaker && !isCommsRack && (
               <div className="bg-gray-800 rounded p-2">
-                <div className="text-gray-400 mb-1">Speaker Zone</div>
+                <div className="text-gray-400 mb-1">{selectedDef?.isVolumeControl ? 'Volume Control Zone' : 'Speaker Zone'}</div>
                 <select value={selectedDevice?.speakerZone || 1}
                   onChange={e => setSpeakerZone(selectedDevice!.instanceId, parseInt(e.target.value))}
                   className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500">
