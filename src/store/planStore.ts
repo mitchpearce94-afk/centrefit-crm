@@ -101,14 +101,16 @@ const DEFAULT_TITLE_BLOCK: TitleBlockInfo = {
 };
 
 function renumberDevices(devices: PlacedDevice[]): PlacedDevice[] {
-  const groupCounters: Record<string, number> = {};
+  // Number each group left-to-right (by X position)
+  const labelMap = new Map<string, number>(); // instanceId -> labelNum
+  for (const [groupName, groupIds] of Object.entries(NUMBERED_GROUPS)) {
+    const groupDevices = devices.filter(d => groupIds.includes(d.deviceId));
+    const sorted = [...groupDevices].sort((a, b) => a.x - b.x);
+    sorted.forEach((d, i) => labelMap.set(d.instanceId, i + 1));
+  }
   return devices.map(d => {
-    for (const [groupName, groupIds] of Object.entries(NUMBERED_GROUPS)) {
-      if (groupIds.includes(d.deviceId)) {
-        groupCounters[groupName] = (groupCounters[groupName] || 0) + 1;
-        return { ...d, labelNum: groupCounters[groupName] };
-      }
-    }
+    const num = labelMap.get(d.instanceId);
+    if (num !== undefined) return { ...d, labelNum: num };
     return d;
   });
 }
@@ -257,15 +259,8 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   placeDevice: (deviceId, x, y) => {
     const state = get();
     const instanceId = `device-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    let labelNum = 0;
-    for (const [, groupIds] of Object.entries(NUMBERED_GROUPS)) {
-      if (groupIds.includes(deviceId)) {
-        labelNum = state.devices.filter(d => groupIds.includes(d.deviceId)).length + 1;
-        break;
-      }
-    }
-    const newDevice: PlacedDevice = { instanceId, deviceId, x, y, rotation: 0, labelNum };
-    const newDevices = [...state.devices, newDevice];
+    const newDevice: PlacedDevice = { instanceId, deviceId, x, y, rotation: 0, labelNum: 0 };
+    const newDevices = renumberDevices([...state.devices, newDevice]);
     const def = getDeviceById(deviceId);
     const isCommsRack = def?.isCommsRack ?? false;
     const newCommsRackId = isCommsRack ? instanceId : state.commsRackId;
@@ -277,7 +272,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
 
   moveDevice: (instanceId, x, y) => {
     const state = get();
-    const newDevices = state.devices.map(d => d.instanceId === instanceId ? { ...d, x, y } : d);
+    const newDevices = renumberDevices(state.devices.map(d => d.instanceId === instanceId ? { ...d, x, y } : d));
     const cableRuns = buildCableRuns(newDevices, state.commsRackId, getDeviceById);
     const newHistory = state.history.slice(0, state.historyIndex + 1);
     newHistory.push({ devices: newDevices, commsRackId: state.commsRackId, whitewashRects: state.whitewashRects });
