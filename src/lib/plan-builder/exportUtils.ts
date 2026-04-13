@@ -239,15 +239,34 @@ export async function exportToPdf(): Promise<Blob | null> {
   }
 
   const { NUMBERED_GROUPS } = await import('@/types/plan-builder');
+  const speakerGroupIds = NUMBERED_GROUPS['speakers'] || [];
+  // For cameras/PIRs: running count across floors
+  // For speakers: running count per zone across floors
   const floorLabelOffsets: Map<string, Record<string, number>> = new Map();
+  const floorSpeakerZoneOffsets: Map<string, Map<number, number>> = new Map();
   const runningGroupCounts: Record<string, number> = {};
+  const runningZoneCounts: Map<number, number> = new Map();
   for (const floor of exportFloors) {
     const offsets: Record<string, number> = {};
-    for (const groupName of Object.keys(NUMBERED_GROUPS)) offsets[groupName] = runningGroupCounts[groupName] || 0;
+    for (const groupName of Object.keys(NUMBERED_GROUPS)) {
+      if (groupName === 'speakers') continue; // handled per-zone
+      offsets[groupName] = runningGroupCounts[groupName] || 0;
+    }
     floorLabelOffsets.set(floor.id, offsets);
+    floorSpeakerZoneOffsets.set(floor.id, new Map(runningZoneCounts));
+
     for (const [groupName, groupIds] of Object.entries(NUMBERED_GROUPS)) {
-      const count = floor.devices.filter(d => groupIds.includes(d.deviceId)).length;
-      runningGroupCounts[groupName] = (runningGroupCounts[groupName] || 0) + count;
+      if (groupName === 'speakers') {
+        // Count per zone
+        for (const d of floor.devices) {
+          if (!groupIds.includes(d.deviceId)) continue;
+          const zone = d.speakerZone || 1;
+          runningZoneCounts.set(zone, (runningZoneCounts.get(zone) || 0) + 1);
+        }
+      } else {
+        const count = floor.devices.filter(d => groupIds.includes(d.deviceId)).length;
+        runningGroupCounts[groupName] = (runningGroupCounts[groupName] || 0) + count;
+      }
     }
   }
 
@@ -374,8 +393,15 @@ export async function exportToPdf(): Promise<Blob | null> {
 
         if (pageDef.view !== 'master' && device.labelNum && device.labelNum > 0 && device.instanceId !== commsRackId) {
           let globalNum = device.labelNum;
-          for (const [groupName, groupIds] of Object.entries(NUMBERED_GROUPS)) {
-            if (groupIds.includes(device.deviceId)) { globalNum = device.labelNum + (labelOffsets[groupName] || 0); break; }
+          if (speakerGroupIds.includes(device.deviceId)) {
+            // Speakers: offset by zone count from previous floors
+            const zoneOffsets = floorSpeakerZoneOffsets.get(floor.id);
+            const zone = device.speakerZone || 1;
+            globalNum = device.labelNum + (zoneOffsets?.get(zone) || 0);
+          } else {
+            for (const [groupName, groupIds] of Object.entries(NUMBERED_GROUPS)) {
+              if (groupIds.includes(device.deviceId)) { globalNum = device.labelNum + (labelOffsets[groupName] || 0); break; }
+            }
           }
           const labelText = String(globalNum);
           const labelSize = mapper.toSize(40 * dScale);
