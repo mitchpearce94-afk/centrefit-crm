@@ -81,7 +81,7 @@ export function generateQuoteExport(): QuoteExportData {
       if (!def || def.isCommsRack) continue;
       // Provisional devices = cable run only, not counted in quote
       if (device.provisional) continue;
-      if (device.deviceId === 'cam-tg') { floorTgCameras++; totalTgCameras++; continue; }
+      if (device.deviceId === 'cam-tg') { floorTgCameras++; totalTgCameras++; if (device.concreteMounted) concreteMountWhite++; continue; }
       if (device.deviceId === 'sensor-tg') { floorTgSensors++; totalTgSensors++; continue; }
       const quoteCode = PLAN_TO_QUOTE_MAP[device.deviceId];
       if (!quoteCode) continue;
