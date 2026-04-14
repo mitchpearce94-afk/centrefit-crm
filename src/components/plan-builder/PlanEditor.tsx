@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import SymbolPalette from '@/components/plan-builder/sidebar/SymbolPalette';
 import PropertiesPanel from '@/components/plan-builder/sidebar/PropertiesPanel';
@@ -19,8 +19,10 @@ const PlanCanvas = dynamic(() => import('@/components/plan-builder/canvas/PlanCa
 
 export default function PlanEditor({ jobs = [] }: { jobs?: JobOption[] }) {
   const isDirty = usePlanStore(s => s.isDirty);
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const [pendingPopState, setPendingPopState] = useState(false);
 
-  // Browser tab close / refresh
+  // Browser tab close / refresh (can only use native dialog here)
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isDirty) {
@@ -31,7 +33,7 @@ export default function PlanEditor({ jobs = [] }: { jobs?: JobOption[] }) {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isDirty]);
 
-  // Intercept in-app link clicks (Next.js client-side navigation)
+  // Intercept in-app link clicks and back/forward
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (!usePlanStore.getState().isDirty) return;
@@ -39,22 +41,16 @@ export default function PlanEditor({ jobs = [] }: { jobs?: JobOption[] }) {
       if (!anchor) return;
       const href = anchor.getAttribute('href');
       if (!href || href.startsWith('#') || href.startsWith('javascript')) return;
-      // Only intercept same-origin navigation away from the plan builder
       if (anchor.origin !== window.location.origin) return;
-      if (href.includes('/plans/new')) return; // staying on same page
+      if (href.includes('/plans/new')) return;
       e.preventDefault();
       e.stopPropagation();
-      if (window.confirm('You have unsaved changes. Are you sure you want to leave?')) {
-        usePlanStore.getState().markClean();
-        window.location.href = href;
-      }
+      setPendingHref(href);
     };
-    // Browser back/forward button
     const handlePopState = () => {
       if (!usePlanStore.getState().isDirty) return;
-      if (!window.confirm('You have unsaved changes. Are you sure you want to leave?')) {
-        window.history.pushState(null, '', window.location.href);
-      }
+      window.history.pushState(null, '', window.location.href);
+      setPendingPopState(true);
     };
     window.addEventListener('click', handleClick, true);
     window.addEventListener('popstate', handlePopState);
@@ -63,6 +59,25 @@ export default function PlanEditor({ jobs = [] }: { jobs?: JobOption[] }) {
       window.removeEventListener('popstate', handlePopState);
     };
   }, []);
+
+  const handleLeave = useCallback(() => {
+    usePlanStore.getState().markClean();
+    if (pendingHref) {
+      const href = pendingHref;
+      setPendingHref(null);
+      window.location.href = href;
+    } else if (pendingPopState) {
+      setPendingPopState(false);
+      window.history.back();
+    }
+  }, [pendingHref, pendingPopState]);
+
+  const handleStay = useCallback(() => {
+    setPendingHref(null);
+    setPendingPopState(false);
+  }, []);
+
+  const showModal = pendingHref !== null || pendingPopState;
 
   return (
     <div className="flex flex-col bg-gray-950 text-white overflow-hidden -m-4 md:-m-6" style={{ height: 'calc(100vh - 0px)' }}>
@@ -93,6 +108,32 @@ export default function PlanEditor({ jobs = [] }: { jobs?: JobOption[] }) {
       <div className="flex-shrink-0">
         <TitleBlock />
       </div>
+
+      {/* Unsaved changes modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999]">
+          <div className="bg-gray-800 rounded-lg border border-gray-600 w-[420px] shadow-2xl">
+            <div className="px-6 py-5">
+              <h3 className="text-white font-bold text-base mb-2">Unsaved Changes</h3>
+              <p className="text-gray-400 text-sm">You have unsaved changes to this plan. If you leave now, your changes will be lost.</p>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-700 flex items-center justify-end gap-3">
+              <button
+                onClick={handleStay}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded transition-colors"
+              >
+                Stay on Page
+              </button>
+              <button
+                onClick={handleLeave}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded transition-colors"
+              >
+                Leave Without Saving
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
