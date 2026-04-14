@@ -216,11 +216,11 @@ function drawDynamicLegend(
   // Notes header "NOTES" sits at y≈1076 from top → pageH - 1076 from bottom
   const iconSize = 18;
   const rowHeight = 27;       // matches ~27px spacing between legend items in template
-  const iconX = 2248;         // left edge of icon column
-  const textX = 2302;         // left edge of text column
+  const iconX = 2249;         // left edge of icon column
+  const textX = 2275;         // left edge of text column (tighter to icon)
   const startY = pageH - 155; // first item row (below LEGEND header)
   const minY = pageH - 1050;  // stop before NOTES area
-  const fontSize = 7.5;
+  const fontSize = 11;        // 50% larger than original 7.5
 
   // Collect unique device types visible on this page view
   const visible = getVisibleDevices(allDevices, view, commsRackId);
@@ -252,15 +252,17 @@ function drawDynamicLegend(
     for (const item of items) {
       if (y - rowHeight < minY) break;
 
-      // Draw symbol image centered in icon column
+      // Vertically center icon and text within the row
+      const rowCenterY = y - rowHeight / 2;
+
+      // Draw symbol image centered on row
       if (item.symbolImage && symbolCache.has(item.symbolImage)) {
         const img = symbolCache.get(item.symbolImage)!;
-        const ix = iconX + (20 - iconSize) / 2;
-        page.drawImage(img, { x: ix, y: y - iconSize + 2, width: iconSize, height: iconSize });
+        page.drawImage(img, { x: iconX, y: rowCenterY - iconSize / 2, width: iconSize, height: iconSize });
       }
 
-      // Draw device name
-      page.drawText(item.name, { x: textX, y: y - iconSize + 5, size: fontSize, font: fontRegular, color: rgb(0, 0, 0) });
+      // Draw device name — baseline aligned to icon center
+      page.drawText(item.name, { x: textX, y: rowCenterY - fontSize / 3, size: fontSize, font: fontRegular, color: rgb(0, 0, 0) });
       y -= rowHeight;
     }
   }
