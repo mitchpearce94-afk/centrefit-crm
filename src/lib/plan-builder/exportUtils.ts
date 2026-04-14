@@ -31,9 +31,9 @@ const TB = {
   clientY: 11500, projectY: 11960, addressY: 12500,
   dateY: 13310, drawingNoY: 13642, revisionY: 13930,
   mainFontSize: 130, smallFontSize: 80,
-  // Logo box boundaries (from template title block grid)
-  logoBoxX: 120, logoBoxY: 12800, logoBoxW: 18320, logoBoxH: 1240,
-  logoX: 9000, logoY: 12550, logoW: 5400, logoH: 1800,
+  // Client logo box — the "CLIENT" cell in the title block grid
+  // PDF coords: x=1180-1623, y=1536-1686 → SVG viewBox (×8.333)
+  logoBoxX: 9833, logoBoxY: 12800, logoBoxW: 3692, logoBoxH: 1250,
 };
 
 function hexToRgb(hex: string) {
