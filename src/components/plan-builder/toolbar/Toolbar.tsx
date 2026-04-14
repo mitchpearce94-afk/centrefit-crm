@@ -171,6 +171,10 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
       } else {
         usePlanStore.setState({ planFileId: planId });
         usePlanStore.getState().markClean();
+        // Update URL to reflect the saved plan ID so refresh works
+        if (window.location.pathname === '/plans/new') {
+          window.history.replaceState(null, '', `/plans/${planId}`);
+        }
       }
     } catch (err) {
       console.error('Cloud save error:', err);

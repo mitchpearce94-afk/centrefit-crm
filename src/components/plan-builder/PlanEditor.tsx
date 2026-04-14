@@ -42,7 +42,7 @@ export default function PlanEditor({ jobs = [] }: { jobs?: JobOption[] }) {
       const href = anchor.getAttribute('href');
       if (!href || href.startsWith('#') || href.startsWith('javascript')) return;
       if (anchor.origin !== window.location.origin) return;
-      if (href.includes('/plans/new')) return;
+      if (href === window.location.pathname) return; // same page
       e.preventDefault();
       e.stopPropagation();
       setPendingHref(href);
