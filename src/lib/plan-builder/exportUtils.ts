@@ -378,6 +378,13 @@ export async function exportToPdf(): Promise<Blob | null> {
     const labelOffsets = floorLabelOffsets.get(floor.id) || {};
 
     for (const pageDef of DEVICE_PAGES) {
+      // Skip non-master pages that have no cable-run devices (only comms rack or empty)
+      if (pageDef.view !== 'master') {
+        const preCheck = getVisibleDevices(devices, pageDef.view, commsRackId);
+        const hasCableDevices = preCheck.some(d => d.instanceId !== commsRackId);
+        if (!hasCableDevices) continue;
+      }
+
       const svgText = await loadAndInjectSvg(pageDef.svgPage, titleBlock, clientLogo, revisions, titleBlock.notes);
       const templatePng = await renderSvgToPng(svgText);
       const templateBytes = await dataUrlToBytes(templatePng);
