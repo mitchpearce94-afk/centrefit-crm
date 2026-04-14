@@ -20,6 +20,7 @@ const PlanCanvas = dynamic(() => import('@/components/plan-builder/canvas/PlanCa
 export default function PlanEditor({ jobs = [] }: { jobs?: JobOption[] }) {
   const isDirty = usePlanStore(s => s.isDirty);
 
+  // Browser tab close / refresh
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isDirty) {
@@ -29,6 +30,39 @@ export default function PlanEditor({ jobs = [] }: { jobs?: JobOption[] }) {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isDirty]);
+
+  // Intercept in-app link clicks (Next.js client-side navigation)
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (!usePlanStore.getState().isDirty) return;
+      const anchor = (e.target as HTMLElement).closest('a[href]') as HTMLAnchorElement | null;
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('#') || href.startsWith('javascript')) return;
+      // Only intercept same-origin navigation away from the plan builder
+      if (anchor.origin !== window.location.origin) return;
+      if (href.includes('/plans/new')) return; // staying on same page
+      e.preventDefault();
+      e.stopPropagation();
+      if (window.confirm('You have unsaved changes. Are you sure you want to leave?')) {
+        usePlanStore.getState().markClean();
+        window.location.href = href;
+      }
+    };
+    // Browser back/forward button
+    const handlePopState = () => {
+      if (!usePlanStore.getState().isDirty) return;
+      if (!window.confirm('You have unsaved changes. Are you sure you want to leave?')) {
+        window.history.pushState(null, '', window.location.href);
+      }
+    };
+    window.addEventListener('click', handleClick, true);
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('click', handleClick, true);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
 
   return (
     <div className="flex flex-col bg-gray-950 text-white overflow-hidden -m-4 md:-m-6" style={{ height: 'calc(100vh - 0px)' }}>
