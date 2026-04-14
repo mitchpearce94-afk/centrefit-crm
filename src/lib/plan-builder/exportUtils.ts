@@ -235,6 +235,7 @@ function drawDynamicLegend(
   const fontSize = 11;        // 50% larger than original 7.5
 
   // Collect unique device types visible on this page view
+  // Infrastructure devices (cableType 'none') appear on every page
   const visible = getVisibleDevices(allDevices, view, commsRackId);
   const seen = new Set<string>();
   const deviceIds: string[] = [];
@@ -243,6 +244,14 @@ function drawDynamicLegend(
     if (seen.has(d.deviceId)) continue;
     seen.add(d.deviceId);
     deviceIds.push(d.deviceId);
+  }
+  for (const d of allDevices) {
+    if (seen.has(d.deviceId)) continue;
+    const def = getDeviceById(d.deviceId);
+    if (def && def.cableType === 'none' && !def.isCommsRack) {
+      seen.add(d.deviceId);
+      deviceIds.push(d.deviceId);
+    }
   }
   if (deviceIds.length === 0) return;
 
