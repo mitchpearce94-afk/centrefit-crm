@@ -31,6 +31,8 @@ const TB = {
   clientY: 11500, projectY: 11960, addressY: 12500,
   dateY: 13310, drawingNoY: 13642, revisionY: 13930,
   mainFontSize: 130, smallFontSize: 80,
+  // Logo box boundaries (from template title block grid)
+  logoBoxX: 120, logoBoxY: 12800, logoBoxW: 18320, logoBoxH: 1240,
   logoX: 9000, logoY: 12550, logoW: 5400, logoH: 1800,
 };
 
@@ -108,7 +110,17 @@ async function loadAndInjectSvg(pageNum: number, titleBlock: TitleBlockInfo, cli
     const weight = f.bold ? ' font-weight="bold"' : '';
     injection += `<text x="${f.x}" y="${f.y}" font-family="Arial, sans-serif" font-size="${f.fontSize}"${weight} text-anchor="${f.anchor}" fill="black">${escapeXml(f.text)}</text>\n`;
   }
-  if (clientLogo) injection += `<image x="${TB.logoX}" y="${TB.logoY}" width="${TB.logoW}" height="${TB.logoH}" href="${clientLogo}" preserveAspectRatio="xMidYMid meet"/>\n`;
+  if (clientLogo) {
+    // Constrain logo to the title block box — centered within, never overflows
+    const clipId = `logo-clip-${pageNum}`;
+    const pad = 80; // padding inside box
+    const lx = TB.logoBoxX + pad;
+    const ly = TB.logoBoxY + pad;
+    const lw = TB.logoBoxW - pad * 2;
+    const lh = TB.logoBoxH - pad * 2;
+    injection += `<clipPath id="${clipId}"><rect x="${TB.logoBoxX}" y="${TB.logoBoxY}" width="${TB.logoBoxW}" height="${TB.logoBoxH}"/></clipPath>\n`;
+    injection += `<image x="${lx}" y="${ly}" width="${lw}" height="${lh}" href="${clientLogo}" preserveAspectRatio="xMidYMid meet" clip-path="url(#${clipId})"/>\n`;
+  }
 
   injection += `<rect x="160" y="13150" width="5750" height="900" fill="white"/>\n`;
   if (revisions && revisions.length > 0) {
