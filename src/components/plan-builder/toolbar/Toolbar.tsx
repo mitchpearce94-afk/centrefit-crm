@@ -133,6 +133,7 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
         deviceScale: store.deviceScale,
         linkedJobId: store.linkedJobId, linkedJobNumber: store.linkedJobNumber,
         planFileId: planId,
+        customDevices: store.customDevices,
       });
 
       const planName = [tb.client, tb.projectName, tb.revision].filter(Boolean).join(' - ') || 'Untitled Plan';
@@ -169,6 +170,7 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
         alert('Failed to save plan to cloud: ' + error.message);
       } else {
         usePlanStore.setState({ planFileId: planId });
+        usePlanStore.getState().markClean();
       }
     } catch (err) {
       console.error('Cloud save error:', err);

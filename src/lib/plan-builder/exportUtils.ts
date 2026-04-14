@@ -1,7 +1,7 @@
 import { PDFDocument, PDFPage, PDFImage, PDFFont, StandardFonts, rgb, degrees } from 'pdf-lib';
 import { usePlanStore } from '@/store/planStore';
 import { getDeviceById } from '@/lib/plan-builder/devices';
-import { PlacedDevice, TitleBlockInfo, FloorData, RevisionEntry } from '@/types/plan-builder';
+import { PlacedDevice, TitleBlockInfo, FloorData, RevisionEntry, DeviceCategory } from '@/types/plan-builder';
 
 type PlanView = 'master' | 'cat6' | 'sixcore' | 'speaker';
 
@@ -197,6 +197,84 @@ function drawRunBadge(page: PDFPage, x: number, y: number, label: string, color:
   page.drawText(label, { x: x - textW / 2, y: y - fontSize / 3, size: fontSize, font, color });
 }
 
+const LEGEND_CATEGORY_ORDER: DeviceCategory[] = ['cameras', 'security', 'audio', 'data', 'av'];
+const LEGEND_CATEGORY_COLORS: Record<string, ReturnType<typeof rgb>> = {
+  cameras: rgb(0.2, 0.6, 1), security: rgb(1, 0.27, 0.27), audio: rgb(0.27, 0.8, 0.27),
+  data: rgb(0.2, 0.6, 1), av: rgb(0.2, 0.6, 1),
+};
+const LEGEND_CATEGORY_NAMES: Record<string, string> = {
+  cameras: 'CAMERAS', security: 'SECURITY', audio: 'AUDIO', data: 'DATA / COMMS', av: 'AV / INTERCOM',
+};
+
+function drawDynamicLegend(
+  page: PDFPage, allDevices: PlacedDevice[], view: PlanView, commsRackId: string | null,
+  symbolCache: Map<string, PDFImage>, fontBold: PDFFont, fontRegular: PDFFont,
+) {
+  const pageH = page.getHeight();
+  const iconSize = 14;
+  const rowHeight = 20;
+  const catHeaderHeight = 22;
+  const iconX = 2210;
+  const textX = iconX + iconSize + 5;
+  const startY = pageH - 105;
+  const minY = 620; // don't overflow into notes area
+  const fontSize = 6.5;
+  const catFontSize = 7;
+
+  // Collect unique device types visible on this page view
+  const visible = getVisibleDevices(allDevices, view, commsRackId);
+  const seen = new Set<string>();
+  const deviceIds: string[] = [];
+  for (const d of visible) {
+    if (d.instanceId === commsRackId) continue;
+    if (seen.has(d.deviceId)) continue;
+    seen.add(d.deviceId);
+    deviceIds.push(d.deviceId);
+  }
+  if (deviceIds.length === 0) return;
+
+  // Group by category
+  const grouped = new Map<DeviceCategory, Array<{ id: string; name: string; symbolImage?: string }>>();
+  for (const id of deviceIds) {
+    const def = getDeviceById(id);
+    if (!def) continue;
+    const list = grouped.get(def.category) || [];
+    list.push({ id, name: def.name, symbolImage: def.symbolImage });
+    grouped.set(def.category, list);
+  }
+
+  let y = startY;
+  for (const cat of LEGEND_CATEGORY_ORDER) {
+    const items = grouped.get(cat);
+    if (!items || items.length === 0) continue;
+    if (y - catHeaderHeight < minY) break;
+
+    // Category header — colored bar
+    const catColor = LEGEND_CATEGORY_COLORS[cat] || rgb(0.5, 0.5, 0.5);
+    page.drawRectangle({ x: iconX - 2, y: y - catHeaderHeight + 4, width: 300, height: catHeaderHeight - 2, color: rgb(0.95, 0.95, 0.95) });
+    page.drawRectangle({ x: iconX - 2, y: y - catHeaderHeight + 4, width: 3, height: catHeaderHeight - 2, color: catColor });
+    page.drawText(LEGEND_CATEGORY_NAMES[cat] || cat.toUpperCase(), {
+      x: iconX + 6, y: y - catHeaderHeight + 10, size: catFontSize, font: fontBold, color: rgb(0.3, 0.3, 0.3),
+    });
+    y -= catHeaderHeight + 2;
+
+    for (const item of items) {
+      if (y - rowHeight < minY) break;
+
+      // Draw symbol image
+      if (item.symbolImage && symbolCache.has(item.symbolImage)) {
+        const img = symbolCache.get(item.symbolImage)!;
+        page.drawImage(img, { x: iconX, y: y - iconSize, width: iconSize, height: iconSize });
+      }
+
+      // Draw device name
+      page.drawText(item.name, { x: textX, y: y - iconSize + 3, size: fontSize, font: fontRegular, color: rgb(0, 0, 0) });
+      y -= rowHeight;
+    }
+    y -= 4; // gap between categories
+  }
+}
+
 export async function exportToPdf(): Promise<Blob | null> {
   const store = usePlanStore.getState();
   const { titleBlock, clientLogo, revisions } = store;
@@ -213,6 +291,15 @@ export async function exportToPdf(): Promise<Blob | null> {
   const multiFloor = exportFloors.length > 1;
   const outputDoc = await PDFDocument.create();
   const fontBold = await outputDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontRegular = await outputDoc.embedFont(StandardFonts.Helvetica);
+
+  // Collect all devices across all floors for legend
+  const allDevicesForLegend: PlacedDevice[] = [];
+  const allCommsRackIds: string[] = [];
+  for (const f of exportFloors) {
+    allDevicesForLegend.push(...f.devices);
+    if (f.commsRackId) allCommsRackIds.push(f.commsRackId);
+  }
 
   const symbolCache = new Map<string, PDFImage>();
   const uniqueSymbols = new Set<string>();
@@ -450,6 +537,9 @@ export async function exportToPdf(): Promise<Blob | null> {
         page.drawRectangle({ x: planCentreX - headingW / 2 - 12, y: headingY - 6, width: headingW + 24, height: headingSize + 12, color: rgb(1, 1, 1), borderColor: rgb(0, 0, 0), borderWidth: 0.8 });
         page.drawText(headingText, { x: planCentreX - headingW / 2, y: headingY + 2, size: headingSize, font: fontBold, color: rgb(0, 0, 0) });
       }
+
+      // Dynamic legend — auto-populated from devices on the plan
+      drawDynamicLegend(page, allDevicesForLegend, pageDef.view, commsRackId, symbolCache, fontBold, fontRegular);
     }
   }
 

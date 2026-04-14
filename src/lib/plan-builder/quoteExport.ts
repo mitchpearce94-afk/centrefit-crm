@@ -37,6 +37,12 @@ const PLAN_TO_QUOTE_MAP: Record<string, string> = {
   'volume-control': 'volume_control',
 };
 
+export interface CustomProductEntry {
+  productId: string;
+  productName: string;
+  count: number;
+}
+
 export interface QuoteExportData {
   source: 'centrefit-plan-builder';
   version: 1;
@@ -49,6 +55,7 @@ export interface QuoteExportData {
     date: string;
   };
   deviceCounts: Record<string, number>;
+  customProducts: CustomProductEntry[];
   siteInfo: { door_count: number; concrete_mount_black?: number; concrete_mount_white?: number; reed_switch_uncabled?: number };
   floors: Array<{ name: string; deviceCounts: Record<string, number> }>;
 }
@@ -85,6 +92,7 @@ export function generateQuoteExport(): QuoteExportData {
       if (device.deviceId === 'cam-tg') { floorTgCameras++; totalTgCameras++; if (device.concreteMounted) concreteMountWhite++; continue; }
       if (device.deviceId === 'sensor-tg') { floorTgSensors++; totalTgSensors++; continue; }
       const quoteCode = PLAN_TO_QUOTE_MAP[device.deviceId];
+      // Custom devices without a quote code are handled separately below
       if (!quoteCode) continue;
       globalCounts[quoteCode] = (globalCounts[quoteCode] || 0) + 1;
       floorCounts[quoteCode] = (floorCounts[quoteCode] || 0) + 1;
@@ -106,6 +114,25 @@ export function generateQuoteExport(): QuoteExportData {
   const totalTgSystems = Math.max(totalTgCameras, totalTgSensors);
   if (totalTgSystems > 0) globalCounts['tailgate_system'] = totalTgSystems;
 
+  // Aggregate custom devices with linked products
+  const customProductMap = new Map<string, { productName: string; count: number }>();
+  const customDeviceLookup = new Map(store.customDevices.map(d => [d.id, d]));
+  for (const floor of syncedFloors) {
+    for (const device of floor.devices) {
+      if (!device.deviceId.startsWith('custom-')) continue;
+      if (device.provisional) continue;
+      const customDef = customDeviceLookup.get(device.deviceId);
+      if (!customDef?.linkedProductId) continue;
+      const existing = customProductMap.get(customDef.linkedProductId);
+      if (existing) {
+        existing.count++;
+      } else {
+        customProductMap.set(customDef.linkedProductId, { productName: customDef.linkedProductName || customDef.name, count: 1 });
+      }
+    }
+  }
+  const customProducts: CustomProductEntry[] = Array.from(customProductMap.entries()).map(([productId, { productName, count }]) => ({ productId, productName, count }));
+
   return {
     source: 'centrefit-plan-builder',
     version: 1,
@@ -118,6 +145,7 @@ export function generateQuoteExport(): QuoteExportData {
       date: titleBlock.date,
     },
     deviceCounts: globalCounts,
+    customProducts,
     siteInfo: { door_count: doorCount, concrete_mount_black: concreteMountBlack, concrete_mount_white: concreteMountWhite, reed_switch_uncabled: reedSwitchUncabled },
     floors: floorBreakdowns,
   };

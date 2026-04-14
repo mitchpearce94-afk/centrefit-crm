@@ -1,4 +1,4 @@
-import { DeviceDefinition } from '@/types/plan-builder';
+import { DeviceDefinition, CustomDevice } from '@/types/plan-builder';
 
 export const DEVICE_CATALOG: DeviceDefinition[] = [
   // CAMERAS
@@ -63,6 +63,29 @@ export const CABLE_COLORS: Record<string, string> = {
   speaker: '#44cc44',
 };
 
+// Runtime custom device definitions (synced from store)
+let _customDeviceDefs: DeviceDefinition[] = [];
+
+export function customDeviceToDefinition(custom: CustomDevice): DeviceDefinition {
+  return {
+    id: custom.id,
+    name: custom.name,
+    category: custom.category,
+    cableType: custom.cableType,
+    symbolType: 'labeled-circle',
+    symbolImage: custom.symbolImage,
+    symbolScale: 1.5,
+  };
+}
+
+export function setCustomDeviceDefs(customs: CustomDevice[]): void {
+  _customDeviceDefs = customs.map(customDeviceToDefinition);
+}
+
+export function getAllDevices(): DeviceDefinition[] {
+  return [...DEVICE_CATALOG, ..._customDeviceDefs];
+}
+
 export function getDeviceById(id: string): DeviceDefinition | undefined {
-  return DEVICE_CATALOG.find(d => d.id === id);
+  return DEVICE_CATALOG.find(d => d.id === id) || _customDeviceDefs.find(d => d.id === id);
 }

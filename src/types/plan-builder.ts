@@ -124,3 +124,14 @@ export interface RevisionEntry {
   date: string;
   notes: string;
 }
+
+export interface CustomDevice {
+  id: string;           // 'custom-' + UUID
+  name: string;
+  category: DeviceCategory;
+  cableType: CableType;
+  symbolImage: string;  // data URL of uploaded PNG
+  needsCableRun: boolean;
+  linkedProductId?: string;
+  linkedProductName?: string;
+}

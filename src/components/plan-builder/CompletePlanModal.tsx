@@ -82,7 +82,9 @@ export default function CompletePlanModal({ onClose }: Props) {
       // If somehow missing, insert a new one
       let usePlanId: string | null = planFileId;
       if (!usePlanId) {
-        const { data: newPlan, error } = await supabase.from('plan_files').insert({
+        const newId = crypto.randomUUID();
+        const { data: newPlan, error } = await supabase.from('plan_files').upsert({
+          id: newId,
           name: planName,
           client_name: titleBlock.client || null,
           site_name: titleBlock.projectName || null,
@@ -93,7 +95,7 @@ export default function CompletePlanModal({ onClose }: Props) {
           floor_data: exportData.floors,
           raw_data: exportData,
           uploaded_by: user?.id ?? null,
-        }).select('id').single();
+        }, { onConflict: 'id' }).select('id').single();
 
         if (error || !newPlan) {
           alert('Failed to save plan: ' + (error?.message ?? 'Unknown error'));
@@ -101,6 +103,7 @@ export default function CompletePlanModal({ onClose }: Props) {
           return;
         }
         usePlanId = newPlan.id;
+        usePlanStore.setState({ planFileId: usePlanId });
       }
 
       // Transition linked job to "Quote Draft"

@@ -2,14 +2,16 @@
 
 import React, { useState } from 'react';
 import { usePlanStore } from '@/store/planStore';
-import { DEVICE_CATALOG, CATEGORY_LABELS, CABLE_COLORS } from '@/lib/plan-builder/devices';
+import { DEVICE_CATALOG, CATEGORY_LABELS, CABLE_COLORS, customDeviceToDefinition } from '@/lib/plan-builder/devices';
 import { DeviceCategory, DeviceDefinition } from '@/types/plan-builder';
+import AddCustomDeviceModal from '@/components/plan-builder/AddCustomDeviceModal';
 
 const CATEGORY_ORDER: DeviceCategory[] = ['cameras', 'security', 'audio', 'data', 'av'];
 
 export default function SymbolPalette() {
-  const { deviceToPlace, setDeviceToPlace } = usePlanStore();
+  const { deviceToPlace, setDeviceToPlace, customDevices, removeCustomDevice } = usePlanStore();
   const [expanded, setExpanded] = useState<Set<DeviceCategory>>(new Set(CATEGORY_ORDER));
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const toggleCategory = (cat: DeviceCategory) => {
     setExpanded(prev => {
@@ -20,8 +22,13 @@ export default function SymbolPalette() {
     });
   };
 
+  // Combine built-in devices with custom devices per category
   const grouped = CATEGORY_ORDER.reduce((acc, cat) => {
-    acc[cat] = DEVICE_CATALOG.filter(d => d.category === cat);
+    const builtIn = DEVICE_CATALOG.filter(d => d.category === cat);
+    const custom = customDevices
+      .filter(d => d.category === cat)
+      .map(customDeviceToDefinition);
+    acc[cat] = [...builtIn, ...custom];
     return acc;
   }, {} as Record<DeviceCategory, DeviceDefinition[]>);
 
@@ -53,7 +60,12 @@ export default function SymbolPalette() {
                   )}
                   {grouped[cat].filter(d => !d.isCommsRack).map(device => (
                     <DeviceButton key={device.id} device={device} selected={deviceToPlace === device.id}
-                      onClick={() => setDeviceToPlace(deviceToPlace === device.id ? null : device.id)} />
+                      onClick={() => setDeviceToPlace(deviceToPlace === device.id ? null : device.id)}
+                      isCustom={device.id.startsWith('custom-')}
+                      onRemove={device.id.startsWith('custom-') ? () => {
+                        if (confirm(`Remove custom device "${device.name}"? Placed instances will also be removed.`)) removeCustomDevice(device.id);
+                      } : undefined}
+                    />
                   ))}
                 </div>
               )}
@@ -61,6 +73,16 @@ export default function SymbolPalette() {
           );
         })}
       </div>
+      <div className="p-2 border-t border-gray-700">
+        <button
+          className="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded transition-colors flex items-center justify-center gap-1.5"
+          onClick={() => setShowAddModal(true)}
+        >
+          <span className="text-base leading-none">+</span>
+          <span>Add Custom Device</span>
+        </button>
+      </div>
+      {showAddModal && <AddCustomDeviceModal onClose={() => setShowAddModal(false)} />}
     </div>
   );
 }
@@ -76,14 +98,26 @@ function SymbolPreview({ device }: { device: DeviceDefinition }) {
   );
 }
 
-function DeviceButton({ device, selected, onClick }: { device: DeviceDefinition; selected: boolean; onClick: () => void }) {
+function DeviceButton({ device, selected, onClick, isCustom, onRemove }: { device: DeviceDefinition; selected: boolean; onClick: () => void; isCustom?: boolean; onRemove?: () => void }) {
   return (
-    <button
-      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors text-xs hover:bg-gray-700 ${selected ? 'bg-blue-900/60 border-l-2 border-blue-400' : 'border-l-2 border-transparent'}`}
-      onClick={onClick}
-      title={`${device.name} (${device.cableType === 'cat6' ? 'CAT6' : device.cableType === 'sixcore' ? '6-Core' : device.cableType === 'speaker' ? 'Speaker' : 'No cable'})`}>
-      <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center"><SymbolPreview device={device} /></span>
-      <span className="text-gray-300 leading-tight truncate">{device.name}</span>
-    </button>
+    <div className="flex items-center group">
+      <button
+        className={`flex-1 flex items-center gap-2 px-3 py-1.5 text-left transition-colors text-xs hover:bg-gray-700 ${selected ? 'bg-blue-900/60 border-l-2 border-blue-400' : 'border-l-2 border-transparent'}`}
+        onClick={onClick}
+        title={`${device.name} (${device.cableType === 'cat6' ? 'CAT6' : device.cableType === 'sixcore' ? '6-Core' : device.cableType === 'speaker' ? 'Speaker' : 'No cable'})${isCustom ? ' [Custom]' : ''}`}>
+        <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center"><SymbolPreview device={device} /></span>
+        <span className="text-gray-300 leading-tight truncate">{device.name}</span>
+        {isCustom && <span className="text-gray-600 text-[9px] ml-auto flex-shrink-0">custom</span>}
+      </button>
+      {onRemove && (
+        <button
+          className="px-1.5 py-1 text-gray-600 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={e => { e.stopPropagation(); onRemove(); }}
+          title="Remove custom device"
+        >
+          x
+        </button>
+      )}
+    </div>
   );
 }

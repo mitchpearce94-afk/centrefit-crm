@@ -1,7 +1,7 @@
 import React from 'react';
 import { create } from 'zustand';
-import { PlacedDevice, CableRun, TitleBlockInfo, LayerVisibility, ActiveTool, WhitewashRect, NUMBERED_GROUPS, FloorData, RevisionEntry, PdfElement } from '@/types/plan-builder';
-import { getDeviceById } from '@/lib/plan-builder/devices';
+import { PlacedDevice, CableRun, TitleBlockInfo, LayerVisibility, ActiveTool, WhitewashRect, NUMBERED_GROUPS, FloorData, RevisionEntry, PdfElement, CustomDevice } from '@/types/plan-builder';
+import { getDeviceById, setCustomDeviceDefs } from '@/lib/plan-builder/devices';
 import { renderPdfPageFiltered } from '@/lib/plan-builder/pdfUtils';
 
 interface HistoryEntry {
@@ -36,6 +36,7 @@ interface PlanState {
   linkedJobId: string | null;
   linkedJobNumber: string | null;
   planFileId: string | null;
+  isDirty: boolean;
   // PDF element selection
   pdfFile: File | null;
   pdfPageNumber: number;
@@ -44,10 +45,13 @@ interface PlanState {
   selectedElementIds: string[];
   hoveredElementId: string | null;
 
+  customDevices: CustomDevice[];
   revisions: RevisionEntry[];
   history: HistoryEntry[];
   historyIndex: number;
 
+  addCustomDevice: (device: CustomDevice) => void;
+  removeCustomDevice: (id: string) => void;
   setLinkedJob: (jobId: string | null, jobNumber: string | null) => void;
   setPdfSource: (file: File, pageNumber: number) => void;
   setPdfElements: (elements: PdfElement[]) => void;
@@ -85,6 +89,7 @@ interface PlanState {
   bumpRevision: (notes: string) => void;
   undo: () => void;
   redo: () => void;
+  markClean: () => void;
   saveProject: () => void;
   loadProject: (data: string) => void;
   clearProject: () => void;
@@ -211,7 +216,8 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   clientLogo: null,
   linkedJobId: null,
   linkedJobNumber: null,
-  planFileId: null,
+  planFileId: crypto.randomUUID(),
+  isDirty: false,
   pdfFile: null,
   pdfPageNumber: 1,
   pdfElements: [],
@@ -220,12 +226,30 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   hoveredElementId: null,
   floors: [{ id: 'floor-1', name: 'Ground Floor', backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, pdfFileName: '', devices: [], commsRackId: null, whitewashRects: [] }],
   activeFloorId: 'floor-1',
+  customDevices: [],
   revisions: [],
   history: [{ devices: [], commsRackId: null, whitewashRects: [] }],
   historyIndex: 0,
 
+  addCustomDevice: (device) => {
+    const newCustomDevices = [...get().customDevices, device];
+    setCustomDeviceDefs(newCustomDevices);
+    set({ customDevices: newCustomDevices, isDirty: true });
+  },
+
+  removeCustomDevice: (id) => {
+    const state = get();
+    const newCustomDevices = state.customDevices.filter(d => d.id !== id);
+    setCustomDeviceDefs(newCustomDevices);
+    set({
+      customDevices: newCustomDevices,
+      devices: state.devices.filter(d => d.deviceId !== id),
+      isDirty: true,
+    });
+  },
+
   setBackground: (image, width, height, fileName) =>
-    set({ backgroundImage: image, backgroundWidth: width, backgroundHeight: height, pdfFileName: fileName }),
+    set({ backgroundImage: image, backgroundWidth: width, backgroundHeight: height, pdfFileName: fileName, isDirty: true }),
 
   cropBackground: (cx, cy, cw, ch) => {
     const state = get();
@@ -250,6 +274,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
         whitewashRects: newWhitewash,
         cableRuns,
         activeTool: 'select',
+        isDirty: true,
       });
     };
   },
@@ -317,7 +342,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     const newHistory = state.history.slice(0, state.historyIndex + 1);
     newHistory.push({ devices: newDevices, commsRackId: newCommsRackId, whitewashRects: state.whitewashRects });
     const cableRuns = buildCableRuns(newDevices, newCommsRackId, getDeviceById);
-    set({ devices: newDevices, commsRackId: newCommsRackId, cableRuns, history: newHistory, historyIndex: newHistory.length - 1 });
+    set({ devices: newDevices, commsRackId: newCommsRackId, cableRuns, history: newHistory, historyIndex: newHistory.length - 1, isDirty: true });
   },
 
   moveDevice: (instanceId, x, y) => {
@@ -326,13 +351,13 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     const cableRuns = buildCableRuns(newDevices, state.commsRackId, getDeviceById);
     const newHistory = state.history.slice(0, state.historyIndex + 1);
     newHistory.push({ devices: newDevices, commsRackId: state.commsRackId, whitewashRects: state.whitewashRects });
-    set({ devices: newDevices, cableRuns, history: newHistory, historyIndex: newHistory.length - 1 });
+    set({ devices: newDevices, cableRuns, history: newHistory, historyIndex: newHistory.length - 1, isDirty: true });
   },
 
   rotateDevice: (instanceId, rotation) => {
     const state = get();
     const newDevices = state.devices.map(d => d.instanceId === instanceId ? { ...d, rotation } : d);
-    set({ devices: newDevices });
+    set({ devices: newDevices, isDirty: true });
   },
 
   deleteDevice: (instanceId) => {
@@ -346,7 +371,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     set({
       devices: newDevices, commsRackId: newCommsRackId, cableRuns,
       selectedDeviceId: state.selectedDeviceId === instanceId ? null : state.selectedDeviceId,
-      history: newHistory, historyIndex: newHistory.length - 1,
+      history: newHistory, historyIndex: newHistory.length - 1, isDirty: true,
     });
   },
 
@@ -371,40 +396,40 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     const newWhitewashRects = [...state.whitewashRects, { id, x, y, width, height }];
     const newHistory = state.history.slice(0, state.historyIndex + 1);
     newHistory.push({ devices: state.devices, commsRackId: state.commsRackId, whitewashRects: newWhitewashRects });
-    set({ whitewashRects: newWhitewashRects, history: newHistory, historyIndex: newHistory.length - 1 });
+    set({ whitewashRects: newWhitewashRects, history: newHistory, historyIndex: newHistory.length - 1, isDirty: true });
   },
 
   removeWhitewashRect: (id) => {
     const state = get();
-    set({ whitewashRects: state.whitewashRects.filter(r => r.id !== id) });
+    set({ whitewashRects: state.whitewashRects.filter(r => r.id !== id), isDirty: true });
   },
 
-  setClientLogo: (logo) => set({ clientLogo: logo }),
+  setClientLogo: (logo) => set({ clientLogo: logo, isDirty: true }),
 
   setSpeakerZone: (instanceId, zone) => {
     const state = get();
     const updated = state.devices.map(d => d.instanceId === instanceId ? { ...d, speakerZone: zone } : d);
-    set({ devices: renumberDevices(updated, state.commsRackId) });
+    set({ devices: renumberDevices(updated, state.commsRackId), isDirty: true });
   },
 
   setConcreteMounted: (instanceId, value) => {
     const state = get();
-    set({ devices: state.devices.map(d => d.instanceId === instanceId ? { ...d, concreteMounted: value } : d) });
+    set({ devices: state.devices.map(d => d.instanceId === instanceId ? { ...d, concreteMounted: value } : d), isDirty: true });
   },
 
   setProvisional: (instanceId, value) => {
     const state = get();
-    set({ devices: state.devices.map(d => d.instanceId === instanceId ? { ...d, provisional: value } : d) });
+    set({ devices: state.devices.map(d => d.instanceId === instanceId ? { ...d, provisional: value } : d), isDirty: true });
   },
 
   setCabled: (instanceId, value) => {
     const state = get();
-    set({ devices: state.devices.map(d => d.instanceId === instanceId ? { ...d, cabled: value } : d) });
+    set({ devices: state.devices.map(d => d.instanceId === instanceId ? { ...d, cabled: value } : d), isDirty: true });
   },
 
   updateTitleBlock: (info) => {
     const state = get();
-    set({ titleBlock: { ...state.titleBlock, ...info } });
+    set({ titleBlock: { ...state.titleBlock, ...info }, isDirty: true });
   },
 
   addFloor: (name) => {
@@ -420,7 +445,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
       floors: [...updatedFloors, newFloor], activeFloorId: newId,
       backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, pdfFileName: '',
       devices: [], commsRackId: null, cableRuns: [], whitewashRects: [],
-      selectedDeviceId: null, history: [{ devices: [], commsRackId: null, whitewashRects: [] }], historyIndex: 0,
+      selectedDeviceId: null, history: [{ devices: [], commsRackId: null, whitewashRects: [] }], historyIndex: 0, isDirty: true,
     });
   },
 
@@ -441,7 +466,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
       backgroundImage: target.backgroundImage, backgroundWidth: target.backgroundWidth, backgroundHeight: target.backgroundHeight,
       pdfFileName: target.pdfFileName, devices: targetDevices, commsRackId: target.commsRackId, cableRuns,
       whitewashRects: target.whitewashRects, selectedDeviceId: null,
-      history: [{ devices: target.devices, commsRackId: target.commsRackId, whitewashRects: target.whitewashRects }], historyIndex: 0,
+      history: [{ devices: target.devices, commsRackId: target.commsRackId, whitewashRects: target.whitewashRects }], historyIndex: 0, isDirty: true,
     });
   },
 
@@ -462,10 +487,10 @@ export const usePlanStore = create<PlanState>((set, get) => ({
         backgroundImage: target.backgroundImage, backgroundWidth: target.backgroundWidth, backgroundHeight: target.backgroundHeight,
         pdfFileName: target.pdfFileName, devices: target.devices, commsRackId: target.commsRackId, cableRuns,
         whitewashRects: target.whitewashRects, selectedDeviceId: null,
-        history: [{ devices: target.devices, commsRackId: target.commsRackId, whitewashRects: target.whitewashRects }], historyIndex: 0,
+        history: [{ devices: target.devices, commsRackId: target.commsRackId, whitewashRects: target.whitewashRects }], historyIndex: 0, isDirty: true,
       });
     } else {
-      set({ floors: remaining });
+      set({ floors: remaining, isDirty: true });
     }
   },
 
@@ -498,6 +523,8 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     set({ devices: entry.devices, commsRackId: entry.commsRackId, whitewashRects: entry.whitewashRects, historyIndex: newIndex, cableRuns });
   },
 
+  markClean: () => set({ isDirty: false }),
+
   saveProject: () => {
     const state = get();
     const syncedFloors = state.floors.map(f =>
@@ -516,6 +543,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
       linkedJobId: state.linkedJobId,
       linkedJobNumber: state.linkedJobNumber,
       planFileId: state.planFileId,
+      customDevices: state.customDevices,
     });
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -526,6 +554,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     a.download = `${parts.join(' - ') || 'centrefit-plan'}.cfp`;
     a.click();
     URL.revokeObjectURL(url);
+    set({ isDirty: false });
   },
 
   loadProject: (data) => {
@@ -535,6 +564,8 @@ export const usePlanStore = create<PlanState>((set, get) => ({
         const floors: FloorData[] = parsed.floors;
         const activeId = parsed.activeFloorId || floors[0]?.id || 'floor-1';
         const active = floors.find(f => f.id === activeId) || floors[0];
+        const loadedCustomDevices: CustomDevice[] = parsed.customDevices || [];
+        setCustomDeviceDefs(loadedCustomDevices);
         const activeDevices = renumberDevices(active.devices || [], active.commsRackId || null);
         const cableRuns = buildCableRuns(activeDevices, active.commsRackId || null, getDeviceById);
         set({
@@ -544,7 +575,9 @@ export const usePlanStore = create<PlanState>((set, get) => ({
           whitewashRects: active.whitewashRects || [], titleBlock: { ...DEFAULT_TITLE_BLOCK, ...(parsed.titleBlock || {}) },
           clientLogo: parsed.clientLogo || null, revisions: parsed.revisions || [], cableRuns,
           deviceScale: parsed.deviceScale || 1,
-          linkedJobId: parsed.linkedJobId || null, linkedJobNumber: parsed.linkedJobNumber || null, planFileId: parsed.planFileId || null,
+          linkedJobId: parsed.linkedJobId || null, linkedJobNumber: parsed.linkedJobNumber || null, planFileId: parsed.planFileId || crypto.randomUUID(),
+          customDevices: loadedCustomDevices,
+          isDirty: false,
           history: [{ devices: active.devices || [], commsRackId: active.commsRackId || null, whitewashRects: active.whitewashRects || [] }], historyIndex: 0,
         });
       } else {
@@ -561,7 +594,8 @@ export const usePlanStore = create<PlanState>((set, get) => ({
           backgroundImage: floor.backgroundImage, backgroundWidth: floor.backgroundWidth, backgroundHeight: floor.backgroundHeight,
           pdfFileName: floor.pdfFileName, titleBlock: { ...DEFAULT_TITLE_BLOCK, ...(parsed.titleBlock || {}) },
           clientLogo: parsed.clientLogo || null, revisions: [], cableRuns,
-          linkedJobId: parsed.linkedJobId || null, linkedJobNumber: parsed.linkedJobNumber || null, planFileId: parsed.planFileId || null,
+          linkedJobId: parsed.linkedJobId || null, linkedJobNumber: parsed.linkedJobNumber || null, planFileId: parsed.planFileId || crypto.randomUUID(),
+          isDirty: false,
           history: [{ devices: floor.devices, commsRackId: floor.commsRackId, whitewashRects: floor.whitewashRects }], historyIndex: 0,
         });
       }
@@ -571,13 +605,16 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   },
 
   clearProject: () => {
+    setCustomDeviceDefs([]);
     set({
       backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, pdfFileName: '',
       devices: [], commsRackId: null, cableRuns: [], whitewashRects: [],
       selectedDeviceId: null, activeTool: 'select', deviceToPlace: null, clientLogo: null,
-      linkedJobId: null, linkedJobNumber: null, planFileId: null,
+      linkedJobId: null, linkedJobNumber: null, planFileId: crypto.randomUUID(),
+      isDirty: false,
       pdfFile: null, pdfPageNumber: 1, pdfElements: [], deletedOpIndices: [],
       selectedElementIds: [], hoveredElementId: null,
+      customDevices: [],
       titleBlock: DEFAULT_TITLE_BLOCK, deviceScale: 1,
       floors: [{ id: 'floor-1', name: 'Ground Floor', backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, pdfFileName: '', devices: [], commsRackId: null, whitewashRects: [] }],
       activeFloorId: 'floor-1', revisions: [],
