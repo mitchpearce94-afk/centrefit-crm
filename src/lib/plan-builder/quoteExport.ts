@@ -49,7 +49,7 @@ export interface QuoteExportData {
     date: string;
   };
   deviceCounts: Record<string, number>;
-  siteInfo: { door_count: number; concrete_mount_black?: number; concrete_mount_white?: number };
+  siteInfo: { door_count: number; concrete_mount_black?: number; concrete_mount_white?: number; reed_switch_uncabled?: number };
   floors: Array<{ name: string; deviceCounts: Record<string, number> }>;
 }
 
@@ -70,6 +70,7 @@ export function generateQuoteExport(): QuoteExportData {
   let totalTgSensors = 0;
   let concreteMountBlack = 0;
   let concreteMountWhite = 0;
+  let reedSwitchUncabled = 0;
 
   for (const floor of syncedFloors) {
     const floorCounts: Record<string, number> = {};
@@ -93,6 +94,8 @@ export function generateQuoteExport(): QuoteExportData {
         if (device.deviceId === 'cam-black') concreteMountBlack++;
         else if (device.deviceId === 'cam-white') concreteMountWhite++;
       }
+      // Count uncabled reed switches (cabled defaults to true)
+      if (device.deviceId === 'reed-switch' && device.cabled === false) reedSwitchUncabled++;
     }
 
     const floorTgSystems = Math.max(floorTgCameras, floorTgSensors);
@@ -115,7 +118,7 @@ export function generateQuoteExport(): QuoteExportData {
       date: titleBlock.date,
     },
     deviceCounts: globalCounts,
-    siteInfo: { door_count: doorCount, concrete_mount_black: concreteMountBlack, concrete_mount_white: concreteMountWhite },
+    siteInfo: { door_count: doorCount, concrete_mount_black: concreteMountBlack, concrete_mount_white: concreteMountWhite, reed_switch_uncabled: reedSwitchUncabled },
     floors: floorBreakdowns,
   };
 }

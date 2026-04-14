@@ -53,6 +53,7 @@ export interface PlacedDevice {
   speakerZone?: number;
   concreteMounted?: boolean;
   provisional?: boolean;
+  cabled?: boolean;
 }
 
 export interface CableRun {

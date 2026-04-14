@@ -11,13 +11,14 @@ export default function PropertiesPanel() {
     titleBlock, updateTitleBlock,
     clientLogo, setClientLogo,
     rotateDevice, deleteDevice, setCommsRack,
-    setSpeakerZone, setConcreteMounted, setProvisional,
+    setSpeakerZone, setConcreteMounted, setProvisional, setCabled,
   } = usePlanStore();
 
   const selectedDevice = selectedDeviceId ? devices.find(d => d.instanceId === selectedDeviceId) : null;
   const selectedDef = selectedDevice ? getDeviceById(selectedDevice.deviceId) : null;
   const isCommsRack = selectedDevice?.instanceId === commsRackId;
   const isSpeaker = selectedDef?.cableType === 'speaker';
+  const isReedSwitch = selectedDevice?.deviceId === 'reed-switch';
 
   return (
     <div className="flex flex-col h-full overflow-y-auto text-xs">
@@ -55,6 +56,14 @@ export default function PropertiesPanel() {
                     className="accent-amber-500 cursor-pointer" />
                   <span className="text-gray-300">Provisional</span>
                 </label>
+                {isReedSwitch && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={selectedDevice.cabled !== false}
+                      onChange={e => setCabled(selectedDevice.instanceId, e.target.checked)}
+                      className="accent-green-500 cursor-pointer" />
+                    <span className="text-gray-300">Cabled</span>
+                  </label>
+                )}
               </div>
             )}
             <div className="flex flex-col gap-1 pt-1">

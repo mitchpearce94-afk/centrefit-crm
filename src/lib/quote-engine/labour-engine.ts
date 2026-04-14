@@ -119,10 +119,12 @@ export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo =
 
   // === 1. ROUGH IN ===
 
+  const cabledReedSwitches = Math.max(0, (c.reed_switch || 0) - (s.reed_switch_uncabled || 0))
+
   const totalCableRuns =
     (c.camera_black || 0) + (c.camera_white || 0) +
     (c.pir_360_roof || 0) + (c.pir_wall || 0) +
-    (c.reed_switch || 0) +
+    cabledReedSwitches +
     (c.speaker_roof || 0) + (c.speaker_wall || 0) +
     (c.wap || 0) + (c.data_point || 0) +
     (c.duress_button || 0) + (c.duress_intercom || 0) +

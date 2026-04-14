@@ -272,7 +272,10 @@ export function QuoteWizard({
     // Fill site info + state
     setSiteInfo((prev) => ({
       ...prev,
-      ...(plan.site_info ? { door_count: (plan.site_info.door_count as number) || prev.door_count } : {}),
+      ...(plan.site_info ? {
+        door_count: (plan.site_info.door_count as number) || prev.door_count,
+        reed_switch_uncabled: (plan.site_info.reed_switch_uncabled as number) || 0,
+      } : {}),
       state: plan.state || prev.state || 'QLD',
     }));
 

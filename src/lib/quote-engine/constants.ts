@@ -37,6 +37,7 @@ export interface SiteInfo {
   ceiling_tv_mount_count?: number;
   separate_studio_zone?: boolean;
   state?: string;
+  reed_switch_uncabled?: number;
 }
 
 // ---------------------------------------------------------------------------

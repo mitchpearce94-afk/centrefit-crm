@@ -97,7 +97,12 @@ function resolveTriggerCount(triggerCode: string | null, deviceCounts: DeviceCou
     if (SITE_INFO_FIELDS.includes(code)) {
       return sum + (Number((siteInfo as Record<string, unknown>)[code]) || 0)
     }
-    return sum + (deviceCounts[code] || 0)
+    let count = deviceCounts[code] || 0
+    // Uncabled reed switches don't need cable runs — subtract from cable formulas
+    if (code === 'reed_switch' && siteInfo.reed_switch_uncabled) {
+      count = Math.max(0, count - siteInfo.reed_switch_uncabled)
+    }
+    return sum + count
   }, 0)
 }
 
