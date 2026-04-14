@@ -211,15 +211,16 @@ function drawDynamicLegend(
   symbolCache: Map<string, PDFImage>, fontBold: PDFFont, fontRegular: PDFFont,
 ) {
   const pageH = page.getHeight();
-  const iconSize = 14;
-  const rowHeight = 20;
-  const catHeaderHeight = 22;
-  const iconX = 2210;
-  const textX = iconX + iconSize + 5;
-  const startY = pageH - 105;
-  const minY = 620; // don't overflow into notes area
-  const fontSize = 6.5;
-  const catFontSize = 7;
+  // Coordinates matched to the template legend area (PDF coords, origin bottom-left)
+  // Legend header "LEGEND" sits at y≈130 from top → pageH - 130 from bottom
+  // Notes header "NOTES" sits at y≈1076 from top → pageH - 1076 from bottom
+  const iconSize = 18;
+  const rowHeight = 27;       // matches ~27px spacing between legend items in template
+  const iconX = 2248;         // left edge of icon column
+  const textX = 2302;         // left edge of text column
+  const startY = pageH - 155; // first item row (below LEGEND header)
+  const minY = pageH - 1050;  // stop before NOTES area
+  const fontSize = 7.5;
 
   // Collect unique device types visible on this page view
   const visible = getVisibleDevices(allDevices, view, commsRackId);
@@ -247,31 +248,21 @@ function drawDynamicLegend(
   for (const cat of LEGEND_CATEGORY_ORDER) {
     const items = grouped.get(cat);
     if (!items || items.length === 0) continue;
-    if (y - catHeaderHeight < minY) break;
-
-    // Category header — colored bar
-    const catColor = LEGEND_CATEGORY_COLORS[cat] || rgb(0.5, 0.5, 0.5);
-    page.drawRectangle({ x: iconX - 2, y: y - catHeaderHeight + 4, width: 300, height: catHeaderHeight - 2, color: rgb(0.95, 0.95, 0.95) });
-    page.drawRectangle({ x: iconX - 2, y: y - catHeaderHeight + 4, width: 3, height: catHeaderHeight - 2, color: catColor });
-    page.drawText(LEGEND_CATEGORY_NAMES[cat] || cat.toUpperCase(), {
-      x: iconX + 6, y: y - catHeaderHeight + 10, size: catFontSize, font: fontBold, color: rgb(0.3, 0.3, 0.3),
-    });
-    y -= catHeaderHeight + 2;
 
     for (const item of items) {
       if (y - rowHeight < minY) break;
 
-      // Draw symbol image
+      // Draw symbol image centered in icon column
       if (item.symbolImage && symbolCache.has(item.symbolImage)) {
         const img = symbolCache.get(item.symbolImage)!;
-        page.drawImage(img, { x: iconX, y: y - iconSize, width: iconSize, height: iconSize });
+        const ix = iconX + (20 - iconSize) / 2;
+        page.drawImage(img, { x: ix, y: y - iconSize + 2, width: iconSize, height: iconSize });
       }
 
       // Draw device name
-      page.drawText(item.name, { x: textX, y: y - iconSize + 3, size: fontSize, font: fontRegular, color: rgb(0, 0, 0) });
+      page.drawText(item.name, { x: textX, y: y - iconSize + 5, size: fontSize, font: fontRegular, color: rgb(0, 0, 0) });
       y -= rowHeight;
     }
-    y -= 4; // gap between categories
   }
 }
 
@@ -551,6 +542,8 @@ export async function exportToPdf(): Promise<Blob | null> {
       const templateImage = await outputDoc.embedPng(templateBytes);
       const page = outputDoc.addPage([PDF_PAGE_W, PDF_PAGE_H]);
       page.drawImage(templateImage, { x: 0, y: 0, width: page.getWidth(), height: page.getHeight() });
+      // Dynamic legend on every page
+      drawDynamicLegend(page, allDevicesForLegend, 'master', null, symbolCache, fontBold, fontRegular);
     } catch (err) { console.warn(`Failed to render static template page ${p}:`, err); }
   }
 
