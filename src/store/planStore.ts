@@ -14,6 +14,9 @@ interface PlanState {
   backgroundImage: string | null;
   backgroundWidth: number;
   backgroundHeight: number;
+  backgroundOffsetX: number;
+  backgroundOffsetY: number;
+  backgroundLocked: boolean;
   pdfFileName: string;
   stageScale: number;
   stageX: number;
@@ -60,6 +63,8 @@ interface PlanState {
   setHoveredElement: (id: string | null) => void;
   deleteSelectedElements: () => Promise<void>;
   setBackground: (image: string, width: number, height: number, fileName: string) => void;
+  setBackgroundOffset: (x: number, y: number) => void;
+  toggleBackgroundLock: () => void;
   cropBackground: (x: number, y: number, width: number, height: number) => void;
   setStageTransform: (scale: number, x: number, y: number) => void;
   setStageRef: (ref: React.RefObject<any>) => void;
@@ -197,6 +202,9 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   backgroundImage: null,
   backgroundWidth: 1200,
   backgroundHeight: 800,
+  backgroundOffsetX: 0,
+  backgroundOffsetY: 0,
+  backgroundLocked: true,
   pdfFileName: '',
   stageScale: 1,
   stageX: 0,
@@ -224,7 +232,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   deletedOpIndices: [],
   selectedElementIds: [],
   hoveredElementId: null,
-  floors: [{ id: 'floor-1', name: 'Ground Floor', backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, pdfFileName: '', devices: [], commsRackId: null, whitewashRects: [] }],
+  floors: [{ id: 'floor-1', name: 'Ground Floor', backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, backgroundOffsetX: 0, backgroundOffsetY: 0, backgroundLocked: true, pdfFileName: '', devices: [], commsRackId: null, whitewashRects: [] }],
   activeFloorId: 'floor-1',
   customDevices: [],
   revisions: [],
@@ -248,8 +256,29 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     });
   },
 
-  setBackground: (image, width, height, fileName) =>
-    set({ backgroundImage: image, backgroundWidth: width, backgroundHeight: height, pdfFileName: fileName, isDirty: true }),
+  setBackground: (image, width, height, fileName) => {
+    const state = get();
+    // If devices already exist, unlock so user can reposition the new plan
+    const hasDevices = state.devices.length > 0;
+    set({
+      backgroundImage: image, backgroundWidth: width, backgroundHeight: height, pdfFileName: fileName,
+      backgroundOffsetX: 0, backgroundOffsetY: 0,
+      backgroundLocked: !hasDevices,
+      activeTool: hasDevices ? 'moveBackground' : state.activeTool,
+      isDirty: true,
+    });
+  },
+
+  setBackgroundOffset: (x, y) => set({ backgroundOffsetX: x, backgroundOffsetY: y, isDirty: true }),
+
+  toggleBackgroundLock: () => {
+    const state = get();
+    const newLocked = !state.backgroundLocked;
+    set({
+      backgroundLocked: newLocked,
+      activeTool: newLocked ? 'select' : 'moveBackground',
+    });
+  },
 
   cropBackground: (cx, cy, cw, ch) => {
     const state = get();
@@ -257,11 +286,14 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     const img = new window.Image();
     img.src = state.backgroundImage;
     img.onload = () => {
+      // Convert canvas-space crop coords to image-relative coords
+      const imgCx = cx - state.backgroundOffsetX;
+      const imgCy = cy - state.backgroundOffsetY;
       const canvas = document.createElement('canvas');
       canvas.width = cw;
       canvas.height = ch;
       const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(img, cx, cy, cw, ch, 0, 0, cw, ch);
+      ctx.drawImage(img, imgCx, imgCy, cw, ch, 0, 0, cw, ch);
       const croppedDataUrl = canvas.toDataURL('image/png');
       const newDevices = state.devices.map(d => ({ ...d, x: d.x - cx, y: d.y - cy }));
       const newWhitewash = state.whitewashRects.map(wr => ({ ...wr, x: wr.x - cx, y: wr.y - cy }));
@@ -270,6 +302,9 @@ export const usePlanStore = create<PlanState>((set, get) => ({
         backgroundImage: croppedDataUrl,
         backgroundWidth: cw,
         backgroundHeight: ch,
+        backgroundOffsetX: 0,
+        backgroundOffsetY: 0,
+        backgroundLocked: true,
         devices: newDevices,
         whitewashRects: newWhitewash,
         cableRuns,
@@ -437,13 +472,13 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     const newId = `floor-${Date.now()}`;
     const updatedFloors = state.floors.map(f =>
       f.id === state.activeFloorId
-        ? { ...f, backgroundImage: state.backgroundImage, backgroundWidth: state.backgroundWidth, backgroundHeight: state.backgroundHeight, pdfFileName: state.pdfFileName, devices: state.devices, commsRackId: state.commsRackId, whitewashRects: state.whitewashRects }
+        ? { ...f, backgroundImage: state.backgroundImage, backgroundWidth: state.backgroundWidth, backgroundHeight: state.backgroundHeight, backgroundOffsetX: state.backgroundOffsetX, backgroundOffsetY: state.backgroundOffsetY, backgroundLocked: state.backgroundLocked, pdfFileName: state.pdfFileName, devices: state.devices, commsRackId: state.commsRackId, whitewashRects: state.whitewashRects }
         : f
     );
-    const newFloor: FloorData = { id: newId, name, backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, pdfFileName: '', devices: [], commsRackId: null, whitewashRects: [] };
+    const newFloor: FloorData = { id: newId, name, backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, backgroundOffsetX: 0, backgroundOffsetY: 0, backgroundLocked: true, pdfFileName: '', devices: [], commsRackId: null, whitewashRects: [] };
     set({
       floors: [...updatedFloors, newFloor], activeFloorId: newId,
-      backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, pdfFileName: '',
+      backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, backgroundOffsetX: 0, backgroundOffsetY: 0, backgroundLocked: true, pdfFileName: '',
       devices: [], commsRackId: null, cableRuns: [], whitewashRects: [],
       selectedDeviceId: null, history: [{ devices: [], commsRackId: null, whitewashRects: [] }], historyIndex: 0, isDirty: true,
     });
@@ -454,7 +489,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     if (floorId === state.activeFloorId) return;
     const updatedFloors = state.floors.map(f =>
       f.id === state.activeFloorId
-        ? { ...f, backgroundImage: state.backgroundImage, backgroundWidth: state.backgroundWidth, backgroundHeight: state.backgroundHeight, pdfFileName: state.pdfFileName, devices: state.devices, commsRackId: state.commsRackId, whitewashRects: state.whitewashRects }
+        ? { ...f, backgroundImage: state.backgroundImage, backgroundWidth: state.backgroundWidth, backgroundHeight: state.backgroundHeight, backgroundOffsetX: state.backgroundOffsetX, backgroundOffsetY: state.backgroundOffsetY, backgroundLocked: state.backgroundLocked, pdfFileName: state.pdfFileName, devices: state.devices, commsRackId: state.commsRackId, whitewashRects: state.whitewashRects }
         : f
     );
     const target = updatedFloors.find(f => f.id === floorId);
@@ -464,6 +499,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     set({
       floors: updatedFloors, activeFloorId: floorId,
       backgroundImage: target.backgroundImage, backgroundWidth: target.backgroundWidth, backgroundHeight: target.backgroundHeight,
+      backgroundOffsetX: target.backgroundOffsetX ?? 0, backgroundOffsetY: target.backgroundOffsetY ?? 0, backgroundLocked: target.backgroundLocked ?? true,
       pdfFileName: target.pdfFileName, devices: targetDevices, commsRackId: target.commsRackId, cableRuns,
       whitewashRects: target.whitewashRects, selectedDeviceId: null,
       history: [{ devices: target.devices, commsRackId: target.commsRackId, whitewashRects: target.whitewashRects }], historyIndex: 0, isDirty: true,
@@ -485,6 +521,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
       set({
         floors: remaining, activeFloorId: target.id,
         backgroundImage: target.backgroundImage, backgroundWidth: target.backgroundWidth, backgroundHeight: target.backgroundHeight,
+        backgroundOffsetX: target.backgroundOffsetX ?? 0, backgroundOffsetY: target.backgroundOffsetY ?? 0, backgroundLocked: target.backgroundLocked ?? true,
         pdfFileName: target.pdfFileName, devices: target.devices, commsRackId: target.commsRackId, cableRuns,
         whitewashRects: target.whitewashRects, selectedDeviceId: null,
         history: [{ devices: target.devices, commsRackId: target.commsRackId, whitewashRects: target.whitewashRects }], historyIndex: 0, isDirty: true,
@@ -529,7 +566,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     const state = get();
     const syncedFloors = state.floors.map(f =>
       f.id === state.activeFloorId
-        ? { ...f, backgroundImage: state.backgroundImage, backgroundWidth: state.backgroundWidth, backgroundHeight: state.backgroundHeight, pdfFileName: state.pdfFileName, devices: state.devices, commsRackId: state.commsRackId, whitewashRects: state.whitewashRects }
+        ? { ...f, backgroundImage: state.backgroundImage, backgroundWidth: state.backgroundWidth, backgroundHeight: state.backgroundHeight, backgroundOffsetX: state.backgroundOffsetX, backgroundOffsetY: state.backgroundOffsetY, backgroundLocked: state.backgroundLocked, pdfFileName: state.pdfFileName, devices: state.devices, commsRackId: state.commsRackId, whitewashRects: state.whitewashRects }
         : f
     );
     const data = JSON.stringify({
@@ -561,7 +598,13 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     try {
       const parsed = JSON.parse(data);
       if (parsed.version === 2 && parsed.floors) {
-        const floors: FloorData[] = parsed.floors;
+        // Backfill offset fields for old .cfp files
+        const floors: FloorData[] = parsed.floors.map((f: any) => ({
+          ...f,
+          backgroundOffsetX: f.backgroundOffsetX ?? 0,
+          backgroundOffsetY: f.backgroundOffsetY ?? 0,
+          backgroundLocked: f.backgroundLocked ?? true,
+        }));
         const activeId = parsed.activeFloorId || floors[0]?.id || 'floor-1';
         const active = floors.find(f => f.id === activeId) || floors[0];
         const loadedCustomDevices: CustomDevice[] = parsed.customDevices || [];
@@ -571,6 +614,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
         set({
           floors, activeFloorId: activeId,
           backgroundImage: active.backgroundImage || null, backgroundWidth: active.backgroundWidth || 1200, backgroundHeight: active.backgroundHeight || 800,
+          backgroundOffsetX: active.backgroundOffsetX ?? 0, backgroundOffsetY: active.backgroundOffsetY ?? 0, backgroundLocked: active.backgroundLocked ?? true,
           pdfFileName: active.pdfFileName || '', devices: activeDevices, commsRackId: active.commsRackId || null,
           whitewashRects: active.whitewashRects || [], titleBlock: { ...DEFAULT_TITLE_BLOCK, ...(parsed.titleBlock || {}) },
           clientLogo: parsed.clientLogo || null, revisions: parsed.revisions || [], cableRuns,
@@ -586,12 +630,14 @@ export const usePlanStore = create<PlanState>((set, get) => ({
         const floor: FloorData = {
           id: 'floor-1', name: 'Ground Floor',
           backgroundImage: parsed.backgroundImage || null, backgroundWidth: parsed.backgroundWidth || 1200, backgroundHeight: parsed.backgroundHeight || 800,
+          backgroundOffsetX: 0, backgroundOffsetY: 0, backgroundLocked: true,
           pdfFileName: parsed.pdfFileName || '', devices: v1Devices, commsRackId: parsed.commsRackId || null, whitewashRects: parsed.whitewashRects || [],
         };
         set({
           floors: [floor], activeFloorId: 'floor-1',
           devices: floor.devices, commsRackId: floor.commsRackId, whitewashRects: floor.whitewashRects,
           backgroundImage: floor.backgroundImage, backgroundWidth: floor.backgroundWidth, backgroundHeight: floor.backgroundHeight,
+          backgroundOffsetX: 0, backgroundOffsetY: 0, backgroundLocked: true,
           pdfFileName: floor.pdfFileName, titleBlock: { ...DEFAULT_TITLE_BLOCK, ...(parsed.titleBlock || {}) },
           clientLogo: parsed.clientLogo || null, revisions: [], cableRuns,
           linkedJobId: parsed.linkedJobId || null, linkedJobNumber: parsed.linkedJobNumber || null, planFileId: parsed.planFileId || crypto.randomUUID(),
@@ -607,7 +653,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   clearProject: () => {
     setCustomDeviceDefs([]);
     set({
-      backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, pdfFileName: '',
+      backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, backgroundOffsetX: 0, backgroundOffsetY: 0, backgroundLocked: true, pdfFileName: '',
       devices: [], commsRackId: null, cableRuns: [], whitewashRects: [],
       selectedDeviceId: null, activeTool: 'select', deviceToPlace: null, clientLogo: null,
       linkedJobId: null, linkedJobNumber: null, planFileId: crypto.randomUUID(),
@@ -616,7 +662,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
       selectedElementIds: [], hoveredElementId: null,
       customDevices: [],
       titleBlock: DEFAULT_TITLE_BLOCK, deviceScale: 1,
-      floors: [{ id: 'floor-1', name: 'Ground Floor', backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, pdfFileName: '', devices: [], commsRackId: null, whitewashRects: [] }],
+      floors: [{ id: 'floor-1', name: 'Ground Floor', backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, backgroundOffsetX: 0, backgroundOffsetY: 0, backgroundLocked: true, pdfFileName: '', devices: [], commsRackId: null, whitewashRects: [] }],
       activeFloorId: 'floor-1', revisions: [],
       history: [{ devices: [], commsRackId: null, whitewashRects: [] }], historyIndex: 0,
     });

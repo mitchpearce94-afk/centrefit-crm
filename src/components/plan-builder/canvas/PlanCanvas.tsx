@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Stage, Layer, Image as KonvaImage, Rect, Text, Circle, Line } from 'react-konva';
+import { Stage, Layer, Image as KonvaImage, Rect, Text, Circle, Line, Group } from 'react-konva';
 import { usePlanStore } from '@/store/planStore';
 import { getDeviceById } from '@/lib/plan-builder/devices';
 import DeviceSymbol from './DeviceSymbol';
@@ -17,13 +17,14 @@ export default function PlanCanvas() {
 
   const {
     backgroundImage, backgroundWidth, backgroundHeight,
+    backgroundOffsetX, backgroundOffsetY, backgroundLocked,
     devices, commsRackId,
     selectedDeviceId, activeTool, deviceToPlace, deviceScale,
     stageScale, stageX, stageY,
     layers, activePlan, pdfFileName,
     whitewashRects, addWhitewashRect, removeWhitewashRect,
     setStageTransform, selectDevice, placeDevice, moveDevice, deleteDevice,
-    setStageRef, cropBackground,
+    setStageRef, cropBackground, setBackgroundOffset,
   } = usePlanStore();
 
   const [eraseStart, setEraseStart] = useState<{ x: number; y: number } | null>(null);
@@ -275,7 +276,7 @@ export default function PlanCanvas() {
 
   return (
     <div ref={containerRef} className="w-full h-full relative"
-      style={{ cursor: activeTool === 'place' || activeTool === 'erase' || activeTool === 'crop' || activeTool === 'elementSelect' ? 'crosshair' : activeTool === 'pan' ? (isDraggingStage ? 'grabbing' : 'grab') : 'default' }}>
+      style={{ cursor: activeTool === 'place' || activeTool === 'erase' || activeTool === 'crop' || activeTool === 'elementSelect' ? 'crosshair' : activeTool === 'pan' ? (isDraggingStage ? 'grabbing' : 'grab') : activeTool === 'moveBackground' && !backgroundLocked ? 'move' : 'default' }}>
       {!backgroundImage && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="text-center text-gray-500">
@@ -295,8 +296,18 @@ export default function PlanCanvas() {
         onDragEnd={(e) => { if (e.target === stageRef.current) { setIsDraggingStage(false); setStageTransform(stageScale, e.target.x(), e.target.y()); } }}>
 
         <Layer>
-          {bgImage && <Rect x={0} y={0} width={backgroundWidth} height={backgroundHeight} fill="#f8f8f0" />}
-          {bgImage && <KonvaImage image={bgImage} x={0} y={0} width={backgroundWidth} height={backgroundHeight} />}
+          {bgImage && (
+            <Group x={backgroundOffsetX} y={backgroundOffsetY}
+              draggable={activeTool === 'moveBackground' && !backgroundLocked}
+              onDragEnd={(e) => { setBackgroundOffset(e.target.x(), e.target.y()); }}>
+              <Rect x={0} y={0} width={backgroundWidth} height={backgroundHeight} fill="#f8f8f0" />
+              <KonvaImage image={bgImage} x={0} y={0} width={backgroundWidth} height={backgroundHeight} />
+              {!backgroundLocked && (
+                <Rect x={0} y={0} width={backgroundWidth} height={backgroundHeight}
+                  fill="transparent" stroke="#f59e0b" strokeWidth={2 / stageScale} dash={[8 / stageScale, 4 / stageScale]} listening={false} />
+              )}
+            </Group>
+          )}
         </Layer>
 
         {/* PDF element selection overlay — between background and whitewash */}

@@ -81,7 +81,7 @@ export interface LayerVisibility {
   speaker: boolean;
 }
 
-export type ActiveTool = 'select' | 'place' | 'pan' | 'erase' | 'crop' | 'elementSelect';
+export type ActiveTool = 'select' | 'place' | 'pan' | 'erase' | 'crop' | 'elementSelect' | 'moveBackground';
 
 export interface PdfElement {
   id: string;
@@ -113,6 +113,9 @@ export interface FloorData {
   backgroundImage: string | null;
   backgroundWidth: number;
   backgroundHeight: number;
+  backgroundOffsetX: number;
+  backgroundOffsetY: number;
+  backgroundLocked: boolean;
   pdfFileName: string;
   devices: PlacedDevice[];
   commsRackId: string | null;

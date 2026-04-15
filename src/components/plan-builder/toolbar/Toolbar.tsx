@@ -36,6 +36,8 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
     devices, titleBlock,
     stageScale, stageX, stageY, setStageTransform,
     backgroundWidth, backgroundHeight,
+    backgroundLocked, toggleBackgroundLock,
+    backgroundImage,
     saveProject, loadProject,
     undo, redo,
     setBackground, pdfFileName,
@@ -123,7 +125,7 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
       // Build .cfp JSON
       const syncedFloors = store.floors.map(f =>
         f.id === store.activeFloorId
-          ? { ...f, backgroundImage: store.backgroundImage, backgroundWidth: store.backgroundWidth, backgroundHeight: store.backgroundHeight, pdfFileName: store.pdfFileName, devices: store.devices, commsRackId: store.commsRackId, whitewashRects: store.whitewashRects }
+          ? { ...f, backgroundImage: store.backgroundImage, backgroundWidth: store.backgroundWidth, backgroundHeight: store.backgroundHeight, backgroundOffsetX: store.backgroundOffsetX, backgroundOffsetY: store.backgroundOffsetY, backgroundLocked: store.backgroundLocked, pdfFileName: store.pdfFileName, devices: store.devices, commsRackId: store.commsRackId, whitewashRects: store.whitewashRects }
           : f
       );
       const planId = store.planFileId || crypto.randomUUID();
@@ -262,6 +264,7 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
         {([
           { id: 'select' as const, icon: '↖', label: 'Select' },
           { id: 'pan' as const, icon: '✋', label: 'Pan' },
+          { id: 'moveBackground' as const, icon: '⊞', label: 'Move background plan' },
           { id: 'elementSelect' as const, icon: '◎', label: 'Select PDF elements to remove' },
           { id: 'erase' as const, icon: '⬜', label: 'Erase (whitewash areas)' },
           { id: 'crop' as const, icon: '⬒', label: 'Crop background' },
@@ -270,6 +273,11 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
             className={`px-2.5 py-1.5 text-xs rounded transition-colors ${activeTool === id ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
             onClick={() => setActiveTool(id)}>{icon}</button>
         ))}
+        {backgroundImage && (
+          <button title={backgroundLocked ? 'Unlock plan (allow repositioning)' : 'Lock plan position'}
+            className={`px-2.5 py-1.5 text-xs rounded transition-colors ${!backgroundLocked ? 'bg-amber-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+            onClick={toggleBackgroundLock}>{backgroundLocked ? '🔒' : '🔓'}</button>
+        )}
       </div>
 
       {/* Delete selected elements */}
