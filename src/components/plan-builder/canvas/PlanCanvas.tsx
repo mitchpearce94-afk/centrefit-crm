@@ -193,26 +193,46 @@ export default function PlanCanvas() {
     if (e.target === e.target.getStage() || e.target.getClassName() === 'Image') { selectDevice(null); setSelectedWhitewashId(null); }
   };
 
+  // Update Konva stage directly during scroll for flicker-free panning,
+  // then sync React state so UI stays consistent.
+  const wheelSyncRef = useRef<number>(0);
   const handleWheel = (e: any) => {
     e.evt.preventDefault();
     const evt = e.evt as WheelEvent;
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    let newScale = stage.scaleX();
+    let newX = stage.x();
+    let newY = stage.y();
+
     if (evt.ctrlKey || evt.metaKey) {
       const scaleBy = 1.08;
-      const stage = e.target.getStage();
       const oldScale = stage.scaleX();
       const pointer = stage.getPointerPosition();
       if (!pointer) return;
-      const newScale = evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy;
-      const clampedScale = Math.max(0.1, Math.min(5, newScale));
+      newScale = Math.max(0.1, Math.min(5, evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy));
       const mousePointTo = { x: (pointer.x - stage.x()) / oldScale, y: (pointer.y - stage.y()) / oldScale };
-      setStageTransform(clampedScale, pointer.x - mousePointTo.x * clampedScale, pointer.y - mousePointTo.y * clampedScale);
+      newX = pointer.x - mousePointTo.x * newScale;
+      newY = pointer.y - mousePointTo.y * newScale;
     } else if (evt.shiftKey) {
-      const dx = evt.deltaY > 0 ? -40 : 40;
-      setStageTransform(stageScale, stageX + dx, stageY);
+      newX += evt.deltaY > 0 ? -40 : 40;
     } else {
-      const dy = evt.deltaY > 0 ? -40 : 40;
-      setStageTransform(stageScale, stageX, stageY + dy);
+      newY += evt.deltaY > 0 ? -40 : 40;
     }
+
+    // Apply directly to Konva (no React re-render = no repaint flicker)
+    stage.scaleX(newScale);
+    stage.scaleY(newScale);
+    stage.x(newX);
+    stage.y(newY);
+    stage.batchDraw();
+
+    // Debounce React state sync so scrollbar/toolbar stay up to date
+    cancelAnimationFrame(wheelSyncRef.current);
+    wheelSyncRef.current = requestAnimationFrame(() => {
+      setStageTransform(newScale, newX, newY);
+    });
   };
 
   const [isDraggingStage, setIsDraggingStage] = useState(false);
