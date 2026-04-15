@@ -308,12 +308,7 @@ export default function PlanCanvas() {
               )}
             </Group>
           )}
-        </Layer>
-
-        {/* PDF element selection overlay — between background and whitewash */}
-        <PdfElementOverlay />
-
-        <Layer>
+          {/* Whitewash on same layer as background so they paint atomically — no flicker on scroll */}
           {whitewashRects.map(wr => (
             <React.Fragment key={wr.id}>
               <Rect x={wr.x} y={wr.y} width={wr.width} height={wr.height} fill="#ffffff"
@@ -331,6 +326,9 @@ export default function PlanCanvas() {
               strokeWidth={activeTool === 'elementSelect' || activeTool === 'crop' ? 2 : 1} dash={[4, 4]} listening={false} />
           )}
         </Layer>
+
+        {/* PDF element selection overlay */}
+        <PdfElementOverlay />
 
         <Layer>
           {activePlan !== 'master' && filteredDevices.map(device => {
