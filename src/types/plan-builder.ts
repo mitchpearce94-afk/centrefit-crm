@@ -115,6 +115,7 @@ export interface FloorData {
   backgroundHeight: number;
   backgroundOffsetX: number;
   backgroundOffsetY: number;
+  backgroundScale: number;
   backgroundLocked: boolean;
   pdfFileName: string;
   devices: PlacedDevice[];

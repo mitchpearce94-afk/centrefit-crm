@@ -36,7 +36,7 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
     devices, titleBlock,
     stageScale, stageX, stageY, setStageTransform,
     backgroundWidth, backgroundHeight,
-    backgroundLocked, toggleBackgroundLock,
+    backgroundLocked, backgroundScale, toggleBackgroundLock, setBackgroundScale,
     backgroundImage,
     saveProject, loadProject,
     undo, redo,
@@ -125,7 +125,7 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
       // Build .cfp JSON
       const syncedFloors = store.floors.map(f =>
         f.id === store.activeFloorId
-          ? { ...f, backgroundImage: store.backgroundImage, backgroundWidth: store.backgroundWidth, backgroundHeight: store.backgroundHeight, backgroundOffsetX: store.backgroundOffsetX, backgroundOffsetY: store.backgroundOffsetY, backgroundLocked: store.backgroundLocked, pdfFileName: store.pdfFileName, devices: store.devices, commsRackId: store.commsRackId, whitewashRects: store.whitewashRects }
+          ? { ...f, backgroundImage: store.backgroundImage, backgroundWidth: store.backgroundWidth, backgroundHeight: store.backgroundHeight, backgroundOffsetX: store.backgroundOffsetX, backgroundOffsetY: store.backgroundOffsetY, backgroundScale: store.backgroundScale, backgroundLocked: store.backgroundLocked, pdfFileName: store.pdfFileName, devices: store.devices, commsRackId: store.commsRackId, whitewashRects: store.whitewashRects }
           : f
       );
       const planId = store.planFileId || crypto.randomUUID();
@@ -277,6 +277,19 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
           <button title={backgroundLocked ? 'Unlock plan (allow repositioning)' : 'Lock plan position'}
             className={`px-2.5 py-1.5 text-xs rounded transition-colors ${!backgroundLocked ? 'bg-amber-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
             onClick={toggleBackgroundLock}>{backgroundLocked ? '🔒' : '🔓'}</button>
+        )}
+        {backgroundImage && !backgroundLocked && (
+          <div className="flex items-center gap-1 ml-1" title="Background plan scale">
+            <span className="text-amber-400 text-xs">Scale:</span>
+            <input type="range" min="0.25" max="3" step="0.01" value={backgroundScale}
+              onChange={(e) => setBackgroundScale(parseFloat(e.target.value))}
+              className="w-20 h-1 accent-amber-500 cursor-pointer" />
+            <span className="text-amber-300 text-xs w-10 text-center">{Math.round(backgroundScale * 100)}%</span>
+            {backgroundScale !== 1 && (
+              <button className="px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded"
+                onClick={() => setBackgroundScale(1)} title="Reset to 100%">Reset</button>
+            )}
+          </div>
         )}
       </div>
 

@@ -17,7 +17,7 @@ export default function PlanCanvas() {
 
   const {
     backgroundImage, backgroundWidth, backgroundHeight,
-    backgroundOffsetX, backgroundOffsetY, backgroundLocked,
+    backgroundOffsetX, backgroundOffsetY, backgroundScale, backgroundLocked,
     devices, commsRackId,
     selectedDeviceId, activeTool, deviceToPlace, deviceScale,
     stageScale, stageX, stageY,
@@ -297,7 +297,7 @@ export default function PlanCanvas() {
 
         <Layer>
           {bgImage && (
-            <Group x={backgroundOffsetX} y={backgroundOffsetY}
+            <Group x={backgroundOffsetX} y={backgroundOffsetY} scaleX={backgroundScale} scaleY={backgroundScale}
               draggable={activeTool === 'moveBackground' && !backgroundLocked}
               onDragEnd={(e) => { setBackgroundOffset(e.target.x(), e.target.y()); }}>
               <Rect x={0} y={0} width={backgroundWidth} height={backgroundHeight} fill="#f8f8f0" />

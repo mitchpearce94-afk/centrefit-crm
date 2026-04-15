@@ -189,7 +189,7 @@ async function renderSvgToPng(svgText: string): Promise<string> {
 
 interface CoordMapper { toX(cx: number): number; toY(cy: number): number; toSize(s: number): number; imgX: number; imgY: number; imgW: number; imgH: number; }
 
-function createCoordMapper(pageWidth: number, pageHeight: number, bgWidth: number, bgHeight: number, bgOffsetX = 0, bgOffsetY = 0): CoordMapper {
+function createCoordMapper(pageWidth: number, pageHeight: number, bgWidth: number, bgHeight: number, bgOffsetX = 0, bgOffsetY = 0, bgScale = 1): CoordMapper {
   const planX = pageWidth * PLAN_AREA.xPct;
   const planW = pageWidth * PLAN_AREA.wPct;
   const planH = pageHeight * PLAN_AREA.hPct;
@@ -198,9 +198,10 @@ function createCoordMapper(pageWidth: number, pageHeight: number, bgWidth: numbe
   const imgW = bgWidth * scale, imgH = bgHeight * scale;
   const imgX = planX + (planW - imgW) / 2;
   const imgY = planBottomY + (planH - imgH) / 2;
-  // Device coords are in canvas space; background is at (bgOffsetX, bgOffsetY).
-  // Map device position relative to the background image origin.
-  return { toX: (cx) => imgX + ((cx - bgOffsetX) / bgWidth) * imgW, toY: (cy) => imgY + imgH - ((cy - bgOffsetY) / bgHeight) * imgH, toSize: (s) => s * scale, imgX, imgY, imgW, imgH };
+  // Device coords are in canvas space; background is at (bgOffsetX, bgOffsetY) scaled by bgScale.
+  // Map device position relative to the scaled background image origin.
+  const scaledW = bgWidth * bgScale, scaledH = bgHeight * bgScale;
+  return { toX: (cx) => imgX + ((cx - bgOffsetX) / scaledW) * imgW, toY: (cy) => imgY + imgH - ((cy - bgOffsetY) / scaledH) * imgH, toSize: (s) => s * scale, imgX, imgY, imgW, imgH };
 }
 
 function drawRunBadge(page: PDFPage, x: number, y: number, label: string, color: ReturnType<typeof rgb>, mapper: CoordMapper, font: PDFFont) {
@@ -297,7 +298,7 @@ export async function exportToPdf(): Promise<Blob | null> {
 
   const syncedFloors: FloorData[] = store.floors.map(f =>
     f.id === store.activeFloorId
-      ? { ...f, backgroundImage: store.backgroundImage, backgroundWidth: store.backgroundWidth, backgroundHeight: store.backgroundHeight, backgroundOffsetX: store.backgroundOffsetX, backgroundOffsetY: store.backgroundOffsetY, backgroundLocked: store.backgroundLocked, pdfFileName: store.pdfFileName, devices: store.devices, commsRackId: store.commsRackId, whitewashRects: store.whitewashRects }
+      ? { ...f, backgroundImage: store.backgroundImage, backgroundWidth: store.backgroundWidth, backgroundHeight: store.backgroundHeight, backgroundOffsetX: store.backgroundOffsetX, backgroundOffsetY: store.backgroundOffsetY, backgroundScale: store.backgroundScale, backgroundLocked: store.backgroundLocked, pdfFileName: store.pdfFileName, devices: store.devices, commsRackId: store.commsRackId, whitewashRects: store.whitewashRects }
       : f
   );
 
@@ -394,7 +395,7 @@ export async function exportToPdf(): Promise<Blob | null> {
       const page = outputDoc.addPage([PDF_PAGE_W, PDF_PAGE_H]);
       const pageW = page.getWidth(), pageH = page.getHeight();
       page.drawImage(templateImage, { x: 0, y: 0, width: pageW, height: pageH });
-      const mapper = createCoordMapper(pageW, pageH, floor.backgroundWidth, floor.backgroundHeight, floor.backgroundOffsetX ?? 0, floor.backgroundOffsetY ?? 0);
+      const mapper = createCoordMapper(pageW, pageH, floor.backgroundWidth, floor.backgroundHeight, floor.backgroundOffsetX ?? 0, floor.backgroundOffsetY ?? 0, floor.backgroundScale ?? 1);
       page.drawImage(bgImage, { x: mapper.imgX, y: mapper.imgY, width: mapper.imgW, height: mapper.imgH });
 
       for (const wr of whitewashRects) {
