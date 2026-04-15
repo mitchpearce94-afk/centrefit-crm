@@ -200,8 +200,9 @@ function createCoordMapper(pageWidth: number, pageHeight: number, bgWidth: numbe
   const imgY = planBottomY + (planH - imgH) / 2;
   // Device coords are in canvas space; background is at (bgOffsetX, bgOffsetY) scaled by bgScale.
   // Map device position relative to the scaled background image origin.
+  // toSize divides by bgScale because canvas units cover less of the background when it's scaled up.
   const scaledW = bgWidth * bgScale, scaledH = bgHeight * bgScale;
-  return { toX: (cx) => imgX + ((cx - bgOffsetX) / scaledW) * imgW, toY: (cy) => imgY + imgH - ((cy - bgOffsetY) / scaledH) * imgH, toSize: (s) => s * scale, imgX, imgY, imgW, imgH };
+  return { toX: (cx) => imgX + ((cx - bgOffsetX) / scaledW) * imgW, toY: (cy) => imgY + imgH - ((cy - bgOffsetY) / scaledH) * imgH, toSize: (s) => s * scale / bgScale, imgX, imgY, imgW, imgH };
 }
 
 function drawRunBadge(page: PDFPage, x: number, y: number, label: string, color: ReturnType<typeof rgb>, mapper: CoordMapper, font: PDFFont) {
