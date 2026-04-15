@@ -284,7 +284,10 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
             <input type="range" min="0.25" max="3" step="0.01" value={backgroundScale}
               onChange={(e) => setBackgroundScale(parseFloat(e.target.value))}
               className="w-20 h-1 accent-amber-500 cursor-pointer" />
-            <span className="text-amber-300 text-xs w-10 text-center">{Math.round(backgroundScale * 100)}%</span>
+            <input type="number" min="10" max="300" step="1"
+              value={Math.round(backgroundScale * 100)}
+              onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v)) setBackgroundScale(v / 100); }}
+              className="w-12 bg-gray-800 border border-gray-600 rounded px-1 py-0.5 text-amber-300 text-xs text-center focus:outline-none focus:border-amber-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" /><span className="text-amber-400 text-xs">%</span>
             {backgroundScale !== 1 && (
               <button className="px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded"
                 onClick={() => setBackgroundScale(1)} title="Reset to 100%">Reset</button>
