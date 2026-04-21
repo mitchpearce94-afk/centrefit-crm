@@ -25,6 +25,7 @@ const DEVICE_LABELS: Record<string, { name: string; category: string }> = {
   rf_receiver: { name: 'RF Receiver', category: 'security' },
   door_lock: { name: 'Door Lock', category: 'security' },
   duress_button: { name: 'Duress Button', category: 'security' },
+  duress_pendant: { name: 'Duress Pendant', category: 'security' },
   duress_intercom: { name: 'Duress Intercom', category: 'security' },
   light_siren: { name: 'External Light & Siren', category: 'security' },
   bio_access: { name: 'BIO Access Control', category: 'security' },

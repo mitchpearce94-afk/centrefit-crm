@@ -15,7 +15,8 @@ export const DEVICE_CATALOG: DeviceDefinition[] = [
   { id: 'reed-switch', name: 'Reed Switch', category: 'security', cableType: 'sixcore', symbolType: 'gold-circle', fillColor: '#FFD700', strokeColor: '#b8860b', symbolImage: '/plan-builder/symbols/reed-switch.png' },
   { id: 'rf-receiver', name: 'RF Receiver', category: 'security', cableType: 'sixcore', symbolType: 'wifi', fillColor: '#ff8800', strokeColor: '#ff8800', symbolImage: '/plan-builder/symbols/rf-receiver.png' },
   { id: 'door-lock', name: 'Door Lock - Striker/Mag', category: 'security', cableType: 'sixcore', symbolType: 'labeled-square', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'H', symbolImage: '/plan-builder/symbols/door-lock.png' },
-  { id: 'duress-btn', name: 'Duress Button', category: 'security', cableType: 'sixcore', symbolType: 'labeled-circle', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'D', symbolImage: '/plan-builder/symbols/duress-button.png' },
+  { id: 'duress-btn', name: 'Duress Button (wall mount)', category: 'security', cableType: 'sixcore', symbolType: 'labeled-circle', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'D', symbolImage: '/plan-builder/symbols/duress-button.png' },
+  { id: 'duress-pendant', name: 'Duress Pendant (wireless)', category: 'security', cableType: 'none', symbolType: 'labeled-circle', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'DP', symbolImage: '/plan-builder/symbols/duress-button.png' },
   { id: 'duress-intercom', name: 'Duress Intercom', category: 'security', cableType: 'sixcore', symbolType: 'duress-circle', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'D', symbolImage: '/plan-builder/symbols/duress-intercom.png' },
   { id: 'ext-siren', name: 'External Light & Siren', category: 'security', cableType: 'sixcore', symbolType: 'outline-square', fillColor: '#0066cc', strokeColor: '#3399ff', symbolImage: '/plan-builder/symbols/ext-light-siren.png' },
 

@@ -15,6 +15,7 @@ const PLAN_TO_QUOTE_MAP: Record<string, string> = {
   'rf-receiver': 'rf_receiver',
   'door-lock': 'door_lock',
   'duress-btn': 'duress_button',
+  'duress-pendant': 'duress_pendant',
   'duress-intercom': 'duress_intercom',
   'ext-siren': 'light_siren',
   'bio-access': 'bio_access',

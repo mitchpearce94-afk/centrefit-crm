@@ -196,6 +196,7 @@ export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo =
     { name: 'PIR wall', minutesPer: t('pir_wall', 20), count: c.pir_wall || 0 },
     { name: 'Reed switch', minutesPer: t('reed_switch', 25), count: c.reed_switch || 0 },
     { name: 'Duress button + faceplate', minutesPer: t('duress_button', 40), count: c.duress_button || 0 },
+    { name: 'Duress pendant (enrol + test)', minutesPer: t('duress_pendant', 15), count: c.duress_pendant || 0 },
     { name: 'Duress intercom', minutesPer: t('duress_intercom', 30), count: c.duress_intercom || 0 },
     { name: 'REX button', minutesPer: t('rex_button', 60), count: c.rex_button || 0 },
     { name: 'External siren', minutesPer: t('light_siren', 40), count: c.light_siren || 0 },

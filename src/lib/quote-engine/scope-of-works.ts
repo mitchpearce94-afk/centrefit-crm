@@ -37,7 +37,7 @@ export function generateScopeOfWorks(
   const totalSensors = sum(deviceCounts, 'pir_360_roof', 'pir_wall', 'reed_switch');
   const totalWAPs = deviceCounts.wap ?? 0;
   const totalTailgate = deviceCounts.tailgate_system ?? 0;
-  const totalDuressButtons = deviceCounts.duress_button ?? 0;
+  const totalDuressButtons = (deviceCounts.duress_button ?? 0) + (deviceCounts.duress_pendant ?? 0);
   const totalDuressIntercoms = deviceCounts.duress_intercom ?? 0;
   const totalDoorLocks = deviceCounts.door_lock ?? 0;
   const totalAlarmPanels = deviceCounts.alarm_panel ?? 0;

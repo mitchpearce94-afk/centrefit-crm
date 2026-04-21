@@ -54,7 +54,8 @@ export const DEVICE_TYPES: DeviceType[] = [
   { code: 'rf_receiver', legend: 'RF Receiver', cable: 'cat6', category: 'Security System' },
   { code: 'door_lock', legend: 'Door Lock - Striker / Mag', cable: '6core_security', category: 'Security System' },
   { code: 'rex_button', legend: 'REX Request to Exit', cable: '6core_security', category: 'Security System' },
-  { code: 'duress_button', legend: 'Duress Button', cable: '6core_security', category: 'Security System' },
+  { code: 'duress_button', legend: 'Duress Button (wall mount)', cable: '6core_security', category: 'Security System' },
+  { code: 'duress_pendant', legend: 'Duress Pendant (wireless)', cable: 'n-a', category: 'Security System' },
   { code: 'duress_intercom', legend: 'Duress Intercom', cable: '6core_security', category: 'Security System' },
   { code: 'light_siren', legend: 'External Light and Siren', cable: '6core_security', category: 'Security System' },
   // Digital Surveillance (2) — short card, column 2 top
