@@ -180,44 +180,42 @@ export function QuoteActions({
       }
       const sortedSuppliers = [...bySupplier.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
+      // Fixed column widths so every supplier's table lines up identically.
+      const colgroup = `<colgroup>
+        <col />
+        <col style="width:180px" />
+        <col style="width:60px" />
+      </colgroup>`;
+
       let sections = "";
       for (const [supplier, supItems] of sortedSuppliers) {
-        const supTotal = supItems.reduce((s: number, i: any) => s + (i.cost_price || 0) * (i.quantity || 0), 0);
         let rows = "";
         for (const item of supItems) {
-          const lineTotal = (item.cost_price || 0) * (item.quantity || 0);
           rows += `<tr style="border-bottom:1px solid #f1f5f9">
             <td style="padding:8px;font-weight:500">${item.product_name}</td>
             <td style="padding:8px;font-family:monospace;color:#64748b;font-size:12px">${item.sku || "—"}</td>
-            <td style="padding:8px;text-align:center;font-weight:600">${item.quantity}</td>
-            <td style="padding:8px;text-align:right;font-family:monospace">$${(item.cost_price || 0).toFixed(2)}</td>
-            <td style="padding:8px;text-align:right;font-family:monospace;font-weight:600">$${lineTotal.toFixed(2)}</td>
+            <td style="padding:8px;text-align:right;font-weight:600">${item.quantity}</td>
           </tr>`;
         }
         sections += `
           <div style="margin-bottom:28px;page-break-inside:avoid">
-            <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #0f172a;padding-bottom:6px;margin-bottom:0">
-              <h2 style="font-size:15px;font-weight:700;margin:0">${supplier}</h2>
-              <span style="font-size:14px;font-weight:700;font-family:monospace">$${supTotal.toFixed(2)}</span>
-            </div>
-            <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <h2 style="font-size:15px;font-weight:700;margin:0;border-bottom:2px solid #0f172a;padding-bottom:6px">${supplier}</h2>
+            <table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed">
+              ${colgroup}
               <thead><tr style="border-bottom:1px solid #e2e8f0">
                 <th style="padding:8px;text-align:left">Product</th>
                 <th style="padding:8px;text-align:left">SKU</th>
-                <th style="padding:8px;text-align:center;width:50px">Qty</th>
-                <th style="padding:8px;text-align:right">Unit Cost</th>
-                <th style="padding:8px;text-align:right">Total</th>
+                <th style="padding:8px;text-align:right">Qty</th>
               </tr></thead>
               <tbody>${rows}</tbody>
             </table>
           </div>`;
       }
 
-      const grandTotal = items.reduce((s: number, i: any) => s + (i.cost_price || 0) * (i.quantity || 0), 0);
       body = `
         <h1 style="font-size:22px;font-weight:700;margin:0">Supplier Purchase Orders</h1>
         <p style="color:#64748b;margin:4px 0 0;font-size:13px">${quoteRef} — ${clientName}${siteName ? " — " + siteName : ""}</p>
-        <p style="color:#94a3b8;margin:2px 0 24px;font-size:12px">${date} · ${sortedSuppliers.length} supplier${sortedSuppliers.length !== 1 ? "s" : ""} · Total cost: <strong style="color:#0f172a">$${grandTotal.toFixed(2)}</strong></p>
+        <p style="color:#94a3b8;margin:2px 0 24px;font-size:12px">${date} · ${sortedSuppliers.length} supplier${sortedSuppliers.length !== 1 ? "s" : ""}</p>
         ${sections}`;
     }
 
