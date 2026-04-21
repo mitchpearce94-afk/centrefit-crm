@@ -73,21 +73,26 @@ export async function POST(req: NextRequest) {
     ceiling_tv_mount_count: quote.ceiling_tv_mount_count ?? 0,
     separate_studio_zone: quote.separate_studio_zone ?? false,
   };
-  const scope = generateScopeOfWorks(deviceCounts, siteInfo);
+  const scope = generateScopeOfWorks(deviceCounts, siteInfo, quote.scope_overrides ?? undefined);
 
   // Build scope HTML
-  const scopeHtml = scope.sections.map(section => `
+  const scopeHtml = scope.sections.map(section => {
+    const visible = section.items.filter(i => i.included && i.text.trim());
+    if (visible.length === 0) return '';
+    return `
     <tr><td style="padding:16px 0 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#334155;border-bottom:1px solid #e2e8f0">${section.heading}</td></tr>
-    ${section.items.map(item => {
-      const isExclusion = item.startsWith('ANY AND ALL');
-      return `<tr><td style="padding:4px 0 4px 12px;font-size:12px;color:${isExclusion ? '#dc2626' : '#475569'};font-weight:${isExclusion ? '700' : '400'};line-height:1.6;border-left:${isExclusion ? 'none' : '2px solid #e2e8f0'}">${item}</td></tr>`;
+    ${visible.map(item => {
+      const isExclusion = item.id === 'electrical_exclusion';
+      return `<tr><td style="padding:4px 0 4px 12px;font-size:12px;color:${isExclusion ? '#dc2626' : '#475569'};font-weight:${isExclusion ? '700' : '400'};line-height:1.6;border-left:${isExclusion ? 'none' : '2px solid #e2e8f0'}">${item.text}</td></tr>`;
     }).join('')}
-  `).join('');
+  `;
+  }).join('');
 
-  const notesHtml = scope.notes.length > 0 ? `
+  const visibleNotes = scope.notes.filter(n => n.included && n.text.trim());
+  const notesHtml = visibleNotes.length > 0 ? `
     <tr><td style="padding:16px 0">
       <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px 20px">
-        ${scope.notes.map(note => `<p style="font-size:11px;color:#92400e;margin:0 0 6px;line-height:1.5"><strong>PLEASE NOTE:</strong>&nbsp;&nbsp;${note}</p>`).join('')}
+        ${visibleNotes.map(note => `<p style="font-size:11px;color:#92400e;margin:0 0 6px;line-height:1.5"><strong>PLEASE NOTE:</strong>&nbsp;&nbsp;${note.text}</p>`).join('')}
       </div>
     </td></tr>
   ` : '';

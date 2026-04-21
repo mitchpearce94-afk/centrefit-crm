@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 import { generateScopeOfWorks } from "@/lib/quote-engine";
 import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
-import type { SiteInfo } from "@/lib/quote-engine";
+import type { SiteInfo, ScopeOverrides } from "@/lib/quote-engine";
+import { ScopeEditor } from "./scope-editor";
 
 function fmt(n: number): string {
   return n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -25,6 +26,7 @@ interface Props {
   lineItems: any[];
   createdAt: string;
   siteInfo: SiteInfo;
+  scopeOverrides: ScopeOverrides | null;
   contactEmail: string | null;
   jobId: string | null;
   jobs?: { id: string; number: string; customer_name: string | null }[];
@@ -33,7 +35,7 @@ interface Props {
 export function QuoteActions({
   quoteId, status, quoteRef, clientName, siteName, siteAddress,
   quoteType, pricing, deviceCounts, lineItems, createdAt,
-  siteInfo, contactEmail, jobId, jobs = [],
+  siteInfo, scopeOverrides, contactEmail, jobId, jobs = [],
 }: Props) {
   const router = useRouter();
   const supabase = createClient();
@@ -41,6 +43,7 @@ export function QuoteActions({
   const { toast } = useToast();
   const [updating, setUpdating] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [showScopeEditor, setShowScopeEditor] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendEmail, setSendEmail] = useState(contactEmail ?? "");
 
@@ -118,7 +121,8 @@ export function QuoteActions({
   }
 
   const isProgress = quoteType === "progress";
-  const scope = generateScopeOfWorks(deviceCounts, siteInfo);
+  const scope = generateScopeOfWorks(deviceCounts, siteInfo, scopeOverrides ?? undefined);
+  const hasScopeOverrides = !!scopeOverrides;
 
   function openBOMWindow(mode: "warehouse" | "supplier") {
     const w = window.open("", "_blank");
@@ -239,6 +243,18 @@ export function QuoteActions({
         )}
 
         <button onClick={() => setShowPreview(true)} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors">Preview Quote</button>
+
+        {/* Scope of Works — edit clauses + custom lines */}
+        <button
+          onClick={() => setShowScopeEditor(true)}
+          className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${
+            hasScopeOverrides
+              ? "border-amber-500/40 bg-amber-500/5 text-amber-300 hover:bg-amber-500/10"
+              : "border-border text-muted-foreground hover:text-foreground hover:bg-accent"
+          }`}
+        >
+          Scope of Works{hasScopeOverrides ? " • Edited" : ""}
+        </button>
 
         {/* Warehouse Pick List */}
         <button onClick={() => openBOMWindow("warehouse")} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Warehouse BOM</button>
@@ -417,38 +433,46 @@ export function QuoteActions({
                 <div style={{ marginBottom: "32px" }}>
                   <p style={{ fontSize: "14px", textTransform: "uppercase", letterSpacing: "1.5px", color: "#0f172a", fontWeight: 700, margin: "0 0 20px", borderBottom: "2px solid #0f172a", paddingBottom: "8px" }}>Scope of Works</p>
 
-                  {scope.sections.map((section) => (
-                    <div key={section.heading} className="scope-section" style={{ marginBottom: "24px" }}>
-                      <p style={{ fontSize: "12px", fontWeight: 700, color: "#334155", textTransform: "uppercase", letterSpacing: "1px", margin: "0 0 12px", paddingBottom: "4px", borderBottom: "1px solid #e2e8f0" }}>{section.heading}</p>
-                      {section.items.map((item, i) => {
-                        const isExclusion = item.startsWith('ANY AND ALL');
-                        return (
-                          <p key={i} style={{
-                            fontSize: "12px",
-                            color: isExclusion ? "#dc2626" : "#475569",
-                            fontWeight: isExclusion ? 700 : 400,
-                            margin: "0 0 8px",
-                            paddingLeft: isExclusion ? 0 : "12px",
-                            borderLeft: isExclusion ? "none" : "2px solid #e2e8f0",
-                            lineHeight: "1.6",
-                          }}>
-                            {item}
-                          </p>
-                        );
-                      })}
-                    </div>
-                  ))}
+                  {scope.sections.map((section) => {
+                    const visible = section.items.filter((i) => i.included && i.text.trim());
+                    if (visible.length === 0) return null;
+                    return (
+                      <div key={section.id} className="scope-section" style={{ marginBottom: "24px" }}>
+                        <p style={{ fontSize: "12px", fontWeight: 700, color: "#334155", textTransform: "uppercase", letterSpacing: "1px", margin: "0 0 12px", paddingBottom: "4px", borderBottom: "1px solid #e2e8f0" }}>{section.heading}</p>
+                        {visible.map((item) => {
+                          const isExclusion = item.id === "electrical_exclusion";
+                          return (
+                            <p key={item.id} style={{
+                              fontSize: "12px",
+                              color: isExclusion ? "#dc2626" : "#475569",
+                              fontWeight: isExclusion ? 700 : 400,
+                              margin: "0 0 8px",
+                              paddingLeft: isExclusion ? 0 : "12px",
+                              borderLeft: isExclusion ? "none" : "2px solid #e2e8f0",
+                              lineHeight: "1.6",
+                            }}>
+                              {item.text}
+                            </p>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
 
                   {/* Please Note items */}
-                  {scope.notes.length > 0 && (
-                    <div className="notes-block" style={{ marginTop: "16px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "16px 20px" }}>
-                      {scope.notes.map((note, i) => (
-                        <p key={i} style={{ fontSize: "11px", color: "#92400e", margin: i === 0 ? 0 : "6px 0 0", lineHeight: "1.5" }}>
-                          <strong>PLEASE NOTE:</strong>&nbsp;&nbsp;{note}
-                        </p>
-                      ))}
-                    </div>
-                  )}
+                  {(() => {
+                    const visibleNotes = scope.notes.filter((n) => n.included && n.text.trim());
+                    if (visibleNotes.length === 0) return null;
+                    return (
+                      <div className="notes-block" style={{ marginTop: "16px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "16px 20px" }}>
+                        {visibleNotes.map((note, i) => (
+                          <p key={note.id} style={{ fontSize: "11px", color: "#92400e", margin: i === 0 ? 0 : "6px 0 0", lineHeight: "1.5" }}>
+                            <strong>PLEASE NOTE:</strong>&nbsp;&nbsp;{note.text}
+                          </p>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* ── PRICING ── */}
@@ -530,6 +554,18 @@ export function QuoteActions({
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── SCOPE OF WORKS EDITOR ── */}
+      {showScopeEditor && (
+        <ScopeEditor
+          quoteId={quoteId}
+          status={status}
+          deviceCounts={deviceCounts}
+          siteInfo={siteInfo}
+          initialOverrides={scopeOverrides}
+          onClose={() => setShowScopeEditor(false)}
+        />
       )}
     </>
   );

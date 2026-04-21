@@ -105,6 +105,7 @@ export default async function QuoteDetailPage({
             ceiling_tv_mount_count: quote.ceiling_tv_mount_count ?? 0,
             separate_studio_zone: quote.separate_studio_zone ?? false,
           }}
+          scopeOverrides={quote.scope_overrides ?? null}
           contactEmail={quote.customer?.customer_contacts?.find((c: any) => c.is_primary)?.email ?? null}
           jobId={quote.job_id ?? null}
           jobs={jobs}

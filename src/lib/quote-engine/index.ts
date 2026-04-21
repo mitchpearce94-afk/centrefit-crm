@@ -64,4 +64,11 @@ export type { QuoteSummary } from './pricing'
 
 // Scope of Works
 export { generateScopeOfWorks } from './scope-of-works'
-export type { ScopeSection, ScopeDocument } from './scope-of-works'
+export type {
+  ScopeItem,
+  ScopeNote,
+  ScopeSection,
+  ScopeDocument,
+  ScopeOverrides,
+  ScopeOverrideMap,
+} from './scope-of-works'
