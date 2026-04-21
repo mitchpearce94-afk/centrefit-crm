@@ -25,6 +25,7 @@ const settingsNav = [
   { name: "Checklists", href: "/settings/checklists", icon: ChecklistIcon },
   { name: "Products", href: "/settings/products", icon: PackageIcon },
   { name: "Rules", href: "/settings/rules", icon: RulesIcon },
+  { name: "Integrations", href: "/settings/integrations", icon: PlugIcon },
 ];
 
 export function Sidebar({ user }: { user: User }) {
@@ -255,6 +256,14 @@ function RulesIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+    </svg>
+  );
+}
+
+function PlugIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22v-5" /><path d="M9 8V2" /><path d="M15 8V2" /><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z" />
     </svg>
   );
 }
