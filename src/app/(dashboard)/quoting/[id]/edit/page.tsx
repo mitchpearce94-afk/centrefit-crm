@@ -10,13 +10,15 @@ export default async function EditQuotePage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [quoteResult, lineItemsResult, extrasResult, customersResult, productsResult, plansResult, billingResult, timingsResult] = await Promise.all([
+  const [quoteResult, lineItemsResult, extrasResult, customersResult, productsResult, plansResult, linkedPlanResult, jobsResult, billingResult, timingsResult] = await Promise.all([
     supabase.from("quotes").select("*").eq("id", id).single(),
     supabase.from("quote_line_items").select("*").eq("quote_id", id).order("sort_order"),
     supabase.from("quote_extras").select("*").eq("quote_id", id).order("sort_order"),
     supabase.from("customers").select("id, name, customer_sites(id, name, address, suburb, state, postcode), customer_contacts(id, name, phone, mobile, email, is_primary)").order("name"),
     supabase.from("quote_products").select("*").eq("is_active", true).order("category, name"),
     supabase.from("plan_files").select("*").is("quote_id", null).order("created_at", { ascending: false }),
+    supabase.from("plan_files").select("*").eq("quote_id", id).maybeSingle(),
+    supabase.from("jobs").select("id, number, customer:customers!customer_id(name)").order("number", { ascending: false }).limit(200),
     supabase.from("billing_settings").select("*").single(),
     supabase.from("labour_timings").select("code, minutes_per").order("sort_order"),
   ]);
@@ -35,6 +37,8 @@ export default async function EditQuotePage({
     ref: quote.ref,
     customerId: quote.customer_id || "",
     siteId: quote.site_id || "",
+    jobId: quote.job_id || "",
+    planId: linkedPlanResult.data?.id || "",
     clientName: quote.client_name || "",
     siteName: quote.site_name || "",
     siteAddress: quote.site_address || "",
@@ -62,6 +66,18 @@ export default async function EditQuotePage({
     extras: extrasResult.data ?? [],
   };
 
+  // Merge plans: include the one linked to this quote so the dropdown can show it
+  const plansList = [...(plansResult.data ?? [])];
+  if (linkedPlanResult.data && !plansList.find((p: any) => p.id === linkedPlanResult.data!.id)) {
+    plansList.unshift(linkedPlanResult.data);
+  }
+
+  const jobsList = (jobsResult.data ?? []).map((j: any) => ({
+    id: j.id,
+    number: j.number,
+    customer_name: Array.isArray(j.customer) ? j.customer[0]?.name ?? null : j.customer?.name ?? null,
+  }));
+
   return (
     <div>
       <h1 className="text-2xl font-bold tracking-tight">Edit Quote — {quote.ref}</h1>
@@ -70,7 +86,8 @@ export default async function EditQuotePage({
         <QuoteWizard
           customers={customersResult.data ?? []}
           products={productsResult.data ?? []}
-          plans={plansResult.data ?? []}
+          plans={plansList}
+          jobs={jobsList}
           existingQuote={existingData}
           billingSettings={billingResult.data}
           labourTimings={Object.fromEntries((timingsResult.data ?? []).map((t: any) => [t.code, t.minutes_per]))}

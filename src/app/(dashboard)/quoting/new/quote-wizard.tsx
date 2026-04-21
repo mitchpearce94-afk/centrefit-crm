@@ -90,6 +90,8 @@ interface ExistingQuote {
   ref: string;
   customerId: string;
   siteId?: string;
+  jobId?: string;
+  planId?: string;
   clientName: string;
   siteName: string;
   siteAddress: string;
@@ -131,13 +133,13 @@ export function QuoteWizard({
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const planImportRef = useRef<HTMLInputElement>(null);
-  const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [selectedPlanId, setSelectedPlanId] = useState(existingQuote?.planId || "");
   const [quoteType, setQuoteType] = useState<"full" | "progress">(
     (existingQuote?.quoteType as "full" | "progress") || "full"
   );
 
   // Job linking
-  const [linkedJobId, setLinkedJobId] = useState(searchParams.get("job") || "");
+  const [linkedJobId, setLinkedJobId] = useState(existingQuote?.jobId || searchParams.get("job") || "");
 
   // Step 1: Client
   const [customerId, setCustomerId] = useState(existingQuote?.customerId || "");
@@ -157,9 +159,28 @@ export function QuoteWizard({
   // Step 2: Devices
   const [deviceCounts, setDeviceCounts] = useState<DeviceCounts>(existingQuote?.deviceCounts || {});
 
-  // Step 3: BOM
-  const [bomItems, setBomItems] = useState<BOMItem[]>([]);
-  const [bomGenerated, setBomGenerated] = useState(false);
+  // Step 3: BOM — rehydrate from saved line items when editing
+  const [bomItems, setBomItems] = useState<BOMItem[]>(
+    existingQuote?.lineItems?.length
+      ? existingQuote.lineItems.map((li: any) => ({
+          device_type_code: li.device_type_code ?? null,
+          device_type_legend: li.device_type_legend ?? null,
+          category: li.category ?? "",
+          product_id: li.product_id ?? null,
+          product_name: li.product_name ?? "",
+          sku: li.sku ?? "",
+          supplier: li.supplier ?? "",
+          quantity: li.quantity ?? 0,
+          cost_price: Number(li.cost_price) || 0,
+          markup: Number(li.markup) || 0,
+          sell_price: Number(li.sell_price) || 0,
+          notes: li.notes ?? "",
+          auto_added: !!li.auto_added,
+          rule_description: li.rule_description ?? null,
+        }))
+      : []
+  );
+  const [bomGenerated, setBomGenerated] = useState(!!existingQuote?.lineItems?.length);
 
   // Step 4: Labour
   const [labourData, setLabourData] = useState<LabourData | null>(existingQuote?.labourData || null);
