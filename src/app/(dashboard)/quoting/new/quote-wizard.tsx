@@ -771,6 +771,88 @@ export function QuoteWizard({
     return map;
   }, [bomItems]);
 
+  // BOM per-category add/delete state
+  const [bomAddCategory, setBomAddCategory] = useState<string | null>(null);
+  const [bomAddSearch, setBomAddSearch] = useState("");
+
+  const bomAddResults = useMemo(() => {
+    if (!bomAddCategory) return [];
+    const q = bomAddSearch.trim().toLowerCase();
+    const pool = products.filter((p) => p.is_active);
+    const sameCat = pool.filter((p) => p.category.toLowerCase() === bomAddCategory.toLowerCase());
+    const base = sameCat.length > 0 ? sameCat : pool;
+    if (!q) return base.slice(0, 20);
+    return base
+      .filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.sku.toLowerCase().includes(q) ||
+          p.supplier.toLowerCase().includes(q)
+      )
+      .slice(0, 20);
+  }, [bomAddCategory, bomAddSearch, products]);
+
+  function addProductToBom(product: Product, category: string) {
+    setBomItems((prev) => {
+      const existing = prev.find(
+        (b) => b.product_id === product.id && b.category === category
+      );
+      if (existing) {
+        return prev.map((b) =>
+          b === existing ? { ...b, quantity: b.quantity + 1 } : b
+        );
+      }
+      const newItem: BOMItem = {
+        device_type_code: null,
+        device_type_legend: null,
+        category,
+        product_id: product.id,
+        product_name: product.name,
+        sku: product.sku,
+        supplier: product.supplier,
+        quantity: 1,
+        cost_price: product.cost_price,
+        markup: product.markup,
+        sell_price: product.sell_price,
+        notes: "",
+        auto_added: false,
+        rule_description: null,
+      };
+      return [...prev, newItem];
+    });
+    setBomAddSearch("");
+  }
+
+  function addCustomToBom(category: string) {
+    const newItem: BOMItem = {
+      device_type_code: null,
+      device_type_legend: null,
+      category,
+      product_id: null,
+      product_name: "",
+      sku: "",
+      supplier: "",
+      quantity: 1,
+      cost_price: 0,
+      markup: 0,
+      sell_price: 0,
+      notes: "",
+      auto_added: false,
+      rule_description: null,
+    };
+    setBomItems((prev) => [...prev, newItem]);
+    setBomAddCategory(null);
+    setBomAddSearch("");
+  }
+
+  function deleteBomItem(target: BOMItem) {
+    setBomItems((prev) => prev.filter((b) => b !== target));
+  }
+
+  function patchBomItem(target: BOMItem, patch: Partial<BOMItem>) {
+    setBomItems((prev) => prev.map((b) => (b === target ? { ...b, ...patch } : b)));
+  }
+
   return (
     <div>
       {/* Draft resume banner */}
@@ -1292,6 +1374,7 @@ export function QuoteWizard({
               {Array.from(bomByCategory).map(([category, items]) => {
                 const catCost = items.reduce((s, i) => s + i.cost_price * i.quantity, 0);
                 const catSell = items.reduce((s, i) => s + i.sell_price * i.quantity, 0);
+                const isAdding = bomAddCategory === category;
                 return (
                   <div key={category} className="mb-5 rounded-lg border border-border overflow-hidden">
                     {/* Category header */}
@@ -1300,52 +1383,192 @@ export function QuoteWizard({
                         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{category}</h3>
                         <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{items.length}</span>
                       </div>
-                      <span className="text-xs font-mono text-muted-foreground">${fmt(catSell)}</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBomAddCategory(isAdding ? null : category);
+                            setBomAddSearch("");
+                          }}
+                          className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                        >
+                          {isAdding ? "Cancel" : "+ Product"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => addCustomToBom(category)}
+                          className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                        >
+                          + Custom
+                        </button>
+                        <span className="ml-2 text-xs font-mono text-muted-foreground">${fmt(catSell)}</span>
+                      </div>
                     </div>
+
+                    {/* Inline product search (open when + Product clicked) */}
+                    {isAdding && (
+                      <div className="border-b border-border bg-card/50 p-3">
+                        <input
+                          type="text"
+                          autoFocus
+                          value={bomAddSearch}
+                          onChange={(e) => setBomAddSearch(e.target.value)}
+                          placeholder={`Search products in ${category}...`}
+                          className={inputClass}
+                        />
+                        <div className="mt-2 max-h-64 overflow-y-auto rounded-md border border-border bg-card">
+                          {bomAddResults.length === 0 ? (
+                            <p className="px-3 py-3 text-xs text-muted-foreground">
+                              No matching products.
+                            </p>
+                          ) : (
+                            bomAddResults.map((p) => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => addProductToBom(p, category)}
+                                className="flex w-full items-center justify-between gap-3 border-b border-border px-3 py-2 text-left text-sm last:border-0 hover:bg-accent transition-colors"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate font-medium">{p.name}</p>
+                                  <p className="truncate text-[11px] text-muted-foreground">
+                                    <span className="font-mono">{p.sku}</span>
+                                    {p.supplier && <> · {p.supplier}</>}
+                                    {p.category.toLowerCase() !== category.toLowerCase() && (
+                                      <span className="ml-1 rounded bg-amber-500/10 px-1 text-[10px] text-amber-400">
+                                        {p.category}
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
+                                <span className="shrink-0 font-mono text-xs">${fmt(p.sell_price)}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Items */}
                     <div className="divide-y divide-border">
-                      {items.map((item, i) => (
-                        <div key={`${item.product_id}-${i}`} className="px-4 py-3">
-                          <div className="flex items-start justify-between gap-4">
-                            {/* Product info */}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <p className="text-sm font-medium truncate">{item.product_name}</p>
-                                {item.auto_added && (
-                                  <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Auto</span>
+                      {items.map((item, i) => {
+                        const isCustom = item.product_id === null;
+                        return (
+                          <div key={`${item.product_id ?? "custom"}-${i}`} className="px-4 py-3">
+                            <div className="flex items-start justify-between gap-4">
+                              {/* Product info */}
+                              <div className="flex-1 min-w-0">
+                                {isCustom ? (
+                                  <div className="space-y-1">
+                                    <input
+                                      type="text"
+                                      value={item.product_name}
+                                      onChange={(e) => patchBomItem(item, { product_name: e.target.value })}
+                                      placeholder="Custom item name"
+                                      className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm font-medium focus:border-primary focus:outline-none"
+                                    />
+                                    <div className="flex gap-2">
+                                      <input
+                                        type="text"
+                                        value={item.sku}
+                                        onChange={(e) => patchBomItem(item, { sku: e.target.value })}
+                                        placeholder="SKU"
+                                        className="w-32 rounded-md border border-border bg-input px-2 py-1 text-[11px] font-mono focus:border-primary focus:outline-none"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={item.supplier}
+                                        onChange={(e) => patchBomItem(item, { supplier: e.target.value })}
+                                        placeholder="Supplier"
+                                        className="w-40 rounded-md border border-border bg-input px-2 py-1 text-[11px] focus:border-primary focus:outline-none"
+                                      />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-sm font-medium truncate">{item.product_name}</p>
+                                      {item.auto_added ? (
+                                        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Auto</span>
+                                      ) : (
+                                        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Manual</span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-3 mt-0.5">
+                                      {item.sku && <span className="text-[11px] text-muted-foreground font-mono">{item.sku}</span>}
+                                      {item.supplier && <span className="text-[11px] text-muted-foreground">{item.supplier}</span>}
+                                    </div>
+                                  </>
                                 )}
                               </div>
-                              <div className="flex items-center gap-3 mt-0.5">
-                                {item.sku && <span className="text-[11px] text-muted-foreground font-mono">{item.sku}</span>}
-                                {item.supplier && <span className="text-[11px] text-muted-foreground">{item.supplier}</span>}
-                              </div>
-                            </div>
 
-                            {/* Qty + Pricing — right aligned, consistent widths */}
-                            <div className="flex items-center gap-4 shrink-0">
-                              <input
-                                type="number"
-                                min="0"
-                                value={item.quantity}
-                                onChange={(e) => {
-                                  const idx = bomItems.indexOf(item);
-                                  setBomItems((prev) => prev.map((b, bi) => bi === idx ? { ...b, quantity: parseInt(e.target.value) || 0 } : b));
-                                }}
-                                className="w-14 rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none"
-                              />
-                              <div className="hidden sm:block w-20 text-right">
-                                <p className="text-[10px] text-muted-foreground">Unit</p>
-                                <p className="text-xs font-mono">${fmt(item.sell_price)}</p>
-                              </div>
-                              <div className="w-24 text-right">
-                                <p className="text-[10px] text-muted-foreground">Line Total</p>
-                                <p className="text-sm font-mono font-medium">${fmt(item.sell_price * item.quantity)}</p>
+                              {/* Qty + Pricing */}
+                              <div className="flex items-center gap-3 shrink-0">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={item.quantity}
+                                  onChange={(e) => patchBomItem(item, { quantity: parseInt(e.target.value) || 0 })}
+                                  className="w-14 rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none"
+                                />
+                                {isCustom ? (
+                                  <>
+                                    <div className="w-20">
+                                      <p className="text-[10px] text-muted-foreground">Cost</p>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={item.cost_price || ""}
+                                        onChange={(e) => patchBomItem(item, { cost_price: parseFloat(e.target.value) || 0 })}
+                                        placeholder="$0"
+                                        className="w-full rounded-md border border-border bg-input px-2 py-1 text-xs text-right font-mono focus:border-primary focus:outline-none"
+                                      />
+                                    </div>
+                                    <div className="w-20">
+                                      <p className="text-[10px] text-muted-foreground">Sell</p>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={item.sell_price || ""}
+                                        onChange={(e) => patchBomItem(item, { sell_price: parseFloat(e.target.value) || 0 })}
+                                        placeholder="$0"
+                                        className="w-full rounded-md border border-border bg-input px-2 py-1 text-xs text-right font-mono focus:border-primary focus:outline-none"
+                                      />
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div className="hidden sm:block w-20 text-right">
+                                    <p className="text-[10px] text-muted-foreground">Unit</p>
+                                    <p className="text-xs font-mono">${fmt(item.sell_price)}</p>
+                                  </div>
+                                )}
+                                <div className="w-24 text-right">
+                                  <p className="text-[10px] text-muted-foreground">Line Total</p>
+                                  <p className="text-sm font-mono font-medium">${fmt(item.sell_price * item.quantity)}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteBomItem(item)}
+                                  title="Remove item"
+                                  className="text-muted-foreground hover:text-red-400 transition-colors"
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M18 6 6 18" />
+                                    <path d="m6 6 12 12" />
+                                  </svg>
+                                </button>
                               </div>
                             </div>
                           </div>
+                        );
+                      })}
+                      {items.length === 0 && (
+                        <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+                          No items. Add a product or custom item above.
                         </div>
-                      ))}
+                      )}
                     </div>
                   </div>
                 );
