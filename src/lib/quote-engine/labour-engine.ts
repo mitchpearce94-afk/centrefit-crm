@@ -19,6 +19,7 @@ export interface LabourItem {
   unitRate?: number     // e.g. 80 — priced per unit instead of hourly rate (callout $80/day)
   unitLabel?: string    // e.g. "days" — replaces "hrs" in the UI
   isDollarInput?: boolean  // if true, "hours" field IS the dollar amount (incidentals)
+  isCustom?: boolean    // manually added by user — preserved across regenerate
 }
 
 export interface FixedCost {

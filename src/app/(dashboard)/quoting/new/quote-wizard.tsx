@@ -490,12 +490,61 @@ export function QuoteWizard({
     e.target.value = "";
   }
 
+  // Device counts derived from BOM — so labour reflects BOM edits
+  // (deletions, additions, qty changes) rather than original Step 2 counts.
+  const bomDeviceCounts = useMemo(() => {
+    const counts: DeviceCounts = {};
+    for (const item of bomItems) {
+      if (item.device_type_code) {
+        counts[item.device_type_code] =
+          (counts[item.device_type_code] ?? 0) + item.quantity;
+      }
+    }
+    return counts;
+  }, [bomItems]);
+
   function regenerateLabour() {
-    setLabourData(calculateLabour(deviceCounts, siteInfo, billingSettings ? {
+    const source = bomGenerated ? bomDeviceCounts : deviceCounts;
+    const fresh = calculateLabour(source, siteInfo, billingSettings ? {
       labourCostRate: billingSettings.labour_cost_rate,
       labourSellRate: billingSettings.labour_sell_rate,
-    } : {}, labourTimings, { elecDoingRoughIn, elecDoingFitOff }));
+    } : {}, labourTimings, { elecDoingRoughIn, elecDoingFitOff });
+
+    // Merge in user-added custom lines from current labourData (if any)
+    if (labourData) {
+      const merged = {
+        ...fresh,
+        sections: fresh.sections.map((section) => {
+          const oldSection = labourData.sections.find((s) => s.name === section.name);
+          if (!oldSection) return section;
+          const customItems = oldSection.items.filter((it) => it.isCustom);
+          if (customItems.length === 0) return section;
+          return { ...section, items: [...section.items, ...customItems] };
+        }),
+      };
+      setLabourData(recalcLabour(merged));
+    } else {
+      setLabourData(fresh);
+    }
   }
+
+  // Auto-recompute labour whenever the BOM changes (after initial generation).
+  // Preserves user-added custom labour lines via isCustom flag.
+  // Note: manual hour edits on formula-driven lines are NOT preserved — they
+  // get overwritten by the fresh calculation. Add a custom line if you need
+  // labour that shouldn't be affected by BOM edits.
+  const labourFirstSync = useRef(true);
+  useEffect(() => {
+    if (labourFirstSync.current) {
+      labourFirstSync.current = false;
+      return;
+    }
+    if (quoteMode !== "plan") return;
+    if (!bomGenerated) return;
+    if (!labourData) return;
+    regenerateLabour();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bomItems]);
 
   function enterStep(newStep: number) {
     if (quoteMode === "plan") {
@@ -621,6 +670,50 @@ export function QuoteWizard({
             jdx !== ii ? item : { ...item, hours: Math.max(0, hours) }
           ),
         }
+      ),
+    };
+    setLabourData(recalcLabour(updated));
+  }
+
+  function updateLabourName(si: number, ii: number, name: string) {
+    if (!labourData) return;
+    setLabourData({
+      ...labourData,
+      sections: labourData.sections.map((s, idx) =>
+        idx !== si ? s : {
+          ...s,
+          items: s.items.map((item, jdx) =>
+            jdx !== ii ? item : { ...item, name }
+          ),
+        }
+      ),
+    });
+  }
+
+  function addLabourLine(si: number) {
+    if (!labourData) return;
+    const newItem = {
+      name: "",
+      formula: "Manual",
+      defaultHours: 0,
+      hours: 0,
+      isCustom: true,
+    };
+    const updated = {
+      ...labourData,
+      sections: labourData.sections.map((s, idx) =>
+        idx !== si ? s : { ...s, items: [...s.items, newItem] }
+      ),
+    };
+    setLabourData(recalcLabour(updated));
+  }
+
+  function deleteLabourLine(si: number, ii: number) {
+    if (!labourData) return;
+    const updated = {
+      ...labourData,
+      sections: labourData.sections.map((s, idx) =>
+        idx !== si ? s : { ...s, items: s.items.filter((_, jdx) => jdx !== ii) }
       ),
     };
     setLabourData(recalcLabour(updated));
@@ -1706,9 +1799,16 @@ export function QuoteWizard({
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{section.name}</h3>
                   {section.mandatory && <span className="rounded-full bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-400">Mandatory</span>}
                 </div>
-                <div className="flex items-center gap-4 text-xs font-mono text-muted-foreground">
-                  <span>{section.totalHours}h</span>
-                  <span>${fmt(section.totalSell)}</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => addLabourLine(si)}
+                    className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  >
+                    + Line
+                  </button>
+                  <span className="ml-2 text-xs font-mono text-muted-foreground">{section.totalHours}h</span>
+                  <span className="text-xs font-mono text-muted-foreground">${fmt(section.totalSell)}</span>
                 </div>
               </div>
 
@@ -1723,8 +1823,20 @@ export function QuoteWizard({
                 {section.items.map((item, ii) => (
                   <div key={`${si}-${ii}`} className="flex items-center gap-4 px-4 py-2.5">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm">{item.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{item.formula}</p>
+                      {item.isCustom ? (
+                        <input
+                          type="text"
+                          value={item.name}
+                          onChange={(e) => updateLabourName(si, ii, e.target.value)}
+                          placeholder="Line item name"
+                          className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm focus:border-primary focus:outline-none"
+                        />
+                      ) : (
+                        <>
+                          <p className="text-sm">{item.name}</p>
+                          <p className="text-[10px] text-muted-foreground">{item.formula}</p>
+                        </>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                       <div className="flex items-center gap-1.5 w-[7.5rem] justify-end">
@@ -1741,9 +1853,25 @@ export function QuoteWizard({
                       <span className="w-20 text-right text-sm font-mono">
                         ${fmt(item.isDollarInput ? item.hours : item.unitRate ? item.hours * item.unitRate : item.hours * (labourData?.sellRate || 150))}
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => deleteLabourLine(si, ii)}
+                        title="Remove line"
+                        className="text-muted-foreground hover:text-red-400 transition-colors"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M18 6 6 18" />
+                          <path d="m6 6 12 12" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
                 ))}
+                {section.items.length === 0 && (
+                  <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+                    No lines. Click + Line to add one.
+                  </div>
+                )}
               </div>
             </div>
           ))}
