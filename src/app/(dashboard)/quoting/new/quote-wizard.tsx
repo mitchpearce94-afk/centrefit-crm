@@ -524,6 +524,12 @@ export function QuoteWizard({
     return counts;
   }, [bomItems]);
 
+  // Track formula-driven labour lines the user has explicitly deleted, so
+  // regen doesn't resurrect them. Keyed as `${sectionName}::${itemName}`.
+  const [deletedLabourKeys, setDeletedLabourKeys] = useState<Set<string>>(new Set());
+  const labourKey = (sectionName: string, itemName: string) =>
+    `${sectionName}::${itemName}`;
+
   function regenerateLabour() {
     const source = bomGenerated ? bomDeviceCounts : deviceCounts;
     const fresh = calculateLabour(source, siteInfo, billingSettings ? {
@@ -537,23 +543,35 @@ export function QuoteWizard({
     }
 
     // Merge with existing labourData:
-    // - Formula-driven items: if user previously overrode hours (hours != defaultHours),
-    //   preserve their override. Otherwise use the fresh value.
-    // - Custom items (isCustom): preserved entirely (name, hours, etc).
+    // - Drop fresh items the user has deleted (tracked in deletedLabourKeys)
+    // - Formula items with hour overrides: preserve the override
+    // - Custom items (isCustom): preserved entirely
     const merged = {
       ...fresh,
       sections: fresh.sections.map((section) => {
         const oldSection = labourData.sections.find((s) => s.name === section.name);
-        if (!oldSection) return section;
+        if (!oldSection) {
+          return {
+            ...section,
+            items: section.items.filter(
+              (it) => !deletedLabourKeys.has(labourKey(section.name, it.name))
+            ),
+          };
+        }
 
-        const mergedFormulaItems = section.items.map((newItem) => {
-          const oldItem = oldSection.items.find(
-            (it) => it.name === newItem.name && !it.isCustom
-          );
-          if (!oldItem) return newItem;
-          const userOverrode = Math.abs(oldItem.hours - oldItem.defaultHours) > 0.001;
-          return userOverrode ? { ...newItem, hours: oldItem.hours } : newItem;
-        });
+        const mergedFormulaItems = section.items
+          .filter(
+            (it) => !deletedLabourKeys.has(labourKey(section.name, it.name))
+          )
+          .map((newItem) => {
+            const oldItem = oldSection.items.find(
+              (it) => it.name === newItem.name && !it.isCustom
+            );
+            if (!oldItem) return newItem;
+            const userOverrode =
+              Math.abs(oldItem.hours - oldItem.defaultHours) > 0.001;
+            return userOverrode ? { ...newItem, hours: oldItem.hours } : newItem;
+          });
 
         const customItems = oldSection.items.filter((it) => it.isCustom);
         return { ...section, items: [...mergedFormulaItems, ...customItems] };
@@ -744,6 +762,19 @@ export function QuoteWizard({
 
   function deleteLabourLine(si: number, ii: number) {
     if (!labourData) return;
+    const section = labourData.sections[si];
+    const item = section?.items[ii];
+    if (!item) return;
+
+    // For formula-driven items, remember the deletion so regen doesn't resurrect it.
+    if (!item.isCustom) {
+      setDeletedLabourKeys((prev) => {
+        const next = new Set(prev);
+        next.add(labourKey(section.name, item.name));
+        return next;
+      });
+    }
+
     const updated = {
       ...labourData,
       sections: labourData.sections.map((s, idx) =>
@@ -1887,21 +1918,17 @@ export function QuoteWizard({
                       <span className="w-20 text-right text-sm font-mono">
                         ${fmt(item.isDollarInput ? item.hours : item.unitRate ? item.hours * item.unitRate : item.hours * (labourData?.sellRate || 150))}
                       </span>
-                      {item.isCustom ? (
-                        <button
-                          type="button"
-                          onClick={() => deleteLabourLine(si, ii)}
-                          title="Remove line"
-                          className="text-muted-foreground hover:text-red-400 transition-colors"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M18 6 6 18" />
-                            <path d="m6 6 12 12" />
-                          </svg>
-                        </button>
-                      ) : (
-                        <span className="w-[14px]" />
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => deleteLabourLine(si, ii)}
+                        title="Remove line"
+                        className="text-muted-foreground hover:text-red-400 transition-colors"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M18 6 6 18" />
+                          <path d="m6 6 12 12" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
                 ))}
