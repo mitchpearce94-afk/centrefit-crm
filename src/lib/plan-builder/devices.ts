@@ -26,10 +26,11 @@ export const DEVICE_CATALOG: DeviceDefinition[] = [
 
   // AUDIO
   { id: 'volume-control', name: 'Volume Control', category: 'audio', cableType: 'speaker', symbolType: 'volume-control', fillColor: '#6600cc', strokeColor: '#9933ff', isVolumeControl: true, symbolImage: '/plan-builder/symbols/volume-control.png' },
-  { id: 'speaker-roof', name: 'Speaker Roof Mount', category: 'audio', cableType: 'speaker', symbolType: 'speaker-circle', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-roof-1.png' },
-  { id: 'speaker-roof-gear', name: 'Speaker Roof Mount (Gear)', category: 'audio', cableType: 'speaker', symbolType: 'speaker-gear', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-roof-2.png' },
-  { id: 'speaker-wall', name: 'Speaker Wall Mount', category: 'audio', cableType: 'speaker', symbolType: 'speaker-wall-outline', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-wall-1.png' },
-  { id: 'speaker-wall-filled', name: 'Speaker Wall Mount (Filled)', category: 'audio', cableType: 'speaker', symbolType: 'speaker-wall-filled', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-wall-2.png' },
+  // Speakers are split by colour — each maps to a distinct product in the quote
+  { id: 'speaker-roof-white', name: 'Speaker Roof Mount (White)', category: 'audio', cableType: 'speaker', symbolType: 'speaker-circle', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-roof-1.png' },
+  { id: 'speaker-roof-black', name: 'Speaker Roof Mount (Black)', category: 'audio', cableType: 'speaker', symbolType: 'speaker-gear', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-roof-2.png' },
+  { id: 'speaker-wall-white', name: 'Speaker Wall Mount (White)', category: 'audio', cableType: 'speaker', symbolType: 'speaker-wall-outline', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-wall-1.png' },
+  { id: 'speaker-wall-black', name: 'Speaker Wall Mount (Black)', category: 'audio', cableType: 'speaker', symbolType: 'speaker-wall-filled', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-wall-2.png' },
 
   // DATA/COMMS
   { id: 'wifi-ap', name: 'Wi-Fi Access Point', category: 'data', cableType: 'cat6', symbolType: 'wifi-circle', fillColor: '#0066cc', strokeColor: '#3399ff', symbolImage: '/plan-builder/symbols/wifi-ap.png' },
@@ -86,6 +87,17 @@ export function getAllDevices(): DeviceDefinition[] {
   return [...DEVICE_CATALOG, ..._customDeviceDefs];
 }
 
+// Backward-compatibility for plans saved before the speaker colour split.
+// Old IDs fall back to the black variants (which were the de-facto product
+// before the split), keeping existing plans loadable.
+const LEGACY_DEVICE_ALIAS: Record<string, string> = {
+  'speaker-roof': 'speaker-roof-white',
+  'speaker-roof-gear': 'speaker-roof-black',
+  'speaker-wall': 'speaker-wall-white',
+  'speaker-wall-filled': 'speaker-wall-black',
+};
+
 export function getDeviceById(id: string): DeviceDefinition | undefined {
-  return DEVICE_CATALOG.find(d => d.id === id) || _customDeviceDefs.find(d => d.id === id);
+  const aliased = LEGACY_DEVICE_ALIAS[id] ?? id;
+  return DEVICE_CATALOG.find(d => d.id === aliased) || _customDeviceDefs.find(d => d.id === aliased);
 }

@@ -468,7 +468,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('REX', 'WEL1911'), { id: ruleId(), trigger_code: 'door_lock', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, description: 'REX button (1x) when door locks present', preset, is_active: true })
 
   // === AUDIO ===
-  const speakerTrigger = 'speaker_roof + speaker_wall'
+  const speakerTrigger = 'speaker_roof_black + speaker_roof_white + speaker_wall_black + speaker_wall_white'
   pushRule(rules, find('Mixer-Amplifier 240W', 'PRM240'), { id: ruleId(), trigger_code: speakerTrigger, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, description: '240W amplifier for speakers', preset, is_active: true })
 
   // 120W amp — compound: speakers > 0 AND separate_studio_zone
@@ -523,8 +523,11 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('Snap Plug', 'EMP-CAT6UTPST'), { ...cabinetTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Cat6 snap-in plugs (1 pack)' })
 
   // Clipsal mounting brackets
-  const bracketTriggerCode = 'pir_360_roof + pir_wall + speaker_roof + speaker_wall + camera_black + camera_white + duress_button + wap + duress_intercom + rf_receiver'
+  const bracketTriggerCode = 'pir_360_roof + pir_wall + speaker_roof_black + speaker_roof_white + speaker_wall_black + speaker_wall_white + camera_black + camera_white + duress_button + wap + duress_intercom + rf_receiver'
   pushRule(rules, find('Mounting Bracket', 'CLI155N'), { id: ruleId(), trigger_code: bracketTriggerCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Clipsal mounting brackets — 1 per PIR, speaker, camera, duress, WAP, RF receiver', preset, is_active: true })
+
+  // Bosch PIR wall brackets — sold in packs of 3. CEIL(pir_wall / 3)
+  pushRule(rules, find('PIR Wall Mounts Pack of 3', 'B335-3'), { id: ruleId(), trigger_code: 'pir_wall', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 1, quantity_divisor: 3, description: 'PIR wall brackets — CEIL(pir_wall / 3) packs of 3', preset, is_active: true })
 
   // === DATA CABLE ===
   const totalDataCode = 'camera_black + camera_white + tailgate_system + wap + data_point'

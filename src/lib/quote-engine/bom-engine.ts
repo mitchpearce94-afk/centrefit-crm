@@ -41,10 +41,9 @@ export function generateBOM(
       (p) => p.device_type === deviceType.code
     )
 
-    // Wall speakers come in boxes of 2
-    const orderQty = deviceType.code === 'speaker_wall'
-      ? Math.ceil(count / 2)
-      : count
+    // Wall speakers come in boxes of 2 (both colour variants)
+    const isWallSpeaker = deviceType.code === 'speaker_wall_black' || deviceType.code === 'speaker_wall_white'
+    const orderQty = isWallSpeaker ? Math.ceil(count / 2) : count
 
     bomItems.push({
       device_type_code: deviceType.code,
@@ -58,7 +57,7 @@ export function generateBOM(
       cost_price: defaultProduct?.cost_price || 0,
       markup: defaultProduct?.markup || DEFAULT_MARKUP,
       sell_price: defaultProduct?.sell_price || 0,
-      notes: deviceType.code === 'speaker_wall' && count !== orderQty
+      notes: isWallSpeaker && count !== orderQty
         ? `${count} speakers (sold in pairs)`
         : '',
       auto_added: false,

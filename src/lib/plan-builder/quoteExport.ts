@@ -20,10 +20,17 @@ const PLAN_TO_QUOTE_MAP: Record<string, string> = {
   'bio-access': 'bio_access',
   'swipe-card': 'card_reader',
   'rex': 'rex_button',
-  'speaker-roof': 'speaker_roof',
-  'speaker-roof-gear': 'speaker_roof',
-  'speaker-wall': 'speaker_wall',
-  'speaker-wall-filled': 'speaker_wall',
+  // Colour-aware speaker codes (current)
+  'speaker-roof-black': 'speaker_roof_black',
+  'speaker-roof-white': 'speaker_roof_white',
+  'speaker-wall-black': 'speaker_wall_black',
+  'speaker-wall-white': 'speaker_wall_white',
+  // Legacy IDs from before the colour split — old plans map to the white/black
+  // variants based on the original visual convention (outline = white, filled = black).
+  'speaker-roof': 'speaker_roof_white',
+  'speaker-roof-gear': 'speaker_roof_black',
+  'speaker-wall': 'speaker_wall_white',
+  'speaker-wall-filled': 'speaker_wall_black',
   'wifi-ap': 'wap',
   'cat6-data': 'data_point',
   'rg6-coax': 'coax_point',

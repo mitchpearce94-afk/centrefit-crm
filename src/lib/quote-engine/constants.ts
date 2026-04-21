@@ -63,9 +63,11 @@ export const DEVICE_TYPES: DeviceType[] = [
   // Data System (2) — column 2
   { code: 'wap', legend: 'Wi-Fi Access Point', cable: 'cat6', category: 'Data System' },
   { code: 'data_point', legend: 'Cat 6 Ethernet - DATA', cable: 'cat6', category: 'Data System' },
-  // Audio System (2) — column 2
-  { code: 'speaker_roof', legend: 'Speaker Roof Mount', cable: 'speaker_cable', category: 'Audio System' },
-  { code: 'speaker_wall', legend: 'Speaker Wall Mount', cable: 'speaker_cable', category: 'Audio System' },
+  // Audio System (4) — column 2  (roof + wall × black/white)
+  { code: 'speaker_roof_black', legend: 'Speaker Roof Mount (Black)', cable: 'speaker_cable', category: 'Audio System' },
+  { code: 'speaker_roof_white', legend: 'Speaker Roof Mount (White)', cable: 'speaker_cable', category: 'Audio System' },
+  { code: 'speaker_wall_black', legend: 'Speaker Wall Mount (Black)', cable: 'speaker_cable', category: 'Audio System' },
+  { code: 'speaker_wall_white', legend: 'Speaker Wall Mount (White)', cable: 'speaker_cable', category: 'Audio System' },
   { code: 'volume_control', legend: 'Volume Control', cable: 'speaker_cable', category: 'Audio System' },
   // Infrastructure (4) — column 2
   { code: 'cabinet_9ru', legend: 'Server Cabinet 9RU', cable: 'n-a', category: 'Infrastructure' },

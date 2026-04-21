@@ -28,9 +28,9 @@ export function generateScopeOfWorks(
   siteInfo: SiteInfo,
 ): ScopeDocument {
   const totalCameras = sum(deviceCounts, 'camera_black', 'camera_white');
-  const totalSpeakers = sum(deviceCounts, 'speaker_roof', 'speaker_wall');
-  const roofSpeakers = deviceCounts.speaker_roof ?? 0;
-  const wallSpeakers = deviceCounts.speaker_wall ?? 0;
+  const roofSpeakers = sum(deviceCounts, 'speaker_roof_black', 'speaker_roof_white');
+  const wallSpeakers = sum(deviceCounts, 'speaker_wall_black', 'speaker_wall_white');
+  const totalSpeakers = roofSpeakers + wallSpeakers;
   const speakerMountDesc = roofSpeakers > 0 && wallSpeakers > 0
     ? 'both wall and ceiling mounted'
     : roofSpeakers > 0 ? 'ceiling mounted' : 'wall mounted';

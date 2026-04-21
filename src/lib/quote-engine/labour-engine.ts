@@ -122,11 +122,14 @@ export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo =
 
   const cabledReedSwitches = Math.max(0, (c.reed_switch || 0) - (s.reed_switch_uncabled || 0))
 
+  const speakerRoofCount = (c.speaker_roof_black || 0) + (c.speaker_roof_white || 0)
+  const speakerWallCount = (c.speaker_wall_black || 0) + (c.speaker_wall_white || 0)
+
   const totalCableRuns =
     (c.camera_black || 0) + (c.camera_white || 0) +
     (c.pir_360_roof || 0) + (c.pir_wall || 0) +
     cabledReedSwitches +
-    (c.speaker_roof || 0) + (c.speaker_wall || 0) +
+    speakerRoofCount + speakerWallCount +
     (c.wap || 0) + (c.data_point || 0) +
     (c.duress_button || 0) + (c.duress_intercom || 0) +
     (c.light_siren || 0) + (c.rex_button || 0) +
@@ -178,7 +181,7 @@ export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo =
   const cameras = totalCameras
   const hasAlarm = (c.alarm_panel || 0) > 0
   const hasCameras = cameras > 0
-  const hasSpeakers = ((c.speaker_roof || 0) + (c.speaker_wall || 0)) > 0
+  const hasSpeakers = (speakerRoofCount + speakerWallCount) > 0
   const wapCount = c.wap || 0
   const hasCabinet =
     ((c.cabinet_9ru || 0) + (c.cabinet_27ru || 0) +
@@ -197,8 +200,8 @@ export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo =
     { name: 'REX button', minutesPer: t('rex_button', 60), count: c.rex_button || 0 },
     { name: 'External siren', minutesPer: t('light_siren', 40), count: c.light_siren || 0 },
     { name: 'WAP', minutesPer: t('wap', 30), count: c.wap || 0 },
-    { name: 'Ceiling speaker', minutesPer: t('speaker_roof', 40), count: c.speaker_roof || 0 },
-    { name: 'Wall speaker', minutesPer: t('speaker_wall', 30), count: c.speaker_wall || 0 },
+    { name: 'Ceiling speaker', minutesPer: t('speaker_roof', 40), count: speakerRoofCount },
+    { name: 'Wall speaker', minutesPer: t('speaker_wall', 30), count: speakerWallCount },
     { name: 'Tailgate system', minutesPer: t('tailgate_system', 90), count: c.tailgate_system || 0 },
     { name: 'Card reader', minutesPer: t('card_reader', 30), count: c.card_reader || 0 },
     { name: 'Door lock', minutesPer: t('door_lock', 30), count: c.door_lock || 0 },
