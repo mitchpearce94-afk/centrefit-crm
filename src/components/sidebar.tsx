@@ -15,6 +15,7 @@ const navigation = [
   { name: "Pipeline", href: "/pipeline", icon: TrendingUpIcon },
   { name: "Suppliers", href: "/suppliers", icon: PackageIcon },
   { name: "Quoting", href: "/quoting", icon: FileTextIcon },
+  { name: "Invoices", href: "/invoices", icon: InvoiceIcon },
   { name: "Plans", href: "/plans", icon: PlanIcon },
   { name: "Reports", href: "/reports", icon: BarChartIcon },
   { name: "Staff", href: "/staff", icon: StaffIcon },
@@ -280,6 +281,15 @@ function BillingIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </svg>
+  );
+}
+
+function InvoiceIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+      <line x1="8" y1="13" x2="14" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /><path d="M16 14.5v4" /><path d="M14.5 16.5h3" />
     </svg>
   );
 }

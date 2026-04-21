@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { DEVICE_TYPES } from "@/lib/quote-engine";
 import { QuoteActions } from "./quote-actions";
+import { QuoteInvoices } from "./quote-invoices";
 
 function fmt(n: number): string {
   return n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -23,11 +24,12 @@ export default async function QuoteDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [quoteResult, lineItemsResult, extrasResult, jobsResult] = await Promise.all([
+  const [quoteResult, lineItemsResult, extrasResult, jobsResult, invoicesResult] = await Promise.all([
     supabase.from("quotes").select("*, customer:customers(id, name, customer_contacts(*))").eq("id", id).single(),
     supabase.from("quote_line_items").select("*").eq("quote_id", id).order("sort_order"),
     supabase.from("quote_extras").select("*").eq("quote_id", id).order("sort_order"),
     supabase.from("jobs").select("id, number, customer:customers(name)").order("number", { ascending: false }).limit(200),
+    supabase.from("invoices").select("*").eq("quote_id", id).order("created_at", { ascending: true }),
   ]);
   const jobs = (jobsResult.data ?? []).map((j: any) => ({
     id: j.id, number: j.number,
@@ -39,6 +41,7 @@ export default async function QuoteDetailPage({
   const quote = quoteResult.data as any;
   const lineItems = (lineItemsResult.data ?? []) as any[];
   const extras = (extrasResult.data ?? []) as any[];
+  const invoices = (invoicesResult.data ?? []) as any[];
   const pricing = quote.pricing_snapshot;
   const statusColour = STATUS_COLOURS[quote.status] ?? "#6b7280";
   const isProgress = quote.quote_type === "progress";
@@ -316,6 +319,15 @@ export default async function QuoteDetailPage({
           )}
         </div>
       )}
+
+      {/* Invoices */}
+      <QuoteInvoices
+        quoteId={quote.id}
+        quoteStatus={quote.status}
+        quoteType={(quote.quote_type as "full" | "progress") || "full"}
+        pricing={pricing}
+        invoices={invoices}
+      />
 
       <p className="mt-6 text-xs text-muted-foreground">Created {new Date(quote.created_at).toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
     </div>
