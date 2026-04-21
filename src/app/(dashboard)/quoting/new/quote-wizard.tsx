@@ -89,6 +89,7 @@ interface ExistingQuote {
   quoteId: string;
   ref: string;
   customerId: string;
+  siteId?: string;
   clientName: string;
   siteName: string;
   siteAddress: string;
@@ -140,7 +141,7 @@ export function QuoteWizard({
 
   // Step 1: Client
   const [customerId, setCustomerId] = useState(existingQuote?.customerId || "");
-  const [siteId, setSiteId] = useState("");
+  const [siteId, setSiteId] = useState(existingQuote?.siteId || "");
   const [customerSearch, setCustomerSearch] = useState("");
   const [clientName, setClientName] = useState(existingQuote?.clientName || "");
   const [siteName, setSiteName] = useState(existingQuote?.siteName || "");
@@ -307,6 +308,48 @@ export function QuoteWizard({
     }
   }, []);
 
+  // Auto-prefill customer + site from linked job (?job=X in URL)
+  // Runs after plan auto-select so the job's specific site wins over the plan's first-site fallback.
+  useEffect(() => {
+    const jobParam = searchParams.get("job");
+    if (!jobParam || isEditing) return;
+    supabase
+      .from("jobs")
+      .select("id, customer_id, site_id, customer:customers!customer_id(id, name, customer_sites(id, name, address, suburb, state, postcode))")
+      .eq("id", jobParam)
+      .single()
+      .then(({ data }) => {
+        if (!data) return;
+        const job = data as any;
+        if (job.customer_id) {
+          // Ensure the customer is in our local list (in case it was freshly created)
+          if (!customers.find((c) => c.id === job.customer_id) && job.customer) {
+            customers.push({
+              id: job.customer.id,
+              name: job.customer.name,
+              customer_sites: job.customer.customer_sites ?? [],
+              customer_contacts: [],
+            });
+          }
+          setCustomerId(job.customer_id);
+          setClientName(job.customer?.name ?? "");
+        }
+        if (job.site_id) {
+          const site = job.customer?.customer_sites?.find((s: any) => s.id === job.site_id);
+          setSiteId(job.site_id);
+          if (site) {
+            setSiteName(site.name);
+            const addr = [site.address, site.suburb, site.state, site.postcode].filter(Boolean).join(", ");
+            setSiteAddress(addr);
+            if (site.state) {
+              setSiteInfo((prev) => ({ ...prev, state: site.state }));
+            }
+          }
+        }
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Draft persistence (new quotes only) ──
   // Restore draft on mount
   useEffect(() => {
@@ -325,6 +368,7 @@ export function QuoteWizard({
       if (d.step != null) setStep(d.step);
       if (d.quoteMode) setQuoteMode(d.quoteMode);
       if (d.customerId) setCustomerId(d.customerId);
+      if (d.siteId) setSiteId(d.siteId);
       if (d.clientName) setClientName(d.clientName);
       if (d.siteName) setSiteName(d.siteName);
       if (d.siteAddress) setSiteAddress(d.siteAddress);
@@ -360,7 +404,7 @@ export function QuoteWizard({
     const timer = setTimeout(() => {
       try {
         localStorage.setItem(DRAFT_KEY, JSON.stringify({
-          step, quoteMode, customerId, clientName, siteName, siteAddress, siteInfo,
+          step, quoteMode, customerId, siteId, clientName, siteName, siteAddress, siteInfo,
           deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
           linkedJobId, selectedPlanId, manualScope, manualBomItems,
           manualLabourHours, manualLabourAmount, manualCalloutDays, electricianCost,
@@ -369,7 +413,7 @@ export function QuoteWizard({
       } catch {}
     }, 500);
     return () => clearTimeout(timer);
-  }, [step, quoteMode, customerId, clientName, siteName, siteAddress, siteInfo,
+  }, [step, quoteMode, customerId, siteId, clientName, siteName, siteAddress, siteInfo,
     deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
     linkedJobId, selectedPlanId, manualScope, manualBomItems,
     manualLabourHours, manualLabourAmount, manualCalloutDays, electricianCost,
@@ -591,6 +635,7 @@ export function QuoteWizard({
 
     const quotePayload = {
       customer_id: customerId || null,
+      site_id: siteId || null,
       client_name: selectedCustomer?.name || clientName,
       site_name: siteName,
       site_address: siteAddress || null,

@@ -19,6 +19,7 @@ export default async function CustomerDetailPage({
         "*, customer_contacts(*), customer_sites(*), parent:customers!parent_customer_id(id, name)"
       )
       .eq("id", id)
+      .is("customer_contacts.site_id", null)
       .single(),
     supabase
       .from("jobs")

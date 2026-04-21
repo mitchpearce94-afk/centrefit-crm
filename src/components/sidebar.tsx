@@ -10,6 +10,7 @@ const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutIcon },
   { name: "Jobs", href: "/jobs", icon: BriefcaseIcon },
   { name: "Customers", href: "/customers", icon: UsersIcon },
+  { name: "Sites", href: "/sites", icon: MapPinIcon },
   { name: "Scheduler", href: "/scheduler", icon: CalendarIcon },
   { name: "Pipeline", href: "/pipeline", icon: TrendingUpIcon },
   { name: "Suppliers", href: "/suppliers", icon: PackageIcon },
@@ -254,6 +255,14 @@ function RulesIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+    </svg>
+  );
+}
+
+function MapPinIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z" /><circle cx="12" cy="10" r="3" />
     </svg>
   );
 }

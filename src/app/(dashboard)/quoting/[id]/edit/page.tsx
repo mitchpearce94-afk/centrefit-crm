@@ -34,6 +34,7 @@ export default async function EditQuotePage({
     quoteId: id,
     ref: quote.ref,
     customerId: quote.customer_id || "",
+    siteId: quote.site_id || "",
     clientName: quote.client_name || "",
     siteName: quote.site_name || "",
     siteAddress: quote.site_address || "",

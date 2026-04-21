@@ -63,6 +63,7 @@ export interface Customer {
 export interface CustomerContact {
   id: string;
   customer_id: string;
+  site_id: string | null;
   name: string;
   role: string | null;
   phone: string | null;
