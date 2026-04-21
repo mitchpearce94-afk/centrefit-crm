@@ -531,29 +531,42 @@ export function QuoteWizard({
       labourSellRate: billingSettings.labour_sell_rate,
     } : {}, labourTimings, { elecDoingRoughIn, elecDoingFitOff });
 
-    // Merge in user-added custom lines from current labourData (if any)
-    if (labourData) {
-      const merged = {
-        ...fresh,
-        sections: fresh.sections.map((section) => {
-          const oldSection = labourData.sections.find((s) => s.name === section.name);
-          if (!oldSection) return section;
-          const customItems = oldSection.items.filter((it) => it.isCustom);
-          if (customItems.length === 0) return section;
-          return { ...section, items: [...section.items, ...customItems] };
-        }),
-      };
-      setLabourData(recalcLabour(merged));
-    } else {
+    if (!labourData) {
       setLabourData(fresh);
+      return;
     }
+
+    // Merge with existing labourData:
+    // - Formula-driven items: if user previously overrode hours (hours != defaultHours),
+    //   preserve their override. Otherwise use the fresh value.
+    // - Custom items (isCustom): preserved entirely (name, hours, etc).
+    const merged = {
+      ...fresh,
+      sections: fresh.sections.map((section) => {
+        const oldSection = labourData.sections.find((s) => s.name === section.name);
+        if (!oldSection) return section;
+
+        const mergedFormulaItems = section.items.map((newItem) => {
+          const oldItem = oldSection.items.find(
+            (it) => it.name === newItem.name && !it.isCustom
+          );
+          if (!oldItem) return newItem;
+          const userOverrode = Math.abs(oldItem.hours - oldItem.defaultHours) > 0.001;
+          return userOverrode ? { ...newItem, hours: oldItem.hours } : newItem;
+        });
+
+        const customItems = oldSection.items.filter((it) => it.isCustom);
+        return { ...section, items: [...mergedFormulaItems, ...customItems] };
+      }),
+    };
+    setLabourData(recalcLabour(merged));
   }
 
   // Auto-recompute labour whenever the BOM changes (after initial generation).
-  // Preserves user-added custom labour lines via isCustom flag.
-  // Note: manual hour edits on formula-driven lines are NOT preserved — they
-  // get overwritten by the fresh calculation. Add a custom line if you need
-  // labour that shouldn't be affected by BOM edits.
+  // regenerateLabour() preserves both:
+  //   - user-added custom labour lines (isCustom flag)
+  //   - manual hour overrides on formula lines (hours != defaultHours)
+  // so BOM edits update the formula values without wiping the user's tweaks.
   const labourFirstSync = useRef(true);
   useEffect(() => {
     if (labourFirstSync.current) {
