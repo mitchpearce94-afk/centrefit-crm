@@ -56,6 +56,16 @@ interface LineItemDraft {
   unitAmount: string;
 }
 
+interface BillingSettings {
+  labour_sell_rate: number;
+  callout_fee_sell: number;
+}
+
+interface ProductPrice {
+  sell_price: number;
+  cost_price: number;
+}
+
 interface Props {
   jobId: string;
   customerId: string | null;
@@ -65,6 +75,8 @@ interface Props {
   linkedQuotes: LinkedQuote[];
   checklistItems: ChecklistItem[];
   workEntries: WorkEntry[];
+  productPrices: Record<string, ProductPrice>;
+  billingSettings: BillingSettings;
 }
 
 const STATUS_COLOURS: Record<Invoice["status"], string> = {
@@ -97,7 +109,9 @@ function newRow(): LineItemDraft {
 /**
  * Build the invoice narrative from the job's description + completed checklist
  * items + work-log entries. This is what the customer sees at the top of the
- * Xero invoice as a $0 line item. User can still edit before sending.
+ * Xero invoice as a $0 line item. Priced things (labour, call-out, materials)
+ * live in the line items instead — they're built separately in
+ * buildAutoLineItems so they appear at quoted rates.
  */
 function buildNarrative(
   jobDescription: string | null,
@@ -127,7 +141,7 @@ function buildNarrative(
 
   // Work entries sorted oldest → newest so the invoice reads chronologically
   const sortedWork = [...workEntries]
-    .filter((w) => (w.content ?? "").trim() || (w.materials ?? []).length > 0)
+    .filter((w) => (w.content ?? "").trim())
     .sort((a, b) => (a.work_date ?? "").localeCompare(b.work_date ?? ""));
 
   if (sortedWork.length > 0) {
@@ -140,22 +154,88 @@ function buildNarrative(
       const by = w.staff?.display_name ? ` (${w.staff.display_name})` : "";
       const content = (w.content ?? "").trim();
       if (content) parts.push(`  • ${date}${by}: ${content}`);
-      const mats = (w.materials ?? []).filter((m) => m?.name);
-      if (mats.length > 0) {
-        const matList = mats
-          .map((m) => `${m.qty ?? 1}× ${m.name}`)
-          .join(", ");
-        parts.push(`      Materials: ${matList}`);
-      }
     }
   }
 
   return parts.join("\n");
 }
 
+/**
+ * Auto-build priced line items from the work log:
+ *   - One labour line: Σ labour_hours × labour_sell_rate
+ *   - One call-out line: (# of call_out=true entries) × callout_fee_sell
+ *   - One line per unique material: aggregated qty × product.sell_price
+ * Plus one empty row at the end for the user to add anything extra.
+ */
+function buildAutoLineItems(
+  workEntries: WorkEntry[],
+  productPrices: Record<string, ProductPrice>,
+  billing: BillingSettings,
+): LineItemDraft[] {
+  const rows: LineItemDraft[] = [];
+
+  // Labour
+  const totalHours = workEntries.reduce((s, w) => s + (Number(w.labour_hours) || 0), 0);
+  if (totalHours > 0) {
+    rows.push({
+      id: `row_labour`,
+      description: `Labour — ${totalHours} hour${totalHours === 1 ? "" : "s"}`,
+      quantity: String(totalHours),
+      unitAmount: billing.labour_sell_rate.toFixed(2),
+    });
+  }
+
+  // Call-out fee (one line, qty = number of call-out entries)
+  const calloutCount = workEntries.filter((w) => w.call_out === true).length;
+  if (calloutCount > 0) {
+    rows.push({
+      id: `row_callout`,
+      description: calloutCount === 1 ? "Call-out fee" : `Call-out fee (×${calloutCount})`,
+      quantity: String(calloutCount),
+      unitAmount: billing.callout_fee_sell.toFixed(2),
+    });
+  }
+
+  // Materials — aggregate across all work entries, keyed by product_id (fall
+  // back to a name+sku key when there's no product_id, so manual entries still
+  // merge sensibly).
+  const materialMap = new Map<string, { name: string; sku: string | null; qty: number; unit: number }>();
+  for (const w of workEntries) {
+    for (const m of w.materials ?? []) {
+      if (!m?.name) continue;
+      const key = m.product_id ?? `manual::${m.sku ?? ""}::${m.name}`;
+      const qty = Number(m.qty) || 1;
+      const unit = m.product_id && productPrices[m.product_id]
+        ? productPrices[m.product_id].sell_price
+        : 0;
+      const existing = materialMap.get(key);
+      if (existing) {
+        existing.qty += qty;
+      } else {
+        materialMap.set(key, { name: m.name, sku: m.sku ?? null, qty, unit });
+      }
+    }
+  }
+  let matIdx = 0;
+  for (const mat of materialMap.values()) {
+    const skuSuffix = mat.sku ? ` (${mat.sku})` : "";
+    rows.push({
+      id: `row_mat_${matIdx++}`,
+      description: `${mat.name}${skuSuffix}`,
+      quantity: String(mat.qty),
+      unitAmount: mat.unit.toFixed(2),
+    });
+  }
+
+  // Trailing blank row for manual additions
+  rows.push(newRow());
+  return rows;
+}
+
 export function JobInvoices({
   jobId, customerId, jobDescription, jobNumber,
   invoices, linkedQuotes, checklistItems, workEntries,
+  productPrices, billingSettings,
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -178,9 +258,13 @@ export function JobInvoices({
     return { subtotal, gst, total: subtotal + gst };
   }, [rows]);
 
-  function openModal() {
+  function rebuildFromJob() {
     setDescription(buildNarrative(jobDescription, checklistItems, workEntries));
-    setRows([newRow()]);
+    setRows(buildAutoLineItems(workEntries, productPrices, billingSettings));
+  }
+
+  function openModal() {
+    rebuildFromJob();
     setShowModal(true);
   }
 
@@ -387,7 +471,7 @@ export function JobInvoices({
                     What the customer sees
                   </label>
                   <button
-                    onClick={() => setDescription(buildNarrative(jobDescription, checklistItems, workEntries))}
+                    onClick={rebuildFromJob}
                     className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2"
                   >
                     Rebuild from job
@@ -395,7 +479,7 @@ export function JobInvoices({
                 </div>
                 <p className="text-[11px] text-muted-foreground mb-1.5">
                   Appears at the top of the invoice at $0 — this is the proof of work.
-                  Pre-filled with the job description, completed checklist, and work log. Edit freely.
+                  Pre-filled with the job description, completed checklist, and work-log entries. Edit freely.
                 </p>
                 <textarea
                   value={description}
@@ -420,7 +504,7 @@ export function JobInvoices({
                   </button>
                 </div>
                 <p className="text-[11px] text-muted-foreground mb-2">
-                  Each row is one Xero line with a price. Unit price is ex GST — Xero adds 10% GST.
+                  Auto-filled at quoted rates: labour @ ${billingSettings.labour_sell_rate.toFixed(2)}/hr, call-out @ ${billingSettings.callout_fee_sell.toFixed(2)}, materials at their sell price. Unit price is ex GST — Xero adds 10% GST.
                 </p>
 
                 <div className="space-y-1.5">

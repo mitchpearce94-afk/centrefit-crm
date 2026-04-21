@@ -13,7 +13,7 @@ export default async function JobDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [jobResult, statusesResult, staffResult, workResult, notesResult, timeResult, nbnResult, checklistResult, templatesResult, scheduleResult, invoicesResult, linkedQuotesResult] =
+  const [jobResult, statusesResult, staffResult, workResult, notesResult, timeResult, nbnResult, checklistResult, templatesResult, scheduleResult, invoicesResult, linkedQuotesResult, billingResult] =
     await Promise.all([
       supabase
         .from("jobs")
@@ -72,6 +72,11 @@ export default async function JobDetailPage({
         .from("quotes")
         .select("id, ref, status")
         .eq("job_id", id),
+      supabase
+        .from("billing_settings")
+        .select("labour_sell_rate, callout_fee_sell")
+        .limit(1)
+        .maybeSingle(),
     ]);
 
   if (jobResult.error || !jobResult.data) {
@@ -81,6 +86,33 @@ export default async function JobDetailPage({
   const job = jobResult.data;
   const isNbnJob = job.category_1?.name?.includes("NBN") ?? false;
   const hasOpenTimer = (timeResult.data ?? []).some((t: any) => !t.end_time);
+
+  // Look up sell_price for every product referenced in the work-log materials
+  // so the invoice modal can auto-populate priced line items at the quoted rate.
+  const productIds = new Set<string>();
+  for (const w of (workResult.data ?? []) as any[]) {
+    for (const m of (w.materials ?? []) as any[]) {
+      if (m?.product_id) productIds.add(m.product_id);
+    }
+  }
+  let productPrices: Record<string, { sell_price: number; cost_price: number }> = {};
+  if (productIds.size > 0) {
+    const { data: products } = await supabase
+      .from("quote_products")
+      .select("id, sell_price, cost_price")
+      .in("id", Array.from(productIds));
+    for (const p of (products ?? []) as any[]) {
+      productPrices[p.id] = {
+        sell_price: Number(p.sell_price) || 0,
+        cost_price: Number(p.cost_price) || 0,
+      };
+    }
+  }
+
+  const billingSettings = {
+    labour_sell_rate: Number(billingResult.data?.labour_sell_rate ?? 150),
+    callout_fee_sell: Number(billingResult.data?.callout_fee_sell ?? 80),
+  };
 
   return (
     <div>
@@ -136,6 +168,8 @@ export default async function JobDetailPage({
         linkedQuotes={(linkedQuotesResult.data ?? []) as any[]}
         checklistItems={(checklistResult.data ?? []) as any[]}
         workEntries={(workResult.data ?? []) as any[]}
+        productPrices={productPrices}
+        billingSettings={billingSettings}
       />
     </div>
   );
