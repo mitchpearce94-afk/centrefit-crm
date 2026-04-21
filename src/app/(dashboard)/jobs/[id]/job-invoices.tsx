@@ -18,10 +18,41 @@ interface Invoice {
   due_date: string | null;
 }
 
+interface LinkedQuote {
+  id: string;
+  ref: string;
+  status: string;
+}
+
+interface ChecklistItem {
+  id: string;
+  title: string;
+  is_completed: boolean;
+  sort_order: number;
+  sub_items?: Array<{ text?: string; done?: boolean }> | null;
+}
+
+interface WorkEntryMaterial {
+  qty?: number;
+  name?: string;
+  sku?: string;
+  product_id?: string;
+}
+
+interface WorkEntry {
+  id: string;
+  work_date: string;
+  content: string | null;
+  labour_hours: number | null;
+  call_out: boolean | null;
+  materials?: WorkEntryMaterial[] | null;
+  staff?: { display_name?: string | null } | null;
+}
+
 interface LineItemDraft {
   id: string;
   description: string;
-  quantity: string; // stored as string for input, parsed on submit
+  quantity: string;
   unitAmount: string;
 }
 
@@ -31,6 +62,9 @@ interface Props {
   jobDescription: string | null;
   jobNumber: string | null;
   invoices: Invoice[];
+  linkedQuotes: LinkedQuote[];
+  checklistItems: ChecklistItem[];
+  workEntries: WorkEntry[];
 }
 
 const STATUS_COLOURS: Record<Invoice["status"], string> = {
@@ -60,13 +94,78 @@ function newRow(): LineItemDraft {
   };
 }
 
-export function JobInvoices({ jobId, customerId, jobDescription, jobNumber, invoices }: Props) {
+/**
+ * Build the invoice narrative from the job's description + completed checklist
+ * items + work-log entries. This is what the customer sees at the top of the
+ * Xero invoice as a $0 line item. User can still edit before sending.
+ */
+function buildNarrative(
+  jobDescription: string | null,
+  checklistItems: ChecklistItem[],
+  workEntries: WorkEntry[],
+): string {
+  const parts: string[] = [];
+
+  if (jobDescription?.trim()) {
+    parts.push(jobDescription.trim());
+  }
+
+  const completedChecklist = [...checklistItems]
+    .filter((c) => c.is_completed)
+    .sort((a, b) => a.sort_order - b.sort_order);
+
+  if (completedChecklist.length > 0) {
+    parts.push("");
+    parts.push("Checklist completed:");
+    for (const c of completedChecklist) {
+      parts.push(`  • ${c.title}`);
+      for (const sub of c.sub_items ?? []) {
+        if (sub?.done && sub.text?.trim()) parts.push(`      – ${sub.text}`);
+      }
+    }
+  }
+
+  // Work entries sorted oldest → newest so the invoice reads chronologically
+  const sortedWork = [...workEntries]
+    .filter((w) => (w.content ?? "").trim() || (w.materials ?? []).length > 0)
+    .sort((a, b) => (a.work_date ?? "").localeCompare(b.work_date ?? ""));
+
+  if (sortedWork.length > 0) {
+    parts.push("");
+    parts.push("Work completed:");
+    for (const w of sortedWork) {
+      const date = w.work_date
+        ? new Date(w.work_date).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })
+        : "";
+      const by = w.staff?.display_name ? ` (${w.staff.display_name})` : "";
+      const content = (w.content ?? "").trim();
+      if (content) parts.push(`  • ${date}${by}: ${content}`);
+      const mats = (w.materials ?? []).filter((m) => m?.name);
+      if (mats.length > 0) {
+        const matList = mats
+          .map((m) => `${m.qty ?? 1}× ${m.name}`)
+          .join(", ");
+        parts.push(`      Materials: ${matList}`);
+      }
+    }
+  }
+
+  return parts.join("\n");
+}
+
+export function JobInvoices({
+  jobId, customerId, jobDescription, jobNumber,
+  invoices, linkedQuotes, checklistItems, workEntries,
+}: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const [showModal, setShowModal] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [description, setDescription] = useState(jobDescription ?? "");
+  const [description, setDescription] = useState("");
   const [rows, setRows] = useState<LineItemDraft[]>([newRow()]);
+
+  const hasLinkedQuote = linkedQuotes.length > 0;
+  const primaryQuote = linkedQuotes[0] ?? null;
 
   const totals = useMemo(() => {
     let subtotal = 0;
@@ -80,7 +179,7 @@ export function JobInvoices({ jobId, customerId, jobDescription, jobNumber, invo
   }, [rows]);
 
   function openModal() {
-    setDescription(jobDescription ?? "");
+    setDescription(buildNarrative(jobDescription, checklistItems, workEntries));
     setRows([newRow()]);
     setShowModal(true);
   }
@@ -223,7 +322,7 @@ export function JobInvoices({ jobId, customerId, jobDescription, jobNumber, invo
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           Invoices
         </h2>
-        {customerId && (
+        {customerId && !hasLinkedQuote && (
           <button
             onClick={openModal}
             className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
@@ -233,11 +332,28 @@ export function JobInvoices({ jobId, customerId, jobDescription, jobNumber, invo
         )}
       </div>
 
+      {/* When this job is tied to a quote, direct invoicing lives on the quote. */}
+      {hasLinkedQuote && primaryQuote && (
+        <div className="mb-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
+          <p className="text-xs text-foreground">
+            This job is linked to{" "}
+            {linkedQuotes.length === 1 ? (
+              <Link href={`/quoting/${primaryQuote.id}`} className="font-mono text-primary hover:underline">
+                quote {primaryQuote.ref}
+              </Link>
+            ) : (
+              <>{linkedQuotes.length} quotes</>
+            )}
+            . Generate invoices from {linkedQuotes.length === 1 ? "that quote" : "the quote"} — not here.
+          </p>
+        </div>
+      )}
+
       <div className="space-y-2">
-        {invoices.length === 0 && (
+        {invoices.length === 0 && !hasLinkedQuote && (
           <p className="text-xs text-muted-foreground italic">
             {customerId
-              ? "No invoices yet. Click Generate Invoice to raise an ad-hoc invoice from this job's description + line items."
+              ? "No invoices yet. Click Generate Invoice to raise one from this job's description, checklist, and work log."
               : "Link a customer to this job to generate invoices."}
           </p>
         )}
@@ -264,28 +380,37 @@ export function JobInvoices({ jobId, customerId, jobDescription, jobNumber, invo
             </div>
 
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-              {/* Description */}
+              {/* Narrative */}
               <div>
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Description
-                </label>
-                <p className="text-[11px] text-muted-foreground mt-1 mb-1.5">
-                  Shows as the invoice reference in Xero. Pre-filled with the job description — edit as needed.
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    What the customer sees
+                  </label>
+                  <button
+                    onClick={() => setDescription(buildNarrative(jobDescription, checklistItems, workEntries))}
+                    className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2"
+                  >
+                    Rebuild from job
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground mb-1.5">
+                  Appears at the top of the invoice at $0 — this is the proof of work.
+                  Pre-filled with the job description, completed checklist, and work log. Edit freely.
                 </p>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
-                  placeholder="e.g. Service call — replaced faulty door reader at front entry"
-                  className="w-full resize-y rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                  rows={14}
+                  placeholder="Describe the work completed…"
+                  className="w-full resize-y rounded-md border border-border bg-input px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none font-mono whitespace-pre"
                 />
               </div>
 
-              {/* Line items */}
+              {/* Priced line items */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Line Items
+                    Priced Line Items
                   </label>
                   <button
                     onClick={addRow}
@@ -295,7 +420,7 @@ export function JobInvoices({ jobId, customerId, jobDescription, jobNumber, invo
                   </button>
                 </div>
                 <p className="text-[11px] text-muted-foreground mb-2">
-                  Each row = one Xero line item. Unit price is ex GST — Xero adds GST at 10%.
+                  Each row is one Xero line with a price. Unit price is ex GST — Xero adds 10% GST.
                 </p>
 
                 <div className="space-y-1.5">
@@ -305,7 +430,7 @@ export function JobInvoices({ jobId, customerId, jobDescription, jobNumber, invo
                         type="text"
                         value={r.description}
                         onChange={(e) => updateRow(r.id, { description: e.target.value })}
-                        placeholder="Description"
+                        placeholder="e.g. Labour — call-out + 2hrs"
                         className="flex-1 rounded-md border border-border bg-input px-2 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none"
                       />
                       <input

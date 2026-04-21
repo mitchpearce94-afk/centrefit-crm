@@ -58,9 +58,20 @@ export async function POST(req: NextRequest) {
       );
     }
     customerId = body.customerId;
-    lineItems = body.lineItems;
+    const pricedLines = body.lineItems;
     headerDescription = body.description ?? "";
-    subtotal = lineItems.reduce((s, li) => s + (li.unitAmount * (li.quantity ?? 1)), 0);
+    subtotal = pricedLines.reduce((s, li) => s + (li.unitAmount * (li.quantity ?? 1)), 0);
+
+    // Prepend the narrative (job description + checklist + work log + materials)
+    // as a $0 line so it appears at the top of the Xero invoice as proof of work.
+    if (headerDescription.trim()) {
+      lineItems = [
+        { description: headerDescription.trim(), quantity: 1, unitAmount: 0 },
+        ...pricedLines,
+      ];
+    } else {
+      lineItems = pricedLines;
+    }
   } else {
     // Quote-linked: full / progress_pp1 / progress_pp2
     if (!quoteId) {

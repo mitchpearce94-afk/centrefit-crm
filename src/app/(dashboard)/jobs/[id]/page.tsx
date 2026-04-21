@@ -13,7 +13,7 @@ export default async function JobDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [jobResult, statusesResult, staffResult, workResult, notesResult, timeResult, nbnResult, checklistResult, templatesResult, scheduleResult, invoicesResult] =
+  const [jobResult, statusesResult, staffResult, workResult, notesResult, timeResult, nbnResult, checklistResult, templatesResult, scheduleResult, invoicesResult, linkedQuotesResult] =
     await Promise.all([
       supabase
         .from("jobs")
@@ -68,6 +68,10 @@ export default async function JobDetailPage({
         .select("*")
         .eq("job_id", id)
         .order("created_at", { ascending: true }),
+      supabase
+        .from("quotes")
+        .select("id, ref, status")
+        .eq("job_id", id),
     ]);
 
   if (jobResult.error || !jobResult.data) {
@@ -129,6 +133,9 @@ export default async function JobDetailPage({
         jobDescription={(job as any).description ?? null}
         jobNumber={(job as any).number ?? null}
         invoices={(invoicesResult.data ?? []) as any[]}
+        linkedQuotes={(linkedQuotesResult.data ?? []) as any[]}
+        checklistItems={(checklistResult.data ?? []) as any[]}
+        workEntries={(workResult.data ?? []) as any[]}
       />
     </div>
   );
