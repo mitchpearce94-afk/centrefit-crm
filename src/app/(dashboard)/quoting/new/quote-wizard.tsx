@@ -1887,17 +1887,21 @@ export function QuoteWizard({
                       <span className="w-20 text-right text-sm font-mono">
                         ${fmt(item.isDollarInput ? item.hours : item.unitRate ? item.hours * item.unitRate : item.hours * (labourData?.sellRate || 150))}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => deleteLabourLine(si, ii)}
-                        title="Remove line"
-                        className="text-muted-foreground hover:text-red-400 transition-colors"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M18 6 6 18" />
-                          <path d="m6 6 12 12" />
-                        </svg>
-                      </button>
+                      {item.isCustom ? (
+                        <button
+                          type="button"
+                          onClick={() => deleteLabourLine(si, ii)}
+                          title="Remove line"
+                          className="text-muted-foreground hover:text-red-400 transition-colors"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M18 6 6 18" />
+                            <path d="m6 6 12 12" />
+                          </svg>
+                        </button>
+                      ) : (
+                        <span className="w-[14px]" />
+                      )}
                     </div>
                   </div>
                 ))}
