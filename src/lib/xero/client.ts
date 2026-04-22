@@ -80,6 +80,9 @@ export async function getAuthedClient(): Promise<{
   if (!conn) throw new Error("Xero is not connected");
 
   const client = buildXeroClient();
+  // Required — sets up the internal openid-client. Without this, refreshToken()
+  // throws "Cannot read properties of undefined (reading 'refresh')".
+  await client.initialize();
 
   const expiresAt = new Date(conn.expires_at).getTime();
   const now = Date.now();
