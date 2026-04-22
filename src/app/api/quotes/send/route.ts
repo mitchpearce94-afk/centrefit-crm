@@ -223,7 +223,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const { error: sendError } = await getResend().emails.send({
-      from: "CentreFit <quotes@centrefitgroup.com.au>",
+      // TEMP: using Resend's test sender until centrefitgroup.com.au is
+      // verified as a sending domain. Only delivers to the email the Resend
+      // account signed up with. Revert to quotes@centrefitgroup.com.au once
+      // domain is verified in Resend dashboard.
+      from: "CentreFit <onboarding@resend.dev>",
       to: email,
       subject: `Quotation ${quote.ref} — ${clientName}${quote.site_name ? ` — ${quote.site_name}` : ''}`,
       html: emailHtml,
