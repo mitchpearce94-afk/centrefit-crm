@@ -1,38 +1,30 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 import { XeroSyncPreviewModal, type PreviewReport } from "./xero-sync-preview-modal";
 
-export function SyncToXeroButton({
-  connected,
-  tenantName,
+export function RowXeroSyncButton({
+  productId,
+  hasSku,
 }: {
-  connected: boolean;
-  tenantName: string | null;
+  productId: string;
+  hasSku: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<PreviewReport | null>(null);
 
-  if (!connected) {
-    return (
-      <Link
-        href="/settings/integrations"
-        className="shrink-0 rounded-md border border-border px-3 py-2 text-xs text-muted-foreground hover:bg-accent"
-      >
-        Connect Xero
-      </Link>
-    );
-  }
+  if (!hasSku) return null;
 
   async function loadPreview() {
     setBusy(true);
     try {
-      const res = await fetch("/api/xero/sync-products/preview");
+      const res = await fetch(
+        `/api/xero/sync-products/preview?productIds=${encodeURIComponent(productId)}`
+      );
       const json = await res.json();
       if (!res.ok || json.error) {
         toast(json.error ?? "Preview failed", "error");
@@ -49,17 +41,23 @@ export function SyncToXeroButton({
   async function confirmSync() {
     setBusy(true);
     try {
-      const res = await fetch("/api/xero/sync-products", { method: "POST" });
+      const res = await fetch("/api/xero/sync-products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productIds: [productId] }),
+      });
       const json = await res.json();
       if (!res.ok || json.error) {
         toast(json.error ?? "Sync failed", "error");
       } else {
         const s = json.summary;
-        toast(
-          `Synced ${s.synced} to Xero (${s.created} new, ${s.updated} updated${
-            s.errors?.length ? `, ${s.errors.length} errors` : ""
-          })`
-        );
+        if (s.errors?.length) {
+          toast(`Synced with ${s.errors.length} error(s)`, "error");
+        } else if (s.synced > 0) {
+          toast(`Synced to Xero (${s.created ? "created" : "updated"})`);
+        } else {
+          toast("Nothing synced");
+        }
         setPreview(null);
         router.refresh();
       }
@@ -75,10 +73,9 @@ export function SyncToXeroButton({
       <button
         onClick={loadPreview}
         disabled={busy}
-        title={tenantName ? `Preview sync to ${tenantName}` : "Preview sync to Xero"}
-        className="shrink-0 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        className="text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
       >
-        {busy ? "Loading…" : "Sync to Xero"}
+        {busy && !preview ? "…" : "Sync"}
       </button>
       {preview && (
         <XeroSyncPreviewModal
@@ -86,6 +83,7 @@ export function SyncToXeroButton({
           busy={busy}
           onCancel={() => setPreview(null)}
           onConfirm={confirmSync}
+          confirmLabel="Confirm sync"
         />
       )}
     </>

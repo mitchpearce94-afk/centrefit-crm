@@ -21,7 +21,7 @@ import type { Item } from "xero-node";
  * the safer default for Centrefit. Tracked items need account setup which
  * we'll layer in later if needed.
  */
-export async function POST(_req: NextRequest) {
+export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -39,9 +39,28 @@ export async function POST(_req: NextRequest) {
     return NextResponse.json({ error: `Xero not connected: ${msg}` }, { status: 400 });
   }
 
-  const { data: products, error: prodErr } = await supabase
+  // Optional body: { productIds: string[] } — scope sync to specific products.
+  // Absent = sync everything (original behavior).
+  let productIds: string[] | null = null;
+  try {
+    const text = await req.text();
+    if (text) {
+      const body = JSON.parse(text) as { productIds?: unknown };
+      if (Array.isArray(body.productIds)) {
+        productIds = body.productIds.filter((v): v is string => typeof v === "string");
+      }
+    }
+  } catch {
+    // Invalid JSON — ignore, treat as full sync
+  }
+
+  let query = supabase
     .from("quote_products")
     .select("id, name, sku, category, supplier, cost_price, sell_price, xero_item_id, is_active");
+  if (productIds && productIds.length > 0) {
+    query = query.in("id", productIds);
+  }
+  const { data: products, error: prodErr } = await query;
   if (prodErr) {
     return NextResponse.json({ error: prodErr.message }, { status: 500 });
   }

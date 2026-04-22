@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 import { PRODUCT_CATEGORIES, DEVICE_TYPES } from "@/lib/quote-engine";
+import { RowXeroSyncButton } from "./row-xero-sync-button";
 
 interface Product {
   id: string;
@@ -239,6 +240,7 @@ export function ProductCatalog({ products, suppliers }: { products: Product[]; s
                           </td>
                           <td className="px-3 py-2 text-right space-x-2">
                             <button onClick={() => setEditingId(p.id)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Edit</button>
+                            <RowXeroSyncButton productId={p.id} hasSku={!!p.sku && p.sku.trim() !== ""} />
                             <button onClick={() => toggleActive(p.id, p.is_active)} className={`text-xs transition-colors ${p.is_active ? "text-muted-foreground hover:text-red-400" : "text-emerald-500 hover:text-emerald-400"}`}>
                               {p.is_active ? "Deactivate" : "Activate"}
                             </button>
