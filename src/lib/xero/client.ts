@@ -3,16 +3,21 @@ import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // Scopes we request from Xero. `offline_access` is required to get a refresh token.
-// `accounting.settings` covers Items + Tax Rates + Accounts.
-// `accounting.transactions` is for invoices + POs (Phase B/C).
-// `accounting.contacts` is for customer sync (Phase B/C).
+// Apps created after 2 Mar 2026 use granular scopes — accounting.transactions is
+// deprecated and split into accounting.invoices + accounting.payments +
+// accounting.banktransactions + accounting.manualjournals.
+// accounting.invoices covers Invoices, Quotes, PurchaseOrders, Items (Phase B/C).
+// accounting.payments covers Payments (used for payment status refresh).
+// accounting.settings covers Accounts, TaxRates, BrandingThemes, Organisation.
+// accounting.contacts covers Contacts (customer sync).
 export const XERO_SCOPES = [
   "openid",
   "profile",
   "email",
   "offline_access",
   "accounting.settings",
-  "accounting.transactions",
+  "accounting.invoices",
+  "accounting.payments",
   "accounting.contacts",
 ];
 
