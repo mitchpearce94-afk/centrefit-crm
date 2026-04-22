@@ -4,6 +4,7 @@ import Link from "next/link";
 import { StatusTransition } from "./status-transition";
 import { JobTabs } from "./job-tabs";
 import { JobInvoices } from "./job-invoices";
+import { JobProcurement } from "./job-procurement";
 
 export default async function JobDetailPage({
   params,
@@ -13,7 +14,7 @@ export default async function JobDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [jobResult, statusesResult, staffResult, workResult, notesResult, timeResult, nbnResult, checklistResult, templatesResult, scheduleResult, invoicesResult, linkedQuotesResult, billingResult] =
+  const [jobResult, statusesResult, staffResult, workResult, notesResult, timeResult, nbnResult, checklistResult, templatesResult, scheduleResult, invoicesResult, linkedQuotesResult, billingResult, procurementResult, suppliersResult] =
     await Promise.all([
       supabase
         .from("jobs")
@@ -77,6 +78,16 @@ export default async function JobDetailPage({
         .select("labour_sell_rate, callout_fee_sell")
         .limit(1)
         .maybeSingle(),
+      supabase
+        .from("job_procurement_items")
+        .select("*, received_by_staff:staff!job_procurement_items_received_by_fkey(display_name)")
+        .eq("job_id", id)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("suppliers")
+        .select("id, name")
+        .eq("is_active", true)
+        .order("name"),
     ]);
 
   if (jobResult.error || !jobResult.data) {
@@ -171,6 +182,15 @@ export default async function JobDetailPage({
         productPrices={productPrices}
         billingSettings={billingSettings}
       />
+
+      {/* ── Procurement / stock ordering ── */}
+      <div className="mt-4">
+        <JobProcurement
+          jobId={id}
+          items={(procurementResult.data ?? []) as any[]}
+          suppliers={(suppliersResult.data ?? []) as any[]}
+        />
+      </div>
     </div>
   );
 }
