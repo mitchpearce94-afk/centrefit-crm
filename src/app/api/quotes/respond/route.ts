@@ -17,27 +17,48 @@ export async function POST(req: NextRequest) {
     { cookies: { getAll: () => cookieStore.getAll() } }
   );
 
-  const { data: quote, error } = await supabase
-    .from("quotes")
-    .select("id, status, ref, job_id")
-    .eq("response_token", token)
-    .single();
-
-  if (error || !quote) {
-    return NextResponse.json({ error: "Quote not found or link expired" }, { status: 404 });
-  }
-
-  if (quote.status !== "sent") {
-    return NextResponse.json({ error: `Quote has already been ${quote.status}` }, { status: 400 });
-  }
-
+  // Atomic transition: only flip status if it's still 'sent'. This protects
+  // against races where email spam scanners fetch both accept AND decline
+  // links within milliseconds of each other — without the WHERE clause we
+  // had a time-of-check/time-of-use gap that let the second write clobber
+  // the first (happened 2026-04-22 with CF-2026-0006: accept at 11:41:05.399
+  // then decline at 11:41:05.452).
   const newStatus = action === "accept" ? "accepted" : "declined";
   const update: Record<string, unknown> = {
     status: newStatus,
     [`${newStatus}_at`]: new Date().toISOString(),
   };
 
-  await supabase.from("quotes").update(update).eq("id", quote.id);
+  const { data: updated, error: updateError } = await supabase
+    .from("quotes")
+    .update(update)
+    .eq("response_token", token)
+    .eq("status", "sent")
+    .select("id, ref, job_id")
+    .maybeSingle();
+
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 500 });
+  }
+
+  if (!updated) {
+    // Either the token is invalid OR the quote has already been responded to.
+    // Fetch to tell them which.
+    const { data: existing } = await supabase
+      .from("quotes")
+      .select("status, ref")
+      .eq("response_token", token)
+      .maybeSingle();
+    if (!existing) {
+      return NextResponse.json({ error: "Quote not found or link expired" }, { status: 404 });
+    }
+    return NextResponse.json(
+      { error: `Quote has already been ${existing.status}` },
+      { status: 400 },
+    );
+  }
+
+  const quote = updated;
 
   // Auto-transition linked job
   if (quote.job_id) {
