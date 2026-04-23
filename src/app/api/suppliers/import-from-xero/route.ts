@@ -6,7 +6,10 @@ import { getAuthedClient } from "@/lib/xero/client";
  * Pull supplier contacts from Xero and populate the CRM's suppliers table.
  *
  * Query params:
- *   dryRun=1  → preview only, don't write anything
+ *   dryRun=1        → preview only, don't write anything
+ *   createNew=1     → also create CRM rows for Xero suppliers with no match
+ *                     (default OFF — most Xero orgs have hundreds of
+ *                     supplier contacts we don't want to pollute the CRM with)
  *
  * Matching strategy (per Xero contact that is marked IsSupplier):
  *   1. Already linked? (suppliers.xero_contact_id == contact.contactID) → update
@@ -48,6 +51,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   const dryRun = req.nextUrl.searchParams.get("dryRun") === "1";
+  const createNew = req.nextUrl.searchParams.get("createNew") === "1";
 
   let xeroContacts: XeroContactRaw[] = [];
   try {
@@ -187,7 +191,17 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // New supplier
+    // No CRM match. Either skip (default) or queue for creation.
+    if (!createNew) {
+      actions.push({
+        action: "skip",
+        xeroContactId: xeroId,
+        name,
+        note: "No CRM match — enable 'Create new suppliers too' to import",
+      });
+      continue;
+    }
+
     actions.push({ action: "create", xeroContactId: xeroId, name });
     toCreate.push({
       name,

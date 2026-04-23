@@ -46,11 +46,16 @@ export function SuppliersList({ suppliers }: { suppliers: Supplier[] }) {
   const [showInactive, setShowInactive] = useState(false);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importing, setImporting] = useState(false);
+  const [createNew, setCreateNew] = useState(false);
 
-  async function loadImportPreview() {
+  async function loadImportPreview(withCreateNew: boolean) {
     setImporting(true);
     try {
-      const res = await fetch("/api/suppliers/import-from-xero?dryRun=1", { method: "POST" });
+      const qs = new URLSearchParams({ dryRun: "1" });
+      if (withCreateNew) qs.set("createNew", "1");
+      const res = await fetch(`/api/suppliers/import-from-xero?${qs.toString()}`, {
+        method: "POST",
+      });
       const json = await res.json();
       if (!res.ok || json.error) {
         alert(json.error ?? "Preview failed");
@@ -65,17 +70,26 @@ export function SuppliersList({ suppliers }: { suppliers: Supplier[] }) {
   async function confirmImport() {
     setImporting(true);
     try {
-      const res = await fetch("/api/suppliers/import-from-xero", { method: "POST" });
+      const qs = new URLSearchParams();
+      if (createNew) qs.set("createNew", "1");
+      const url = `/api/suppliers/import-from-xero${qs.toString() ? `?${qs}` : ""}`;
+      const res = await fetch(url, { method: "POST" });
       const json = await res.json();
       if (!res.ok || json.error) {
         alert(json.error ?? "Import failed");
         return;
       }
       setImportPreview(null);
+      setCreateNew(false);
       router.refresh();
     } finally {
       setImporting(false);
     }
+  }
+
+  async function toggleCreateNew(next: boolean) {
+    setCreateNew(next);
+    await loadImportPreview(next);
   }
 
   const filtered = useMemo(() => {
@@ -120,7 +134,7 @@ export function SuppliersList({ suppliers }: { suppliers: Supplier[] }) {
           Inactive
         </label>
         <button
-          onClick={loadImportPreview}
+          onClick={() => loadImportPreview(createNew)}
           disabled={importing}
           className="rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 transition-colors shrink-0"
           title="Pull suppliers from Xero and populate CRM"
@@ -142,7 +156,12 @@ export function SuppliersList({ suppliers }: { suppliers: Supplier[] }) {
         <XeroImportPreviewModal
           preview={importPreview}
           busy={importing}
-          onCancel={() => setImportPreview(null)}
+          createNew={createNew}
+          onToggleCreateNew={toggleCreateNew}
+          onCancel={() => {
+            setImportPreview(null);
+            setCreateNew(false);
+          }}
           onConfirm={confirmImport}
         />
       )}
@@ -466,11 +485,15 @@ function SearchIcon({ className }: { className?: string }) {
 function XeroImportPreviewModal({
   preview,
   busy,
+  createNew,
+  onToggleCreateNew,
   onCancel,
   onConfirm,
 }: {
   preview: ImportPreview;
   busy: boolean;
+  createNew: boolean;
+  onToggleCreateNew: (next: boolean) => void;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -487,7 +510,15 @@ function XeroImportPreviewModal({
   const newItems = preview.actions.filter((a) => a.action === "create");
   const linkItems = preview.actions.filter((a) => a.action === "link");
   const updateItems = preview.actions.filter((a) => a.action === "update");
-  const skipItems = preview.actions.filter((a) => a.action === "skip");
+  // Split skip items into two buckets:
+  //   - "no match" skips (would become creates if toggle is on)
+  //   - other skips (already synced, conflicts, etc.)
+  const unmatchedSkips = preview.actions.filter(
+    (a) => a.action === "skip" && a.note?.startsWith("No CRM match"),
+  );
+  const otherSkips = preview.actions.filter(
+    (a) => a.action === "skip" && !a.note?.startsWith("No CRM match"),
+  );
 
   return (
     <div
@@ -506,19 +537,33 @@ function XeroImportPreviewModal({
 
         <div className="overflow-y-auto px-5 py-4 space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <ImportStat label="Create new" value={s.toCreate} tone="good" />
             <ImportStat label="Link existing" value={s.toLink} tone="neutral" />
             <ImportStat label="Backfill fields" value={s.toUpdate} tone="neutral" />
-            <ImportStat label="Skipped" value={s.skipped} tone="muted" />
+            <ImportStat
+              label={createNew ? "Create new" : "Unmatched"}
+              value={createNew ? s.toCreate : unmatchedSkips.length}
+              tone={createNew ? "good" : "muted"}
+            />
+            <ImportStat label="No change" value={otherSkips.length} tone="muted" />
           </div>
 
-          {newItems.length > 0 && (
-            <ActionSection
-              title="Will create new suppliers"
-              tone="emerald"
-              items={newItems.map((i) => ({ title: i.name, subtitle: i.xeroContactId }))}
+          <label className="flex items-start gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs cursor-pointer">
+            <input
+              type="checkbox"
+              checked={createNew}
+              onChange={(e) => onToggleCreateNew(e.target.checked)}
+              disabled={busy}
+              className="mt-0.5 rounded border-border"
             />
-          )}
+            <div>
+              <div className="font-medium">Also create new CRM suppliers from unmatched Xero contacts</div>
+              <div className="text-muted-foreground text-[11px] mt-0.5">
+                Default OFF. Xero orgs usually have hundreds of supplier contacts you don&rsquo;t
+                want in the CRM. Only turn this on if you specifically want to bulk-import.
+              </div>
+            </div>
+          </label>
+
           {linkItems.length > 0 && (
             <ActionSection
               title="Will link to existing CRM suppliers"
@@ -533,15 +578,31 @@ function XeroImportPreviewModal({
               items={updateItems.map((i) => ({ title: i.name, subtitle: "already linked" }))}
             />
           )}
-          {skipItems.length > 0 && (
+          {createNew && newItems.length > 0 && (
             <ActionSection
-              title="Skipped"
+              title="Will create new suppliers"
+              tone="emerald"
+              items={newItems.map((i) => ({ title: i.name, subtitle: i.xeroContactId }))}
+            />
+          )}
+          {!createNew && unmatchedSkips.length > 0 && (
+            <ActionSection
+              title="Unmatched Xero contacts (ignored)"
               tone="muted"
-              items={skipItems.map((i) => ({ title: i.name, subtitle: i.note ?? "no changes needed" }))}
+              items={unmatchedSkips
+                .slice(0, 50)
+                .map((i) => ({ title: i.name, subtitle: "not in CRM" }))}
+            />
+          )}
+          {otherSkips.length > 0 && (
+            <ActionSection
+              title="No change"
+              tone="muted"
+              items={otherSkips.map((i) => ({ title: i.name, subtitle: i.note ?? "" }))}
             />
           )}
 
-          {nothingToDo && skipItems.length === 0 && (
+          {nothingToDo && (
             <p className="text-center text-xs text-muted-foreground italic">
               Nothing to import.
             </p>
