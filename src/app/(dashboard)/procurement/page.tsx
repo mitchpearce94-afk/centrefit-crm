@@ -47,6 +47,7 @@ export default async function ProcurementIndexPage() {
   for (const j of jobs) jobsById.set(j.id, j);
 
   // Summary stats per job based on procurement items
+  type StatusKey = "pending" | "in_stock" | "order" | "ordered" | "received";
   type Stats = {
     pending: number;
     in_stock: number;
@@ -57,6 +58,7 @@ export default async function ProcurementIndexPage() {
     poNumbers: Set<string>;
   };
   const statsByJob = new Map<string, Stats>();
+  const KNOWN_STATUSES: StatusKey[] = ["pending", "in_stock", "order", "ordered", "received"];
   for (const it of items) {
     const s =
       statsByJob.get(it.job_id) ??
@@ -69,7 +71,9 @@ export default async function ProcurementIndexPage() {
         total: 0,
         poNumbers: new Set<string>(),
       } as Stats);
-    s[it.status as keyof Stats]! += 1;
+    if ((KNOWN_STATUSES as string[]).includes(it.status)) {
+      s[it.status as StatusKey] += 1;
+    }
     s.total += 1;
     if (it.xero_po_number) s.poNumbers.add(it.xero_po_number);
     statsByJob.set(it.job_id, s);
