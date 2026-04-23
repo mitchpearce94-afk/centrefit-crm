@@ -19,6 +19,19 @@ interface CreateBody {
   email: string;
   phone?: string | null;
   company?: string | null;
+
+  // residential | business
+  customerType?: "residential" | "business" | null;
+
+  // Residential-only
+  dob?: string | null;             // ISO date
+  idType?: string | null;          // 'drivers' | 'passport'
+  idNumber?: string | null;
+
+  // Business-only
+  abn?: string | null;
+  tradingName?: string | null;
+
   planName?: string | null;
   planSpeed?: string | null;
   planPrice?: string | null;
@@ -74,6 +87,12 @@ export async function POST(req: NextRequest) {
       email: body.email.trim(),
       phone: body.phone?.trim() || null,
       company: body.company?.trim() || null,
+      customer_type: body.customerType ?? null,
+      dob: body.dob || null,
+      id_type: body.idType || null,
+      id_number: body.idNumber || null,
+      abn: body.abn || null,
+      trading_name: body.tradingName || null,
       plan_name: body.planName ?? null,
       plan_speed: body.planSpeed ?? null,
       plan_price: body.planPrice ?? null,

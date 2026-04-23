@@ -53,7 +53,14 @@ export default async function EnquiryDetailPage({
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
           <section className="rounded-lg border border-border bg-card p-5">
-            <h3 className="text-sm font-semibold mb-3">Contact</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold">Contact</h3>
+              {enquiry.customer_type && (
+                <span className="rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-primary/10 text-primary border border-primary/20">
+                  {enquiry.customer_type}
+                </span>
+              )}
+            </div>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
               <Field label="Name" value={enquiry.name} />
               <Field label="Email" value={<a href={`mailto:${enquiry.email}`} className="text-primary hover:underline">{enquiry.email}</a>} />
@@ -61,6 +68,23 @@ export default async function EnquiryDetailPage({
                 <Field label="Phone" value={<a href={`tel:${enquiry.phone}`} className="text-primary hover:underline">{enquiry.phone}</a>} />
               )}
               {enquiry.company && <Field label="Company" value={enquiry.company} />}
+
+              {/* Residential-only */}
+              {enquiry.customer_type === "residential" && (
+                <>
+                  {enquiry.dob && <Field label="Date of Birth" value={new Date(enquiry.dob).toLocaleDateString("en-AU")} />}
+                  {enquiry.id_type && <Field label="ID Type" value={enquiry.id_type === "drivers" ? "Driver's Licence" : enquiry.id_type === "passport" ? "Passport" : enquiry.id_type} />}
+                  {enquiry.id_number && <Field label="ID Number" value={<span className="font-mono text-xs">{enquiry.id_number}</span>} />}
+                </>
+              )}
+
+              {/* Business-only */}
+              {enquiry.customer_type === "business" && (
+                <>
+                  {enquiry.abn && <Field label="ABN" value={<span className="font-mono text-xs">{enquiry.abn}</span>} />}
+                  {enquiry.trading_name && <Field label="Trading Name" value={enquiry.trading_name} />}
+                </>
+              )}
             </dl>
           </section>
 
