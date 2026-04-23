@@ -51,13 +51,18 @@ export async function POST(
     .from("quote_line_items")
     .select(`
       id, product_name, sku, quantity, cost_price,
-      quote_products ( supplier_id )
+      quote_products ( supplier_id, cost_updated_at )
     `)
     .eq("quote_id", quoteId);
   if (liErr) return NextResponse.json({ error: liErr.message }, { status: 500 });
   if (!lineItems || lineItems.length === 0) {
     return NextResponse.json({ error: "Quote has no line items" }, { status: 400 });
   }
+
+  // Skip lines whose catalog price was confirmed in the last 30 days —
+  // those are considered fresh and don't need another RFQ round.
+  const FRESH_WINDOW_MS = 30 * 86400 * 1000;
+  const now = Date.now();
 
   // Group lines by supplier_id
   type Row = {
@@ -66,20 +71,47 @@ export async function POST(
     sku: string | null;
     quantity: number;
     cost_price: number | null;
-    quote_products: { supplier_id: string | null } | null;
+    quote_products: { supplier_id: string | null; cost_updated_at: string | null } | null;
   };
   const typed = lineItems as unknown as Row[];
   const linesBySupplier = new Map<string, Row[]>();
+  const skippedFresh: { lineId: string; productName: string; freshAt: string }[] = [];
+
   for (const row of typed) {
     const sid = row.quote_products?.supplier_id;
     if (!sid) continue;
     if (body.supplierIds && !body.supplierIds.includes(sid)) continue;
+
+    const costUpdatedAt = row.quote_products?.cost_updated_at;
+    if (costUpdatedAt) {
+      const age = now - new Date(costUpdatedAt).getTime();
+      if (age < FRESH_WINDOW_MS) {
+        skippedFresh.push({
+          lineId: row.id,
+          productName: row.product_name,
+          freshAt: costUpdatedAt,
+        });
+        continue;
+      }
+    }
+
     const list = linesBySupplier.get(sid) ?? [];
     list.push(row);
     linesBySupplier.set(sid, list);
   }
 
   if (linesBySupplier.size === 0) {
+    if (skippedFresh.length > 0) {
+      return NextResponse.json(
+        {
+          ok: true,
+          sent: [],
+          failures: [],
+          skippedFresh,
+          message: `All lines have prices confirmed within the last 30 days — nothing to send.`,
+        },
+      );
+    }
     return NextResponse.json(
       { error: "No lines with an assigned supplier — set supplier on products first" },
       { status: 400 },
@@ -152,5 +184,6 @@ export async function POST(
     ok: failures.length === 0,
     sent,
     failures,
+    skippedFresh,
   });
 }

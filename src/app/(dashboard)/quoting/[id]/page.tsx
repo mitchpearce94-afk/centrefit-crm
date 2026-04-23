@@ -29,7 +29,7 @@ export default async function QuoteDetailPage({
     supabase.from("quotes").select("*, customer:customers(id, name, customer_contacts(*))").eq("id", id).single(),
     supabase
       .from("quote_line_items")
-      .select("*, quote_products(supplier_id, suppliers(id, name, email))")
+      .select("*, quote_products(supplier_id, cost_updated_at, suppliers(id, name, email))")
       .eq("quote_id", id)
       .order("sort_order"),
     supabase.from("quote_extras").select("*").eq("quote_id", id).order("sort_order"),
@@ -191,21 +191,32 @@ export default async function QuoteDetailPage({
         </div>
       )}
 
-      {/* BOM */}
+      {/* BOM — collapsible per category, default collapsed */}
       <div className="mt-6">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Bill of Materials</h2>
         {Array.from(bomByCategory).map(([category, items]) => {
           const catSell = items.reduce((s: number, i: any) => s + i.sell_price * i.quantity, 0);
           return (
-            <div key={category} className="mb-4 rounded-lg border border-border overflow-hidden">
-              <div className="flex items-center justify-between bg-muted/50 px-4 py-2.5 border-b border-border">
+            <details key={category} className="mb-4 group rounded-lg border border-border overflow-hidden">
+              <summary className="flex items-center justify-between bg-muted/50 px-4 py-2.5 cursor-pointer list-none select-none hover:bg-muted/70 transition-colors">
                 <div className="flex items-center gap-2">
+                  <svg
+                    className="h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-90"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{category}</h3>
                   <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{items.length}</span>
                 </div>
                 <span className="text-xs font-mono text-muted-foreground">${fmt(catSell)}</span>
-              </div>
-              <div className="divide-y divide-border">
+              </summary>
+              <div className="divide-y divide-border border-t border-border">
                 {items.map((item: any) => (
                   <div key={item.id} className="px-4 py-3 flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
@@ -226,7 +237,7 @@ export default async function QuoteDetailPage({
                   </div>
                 ))}
               </div>
-            </div>
+            </details>
           );
         })}
       </div>
@@ -341,6 +352,7 @@ export default async function QuoteDetailPage({
           supplier_id: li.quote_products?.supplier_id ?? null,
           supplier_name: li.quote_products?.suppliers?.name ?? null,
           supplier_email: li.quote_products?.suppliers?.email ?? null,
+          product_cost_updated_at: li.quote_products?.cost_updated_at ?? null,
         }))}
       />
 

@@ -17,6 +17,15 @@ export interface LineItem {
   supplier_id: string | null;
   supplier_name: string | null;
   supplier_email: string | null;
+  product_cost_updated_at: string | null;
+}
+
+const FRESH_DAYS = 30;
+const FRESH_MS = FRESH_DAYS * 86400 * 1000;
+
+function isFresh(line: LineItem): boolean {
+  if (!line.product_cost_updated_at) return false;
+  return Date.now() - new Date(line.product_cost_updated_at).getTime() < FRESH_MS;
 }
 
 interface Group {
@@ -44,6 +53,16 @@ function StatusBadge({ line }: { line: LineItem }) {
     return (
       <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
         ✓ Confirmed {formatRelative(line.cost_confirmed_at)}
+      </span>
+    );
+  }
+  if (isFresh(line)) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+        title={`Catalog price was confirmed ${formatRelative(line.product_cost_updated_at!)} — no RFQ needed`}
+      >
+        Fresh · {formatRelative(line.product_cost_updated_at!)}
       </span>
     );
   }
@@ -112,7 +131,11 @@ export function SupplierPricing({
       if (json.failures?.length > 0) {
         toast(`RFQ failed: ${json.failures[0].message}`, "error");
       } else if (json.sent?.length > 0) {
-        toast(`RFQ sent to ${json.sent[0].supplierName} (${json.sent[0].lineCount} line${json.sent[0].lineCount === 1 ? "" : "s"})`);
+        const skippedFreshCount = json.skippedFresh?.length ?? 0;
+        const freshSuffix = skippedFreshCount > 0 ? `, skipped ${skippedFreshCount} fresh line${skippedFreshCount === 1 ? "" : "s"}` : "";
+        toast(`RFQ sent to ${json.sent[0].supplierName} (${json.sent[0].lineCount} line${json.sent[0].lineCount === 1 ? "" : "s"}${freshSuffix})`);
+      } else if (json.skippedFresh?.length > 0) {
+        toast("All lines have fresh prices — nothing to send");
       }
       router.refresh();
     } finally {
@@ -165,8 +188,9 @@ export function SupplierPricing({
   const totals = {
     total: lineItems.length,
     confirmed: lineItems.filter((l) => l.cost_confirmed_at).length,
-    pending: lineItems.filter((l) => !l.cost_confirmed_at && l.rfq_sent_at).length,
-    estimated: lineItems.filter((l) => !l.cost_confirmed_at && !l.rfq_sent_at).length,
+    fresh: lineItems.filter((l) => !l.cost_confirmed_at && isFresh(l)).length,
+    pending: lineItems.filter((l) => !l.cost_confirmed_at && !isFresh(l) && l.rfq_sent_at).length,
+    estimated: lineItems.filter((l) => !l.cost_confirmed_at && !isFresh(l) && !l.rfq_sent_at).length,
   };
 
   if (lineItems.length === 0) return null;
@@ -184,7 +208,7 @@ export function SupplierPricing({
         <div className="shrink-0 flex gap-2 text-[10px] uppercase tracking-wide">
           <span className="text-muted-foreground">{totals.estimated} est</span>
           <span className="text-amber-400">{totals.pending} pending</span>
-          <span className="text-emerald-400">{totals.confirmed} conf</span>
+          <span className="text-emerald-400">{totals.fresh + totals.confirmed} fresh</span>
         </div>
       </div>
 
@@ -193,7 +217,13 @@ export function SupplierPricing({
           const groupKey = group.supplierId ?? "__unassigned__";
           const groupSending = sendingRFQ === group.supplierId;
           const noEmail = !group.supplierEmail;
-          const canSendRFQ = group.supplierId !== null && !noEmail;
+          const nonFreshLines = group.lines.filter((l) => !isFresh(l));
+          const allFresh = group.lines.length > 0 && nonFreshLines.length === 0;
+          const canSendRFQ = group.supplierId !== null && !noEmail && !allFresh;
+
+          let rfqTooltip = "Send pricing request";
+          if (noEmail) rfqTooltip = "Supplier has no email set";
+          else if (allFresh) rfqTooltip = "All prices confirmed within the last 30 days — no RFQ needed";
 
           return (
             <div key={groupKey} className="rounded-md border border-border">
@@ -206,15 +236,22 @@ export function SupplierPricing({
                   {group.supplierId && noEmail && (
                     <div className="text-[10px] text-amber-400">No email on file — add one to send RFQs</div>
                   )}
+                  {group.supplierId && allFresh && (
+                    <div className="text-[10px] text-emerald-400">All prices fresh (last 30 days)</div>
+                  )}
                 </div>
                 {group.supplierId && (
                   <button
                     onClick={() => sendRFQ(group.supplierId!)}
                     disabled={!canSendRFQ || groupSending}
                     className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs text-foreground hover:bg-accent disabled:opacity-50"
-                    title={noEmail ? "Supplier has no email set" : "Send pricing request"}
+                    title={rfqTooltip}
                   >
-                    {groupSending ? "Sending…" : "Send RFQ"}
+                    {groupSending
+                      ? "Sending…"
+                      : allFresh
+                        ? "No RFQ needed"
+                        : `Send RFQ${nonFreshLines.length < group.lines.length ? ` (${nonFreshLines.length})` : ""}`}
                   </button>
                 )}
               </div>

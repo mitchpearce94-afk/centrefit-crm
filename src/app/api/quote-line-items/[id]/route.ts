@@ -46,7 +46,7 @@ export async function PATCH(
 
   const { data: line, error: fetchErr } = await supabase
     .from("quote_line_items")
-    .select("id, markup, sell_price")
+    .select("id, markup, sell_price, product_id")
     .eq("id", id)
     .maybeSingle();
   if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
@@ -74,6 +74,24 @@ export async function PATCH(
     .select()
     .single();
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+
+  // Propagate confirmed price back to the product catalog so future quotes
+  // pull the fresh cost without needing another RFQ round. We only update
+  // cost_price + markup + cost_updated_at; sell_price is a generated column
+  // on quote_products so it auto-recalcs.
+  //
+  // Deliberately does NOT update the product name, SKU, supplier, etc. Those
+  // stay as-is — Mitchell edits them in the product catalog UI if needed.
+  if ((line as { product_id?: string | null }).product_id) {
+    await supabase
+      .from("quote_products")
+      .update({
+        cost_price: body.cost_price,
+        markup,
+        cost_updated_at: new Date().toISOString(),
+      })
+      .eq("id", (line as { product_id: string }).product_id);
+  }
 
   return NextResponse.json({ line: updated });
 }
