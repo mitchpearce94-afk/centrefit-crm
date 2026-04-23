@@ -841,23 +841,72 @@ export function QuoteWizard({
       await supabase.from("quote_line_items").delete().eq("quote_id", quoteId);
       await supabase.from("quote_extras").delete().eq("quote_id", quoteId);
     } else {
-      // INSERT new quote
-      const { count } = await supabase.from("quotes").select("id", { count: "exact", head: true });
-      const ref = `CF-${new Date().getFullYear()}-${String((count ?? 0) + 1).padStart(4, "0")}`;
+      // INSERT new quote. Ref is CF-{year}-{NNNN} where NNNN is the next
+      // number for the current year. We look up MAX(NNNN) for this year's
+      // existing refs rather than using count(*), which was broken (not
+      // year-scoped, and susceptible to deletes/concurrency).
+      //
+      // A UNIQUE constraint on quotes.ref catches any race collision — if
+      // two users save at once, one gets 23505 and we retry with +1. We
+      // cap retries at 5 to avoid infinite loops.
+      const year = new Date().getFullYear();
+      const refPrefix = `CF-${year}-`;
 
-      const { data: newQuote, error } = await supabase.from("quotes").insert({
-        ...quotePayload,
-        ref,
-        status: "draft",
-        created_by: user?.id ?? null,
-      }).select("id").single();
-
-      if (error || !newQuote) {
-        toast(error?.message || "Failed to save", "error");
+      const { data: yearQuotes, error: refErr } = await supabase
+        .from("quotes")
+        .select("ref")
+        .like("ref", `${refPrefix}%`);
+      if (refErr) {
+        toast(refErr.message, "error");
         setSaving(false);
         return;
       }
-      quoteId = newQuote.id;
+      let nextNumber = 1;
+      for (const q of yearQuotes ?? []) {
+        const match = /-(\d+)$/.exec(q.ref ?? "");
+        if (match) {
+          const n = parseInt(match[1], 10);
+          if (!Number.isNaN(n) && n >= nextNumber) nextNumber = n + 1;
+        }
+      }
+
+      let newQuoteId: string | null = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const candidate = `${refPrefix}${String(nextNumber).padStart(4, "0")}`;
+        const { data: newQuote, error } = await supabase
+          .from("quotes")
+          .insert({
+            ...quotePayload,
+            ref: candidate,
+            status: "draft",
+            created_by: user?.id ?? null,
+          })
+          .select("id")
+          .single();
+
+        if (!error && newQuote) {
+          newQuoteId = newQuote.id;
+          break;
+        }
+
+        // 23505 = unique_violation — someone else grabbed this ref. Try next.
+        const isUniqueViolation =
+          error?.code === "23505" ||
+          (error?.message ?? "").toLowerCase().includes("duplicate key");
+        if (!isUniqueViolation) {
+          toast(error?.message || "Failed to save", "error");
+          setSaving(false);
+          return;
+        }
+        nextNumber += 1;
+      }
+
+      if (!newQuoteId) {
+        toast("Could not allocate a unique quote ref after 5 attempts", "error");
+        setSaving(false);
+        return;
+      }
+      quoteId = newQuoteId;
     }
 
     const lineItemsToSave = quoteMode === "manual" ? manualBomAsBomItems : bomItems;
