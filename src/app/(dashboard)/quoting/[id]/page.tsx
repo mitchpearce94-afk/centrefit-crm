@@ -248,15 +248,28 @@ export default async function QuoteDetailPage({
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Labour</h2>
           {(quote.labour_data.sections || []).map((section: any) => (
             section.totalSell > 0 && (
-              <div key={section.name} className="mb-3 rounded-lg border border-border overflow-hidden">
-                <div className="flex items-center justify-between bg-muted/50 px-4 py-2.5 border-b border-border">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{section.name}</h3>
+              <details key={section.name} className="mb-3 group rounded-lg border border-border overflow-hidden">
+                <summary className="flex items-center justify-between bg-muted/50 px-4 py-2.5 cursor-pointer list-none select-none hover:bg-muted/70 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <svg
+                      className="h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-90"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{section.name}</h3>
+                  </div>
                   <div className="flex items-center gap-4 text-xs font-mono text-muted-foreground">
                     <span>{section.totalHours}h</span>
                     <span>${fmt(section.totalSell)}</span>
                   </div>
-                </div>
-                <div className="divide-y divide-border">
+                </summary>
+                <div className="divide-y divide-border border-t border-border">
                   {(section.items || []).filter((i: any) => i.hours > 0).map((item: any, ii: number) => (
                     <div key={ii} className="flex items-center justify-between px-4 py-2">
                       <div>
@@ -270,7 +283,7 @@ export default async function QuoteDetailPage({
                     </div>
                   ))}
                 </div>
-              </div>
+              </details>
             )
           ))}
         </div>
