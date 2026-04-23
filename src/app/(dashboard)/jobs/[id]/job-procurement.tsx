@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 
@@ -54,6 +54,7 @@ export function JobProcurement({
   const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [splitTarget, setSplitTarget] = useState<ProcurementItem | null>(null);
 
   const hasItems = items.length > 0;
   const orderCount = useMemo(() => items.filter((i) => i.status === "order").length, [items]);
@@ -115,27 +116,21 @@ export function JobProcurement({
     }
   }
 
-  async function splitItem(id: string, currentQty: number) {
-    const input = prompt(
-      `Split off how many units? (Original has ${currentQty}. New row will be created with that qty; original reduced to ${currentQty} - your input)`,
-      "1",
-    );
-    if (!input) return;
-    const n = Number(input);
-    if (!n || n <= 0 || n >= currentQty) {
-      toast(`Invalid split quantity. Must be between 1 and ${currentQty - 1}.`, "error");
-      return;
-    }
+  async function confirmSplit(id: string, splitQty: number) {
     setBusy(id);
     try {
       const res = await fetch(`/api/procurement-items/${id}/split`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ splitQuantity: n }),
+        body: JSON.stringify({ splitQuantity: splitQty }),
       });
       const json = await res.json();
-      if (!res.ok || json.error) toast(json.error ?? "Split failed", "error");
-      else router.refresh();
+      if (!res.ok || json.error) {
+        toast(json.error ?? "Split failed", "error");
+      } else {
+        setSplitTarget(null);
+        router.refresh();
+      }
     } finally {
       setBusy(null);
     }
@@ -349,7 +344,7 @@ export function JobProcurement({
                       )}
                       {!isLocked && item.quantity > 1 && (
                         <button
-                          onClick={() => splitItem(item.id, item.quantity)}
+                          onClick={() => setSplitTarget(item)}
                           disabled={rowBusy}
                           className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
                         >
@@ -372,6 +367,109 @@ export function JobProcurement({
             })}
           </tbody>
         </table>
+      </div>
+      {splitTarget && (
+        <SplitModal
+          item={splitTarget}
+          busy={busy === splitTarget.id}
+          onCancel={() => setSplitTarget(null)}
+          onConfirm={(qty) => confirmSplit(splitTarget.id, qty)}
+        />
+      )}
+    </div>
+  );
+}
+
+function SplitModal({
+  item,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  item: ProcurementItem;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: (qty: number) => void;
+}) {
+  const maxSplit = item.quantity - 1;
+  const [value, setValue] = useState<string>("1");
+  const parsed = Number(value);
+  const valid = Number.isInteger(parsed) && parsed >= 1 && parsed <= maxSplit;
+  const remaining = valid ? item.quantity - parsed : item.quantity;
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !busy) onCancel();
+      if (e.key === "Enter" && valid && !busy) onConfirm(parsed);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, onCancel, onConfirm, parsed, valid]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-md rounded-lg border border-border bg-background shadow-xl">
+        <div className="border-b border-border px-5 py-4">
+          <h2 className="text-base font-semibold">Split line</h2>
+          <p className="mt-1 text-xs text-muted-foreground truncate">
+            {item.product_name}
+            {item.sku && <span className="ml-1 font-mono">({item.sku})</span>}
+          </p>
+        </div>
+
+        <div className="px-5 py-4 space-y-3">
+          <div className="rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            Current quantity: <span className="font-mono text-foreground">{item.quantity}</span>
+          </div>
+
+          <label className="block">
+            <span className="text-xs text-muted-foreground">Split off how many?</span>
+            <input
+              type="number"
+              min={1}
+              max={maxSplit}
+              step={1}
+              value={value}
+              autoFocus
+              onChange={(e) => setValue(e.target.value)}
+              disabled={busy}
+              className="mt-1 block w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+            />
+            <span className="mt-1 block text-[10px] text-muted-foreground">
+              Must be between 1 and {maxSplit}.
+            </span>
+          </label>
+
+          {valid && (
+            <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Original becomes</span>
+                <span className="font-mono">{remaining}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">New row</span>
+                <span className="font-mono">{parsed}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-border px-5 py-3 flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => valid && onConfirm(parsed)}
+            disabled={!valid || busy}
+            className="rounded-md bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {busy ? "Splitting…" : "Split"}
+          </button>
+        </div>
       </div>
     </div>
   );
