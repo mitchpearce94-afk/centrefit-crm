@@ -142,15 +142,26 @@ export async function POST(
         },
       );
 
-      const lineItems: XeroPOLineItem[] = rows.map((r) => {
-        const lineCost = Number(r.quote_line_items?.cost_price ?? 0);
-        const desc = r.sku ? `${r.product_name} (${r.sku})` : r.product_name;
-        return {
-          description: desc,
-          quantity: Number(r.quantity),
-          unitAmount: lineCost,
-        };
-      });
+      // Supplier pricing changes week-to-week, so we send POs as $0 RFQs and
+      // let the supplier quote current rates back. Mitchell updates the draft
+      // PO in Xero with their reply before authorising + sending.
+      const rfqNotice: XeroPOLineItem = {
+        description:
+          "QUOTE REQUEST — Please confirm current unit pricing before fulfilling this order. Reply to this PO with revised quotes; we will update and authorise from our end. Do not ship until pricing is confirmed in writing.",
+        quantity: 1,
+        unitAmount: 0,
+      };
+      const lineItems: XeroPOLineItem[] = [
+        rfqNotice,
+        ...rows.map<XeroPOLineItem>((r) => {
+          const desc = r.sku ? `${r.product_name} (${r.sku})` : r.product_name;
+          return {
+            description: desc,
+            quantity: Number(r.quantity),
+            unitAmount: 0,
+          };
+        }),
+      ];
 
       const po = await createXeroPurchaseOrder({
         xero,
@@ -159,6 +170,8 @@ export async function POST(
         lineItems,
         reference: job.number,
         deliveryAddress,
+        deliveryInstructions:
+          "Pricing to be confirmed by supplier. Do not ship until we authorise the PO with confirmed unit prices.",
       });
 
       // Mark rows ordered

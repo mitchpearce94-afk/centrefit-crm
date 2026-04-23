@@ -55,6 +55,7 @@ export function JobProcurement({
   const [busy, setBusy] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [splitTarget, setSplitTarget] = useState<ProcurementItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProcurementItem | null>(null);
 
   const hasItems = items.length > 0;
   const orderCount = useMemo(() => items.filter((i) => i.status === "order").length, [items]);
@@ -100,8 +101,7 @@ export function JobProcurement({
     }
   }
 
-  async function deleteItem(id: string) {
-    if (!confirm("Delete this procurement line?")) return;
+  async function confirmDelete(id: string) {
     setBusy(id);
     try {
       const res = await fetch(`/api/procurement-items/${id}`, { method: "DELETE" });
@@ -109,6 +109,7 @@ export function JobProcurement({
       if (!res.ok || json.error) {
         toast(json.error ?? "Delete failed", "error");
       } else {
+        setDeleteTarget(null);
         router.refresh();
       }
     } finally {
@@ -353,7 +354,7 @@ export function JobProcurement({
                       )}
                       {!isLocked && (
                         <button
-                          onClick={() => deleteItem(item.id)}
+                          onClick={() => setDeleteTarget(item)}
                           disabled={rowBusy}
                           className="text-xs text-muted-foreground hover:text-red-400 disabled:opacity-50"
                         >
@@ -376,6 +377,78 @@ export function JobProcurement({
           onConfirm={(qty) => confirmSplit(splitTarget.id, qty)}
         />
       )}
+      {deleteTarget && (
+        <ConfirmDeleteModal
+          item={deleteTarget}
+          busy={busy === deleteTarget.id}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => confirmDelete(deleteTarget.id)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ConfirmDeleteModal({
+  item,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  item: ProcurementItem;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !busy) onCancel();
+      if (e.key === "Enter" && !busy) onConfirm();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, onCancel, onConfirm]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-md rounded-lg border border-border bg-background shadow-xl">
+        <div className="border-b border-border px-5 py-4">
+          <h2 className="text-base font-semibold">Delete procurement line?</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            This can't be undone, but you can always re-init procurement from the quote.
+          </p>
+        </div>
+
+        <div className="px-5 py-4">
+          <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs">
+            <div className="font-medium">{item.product_name}</div>
+            {item.sku && (
+              <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{item.sku}</div>
+            )}
+            <div className="mt-1 flex items-center justify-between text-muted-foreground">
+              <span>Quantity</span>
+              <span className="font-mono text-foreground">{item.quantity}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-border px-5 py-3 flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={busy}
+            className="rounded-md bg-red-500 px-4 py-1.5 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50"
+          >
+            {busy ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
