@@ -82,7 +82,8 @@ export default async function JobDetailPage({
         .from("job_procurement_items")
         .select("*, received_by_staff:staff!job_procurement_items_received_by_fkey(display_name)")
         .eq("job_id", id)
-        .order("created_at", { ascending: true }),
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true }),
       supabase
         .from("suppliers")
         .select("id, name")
@@ -185,6 +186,14 @@ export default async function JobDetailPage({
 
       {/* ── Procurement / stock ordering ── */}
       <div className="mt-4">
+        <div className="mb-2 flex justify-end">
+          <Link
+            href={`/procurement/${id}`}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Open in Procurement →
+          </Link>
+        </div>
         <JobProcurement
           jobId={id}
           items={(procurementResult.data ?? []) as any[]}
