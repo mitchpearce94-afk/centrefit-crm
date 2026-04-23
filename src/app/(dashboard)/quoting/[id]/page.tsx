@@ -4,6 +4,7 @@ import Link from "next/link";
 import { DEVICE_TYPES } from "@/lib/quote-engine";
 import { QuoteActions } from "./quote-actions";
 import { QuoteInvoices } from "./quote-invoices";
+import { SupplierPricing } from "./supplier-pricing";
 
 function fmt(n: number): string {
   return n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -26,7 +27,11 @@ export default async function QuoteDetailPage({
 
   const [quoteResult, lineItemsResult, extrasResult, jobsResult, invoicesResult] = await Promise.all([
     supabase.from("quotes").select("*, customer:customers(id, name, customer_contacts(*))").eq("id", id).single(),
-    supabase.from("quote_line_items").select("*").eq("quote_id", id).order("sort_order"),
+    supabase
+      .from("quote_line_items")
+      .select("*, quote_products(supplier_id, suppliers(id, name, email))")
+      .eq("quote_id", id)
+      .order("sort_order"),
     supabase.from("quote_extras").select("*").eq("quote_id", id).order("sort_order"),
     supabase.from("jobs").select("id, number, customer:customers(name)").order("number", { ascending: false }).limit(200),
     supabase.from("invoices").select("*").eq("quote_id", id).order("created_at", { ascending: true }),
@@ -319,6 +324,25 @@ export default async function QuoteDetailPage({
           )}
         </div>
       )}
+
+      {/* Supplier pricing */}
+      <SupplierPricing
+        quoteId={quote.id}
+        lineItems={lineItems.map((li: any) => ({
+          id: li.id,
+          product_name: li.product_name,
+          sku: li.sku,
+          quantity: li.quantity,
+          cost_price: Number(li.cost_price ?? 0),
+          markup: Number(li.markup ?? 0),
+          sell_price: Number(li.sell_price ?? 0),
+          rfq_sent_at: li.rfq_sent_at ?? null,
+          cost_confirmed_at: li.cost_confirmed_at ?? null,
+          supplier_id: li.quote_products?.supplier_id ?? null,
+          supplier_name: li.quote_products?.suppliers?.name ?? null,
+          supplier_email: li.quote_products?.suppliers?.email ?? null,
+        }))}
+      />
 
       {/* Invoices */}
       <QuoteInvoices
