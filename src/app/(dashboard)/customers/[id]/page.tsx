@@ -4,6 +4,8 @@ import Link from "next/link";
 import { DeleteCustomerButton } from "./delete-customer-button";
 import { CustomerDetailTabs } from "./customer-detail-tabs";
 
+export const dynamic = "force-dynamic";
+
 export default async function CustomerDetailPage({
   params,
 }: {
