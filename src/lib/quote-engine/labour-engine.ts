@@ -147,20 +147,41 @@ export function calculateLabour(
 
   // === 1. ROUGH IN ===
 
-  const cabledReedSwitches = Math.max(0, (c.reed_switch || 0) - (s.reed_switch_uncabled || 0))
+  // Cable runs: in BOM-driven mode, each line whose labour_code is in the
+  // "needs cable" set contributes its quantity to the cable-run count. In
+  // legacy device-counts mode, sum the device codes that historically need
+  // cable pulled. AV termination remains site-info driven (TV + cardio).
+  const NEEDS_CABLE_LABOUR_CODES = new Set([
+    'camera_plaster', 'camera_concrete',
+    'pir_360_roof', 'pir_wall',
+    'reed_switch',
+    'duress_button', 'duress_intercom',
+    'light_siren', 'rex_button',
+    'tailgate_system',
+    'wap',
+    'speaker_roof', 'speaker_wall',
+    'data_point',
+    'card_reader', 'door_lock', 'alarm_keypad',
+  ])
 
+  const useBomLabourForRoughIn = bomLabour.length > 0
+
+  const cabledReedSwitches = Math.max(0, (c.reed_switch || 0) - (s.reed_switch_uncabled || 0))
   const speakerRoofCount = (c.speaker_roof_black || 0) + (c.speaker_roof_white || 0)
   const speakerWallCount = (c.speaker_wall_black || 0) + (c.speaker_wall_white || 0)
 
-  const totalCableRuns =
-    (c.camera_black || 0) + (c.camera_white || 0) +
-    (c.pir_360_roof || 0) + (c.pir_wall || 0) +
-    cabledReedSwitches +
-    speakerRoofCount + speakerWallCount +
-    (c.wap || 0) + (c.data_point || 0) +
-    (c.duress_button || 0) + (c.duress_intercom || 0) +
-    (c.light_siren || 0) + (c.rex_button || 0) +
-    (c.tailgate_system || 0)
+  const totalCableRuns = useBomLabourForRoughIn
+    ? bomLabour
+        .filter((line) => line.labour_code && NEEDS_CABLE_LABOUR_CODES.has(line.labour_code))
+        .reduce((sum, line) => sum + Math.max(0, line.quantity), 0)
+    : (c.camera_black || 0) + (c.camera_white || 0) +
+      (c.pir_360_roof || 0) + (c.pir_wall || 0) +
+      cabledReedSwitches +
+      speakerRoofCount + speakerWallCount +
+      (c.wap || 0) + (c.data_point || 0) +
+      (c.duress_button || 0) + (c.duress_intercom || 0) +
+      (c.light_siren || 0) + (c.rex_button || 0) +
+      (c.tailgate_system || 0)
 
   const roughInItems: LabourItem[] = []
   const elecRoughIn = elecOptions.elecDoingRoughIn || false
