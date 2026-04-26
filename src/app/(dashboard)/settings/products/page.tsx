@@ -4,11 +4,10 @@ import { SyncToXeroButton } from "./sync-to-xero-button";
 
 export default async function SettingsProductsPage() {
   const supabase = await createClient();
-  const [{ data: products }, { data: suppliers }, { data: scopeRoles }, { data: xeroConn }] =
+  const [{ data: products }, { data: suppliers }, { data: xeroConn }] =
     await Promise.all([
       supabase.from("quote_products").select("*").order("category, name"),
       supabase.from("suppliers").select("id, name").eq("is_active", true).order("name"),
-      supabase.from("quote_scope_roles").select("slug, label").order("label"),
       supabase
         .from("xero_connections")
         .select("id, tenant_name, last_sync_at")
@@ -28,7 +27,7 @@ export default async function SettingsProductsPage() {
         <SyncToXeroButton connected={!!xeroConn} tenantName={xeroConn?.tenant_name ?? null} />
       </div>
       <div className="mt-5">
-        <ProductCatalog products={products ?? []} suppliers={suppliers ?? []} scopeRoles={scopeRoles ?? []} />
+        <ProductCatalog products={products ?? []} suppliers={suppliers ?? []} />
       </div>
     </div>
   );
