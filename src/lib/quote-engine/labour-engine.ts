@@ -107,6 +107,9 @@ export type LabourTimingOverrides = Record<string, number> // code → minutes_p
 export interface ElecOptions {
   elecDoingRoughIn?: boolean
   elecDoingFitOff?: boolean
+  /** Manual-mode quotes don't have an upfront design phase — skip the
+   *  default 4 hr Plan design & quotation labour line. */
+  isManualQuote?: boolean
 }
 
 // New (post-2026-04-26): Fit Off labour can be driven directly from BOM line
@@ -117,6 +120,7 @@ export interface ElecOptions {
 // for new quotes.
 export interface BomLabourLine {
   labour_code: string | null
+  scope_role?: string | null
   quantity: number
   /** True if this product physically needs a cable run from head-end. Drives
    * the Rough In cable-pulling + termination labour lines. Sourced from
@@ -342,35 +346,67 @@ export function calculateLabour(
   sections.push(fitOffSection)
 
   // === 3. COMMISSIONING & BUILD ===
+  //
+  // In BOM-driven mode, system-presence flags (do we have cabinets, an alarm,
+  // cameras, switches, etc.) are derived from BOM × product.scope_role. In
+  // legacy device-counts mode, fall back to device_counts presence flags.
+  // This means manual quotes only get commissioning lines for systems that
+  // are actually quoted, instead of always seeing Switch config / AV config.
+
+  // Aggregate BOM by scope_role for system-presence checks
+  const scopeCounts = new Map<string, number>()
+  if (useBomLabour) {
+    for (const line of bomLabour) {
+      if (!line.scope_role || line.quantity <= 0) continue
+      scopeCounts.set(line.scope_role, (scopeCounts.get(line.scope_role) ?? 0) + line.quantity)
+    }
+  }
+  const bomCount = (...roles: string[]) => roles.reduce((sum, r) => sum + (scopeCounts.get(r) ?? 0), 0)
+  const bomHas = (...roles: string[]) => roles.some(r => (scopeCounts.get(r) ?? 0) > 0)
+
+  // Effective presence flags. BOM signal wins when in BOM-driven mode.
+  const hasCabinetEff = useBomLabour ? bomHas('cabinet') : hasCabinet
+  const hasAlarmEff = useBomLabour ? bomHas('alarm_panel') : hasAlarm
+  const hasCamerasEff = useBomLabour ? bomHas('camera') : hasCameras
+  const camerasEff = useBomLabour ? bomCount('camera') : cameras
+  const wapCountEff = useBomLabour ? bomCount('wap') : wapCount
+  const hasSpeakersEff = useBomLabour ? bomHas('speaker') : hasSpeakers
+  const hasNetworkSwitchEff = useBomLabour
+    ? bomHas('network_switch')
+    : hasCabinet || hasCameras || (c.wap || 0) > 0  // legacy heuristic
+  const hasAvEff = useBomLabour
+    ? bomHas('modulator', 'tv_mount_wall', 'tv_mount_ceiling', 'nightlife') ||
+      (s.tv_count ?? 0) > 0 || (s.cardio_count ?? 0) > 0
+    : (s.tv_count ?? 0) > 0 || (s.cardio_count ?? 0) > 0
 
   const commItems: LabourItem[] = []
 
-  if (hasCabinet) commItems.push(fixedItem('Server rack build', 6))
-  if (hasAlarm) commItems.push(fixedItem('Alarm panel build', 8))
+  if (hasCabinetEff) commItems.push(fixedItem('Server rack build', 6))
+  if (hasAlarmEff) commItems.push(fixedItem('Alarm panel build', 8))
 
-  if (hasCameras) {
-    const nvrHrs = round((20 + cameras * 5) / 60)
+  if (hasCamerasEff) {
+    const nvrHrs = round((20 + camerasEff * 5) / 60)
     commItems.push({
       name: 'NVR config',
-      formula: `20 min base + ${cameras} cameras × 5 min`,
+      formula: `20 min base + ${camerasEff} cameras × 5 min`,
       defaultHours: nvrHrs,
       hours: nvrHrs,
     })
   }
 
-  commItems.push(fixedItem('Switch config (VLANs, network)', 1))
+  if (hasNetworkSwitchEff) commItems.push(fixedItem('Switch config (VLANs, network)', 1))
 
-  if (wapCount > 0) {
-    const wapHrs = round((wapCount * 30) / 60)
+  if (wapCountEff > 0) {
+    const wapHrs = round((wapCountEff * 30) / 60)
     commItems.push({
       name: 'WAP config',
-      formula: `${wapCount} WAPs × 30 min`,
+      formula: `${wapCountEff} WAPs × 30 min`,
       defaultHours: wapHrs,
       hours: wapHrs,
     })
   }
 
-  if (hasAlarm) {
+  if (hasAlarmEff) {
     commItems.push({
       name: 'Test & commission alarm',
       formula: 'Fixed 1.5 hrs (1hr + 0.5hr fault allowance)',
@@ -379,8 +415,8 @@ export function calculateLabour(
     })
   }
 
-  if (hasCameras) commItems.push(fixedItem('Test & commission CCTV', 0.5))
-  if (hasSpeakers) {
+  if (hasCamerasEff) commItems.push(fixedItem('Test & commission CCTV', 0.5))
+  if (hasSpeakersEff) {
     commItems.push({
       name: 'Audio system tune & balance',
       formula: 'Fixed 15 min',
@@ -389,15 +425,20 @@ export function calculateLabour(
     })
   }
 
-  commItems.push({
-    name: 'AV/Nightlife config',
-    formula: 'Fixed 10 min',
-    defaultHours: round(10 / 60),
-    hours: round(10 / 60),
-  })
+  if (hasAvEff) {
+    commItems.push({
+      name: 'AV/Nightlife config',
+      formula: 'Fixed 10 min',
+      defaultHours: round(10 / 60),
+      hours: round(10 / 60),
+    })
+  }
 
-  commItems.push(fixedItem('Handover + training', 0.5))
-  commItems.push(fixedItem('As-built documentation', 0.5))
+  // Handover + as-built apply to every quote that has *something* to commission
+  if (commItems.length > 0) {
+    commItems.push(fixedItem('Handover + training', 0.5))
+    commItems.push(fixedItem('As-built documentation', 0.5))
+  }
 
   sections.push(buildSection('Commissioning & Build', commItems, false))
 
@@ -408,9 +449,12 @@ export function calculateLabour(
   const isQLD = !s.state || s.state === 'QLD'
   const calloutDays = isQLD ? Math.max(1, Math.ceil((roughInHours + fitOffHours) / 10)) : 0
 
-  const otherItems: LabourItem[] = [
-    fixedItem('Plan design & quotation', 4),
-  ]
+  const otherItems: LabourItem[] = []
+  // Plan design & quotation: only for plan-mode quotes — manual quotes don't
+  // have an upfront system-design phase.
+  if (!elecOptions.isManualQuote) {
+    otherItems.push(fixedItem('Plan design & quotation', 4))
+  }
   if (isQLD) {
     otherItems.push({ name: 'Callout', formula: `(${roughInHours}h + ${fitOffHours}h) ÷ 10hr days = ${calloutDays} days × $80`, defaultHours: calloutDays, hours: calloutDays, unitRate: 80, unitLabel: 'days' })
   }

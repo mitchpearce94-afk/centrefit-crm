@@ -643,10 +643,11 @@ export function QuoteWizard({
     [labourTimings],
   );
 
-  // Build BOM labour lines: aggregate quantity by labour_code (for Fit Off)
-  // AND emit per-product cable-run flags (for Rough In). Both are passed to
-  // calculateLabour so it can build the right labour breakdown from BOM
-  // instead of the legacy device-counts mapping.
+  // Build BOM labour lines for the engine. Three signals encoded:
+  //   1. Fit Off labour aggregated by labour_code (one entry per code)
+  //   2. Cable-run flags per BOM line (one entry per cabled line)
+  //   3. Scope-role presence per BOM line (one entry per scope role)
+  // The engine reads each as needed.
   const bomLabourLines = useMemo(() => {
     const productLookup = new Map(rawProducts.map((p) => [p.id, p]));
     const source = quoteMode === "manual" ? manualBomItems : bomItems;
@@ -661,21 +662,26 @@ export function QuoteWizard({
       fitOffTotals.set(code, (fitOffTotals.get(code) ?? 0) + line.quantity);
     }
     const fitOffLines = Array.from(fitOffTotals.entries()).map(
-      ([labour_code, quantity]) => ({ labour_code, quantity })
+      ([labour_code, quantity]) => ({ labour_code, quantity, scope_role: null })
     );
 
-    // 2. Per-line cable-run signals (Rough In) — separate entries with
-    //    requires_cable=true and the product's quantity.
-    const cableLines: { labour_code: null; quantity: number; requires_cable: true }[] = [];
+    // 2. Per-line cable-run signals (Rough In)
+    const cableLines: { labour_code: null; quantity: number; requires_cable: true; scope_role: null }[] = [];
+    // 3. Per-line scope-role presence (Commissioning system detection)
+    const scopeLines: { labour_code: null; scope_role: string; quantity: number }[] = [];
     for (const line of source) {
-      if (!line.product_id) continue;
+      if (!line.product_id || line.quantity <= 0) continue;
       const product = productLookup.get(line.product_id);
-      if (product?.requires_cable_run && line.quantity > 0) {
-        cableLines.push({ labour_code: null, quantity: line.quantity, requires_cable: true });
+      if (!product) continue;
+      if (product.requires_cable_run) {
+        cableLines.push({ labour_code: null, quantity: line.quantity, requires_cable: true, scope_role: null });
+      }
+      if (product.scope_role && product.scope_role !== 'none') {
+        scopeLines.push({ labour_code: null, scope_role: product.scope_role, quantity: line.quantity });
       }
     }
 
-    return [...fitOffLines, ...cableLines];
+    return [...fitOffLines, ...cableLines, ...scopeLines];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bomItems, manualBomItems, quoteMode, rawProducts]);
 
@@ -684,7 +690,7 @@ export function QuoteWizard({
     const fresh = calculateLabour(source, siteInfo, billingSettings ? {
       labourCostRate: billingSettings.labour_cost_rate,
       labourSellRate: billingSettings.labour_sell_rate,
-    } : {}, labourTimingOverrides, { elecDoingRoughIn, elecDoingFitOff }, bomLabourLines, labourTimingsMap);
+    } : {}, labourTimingOverrides, { elecDoingRoughIn, elecDoingFitOff, isManualQuote: quoteMode === "manual" }, bomLabourLines, labourTimingsMap);
 
     if (!labourData) {
       setLabourData(fresh);
