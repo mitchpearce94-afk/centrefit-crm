@@ -24,6 +24,7 @@ interface Product {
   description: string | null;
   default_quantity: number;
   internal_notes: string | null;
+  image_url: string | null;
   is_default: boolean;
   is_active: boolean;
 }
@@ -311,6 +312,13 @@ export function ProductCatalog({
                     {items.map((p) => (
                         <tr key={p.id} className={`border-b border-border last:border-0 ${!p.is_active ? "opacity-40" : ""}`}>
                           <td className="px-3 py-2">
+                            <div className="flex items-start gap-2">
+                              {p.image_url ? (
+                                <img src={p.image_url} alt="" className="h-9 w-9 rounded border border-border object-contain bg-card shrink-0" />
+                              ) : (
+                                <div className="h-9 w-9 rounded border border-dashed border-border bg-card shrink-0 flex items-center justify-center text-[9px] text-muted-foreground/40">no img</div>
+                              )}
+                              <div className="min-w-0">
                             <span className="text-sm">{p.name}</span>
                             {p.device_type && <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{p.device_type}</span>}
                             {p.scope_role ? (
@@ -331,6 +339,8 @@ export function ProductCatalog({
                                 ⚠ no labour
                               </span>
                             )}
+                              </div>
+                            </div>
                           </td>
                           <td className="px-3 py-2 text-xs text-muted-foreground font-mono hidden md:table-cell">{p.sku || "—"}</td>
                           <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">{p.supplier}</td>
@@ -446,10 +456,28 @@ function ProductFormModal(props: ProductFormModalProps) {
   const [defaultQuantity, setDefaultQuantity] = useState(isEditing ? props.product.default_quantity.toString() : "1");
   const [internalNotes, setInternalNotes] = useState(isEditing ? (props.product.internal_notes || "") : "");
   const [isDefault, setIsDefault] = useState(isEditing ? props.product.is_default : false);
+  const [imageUrl, setImageUrl] = useState(isEditing ? (props.product.image_url || "") : "");
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [showNewScopeRole, setShowNewScopeRole] = useState(false);
   const [showNewLabourCode, setShowNewLabourCode] = useState(false);
+
+  async function handleImageUpload(file: File | null) {
+    if (!file) return;
+    setUploadingImage(true);
+    try {
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+      const key = `${(isEditing ? props.product.id : crypto.randomUUID())}.${ext}`;
+      const { error } = await supabase.storage.from('product-images').upload(key, file, { upsert: true, contentType: file.type });
+      if (error) { toast(error.message, "error"); return; }
+      const { data } = supabase.storage.from('product-images').getPublicUrl(key);
+      setImageUrl(data.publicUrl);
+      toast('Image uploaded');
+    } finally {
+      setUploadingImage(false);
+    }
+  }
 
   const categoryDevices = DEVICE_TYPES.filter(d => d.category === category);
   const sellPreview = (parseFloat(costPrice || "0") * (1 + parseFloat(markup || "0.5"))).toFixed(2);
@@ -495,6 +523,7 @@ function ProductFormModal(props: ProductFormModalProps) {
       device_type: deviceType || null,
       scope_role: scopeRole || null,
       labour_code: labourCode || null,
+      image_url: imageUrl || null,
       description: description.trim() || null,
       default_quantity: isNaN(qty) || qty < 1 ? 1 : qty,
       internal_notes: internalNotes.trim() || null,
@@ -551,15 +580,40 @@ function ProductFormModal(props: ProductFormModalProps) {
 
         {/* Body */}
         <div className="px-6 py-5 space-y-4">
-          {/* Name + SKU */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Name *</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus={!isEditing} className={inputClass} />
+          {/* Image + Name + SKU */}
+          <div className="flex gap-3">
+            {/* Image thumbnail + upload */}
+            <div className="shrink-0">
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Image</label>
+              <label className={`relative block h-[68px] w-[68px] rounded-md border ${imageUrl ? "border-border" : "border-dashed border-border"} bg-card cursor-pointer hover:border-primary transition-colors overflow-hidden`}>
+                {imageUrl ? (
+                  <img src={imageUrl} alt="" className="h-full w-full object-contain" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground/60 text-center px-1">
+                    {uploadingImage ? "..." : "+ image"}
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(e) => handleImageUpload(e.target.files?.[0] ?? null)}
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                />
+              </label>
+              {imageUrl && (
+                <button type="button" onClick={() => setImageUrl("")} className="mt-1 block w-full text-[9px] text-muted-foreground hover:text-destructive transition-colors">Remove</button>
+              )}
             </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">SKU</label>
-              <input value={sku} onChange={(e) => setSku(e.target.value)} className={inputClass} />
+            {/* Name + SKU */}
+            <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Name *</label>
+                <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus={!isEditing} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">SKU</label>
+                <input value={sku} onChange={(e) => setSku(e.target.value)} className={inputClass} />
+              </div>
             </div>
           </div>
 

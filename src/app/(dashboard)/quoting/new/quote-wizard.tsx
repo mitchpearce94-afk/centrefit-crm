@@ -61,6 +61,7 @@ interface QuoteProduct {
   device_type: string | null;
   scope_role: string | null;
   labour_code: string | null;
+  image_url: string | null;
   is_default: boolean;
   is_active: boolean;
 }
@@ -1597,28 +1598,36 @@ export function QuoteWizard({
                               className={`${inputClass} text-sm`}
                             />
                           ) : (
-                            <div>
-                              <p className="text-sm font-medium truncate">{item.product_name}</p>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <p className="text-[11px] text-muted-foreground font-mono truncate">{item.sku}</p>
-                                {(() => {
-                                  const product = rawProducts.find((p) => p.id === item.product_id);
-                                  if (!product) return null;
-                                  return (
-                                    <>
-                                      {product.scope_role ? (
-                                        <span className="rounded bg-emerald-500/10 px-1 py-0.5 text-[9px] font-medium text-emerald-400" title="Scope role — drives SoW placement">{product.scope_role}</span>
-                                      ) : (
-                                        <a href={`/settings/products`} target="_blank" rel="noopener" className="rounded bg-amber-500/10 px-1 py-0.5 text-[9px] font-medium text-amber-400 hover:bg-amber-500/20 transition-colors" title="Missing scope role — click to tag">⚠ no scope</a>
-                                      )}
-                                      {product.labour_code ? (
-                                        <span className="rounded bg-blue-500/10 px-1 py-0.5 text-[9px] font-medium text-blue-400" title="Labour code — drives labour calculation">{product.labour_code}</span>
-                                      ) : (
-                                        <a href={`/settings/products`} target="_blank" rel="noopener" className="rounded bg-amber-500/10 px-1 py-0.5 text-[9px] font-medium text-amber-400 hover:bg-amber-500/20 transition-colors" title="Missing labour code — click to tag">⚠ no labour</a>
-                                      )}
-                                    </>
-                                  );
-                                })()}
+                            <div className="flex items-start gap-2">
+                              {(() => {
+                                const product = rawProducts.find((p) => p.id === item.product_id);
+                                return product?.image_url ? (
+                                  <img src={product.image_url} alt="" className="h-9 w-9 rounded border border-border object-contain bg-card shrink-0" />
+                                ) : null;
+                              })()}
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate">{item.product_name}</p>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="text-[11px] text-muted-foreground font-mono truncate">{item.sku}</p>
+                                  {(() => {
+                                    const product = rawProducts.find((p) => p.id === item.product_id);
+                                    if (!product) return null;
+                                    return (
+                                      <>
+                                        {product.scope_role ? (
+                                          <span className="rounded bg-emerald-500/10 px-1 py-0.5 text-[9px] font-medium text-emerald-400" title="Scope role — drives SoW placement">{product.scope_role}</span>
+                                        ) : (
+                                          <a href={`/settings/products`} target="_blank" rel="noopener" className="rounded bg-amber-500/10 px-1 py-0.5 text-[9px] font-medium text-amber-400 hover:bg-amber-500/20 transition-colors" title="Missing scope role — click to tag">⚠ no scope</a>
+                                        )}
+                                        {product.labour_code ? (
+                                          <span className="rounded bg-blue-500/10 px-1 py-0.5 text-[9px] font-medium text-blue-400" title="Labour code — drives labour calculation">{product.labour_code}</span>
+                                        ) : (
+                                          <a href={`/settings/products`} target="_blank" rel="noopener" className="rounded bg-amber-500/10 px-1 py-0.5 text-[9px] font-medium text-amber-400 hover:bg-amber-500/20 transition-colors" title="Missing labour code — click to tag">⚠ no labour</a>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
+                                </div>
                               </div>
                             </div>
                           )}
@@ -1819,6 +1828,14 @@ export function QuoteWizard({
                                   </div>
                                 ) : (
                                   <>
+                                    <div className="flex items-start gap-2">
+                                      {(() => {
+                                        const product = rawProducts.find((p) => p.id === item.product_id);
+                                        return product?.image_url ? (
+                                          <img src={product.image_url} alt="" className="h-9 w-9 rounded border border-border object-contain bg-card shrink-0" />
+                                        ) : null;
+                                      })()}
+                                      <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-2">
                                       <p className="text-sm font-medium truncate">{item.product_name}</p>
                                       {item.auto_added ? (
@@ -1848,6 +1865,8 @@ export function QuoteWizard({
                                           </>
                                         );
                                       })()}
+                                    </div>
+                                      </div>
                                     </div>
                                   </>
                                 )}
