@@ -13,6 +13,7 @@ interface DbRule {
   template_id: string | null;
   description: string;
   is_active: boolean;
+  is_universal: boolean;
   trigger_code: string | null;
   trigger_condition: string;
   trigger_value: number | null;
@@ -220,7 +221,11 @@ export function RulesManager({
 
   const filtered = useMemo(() => {
     let list = dbRules;
-    if (activeTemplateId) list = list.filter((r) => r.template_id === activeTemplateId);
+    if (activeTemplateId === "__universal__") {
+      list = list.filter((r) => r.is_universal);
+    } else if (activeTemplateId) {
+      list = list.filter((r) => r.template_id === activeTemplateId);
+    }
     if (search.length >= 2) {
       const q = search.toLowerCase();
       list = list.filter(r => r.description.toLowerCase().includes(q) || (r.trigger_code ?? "").toLowerCase().includes(q));
@@ -269,6 +274,12 @@ export function RulesManager({
     else { toast(!current ? "Rule activated" : "Rule deactivated"); router.refresh(); }
   }
 
+  async function toggleUniversal(id: string, current: boolean) {
+    const { error } = await supabase.from("quote_dependency_rules").update({ is_universal: !current }).eq("id", id);
+    if (error) toast(error.message, "error");
+    else { toast(!current ? "Rule promoted to universal — fires on every quote" : "Rule demoted — fires only on its template"); router.refresh(); }
+  }
+
   async function deleteRule(id: string) {
     const { error } = await supabase.from("quote_dependency_rules").delete().eq("id", id);
     if (error) toast(error.message, "error");
@@ -280,8 +291,32 @@ export function RulesManager({
       {/* Template tabs */}
       <div className="mb-4">
         <div className="flex items-center gap-2 flex-wrap border-b border-border pb-2 mb-3">
+          {/* Universal pseudo-tab — rules that fire on every quote */}
+          {(() => {
+            const universalCount = dbRules.filter((r) => r.is_universal).length;
+            const isActive = activeTemplateId === "__universal__";
+            return (
+              <button
+                key="__universal__"
+                onClick={() => setActiveTemplateId("__universal__")}
+                className={`group inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-amber-500/10 text-amber-400"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
+                title="Rules that fire on every quote regardless of template"
+              >
+                <span className="leading-none">★</span>
+                Universal
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-mono tabular-nums text-muted-foreground">
+                  {universalCount}
+                </span>
+              </button>
+            );
+          })()}
+          <span className="h-4 w-px bg-border mx-1" />
           {templates.map((tpl) => {
-            const ruleCount = dbRules.filter((r) => r.template_id === tpl.id).length;
+            const ruleCount = dbRules.filter((r) => r.template_id === tpl.id && !r.is_universal).length;
             const isActive = activeTemplateId === tpl.id;
             return (
               <button
@@ -319,6 +354,15 @@ export function RulesManager({
             onSaved={() => { setShowTemplateForm(false); router.refresh(); }}
             onCancel={() => setShowTemplateForm(false)}
           />
+        )}
+
+        {activeTemplateId === "__universal__" && (
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-amber-400">★ Universal rules</p>
+              <p className="text-xs text-muted-foreground mt-0.5">These rules fire on every quote regardless of which template is selected. Use for cross-template behaviour like cabling allowances, locksmith By-Others bullets, and subscription line items. Toggle ★ on any rule to promote/demote.</p>
+            </div>
+          </div>
         )}
 
         {activeTemplate && (
@@ -368,8 +412,9 @@ export function RulesManager({
         <input type="text" placeholder="Search rules..." value={search} onChange={(e) => setSearch(e.target.value)} className={`${inputClass} flex-1 min-w-[200px]`} />
         <button
           onClick={() => { setEditingRule(null); setShowForm(true); }}
-          disabled={!activeTemplateId}
-          className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+          disabled={!activeTemplateId || activeTemplateId === "__universal__"}
+          title={activeTemplateId === "__universal__" ? "Add the rule to a template first, then toggle ★ to promote it to universal" : undefined}
+          className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <span className="text-lg leading-none">+</span> Add Rule
         </button>
@@ -380,7 +425,7 @@ export function RulesManager({
       </div>
 
       <p className="text-xs text-muted-foreground mb-4">
-        <span className="font-medium text-foreground tabular-nums">{filtered.length}</span> rule{filtered.length === 1 ? "" : "s"} in <span className="text-foreground">{activeTemplate?.name ?? "—"}</span> — these automatically add products to quotes when devices are detected on a plan.
+        <span className="font-medium text-foreground tabular-nums">{filtered.length}</span> rule{filtered.length === 1 ? "" : "s"} in <span className="text-foreground">{activeTemplateId === "__universal__" ? "Universal" : (activeTemplate?.name ?? "—")}</span> — these automatically add products to quotes when devices are detected on a plan.
       </p>
 
       {/* Rule form */}
@@ -410,6 +455,11 @@ export function RulesManager({
                   <p className="text-[10px] text-muted-foreground/60 mt-1">{rule.description}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => toggleUniversal(rule.id, rule.is_universal)}
+                    title={rule.is_universal ? "Demote to template-only" : "Promote to universal — fires on every quote"}
+                    className={`px-2 py-1 rounded text-xs transition-colors ${rule.is_universal ? "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20" : "bg-muted text-muted-foreground hover:bg-amber-500/10 hover:text-amber-400"}`}>
+                    {rule.is_universal ? "★ Universal" : "☆"}
+                  </button>
                   <button onClick={() => toggleActive(rule.id, rule.is_active)}
                     className={`px-2 py-1 rounded text-xs transition-colors ${rule.is_active ? "bg-muted text-muted-foreground hover:bg-amber-500/10 hover:text-amber-400" : "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"}`}>
                     {rule.is_active ? "Disable" : "Enable"}
