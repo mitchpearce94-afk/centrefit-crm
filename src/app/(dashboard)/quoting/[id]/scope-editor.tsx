@@ -78,7 +78,23 @@ export function ScopeEditor({
 
   const [systems, setSystems] = useState<SystemEdit[]>(seedSystems);
   const [hideHardExclusion, setHideHardExclusion] = useState(!!initialOverrides?.hideHardExclusion);
+  const [summaryLead, setSummaryLead] = useState<string>(
+    initialOverrides?.summaryLead ?? auto.summary.lead,
+  );
+  const [summaryLeadDirty, setSummaryLeadDirty] = useState(
+    typeof initialOverrides?.summaryLead === "string" &&
+      initialOverrides.summaryLead !== auto.summary.lead,
+  );
   const [saving, setSaving] = useState(false);
+
+  function patchSummaryLead(v: string) {
+    setSummaryLead(v);
+    setSummaryLeadDirty(true);
+  }
+  function revertSummaryLead() {
+    setSummaryLead(auto.summary.lead);
+    setSummaryLeadDirty(false);
+  }
 
   function patchSystem(id: string, patch: Partial<SystemEdit>) {
     setSystems((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch, isDirty: true } : s)));
@@ -117,6 +133,7 @@ export function ScopeEditor({
 
     if (Object.keys(sysOverrides).length > 0) ov.systems = sysOverrides;
     if (hideHardExclusion) ov.hideHardExclusion = true;
+    if (summaryLeadDirty) ov.summaryLead = summaryLead;
 
     return Object.keys(ov).length > 0 ? ov : null;
   }
@@ -180,6 +197,37 @@ export function ScopeEditor({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+          {/* Summary lead — the intro paragraph at the top of the SoW / PDF */}
+          <div className="rounded-lg border border-border bg-card">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
+              <div className="flex items-center gap-2.5">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-foreground text-[11px] font-bold text-background">¶</span>
+                <span className="text-sm font-semibold text-foreground">Intro paragraph</span>
+                <span className="text-[11px] text-muted-foreground">— top of the quote PDF</span>
+                {summaryLeadDirty && (
+                  <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-400">Edited</span>
+                )}
+              </div>
+              {!readOnly && summaryLeadDirty && (
+                <button
+                  onClick={revertSummaryLead}
+                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Revert
+                </button>
+              )}
+            </div>
+            <div className="p-4">
+              <textarea
+                value={summaryLead}
+                onChange={(e) => patchSummaryLead(e.target.value)}
+                readOnly={readOnly}
+                rows={4}
+                className="w-full rounded-md border border-border bg-input px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+          </div>
+
           {systems.length === 0 && (
             <p className="text-sm text-muted-foreground italic text-center py-12">
               No systems on this quote — add items to the BOM to populate the scope.

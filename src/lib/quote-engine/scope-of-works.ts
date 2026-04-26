@@ -77,6 +77,8 @@ export interface ScopeOverrides {
   } | undefined>;
   ongoingCosts?: Record<string, { included?: boolean } | undefined>;
   hideHardExclusion?: boolean;
+  /** Override the auto-generated intro paragraph at the top of the SoW. */
+  summaryLead?: string;
   customSystems?: Array<{
     id: string;
     name: string;
@@ -622,10 +624,11 @@ export function generateScopeOfWorks(
   if (tailgates > 0)        summaryRows.push({ name: 'FelixGate Tailgating', qty: `${tailgates} system` });
 
   const systemNames = systems.map((s) => s.name.toLowerCase()).join(', ');
+  const autoLead = systems.length > 0
+    ? `Centrefit Group will supply, install and commission the ${systemNames} systems for this site. All cabling, terminations, configuration and customer-staff training are included. Trade work outside our scope (electrical, antenna, door strikes) is called out as "By others" below.`
+    : 'No items currently selected — add products to the BOM to populate this scope.';
   const summary: ScopeSummary = {
-    lead: systems.length > 0
-      ? `Centrefit Group will supply, install and commission the ${systemNames} systems for this site. All cabling, terminations, configuration and customer-staff training are included. Trade work outside our scope (electrical, antenna, door strikes) is called out as "By others" below.`
-      : 'No items currently selected — add products to the BOM to populate this scope.',
+    lead: overrides?.summaryLead ?? autoLead,
     rows: summaryRows,
   };
 
