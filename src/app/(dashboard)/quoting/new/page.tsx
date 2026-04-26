@@ -12,7 +12,7 @@ export default async function NewQuotePage() {
     supabase.from("plan_files").select("*").is("quote_id", null).order("created_at", { ascending: false }),
     supabase.from("billing_settings").select("*").single(),
     supabase.from("jobs").select("id, number, customer:customers(name), site:customer_sites!site_id(name)").order("number", { ascending: false }).limit(200),
-    supabase.from("labour_timings").select("code, minutes_per").order("sort_order"),
+    supabase.from("labour_timings").select("code, name, minutes_per").order("sort_order"),
     supabase.from("quote_rule_templates").select("*").eq("is_active", true).order("sort_order"),
     supabase.from("quote_dependency_rules").select("*").eq("is_active", true).order("sort_order"),
   ]);
@@ -34,7 +34,7 @@ export default async function NewQuotePage() {
           plans={plansResult.data ?? []}
           billingSettings={billingResult.data}
           jobs={jobs}
-          labourTimings={Object.fromEntries((timingsResult.data ?? []).map((t: any) => [t.code, t.minutes_per]))}
+          labourTimings={(timingsResult.data ?? []) as { code: string; name: string; minutes_per: number }[]}
           templates={templatesResult.data ?? []}
           allRules={rulesResult.data ?? []}
         />

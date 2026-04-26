@@ -109,7 +109,34 @@ export interface ElecOptions {
   elecDoingFitOff?: boolean
 }
 
-export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo = {}, rates: RateOverrides = {}, timingOverrides: LabourTimingOverrides = {}, elecOptions: ElecOptions = {}): LabourData {
+// New (post-2026-04-26): Fit Off labour can be driven directly from BOM line
+// items via product.labour_code. When `bomLabour` is non-empty, the engine
+// uses it to build the Fit Off section instead of the legacy deviceCounts ×
+// hardcoded fitOffDefs mapping. This makes manual quotes calculate labour
+// automatically and removes the device-counts→labour-code translation table
+// for new quotes.
+export interface BomLabourLine {
+  labour_code: string | null
+  quantity: number
+}
+
+export interface LabourTimingMeta {
+  code: string
+  name: string
+  minutes_per: number
+}
+
+export type LabourTimingsMap = Record<string, LabourTimingMeta>
+
+export function calculateLabour(
+  deviceCounts: DeviceCounts,
+  siteInfo: SiteInfo = {},
+  rates: RateOverrides = {},
+  timingOverrides: LabourTimingOverrides = {},
+  elecOptions: ElecOptions = {},
+  bomLabour: BomLabourLine[] = [],
+  labourTimings: LabourTimingsMap = {},
+): LabourData {
   const c = deviceCounts || {}
   const s = siteInfo || {}
   const sections: LabourSection[] = []
@@ -215,18 +242,50 @@ export function calculateLabour(deviceCounts: DeviceCounts, siteInfo: SiteInfo =
     { name: 'Intercom slave', minutesPer: t('intercom_slave', 30), count: c.intercom_slave || 0 },
   ]
 
-  // If electrician is doing fit off, skip all device mounting items
-  const fitOffItems: LabourItem[] = elecFitOff ? [] : fitOffDefs
-    .filter((d) => d.count > 0)
-    .map((d) => {
-      const hrs = round((d.count * d.minutesPer) / 60)
-      return {
-        name: d.name,
-        formula: `${d.count} × ${d.minutesPer} min`,
-        defaultHours: hrs,
-        hours: hrs,
-      }
-    })
+  // BOM-driven fit off: aggregate by labour_code, look up timing for minutes.
+  // Falls back to legacy device-counts × fitOffDefs when bomLabour is empty
+  // (preserves behaviour for existing plan-mode quotes that haven't been
+  // re-saved since the BOM-labour wiring shipped).
+  const useBomLabour = bomLabour.length > 0 && Object.keys(labourTimings).length > 0
+
+  let fitOffItems: LabourItem[]
+
+  if (elecFitOff) {
+    fitOffItems = []
+  } else if (useBomLabour) {
+    const totals = new Map<string, number>()
+    for (const line of bomLabour) {
+      if (!line.labour_code || line.labour_code === 'none' || line.quantity <= 0) continue
+      totals.set(line.labour_code, (totals.get(line.labour_code) ?? 0) + line.quantity)
+    }
+    fitOffItems = Array.from(totals.entries())
+      .map(([code, qty]) => {
+        const timing = labourTimings[code]
+        if (!timing) return null
+        const mins = timingOverrides[code] ?? timing.minutes_per
+        if (mins <= 0) return null
+        const hrs = round((qty * mins) / 60)
+        return {
+          name: timing.name,
+          formula: `${qty} × ${mins} min`,
+          defaultHours: hrs,
+          hours: hrs,
+        }
+      })
+      .filter((x): x is LabourItem => x !== null)
+  } else {
+    fitOffItems = fitOffDefs
+      .filter((d) => d.count > 0)
+      .map((d) => {
+        const hrs = round((d.count * d.minutesPer) / 60)
+        return {
+          name: d.name,
+          formula: `${d.count} × ${d.minutesPer} min`,
+          defaultHours: hrs,
+          hours: hrs,
+        }
+      })
+  }
 
   const tvCount = s.tv_count || 0
   if (tvCount > 0) {

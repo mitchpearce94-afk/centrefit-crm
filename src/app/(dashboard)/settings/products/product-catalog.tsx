@@ -65,6 +65,7 @@ export function ProductCatalog({
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
+  const [taggingFilter, setTaggingFilter] = useState<"" | "untagged_any" | "untagged_scope" | "untagged_labour">("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [addingToCategory, setAddingToCategory] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
@@ -95,6 +96,13 @@ export function ProductCatalog({
     let list = products;
     if (!showInactive) list = list.filter((p) => p.is_active);
     if (categoryFilter) list = list.filter((p) => p.category === categoryFilter);
+    if (taggingFilter === "untagged_any") {
+      list = list.filter((p) => !p.scope_role || !p.labour_code);
+    } else if (taggingFilter === "untagged_scope") {
+      list = list.filter((p) => !p.scope_role);
+    } else if (taggingFilter === "untagged_labour") {
+      list = list.filter((p) => !p.labour_code);
+    }
     if (search.length >= 2) {
       const q = search.toLowerCase();
       list = list.filter((p) =>
@@ -104,7 +112,18 @@ export function ProductCatalog({
       );
     }
     return list;
-  }, [products, search, categoryFilter, showInactive]);
+  }, [products, search, categoryFilter, showInactive, taggingFilter]);
+
+  // Tagging stats — only counts active products since inactive ones don't appear on quotes
+  const taggingStats = useMemo(() => {
+    const active = products.filter((p) => p.is_active);
+    return {
+      total: active.length,
+      untaggedScope: active.filter((p) => !p.scope_role).length,
+      untaggedLabour: active.filter((p) => !p.labour_code).length,
+      untaggedAny: active.filter((p) => !p.scope_role || !p.labour_code).length,
+    };
+  }, [products]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Product[]>();
@@ -199,6 +218,30 @@ export function ProductCatalog({
 
   return (
     <div>
+      {/* Tagging audit banner — shown when there are untagged products */}
+      {taggingStats.untaggedAny > 0 && (
+        <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-amber-400">
+                {taggingStats.untaggedAny} active product{taggingStats.untaggedAny === 1 ? "" : "s"} need{taggingStats.untaggedAny === 1 ? "s" : ""} tagging
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {taggingStats.untaggedScope} missing scope role · {taggingStats.untaggedLabour} missing labour code. Untagged products fall into "Additional items" on the SoW and skip labour calculation.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <button onClick={() => setTaggingFilter("untagged_any")} className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${taggingFilter === "untagged_any" ? "bg-amber-500 text-amber-950" : "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"}`}>Show all untagged</button>
+              <button onClick={() => setTaggingFilter("untagged_scope")} className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${taggingFilter === "untagged_scope" ? "bg-amber-500 text-amber-950" : "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"}`}>Missing scope only</button>
+              <button onClick={() => setTaggingFilter("untagged_labour")} className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${taggingFilter === "untagged_labour" ? "bg-amber-500 text-amber-950" : "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"}`}>Missing labour only</button>
+              {taggingFilter && (
+                <button onClick={() => setTaggingFilter("")} className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">Clear</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <input
@@ -231,7 +274,7 @@ export function ProductCatalog({
         </button>
       </div>
 
-      <p className="text-xs text-muted-foreground mb-4">{filtered.length} products</p>
+      <p className="text-xs text-muted-foreground mb-4">{filtered.length} products{taggingFilter ? ` (filtered to untagged)` : ""}</p>
 
       {/* Category groups */}
       {Array.from(grouped).map(([category, items]) => {
@@ -271,12 +314,21 @@ export function ProductCatalog({
                             <span className="text-sm">{p.name}</span>
                             {p.device_type && <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{p.device_type}</span>}
                             {p.scope_role ? (
-                              <span className="ml-1.5 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400" title="Scope role">
+                              <span className="ml-1.5 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400" title="Scope role — drives SoW placement">
                                 {scopeRolesLocal.find(r => r.slug === p.scope_role)?.label ?? p.scope_role}
                               </span>
                             ) : (
-                              <span className="ml-1.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400" title="Untagged — will land in Miscellaneous on quotes">
-                                Untagged
+                              <span className="ml-1.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400" title="Missing scope role — will land in Miscellaneous on quotes">
+                                ⚠ no scope
+                              </span>
+                            )}
+                            {p.labour_code ? (
+                              <span className="ml-1.5 rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-400" title="Labour code — drives labour calculation">
+                                {labourTimingsLocal.find(t => t.code === p.labour_code)?.name ?? p.labour_code}
+                              </span>
+                            ) : (
+                              <span className="ml-1.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400" title="Missing labour code — won't add labour minutes on quotes">
+                                ⚠ no labour
                               </span>
                             )}
                           </td>
@@ -422,6 +474,14 @@ function ProductFormModal(props: ProductFormModalProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !costPrice) return;
+    if (!scopeRole) {
+      toast("Pick a scope role (use 'None / consumable' for accessories or items with no SoW representation)", "error");
+      return;
+    }
+    if (!labourCode) {
+      toast("Pick a labour code (use 'None / no separate labour' for items that don't add labour minutes)", "error");
+      return;
+    }
 
     const qty = parseInt(defaultQuantity);
     const selectedSupplier = props.suppliers.find(s => s.id === supplierId);
@@ -578,7 +638,7 @@ function ProductFormModal(props: ProductFormModalProps) {
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs font-medium text-muted-foreground">
-                Scope role
+                Scope role <span className="text-destructive">*</span>
                 <span className="ml-1 font-normal text-muted-foreground/60">— drives where this product appears in the SoW</span>
               </label>
               <button
@@ -589,8 +649,8 @@ function ProductFormModal(props: ProductFormModalProps) {
                 {showNewScopeRole ? "Cancel" : "+ New"}
               </button>
             </div>
-            <select value={scopeRole} onChange={(e) => setScopeRole(e.target.value)} className={inputClass}>
-              <option value="">(untagged)</option>
+            <select value={scopeRole} onChange={(e) => setScopeRole(e.target.value)} required className={inputClass}>
+              <option value="">— pick one —</option>
               {props.scopeRoles.map(r => <option key={r.slug} value={r.slug}>{r.label}</option>)}
             </select>
             {showNewScopeRole && (
@@ -609,7 +669,7 @@ function ProductFormModal(props: ProductFormModalProps) {
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs font-medium text-muted-foreground">
-                Labour code
+                Labour code <span className="text-destructive">*</span>
                 <span className="ml-1 font-normal text-muted-foreground/60">— links to labour timings for fit-off minutes</span>
               </label>
               <button
@@ -620,8 +680,8 @@ function ProductFormModal(props: ProductFormModalProps) {
                 {showNewLabourCode ? "Cancel" : "+ New"}
               </button>
             </div>
-            <select value={labourCode} onChange={(e) => setLabourCode(e.target.value)} className={inputClass}>
-              <option value="">(none)</option>
+            <select value={labourCode} onChange={(e) => setLabourCode(e.target.value)} required className={inputClass}>
+              <option value="">— pick one —</option>
               {props.labourTimings.map(t => <option key={t.code} value={t.code}>{t.name}</option>)}
             </select>
             {showNewLabourCode && (

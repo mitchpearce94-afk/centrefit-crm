@@ -60,6 +60,7 @@ interface QuoteProduct {
   sell_price: number;
   device_type: string | null;
   scope_role: string | null;
+  labour_code: string | null;
   is_default: boolean;
   is_active: boolean;
 }
@@ -194,7 +195,7 @@ export function QuoteWizard({
   existingQuote,
   billingSettings,
   jobs = [],
-  labourTimings = {},
+  labourTimings = [],
   templates = [],
   allRules = [],
 }: {
@@ -204,7 +205,7 @@ export function QuoteWizard({
   existingQuote?: ExistingQuote;
   billingSettings?: any;
   jobs?: { id: string; number: string; customer_name: string | null; site_name: string | null }[];
-  labourTimings?: LabourTimingOverrides;
+  labourTimings?: { code: string; name: string; minutes_per: number }[];
   templates?: RuleTemplate[];
   allRules?: RuleRow[];
 }) {
@@ -630,12 +631,39 @@ export function QuoteWizard({
   const labourKey = (sectionName: string, itemName: string) =>
     `${sectionName}::${itemName}`;
 
+  // Derive labour-engine maps from the timings array prop
+  const labourTimingOverrides = useMemo<Record<string, number>>(
+    () => Object.fromEntries(labourTimings.map((t) => [t.code, t.minutes_per])),
+    [labourTimings],
+  );
+  const labourTimingsMap = useMemo<Record<string, { code: string; name: string; minutes_per: number }>>(
+    () => Object.fromEntries(labourTimings.map((t) => [t.code, t])),
+    [labourTimings],
+  );
+
+  // Build BOM labour lines: aggregate quantity by labour_code from BOM × product lookup.
+  // Used by calculateLabour to drive Fit Off section directly from the BOM
+  // instead of the legacy device-counts → fitOffDefs mapping.
+  const bomLabourLines = useMemo(() => {
+    const productLabour = new Map(rawProducts.map((p) => [p.id, p.labour_code]));
+    const source = quoteMode === "manual" ? manualBomItems : bomItems;
+    const totals = new Map<string, number>();
+    for (const line of source) {
+      if (!line.product_id) continue;
+      const code = productLabour.get(line.product_id);
+      if (!code || code === 'none') continue;
+      totals.set(code, (totals.get(code) ?? 0) + line.quantity);
+    }
+    return Array.from(totals.entries()).map(([labour_code, quantity]) => ({ labour_code, quantity }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bomItems, manualBomItems, quoteMode, rawProducts]);
+
   function regenerateLabour() {
     const source = bomGenerated ? bomDeviceCounts : deviceCounts;
     const fresh = calculateLabour(source, siteInfo, billingSettings ? {
       labourCostRate: billingSettings.labour_cost_rate,
       labourSellRate: billingSettings.labour_sell_rate,
-    } : {}, labourTimings, { elecDoingRoughIn, elecDoingFitOff });
+    } : {}, labourTimingOverrides, { elecDoingRoughIn, elecDoingFitOff }, bomLabourLines, labourTimingsMap);
 
     if (!labourData) {
       setLabourData(fresh);
@@ -691,12 +719,11 @@ export function QuoteWizard({
       labourFirstSync.current = false;
       return;
     }
-    if (quoteMode !== "plan") return;
-    if (!bomGenerated) return;
     if (!labourData) return;
+    if (quoteMode === "plan" && !bomGenerated) return;
     regenerateLabour();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bomItems]);
+  }, [bomItems, manualBomItems]);
 
   function enterStep(newStep: number) {
     if (quoteMode === "plan") {
@@ -709,6 +736,15 @@ export function QuoteWizard({
         regenerateLabour();
       }
       // Regenerate labour before summary in case elec toggles changed on extras step
+      if (newStep === 5) {
+        regenerateLabour();
+      }
+    } else if (quoteMode === "manual") {
+      // Manual mode now uses the same labour engine — generate a starter
+      // breakdown from BOM × labour_code when entering the Labour step.
+      if (newStep === 3 && !labourData) {
+        regenerateLabour();
+      }
       if (newStep === 5) {
         regenerateLabour();
       }
@@ -791,7 +827,12 @@ export function QuoteWizard({
 
   const summary: QuoteSummary | null = useMemo(() => {
     if (quoteMode === "manual") {
-      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, extras, { discountPercent, electricianCost, isInterstate });
+      // Manual mode now uses real labourData when available (computed from BOM
+      // × labour_code on entering the Labour step). Falls back to the legacy
+      // manualLabourData for old quotes that haven't entered the Labour step
+      // since the unification.
+      const effective = labourData ?? manualLabourData;
+      return calculateQuoteSummary(manualBomAsBomItems, effective, extras, { discountPercent, electricianCost, isInterstate });
     }
     if (!labourData) return null;
     return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent, electricianCost, isInterstate });
@@ -885,7 +926,10 @@ export function QuoteWizard({
   }
 
   async function handleSave() {
-    const effectiveLabourData = quoteMode === "manual" ? manualLabourData : labourData;
+    // Both modes now write the real labourData to quote.labour_data.
+    // Manual quotes that haven't visited the Labour step still get their
+    // legacy manualLabourData saved as a fallback.
+    const effectiveLabourData = labourData ?? (quoteMode === "manual" ? manualLabourData : null);
     if (!summary || !effectiveLabourData) return;
     setSaving(true);
 
@@ -1555,7 +1599,27 @@ export function QuoteWizard({
                           ) : (
                             <div>
                               <p className="text-sm font-medium truncate">{item.product_name}</p>
-                              <p className="text-[11px] text-muted-foreground font-mono truncate">{item.sku}</p>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="text-[11px] text-muted-foreground font-mono truncate">{item.sku}</p>
+                                {(() => {
+                                  const product = rawProducts.find((p) => p.id === item.product_id);
+                                  if (!product) return null;
+                                  return (
+                                    <>
+                                      {product.scope_role ? (
+                                        <span className="rounded bg-emerald-500/10 px-1 py-0.5 text-[9px] font-medium text-emerald-400" title="Scope role — drives SoW placement">{product.scope_role}</span>
+                                      ) : (
+                                        <a href={`/settings/products`} target="_blank" rel="noopener" className="rounded bg-amber-500/10 px-1 py-0.5 text-[9px] font-medium text-amber-400 hover:bg-amber-500/20 transition-colors" title="Missing scope role — click to tag">⚠ no scope</a>
+                                      )}
+                                      {product.labour_code ? (
+                                        <span className="rounded bg-blue-500/10 px-1 py-0.5 text-[9px] font-medium text-blue-400" title="Labour code — drives labour calculation">{product.labour_code}</span>
+                                      ) : (
+                                        <a href={`/settings/products`} target="_blank" rel="noopener" className="rounded bg-amber-500/10 px-1 py-0.5 text-[9px] font-medium text-amber-400 hover:bg-amber-500/20 transition-colors" title="Missing labour code — click to tag">⚠ no labour</a>
+                                      )}
+                                    </>
+                                  );
+                                })()}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1763,9 +1827,27 @@ export function QuoteWizard({
                                         <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Manual</span>
                                       )}
                                     </div>
-                                    <div className="flex items-center gap-3 mt-0.5">
+                                    <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                                       {item.sku && <span className="text-[11px] text-muted-foreground font-mono">{item.sku}</span>}
                                       {item.supplier && <span className="text-[11px] text-muted-foreground">{item.supplier}</span>}
+                                      {(() => {
+                                        const product = rawProducts.find((p) => p.id === item.product_id);
+                                        if (!product) return null;
+                                        return (
+                                          <>
+                                            {product.scope_role ? (
+                                              <span className="rounded bg-emerald-500/10 px-1 py-0.5 text-[9px] font-medium text-emerald-400" title="Scope role — drives SoW placement">{product.scope_role}</span>
+                                            ) : (
+                                              <a href={`/settings/products`} target="_blank" rel="noopener" className="rounded bg-amber-500/10 px-1 py-0.5 text-[9px] font-medium text-amber-400 hover:bg-amber-500/20 transition-colors" title="Missing scope role — click to tag">⚠ no scope</a>
+                                            )}
+                                            {product.labour_code ? (
+                                              <span className="rounded bg-blue-500/10 px-1 py-0.5 text-[9px] font-medium text-blue-400" title="Labour code — drives labour calculation">{product.labour_code}</span>
+                                            ) : (
+                                              <a href={`/settings/products`} target="_blank" rel="noopener" className="rounded bg-amber-500/10 px-1 py-0.5 text-[9px] font-medium text-amber-400 hover:bg-amber-500/20 transition-colors" title="Missing labour code — click to tag">⚠ no labour</a>
+                                            )}
+                                          </>
+                                        );
+                                      })()}
                                     </div>
                                   </>
                                 )}
@@ -1992,7 +2074,11 @@ export function QuoteWizard({
       )}
 
       {/* STEP 4: LABOUR */}
-      {step === 3 && quoteMode === "manual" && (
+      {/* Legacy manual labour UI — only renders if labourData hasn't been generated
+          yet (e.g. opening an old manual quote saved before the labour engine
+          was unified). Entering the Labour step now auto-generates labourData
+          for both modes, so this branch is mostly a safety net. */}
+      {step === 3 && quoteMode === "manual" && !labourData && (
         <div className="space-y-5 max-w-2xl">
           <div className="grid grid-cols-4 gap-3">
             <div className="rounded-lg border border-border bg-card p-4 text-center">
@@ -2084,7 +2170,7 @@ export function QuoteWizard({
         </div>
       )}
 
-      {step === 3 && quoteMode === "plan" && labourData && (
+      {step === 3 && labourData && (
         <div className="space-y-5">
           {/* Docklands warning */}
           {labourWarnings.length > 0 && (
