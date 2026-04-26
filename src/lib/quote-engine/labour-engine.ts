@@ -258,6 +258,23 @@ export function calculateLabour(
       if (!line.labour_code || line.labour_code === 'none' || line.quantity <= 0) continue
       totals.set(line.labour_code, (totals.get(line.labour_code) ?? 0) + line.quantity)
     }
+
+    // Camera mount-type split. Cameras have one labour_code on the catalog
+    // (camera_plaster, the typical mount), but Site Info captures how many of
+    // the cameras at this site are actually going on concrete. Move that many
+    // units across to camera_concrete so the labour line correctly reflects
+    // the longer install time. Solves "same camera SKU, different mount" without
+    // forcing a separate product per mount type.
+    const concreteCount = (s.concrete_mount_black ?? 0) + (s.concrete_mount_white ?? 0)
+    const plasterFromBom = totals.get('camera_plaster') ?? 0
+    if (concreteCount > 0 && plasterFromBom > 0) {
+      const moveToConcrete = Math.min(concreteCount, plasterFromBom)
+      const remainingPlaster = plasterFromBom - moveToConcrete
+      if (remainingPlaster > 0) totals.set('camera_plaster', remainingPlaster)
+      else totals.delete('camera_plaster')
+      totals.set('camera_concrete', (totals.get('camera_concrete') ?? 0) + moveToConcrete)
+    }
+
     fitOffItems = Array.from(totals.entries())
       .map(([code, qty]) => {
         const timing = labourTimings[code]
