@@ -609,7 +609,16 @@ export function QuoteWizard({
 
   // Track formula-driven labour lines the user has explicitly deleted, so
   // regen doesn't resurrect them. Keyed as `${sectionName}::${itemName}`.
-  const [deletedLabourKeys, setDeletedLabourKeys] = useState<Set<string>>(new Set());
+  // Persisted inside labour_data.deleted_labour_keys so deletions survive
+  // across save/edit cycles — without this, every BOM change after re-opening
+  // a saved quote was resurrecting items the user had previously deleted.
+  const [deletedLabourKeys, setDeletedLabourKeys] = useState<Set<string>>(
+    () => new Set<string>(
+      Array.isArray((existingQuote?.labourData as any)?.deleted_labour_keys)
+        ? (existingQuote!.labourData as any).deleted_labour_keys
+        : []
+    )
+  );
   const labourKey = (sectionName: string, itemName: string) =>
     `${sectionName}::${itemName}`;
 
@@ -894,6 +903,9 @@ export function QuoteWizard({
       device_counts: deviceCounts,
       labour_data: {
         ...effectiveLabourData,
+        // Persist the user's labour-line deletions so regen doesn't
+        // resurrect them next time the quote is edited.
+        deleted_labour_keys: Array.from(deletedLabourKeys),
         ...(quoteMode === "manual" ? { scope_of_works: manualScope, quote_mode: "manual" } : { quote_mode: "plan" }),
       },
       discount_percent: discountPercent,
