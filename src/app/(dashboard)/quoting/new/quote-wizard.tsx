@@ -62,6 +62,7 @@ interface QuoteProduct {
   scope_role: string | null;
   labour_code: string | null;
   image_url: string | null;
+  requires_cable_run: boolean;
   is_default: boolean;
   is_active: boolean;
 }
@@ -642,20 +643,39 @@ export function QuoteWizard({
     [labourTimings],
   );
 
-  // Build BOM labour lines: aggregate quantity by labour_code from BOM × product lookup.
-  // Used by calculateLabour to drive Fit Off section directly from the BOM
-  // instead of the legacy device-counts → fitOffDefs mapping.
+  // Build BOM labour lines: aggregate quantity by labour_code (for Fit Off)
+  // AND emit per-product cable-run flags (for Rough In). Both are passed to
+  // calculateLabour so it can build the right labour breakdown from BOM
+  // instead of the legacy device-counts mapping.
   const bomLabourLines = useMemo(() => {
-    const productLabour = new Map(rawProducts.map((p) => [p.id, p.labour_code]));
+    const productLookup = new Map(rawProducts.map((p) => [p.id, p]));
     const source = quoteMode === "manual" ? manualBomItems : bomItems;
-    const totals = new Map<string, number>();
+
+    // 1. Aggregate by labour_code (Fit Off)
+    const fitOffTotals = new Map<string, number>();
     for (const line of source) {
       if (!line.product_id) continue;
-      const code = productLabour.get(line.product_id);
+      const product = productLookup.get(line.product_id);
+      const code = product?.labour_code;
       if (!code || code === 'none') continue;
-      totals.set(code, (totals.get(code) ?? 0) + line.quantity);
+      fitOffTotals.set(code, (fitOffTotals.get(code) ?? 0) + line.quantity);
     }
-    return Array.from(totals.entries()).map(([labour_code, quantity]) => ({ labour_code, quantity }));
+    const fitOffLines = Array.from(fitOffTotals.entries()).map(
+      ([labour_code, quantity]) => ({ labour_code, quantity })
+    );
+
+    // 2. Per-line cable-run signals (Rough In) — separate entries with
+    //    requires_cable=true and the product's quantity.
+    const cableLines: { labour_code: null; quantity: number; requires_cable: true }[] = [];
+    for (const line of source) {
+      if (!line.product_id) continue;
+      const product = productLookup.get(line.product_id);
+      if (product?.requires_cable_run && line.quantity > 0) {
+        cableLines.push({ labour_code: null, quantity: line.quantity, requires_cable: true });
+      }
+    }
+
+    return [...fitOffLines, ...cableLines];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bomItems, manualBomItems, quoteMode, rawProducts]);
 

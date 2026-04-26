@@ -25,6 +25,7 @@ interface Product {
   default_quantity: number;
   internal_notes: string | null;
   image_url: string | null;
+  requires_cable_run: boolean;
   is_default: boolean;
   is_active: boolean;
 }
@@ -458,6 +459,7 @@ function ProductFormModal(props: ProductFormModalProps) {
   const [isDefault, setIsDefault] = useState(isEditing ? props.product.is_default : false);
   const [imageUrl, setImageUrl] = useState(isEditing ? (props.product.image_url || "") : "");
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [requiresCableRun, setRequiresCableRun] = useState(isEditing ? props.product.requires_cable_run : false);
   const [saving, setSaving] = useState(false);
 
   const [showNewScopeRole, setShowNewScopeRole] = useState(false);
@@ -524,6 +526,7 @@ function ProductFormModal(props: ProductFormModalProps) {
       scope_role: scopeRole || null,
       labour_code: labourCode || null,
       image_url: imageUrl || null,
+      requires_cable_run: requiresCableRun,
       description: description.trim() || null,
       default_quantity: isNaN(qty) || qty < 1 ? 1 : qty,
       internal_notes: internalNotes.trim() || null,
@@ -749,6 +752,20 @@ function ProductFormModal(props: ProductFormModalProps) {
               />
             )}
           </div>
+
+          {/* Cable run flag */}
+          <label className="flex items-start gap-2 text-xs cursor-pointer select-none rounded-md border border-border bg-card px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={requiresCableRun}
+              onChange={(e) => setRequiresCableRun(e.target.checked)}
+              className="mt-0.5 rounded border-border accent-primary"
+            />
+            <span>
+              <span className="font-medium text-foreground">Needs a cable run</span>
+              <span className="block text-muted-foreground/80 mt-0.5">Tick when this product is physically wired back to the head-end (cameras, PIRs, speakers, WAPs, etc.). Each unit on a quote contributes 1 run to the rough-in cable pulling labour line.</span>
+            </span>
+          </label>
 
           {/* Internal notes */}
           <div>

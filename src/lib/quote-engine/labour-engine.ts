@@ -118,6 +118,10 @@ export interface ElecOptions {
 export interface BomLabourLine {
   labour_code: string | null
   quantity: number
+  /** True if this product physically needs a cable run from head-end. Drives
+   * the Rough In cable-pulling + termination labour lines. Sourced from
+   * quote_products.requires_cable_run via the BOM × product lookup in the wizard. */
+  requires_cable?: boolean
 }
 
 export interface LabourTimingMeta {
@@ -147,23 +151,10 @@ export function calculateLabour(
 
   // === 1. ROUGH IN ===
 
-  // Cable runs: in BOM-driven mode, each line whose labour_code is in the
-  // "needs cable" set contributes its quantity to the cable-run count. In
-  // legacy device-counts mode, sum the device codes that historically need
-  // cable pulled. AV termination remains site-info driven (TV + cardio).
-  const NEEDS_CABLE_LABOUR_CODES = new Set([
-    'camera_plaster', 'camera_concrete',
-    'pir_360_roof', 'pir_wall',
-    'reed_switch',
-    'duress_button', 'duress_intercom',
-    'light_siren', 'rex_button',
-    'tailgate_system',
-    'wap',
-    'speaker_roof', 'speaker_wall',
-    'data_point',
-    'card_reader', 'door_lock', 'alarm_keypad',
-  ])
-
+  // Cable runs: BOM-driven mode sums quantities of BOM lines flagged
+  // requires_cable on the product (managed via the Settings → Products
+  // editor). Legacy device-counts mode sums historical device codes for
+  // backwards compat. AV termination is site-info driven (TV + cardio).
   const useBomLabourForRoughIn = bomLabour.length > 0
 
   const cabledReedSwitches = Math.max(0, (c.reed_switch || 0) - (s.reed_switch_uncabled || 0))
@@ -172,7 +163,7 @@ export function calculateLabour(
 
   const totalCableRuns = useBomLabourForRoughIn
     ? bomLabour
-        .filter((line) => line.labour_code && NEEDS_CABLE_LABOUR_CODES.has(line.labour_code))
+        .filter((line) => line.requires_cable === true)
         .reduce((sum, line) => sum + Math.max(0, line.quantity), 0)
     : (c.camera_black || 0) + (c.camera_white || 0) +
       (c.pir_360_roof || 0) + (c.pir_wall || 0) +
