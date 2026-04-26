@@ -1,5 +1,12 @@
 import type { XeroClient } from "xero-node";
-import { generateScopeOfWorks, type ScopeOverrides, type SiteInfo } from "@/lib/quote-engine";
+import {
+  generateScopeOfWorks,
+  renderScopeAsText,
+  type ScopeOverrides,
+  type SiteInfo,
+  type BOMLineForScope,
+  type ProductForScope,
+} from "@/lib/quote-engine";
 
 // Centrefit's default Xero sales account code. Sue used 200 historically —
 // if this ever changes, update here + let the rest of the code flow through.
@@ -39,10 +46,10 @@ export interface CreatedXeroInvoice {
 }
 
 /**
- * Create an AUTHORISED (not DRAFT) sales invoice in Xero. AUTHORISED is
- * required to get an `OnlineInvoiceUrl` we can send to the customer.
- *
- * Returns a normalised shape the API route can persist directly.
+ * Create a DRAFT sales invoice in Xero. Kept as DRAFT so it does NOT hit the
+ * books (A/R, revenue, GST) until Mitchell explicitly authorises it from the
+ * CRM. Pay-now link is unavailable on drafts — it gets populated by the
+ * authorise endpoint once the invoice is promoted.
  */
 export async function createXeroInvoice({
   xero, tenantId, xeroContactId, lineItems, reference, dueDate,
@@ -56,7 +63,7 @@ export async function createXeroInvoice({
 
   const invoicePayload: Record<string, unknown> = {
     type: "ACCREC", // Accounts Receivable — sales invoice
-    status: "AUTHORISED",
+    status: "DRAFT",
     contact: { contactID: xeroContactId },
     date: today.toISOString().slice(0, 10),
     dueDate: due.toISOString().slice(0, 10),
@@ -79,29 +86,42 @@ export async function createXeroInvoice({
     throw new Error("Xero did not return an InvoiceID for the new invoice");
   }
 
-  // Fetch the OnlineInvoiceUrl — Xero exposes it on a separate endpoint.
-  let onlineUrl: string | null = null;
-  try {
-    const online = await xero.accountingApi.getOnlineInvoice(
-      tenantId,
-      invoice.invoiceID,
-    );
-    onlineUrl = online.body.onlineInvoices?.[0]?.onlineInvoiceUrl ?? null;
-  } catch {
-    // Not fatal — the invoice still exists; Mitchell can grab the URL from Xero.
-  }
-
   return {
     invoiceID: invoice.invoiceID,
     invoiceNumber: invoice.invoiceNumber ?? null,
-    onlineInvoiceUrl: onlineUrl,
+    onlineInvoiceUrl: null, // drafts have no OnlineInvoiceUrl
     subTotal: Number(invoice.subTotal ?? 0),
     totalTax: Number(invoice.totalTax ?? 0),
     total: Number(invoice.total ?? 0),
     amountDue: Number(invoice.amountDue ?? invoice.total ?? 0),
-    status: String(invoice.status ?? "AUTHORISED"),
+    status: String(invoice.status ?? "DRAFT"),
     dueDate: invoice.dueDate ?? null,
   };
+}
+
+/**
+ * Promote a DRAFT invoice to AUTHORISED and fetch the resulting
+ * OnlineInvoiceUrl (pay-now link). Called from the CRM's Authorise button.
+ */
+export async function authoriseXeroInvoice(
+  xero: XeroClient,
+  tenantId: string,
+  xeroInvoiceId: string,
+): Promise<{ onlineInvoiceUrl: string | null; status: string }> {
+  const res = await xero.accountingApi.updateInvoice(tenantId, xeroInvoiceId, {
+    invoices: [{ status: "AUTHORISED" } as Record<string, unknown>],
+  });
+  const invoice = res.body.invoices?.[0];
+  const status = String(invoice?.status ?? "AUTHORISED");
+
+  let onlineUrl: string | null = null;
+  try {
+    const online = await xero.accountingApi.getOnlineInvoice(tenantId, xeroInvoiceId);
+    onlineUrl = online.body.onlineInvoices?.[0]?.onlineInvoiceUrl ?? null;
+  } catch {
+    // Not fatal — invoice is authorised; Mitchell can grab the URL from Xero.
+  }
+  return { onlineInvoiceUrl: onlineUrl, status };
 }
 
 /**
@@ -137,29 +157,14 @@ export async function fetchXeroInvoice(
  * at quote time.
  */
 export function formatScopeDescription(
-  deviceCounts: Record<string, number>,
+  bom: BOMLineForScope[],
+  products: ProductForScope[],
   siteInfo: SiteInfo,
   overrides: ScopeOverrides | null | undefined,
   prefix?: string,
+  roleDescriptions?: Record<string, string>,
 ): string {
-  const scope = generateScopeOfWorks(deviceCounts, siteInfo, overrides ?? undefined);
-
-  const parts: string[] = [];
-  if (prefix) parts.push(prefix, "");
-
-  for (const section of scope.sections) {
-    const visible = section.items.filter((i) => i.included && i.text.trim());
-    if (visible.length === 0) continue;
-    parts.push(`${section.heading}:`);
-    for (const item of visible) parts.push(`  • ${item.text}`);
-    parts.push("");
-  }
-
-  const visibleNotes = scope.notes.filter((n) => n.included && n.text.trim());
-  if (visibleNotes.length > 0) {
-    parts.push("PLEASE NOTE:");
-    for (const note of visibleNotes) parts.push(`  • ${note.text}`);
-  }
-
-  return parts.join("\n").trim();
+  const scope = generateScopeOfWorks(bom, products, siteInfo, overrides ?? undefined, roleDescriptions);
+  const body = renderScopeAsText(scope);
+  return prefix ? `${prefix}\n\n${body}` : body;
 }

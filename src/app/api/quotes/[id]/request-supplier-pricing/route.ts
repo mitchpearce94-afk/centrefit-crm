@@ -40,12 +40,15 @@ export async function POST(
 
   const { data: quote, error: quoteErr } = await supabase
     .from("quotes")
-    .select("id, ref, site_name, client_name")
+    .select("id, ref, site_name, client_name, job:jobs(number)")
     .eq("id", quoteId)
     .single();
   if (quoteErr || !quote) {
     return NextResponse.json({ error: "Quote not found" }, { status: 404 });
   }
+  const jobNumber = Array.isArray(quote.job)
+    ? quote.job[0]?.number ?? null
+    : (quote.job as { number?: string } | null)?.number ?? null;
 
   const { data: lineItems, error: liErr } = await supabase
     .from("quote_line_items")
@@ -158,6 +161,7 @@ export async function POST(
         supplierName: supplier.name,
         supplierEmail: supplier.email,
         quoteRef: quote.ref,
+        jobNumber,
         siteName: quote.site_name ?? quote.client_name ?? null,
         lines: rfqLines,
       });

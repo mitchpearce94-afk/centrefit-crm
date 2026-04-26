@@ -10,6 +10,7 @@ import type { DependencyRule } from "@/lib/quote-engine";
 interface DbRule {
   id: string;
   preset: string;
+  template_id: string | null;
   description: string;
   is_active: boolean;
   trigger_code: string | null;
@@ -36,6 +37,16 @@ interface ProductOption {
   name: string;
   sku: string;
   category: string;
+}
+
+interface RuleTemplate {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  is_default: boolean;
+  is_active: boolean;
+  sort_order: number;
 }
 
 const inputClass = "block w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
@@ -137,17 +148,33 @@ const QUANTITY_MODES = [
   { value: "custom", label: "Custom key", help: "Advanced: special logic" },
 ];
 
-export function RulesManager({ dbRules, products }: { dbRules: DbRule[]; products: ProductOption[] }) {
+export function RulesManager({
+  dbRules,
+  products,
+  templates,
+}: {
+  dbRules: DbRule[];
+  products: ProductOption[];
+  templates: RuleTemplate[];
+}) {
   const router = useRouter();
   const supabase = createClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingRule, setEditingRule] = useState<DbRule | null>(null);
-  const [presetFilter, setPresetFilter] = useState("");
   const [seeding, setSeeding] = useState(false);
+  const [showTemplateForm, setShowTemplateForm] = useState(false);
+
+  // Active template tab — defaults to default template, then first
+  const initialTemplateId =
+    templates.find((t) => t.is_default)?.id ??
+    templates[0]?.id ??
+    null;
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(initialTemplateId);
 
   async function seedRulesFromEngine() {
+    if (!confirm("Re-seed both Snap Fitness and Total Fusion templates from the code-defined ruleset? This wipes all existing dependency rules and replaces them.")) return;
     setSeeding(true);
     try {
       const { data: fullProducts } = await supabase.from("quote_products").select("*").eq("is_active", true);
@@ -156,14 +183,17 @@ export function RulesManager({ dbRules, products }: { dbRules: DbRule[]; product
         setSeeding(false);
         return;
       }
-      const snapRules = getSnapFitnessRules(fullProducts);
-      const basicRules = getBasicRules(fullProducts);
+      const snapTemplate = templates.find((t) => t.slug === "snap_fitness");
+      const basicTemplate = templates.find((t) => t.slug === "total_fusion") ?? templates.find((t) => t.slug === "basic");
+      const snapRules = snapTemplate ? getSnapFitnessRules(fullProducts).map((r) => ({ ...r, _templateId: snapTemplate.id })) : [];
+      const basicRules = basicTemplate ? getBasicRules(fullProducts).map((r) => ({ ...r, _templateId: basicTemplate.id })) : [];
       const allRules = [...snapRules, ...basicRules];
       await supabase.from("quote_dependency_rules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
       const rows = allRules
-        .filter((r: DependencyRule) => r.auto_add_product_id)
-        .map((rule: DependencyRule, i: number) => ({
-          preset: rule.preset, description: rule.description, is_active: rule.is_active,
+        .filter((r) => r.auto_add_product_id)
+        .map((rule, i) => ({
+          preset: rule.preset, template_id: rule._templateId,
+          description: rule.description, is_active: rule.is_active,
           trigger_code: rule.trigger_code, trigger_condition: rule.trigger_condition,
           trigger_value: rule.trigger_value ?? null, trigger_min: rule.trigger_min ?? null, trigger_max: rule.trigger_max ?? null,
           trigger_site_field: rule.trigger_site_field ?? null, trigger_site_value: rule.trigger_site_value ?? null, trigger_site_op: rule.trigger_site_op ?? null,
@@ -180,7 +210,7 @@ export function RulesManager({ dbRules, products }: { dbRules: DbRule[]; product
         if (error) { toast(`Error at batch ${i}: ${error.message}`, "error"); break; }
         inserted += batch.length;
       }
-      toast(`Seeded ${inserted} rules (${allRules.length - rows.length} skipped — product not found)`);
+      toast(`Seeded ${inserted} rules across templates (${allRules.length - rows.length} skipped — product not found)`);
       router.refresh();
     } catch (err: any) {
       toast(err.message, "error");
@@ -188,20 +218,39 @@ export function RulesManager({ dbRules, products }: { dbRules: DbRule[]; product
     setSeeding(false);
   }
 
-  const presets = useMemo(() => {
-    const set = new Set(dbRules.map(r => r.preset));
-    return Array.from(set).sort();
-  }, [dbRules]);
-
   const filtered = useMemo(() => {
     let list = dbRules;
-    if (presetFilter) list = list.filter(r => r.preset === presetFilter);
+    if (activeTemplateId) list = list.filter((r) => r.template_id === activeTemplateId);
     if (search.length >= 2) {
       const q = search.toLowerCase();
       list = list.filter(r => r.description.toLowerCase().includes(q) || (r.trigger_code ?? "").toLowerCase().includes(q));
     }
     return list;
-  }, [dbRules, search, presetFilter]);
+  }, [dbRules, search, activeTemplateId]);
+
+  const activeTemplate = templates.find((t) => t.id === activeTemplateId) ?? null;
+
+  async function setDefaultTemplate(id: string) {
+    await supabase.from("quote_rule_templates").update({ is_default: false }).neq("id", id);
+    const { error } = await supabase.from("quote_rule_templates").update({ is_default: true }).eq("id", id);
+    if (error) toast(error.message, "error");
+    else { toast("Default template updated"); router.refresh(); }
+  }
+
+  async function deleteTemplate(id: string) {
+    const ruleCount = dbRules.filter((r) => r.template_id === id).length;
+    const msg = ruleCount > 0
+      ? `Delete this template? Its ${ruleCount} rules will also be deleted (cascade). Quotes already using it keep their existing BOM but will fall back to the default template if edited.`
+      : "Delete this template?";
+    if (!confirm(msg)) return;
+    const { error } = await supabase.from("quote_rule_templates").delete().eq("id", id);
+    if (error) toast(error.message, "error");
+    else {
+      toast("Template deleted");
+      setActiveTemplateId(templates.find((t) => t.id !== id && t.is_default)?.id ?? templates.find((t) => t.id !== id)?.id ?? null);
+      router.refresh();
+    }
+  }
 
   const grouped = useMemo(() => {
     const map = new Map<string, DbRule[]>();
@@ -228,29 +277,119 @@ export function RulesManager({ dbRules, products }: { dbRules: DbRule[]; product
 
   return (
     <div>
+      {/* Template tabs */}
+      <div className="mb-4">
+        <div className="flex items-center gap-2 flex-wrap border-b border-border pb-2 mb-3">
+          {templates.map((tpl) => {
+            const ruleCount = dbRules.filter((r) => r.template_id === tpl.id).length;
+            const isActive = activeTemplateId === tpl.id;
+            return (
+              <button
+                key={tpl.id}
+                onClick={() => setActiveTemplateId(tpl.id)}
+                className={`group inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
+              >
+                {tpl.name}
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-mono tabular-nums text-muted-foreground">
+                  {ruleCount}
+                </span>
+                {tpl.is_default && (
+                  <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary">
+                    Default
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          <button
+            onClick={() => setShowTemplateForm(true)}
+            className="ml-auto inline-flex items-center gap-1 rounded-md border border-dashed border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:border-muted-foreground transition-colors"
+          >
+            <span className="text-base leading-none">+</span> New template
+          </button>
+        </div>
+
+        {showTemplateForm && (
+          <TemplateForm
+            template={null}
+            onSaved={() => { setShowTemplateForm(false); router.refresh(); }}
+            onCancel={() => setShowTemplateForm(false)}
+          />
+        )}
+
+        {activeTemplate && (
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3 rounded-lg border border-border bg-card p-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">{activeTemplate.name}</p>
+              {activeTemplate.description && (
+                <p className="text-xs text-muted-foreground mt-0.5">{activeTemplate.description}</p>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
+              {!activeTemplate.is_default && (
+                <button
+                  onClick={() => setDefaultTemplate(activeTemplate.id)}
+                  className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                >
+                  Set as default
+                </button>
+              )}
+              <button
+                onClick={() => setShowTemplateForm(true)}
+                className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              >
+                Rename / edit
+              </button>
+              <button
+                onClick={() => deleteTemplate(activeTemplate.id)}
+                className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-destructive hover:bg-accent transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        )}
+
+        {showTemplateForm && activeTemplate && (
+          <TemplateForm
+            template={activeTemplate}
+            onSaved={() => { setShowTemplateForm(false); router.refresh(); }}
+            onCancel={() => setShowTemplateForm(false)}
+          />
+        )}
+      </div>
+
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <input type="text" placeholder="Search rules..." value={search} onChange={(e) => setSearch(e.target.value)} className={`${inputClass} flex-1 min-w-[200px]`} />
-        <select value={presetFilter} onChange={(e) => setPresetFilter(e.target.value)} className={inputClass + " w-auto"}>
-          <option value="">All Presets</option>
-          {presets.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <button onClick={() => { setEditingRule(null); setShowForm(true); }} className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/10">
+        <button
+          onClick={() => { setEditingRule(null); setShowForm(true); }}
+          disabled={!activeTemplateId}
+          className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+        >
           <span className="text-lg leading-none">+</span> Add Rule
         </button>
         <button onClick={seedRulesFromEngine} disabled={seeding}
           className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm font-medium text-amber-400 transition-colors hover:bg-amber-500/10 disabled:opacity-50">
-          {seeding ? "Seeding..." : "Seed from Quote Engine"}
+          {seeding ? "Seeding..." : "Re-seed from code"}
         </button>
       </div>
 
-      <p className="text-xs text-muted-foreground mb-4">{filtered.length} rules — these automatically add products to quotes when devices are detected on a plan.</p>
+      <p className="text-xs text-muted-foreground mb-4">
+        <span className="font-medium text-foreground tabular-nums">{filtered.length}</span> rule{filtered.length === 1 ? "" : "s"} in <span className="text-foreground">{activeTemplate?.name ?? "—"}</span> — these automatically add products to quotes when devices are detected on a plan.
+      </p>
 
       {/* Rule form */}
-      {showForm && (
+      {showForm && activeTemplateId && (
         <RuleForm
           rule={editingRule}
           products={products}
+          templateId={activeTemplateId}
+          templateSlug={activeTemplate?.slug ?? ""}
           onSaved={() => { setShowForm(false); setEditingRule(null); router.refresh(); }}
           onCancel={() => { setShowForm(false); setEditingRule(null); }}
         />
@@ -296,9 +435,11 @@ export function RulesManager({ dbRules, products }: { dbRules: DbRule[]; product
 }
 
 /* ── Rule Form ── */
-function RuleForm({ rule, products, onSaved, onCancel }: {
+function RuleForm({ rule, products, templateId, templateSlug, onSaved, onCancel }: {
   rule: DbRule | null;
   products: ProductOption[];
+  templateId: string;
+  templateSlug: string;
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -307,7 +448,6 @@ function RuleForm({ rule, products, onSaved, onCancel }: {
   const isEditing = !!rule;
   const [saving, setSaving] = useState(false);
 
-  const [preset, setPreset] = useState(rule?.preset || "snap_fitness");
   const [description, setDescription] = useState(rule?.description || "");
   const [triggerCode, setTriggerCode] = useState(rule?.trigger_code || "");
   const [triggerCondition, setTriggerCondition] = useState(rule?.trigger_condition || "always");
@@ -326,7 +466,9 @@ function RuleForm({ rule, products, onSaved, onCancel }: {
     if (!description.trim() || !triggerCode) return;
     setSaving(true);
     const payload = {
-      preset, description: description.trim(), trigger_code: triggerCode, trigger_condition: triggerCondition,
+      template_id: templateId,
+      preset: templateSlug,
+      description: description.trim(), trigger_code: triggerCode, trigger_condition: triggerCondition,
       trigger_value: triggerValue ? parseInt(triggerValue) : null,
       trigger_min: triggerMin ? parseInt(triggerMin) : null, trigger_max: triggerMax ? parseInt(triggerMax) : null,
       quantity_mode: quantityMode, quantity_value: quantityValue ? parseInt(quantityValue) : null,
@@ -457,10 +599,6 @@ function RuleForm({ rule, products, onSaved, onCancel }: {
         <summary className="text-muted-foreground cursor-pointer hover:text-foreground transition-colors">Advanced options</summary>
         <div className="grid grid-cols-2 gap-3 mt-3">
           <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Preset group</label>
-            <input value={preset} onChange={(e) => setPreset(e.target.value)} className={inputClass} />
-          </div>
-          <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Sort order</label>
             <input type="number" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className={inputClass} />
           </div>
@@ -471,6 +609,98 @@ function RuleForm({ rule, products, onSaved, onCancel }: {
         <button type="button" onClick={onCancel} className="rounded-md border border-border px-4 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors">Cancel</button>
         <button type="submit" disabled={saving} className="rounded-md bg-primary px-5 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
           {saving ? "Saving..." : isEditing ? "Update Rule" : "Create Rule"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/* ── Template Form ── */
+function TemplateForm({ template, onSaved, onCancel }: {
+  template: RuleTemplate | null;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const supabase = createClient();
+  const { toast } = useToast();
+  const isEditing = !!template;
+  const [saving, setSaving] = useState(false);
+  const [name, setName] = useState(template?.name ?? "");
+  const [description, setDescription] = useState(template?.description ?? "");
+
+  function slugify(s: string): string {
+    return s
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "");
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) {
+      toast("Name is required", "error");
+      return;
+    }
+    setSaving(true);
+    if (isEditing && template) {
+      const { error } = await supabase
+        .from("quote_rule_templates")
+        .update({ name: name.trim(), description: description.trim() || null })
+        .eq("id", template.id);
+      if (error) { toast(error.message, "error"); setSaving(false); return; }
+      toast("Template updated");
+    } else {
+      const slug = slugify(name);
+      const { error } = await supabase
+        .from("quote_rule_templates")
+        .insert({ name: name.trim(), slug, description: description.trim() || null, is_active: true });
+      if (error) { toast(error.message, "error"); setSaving(false); return; }
+      toast("Template created");
+    }
+    onSaved();
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="mb-4 rounded-lg border border-primary/30 bg-card p-4 space-y-3"
+    >
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold">{isEditing ? `Edit template — ${template!.name}` : "New rule template"}</p>
+        <button type="button" onClick={onCancel} className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Each quote picks one template at creation. Only that template's rules build the BOM.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Name</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            className={inputClass}
+            placeholder="e.g. Anytime Fitness"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Short description</label>
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className={inputClass}
+            placeholder="What's different about this build?"
+          />
+        </div>
+      </div>
+      <div className="flex justify-end gap-2 pt-1">
+        <button
+          type="submit"
+          disabled={saving}
+          className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {saving ? "Saving..." : isEditing ? "Update template" : "Create template"}
         </button>
       </div>
     </form>

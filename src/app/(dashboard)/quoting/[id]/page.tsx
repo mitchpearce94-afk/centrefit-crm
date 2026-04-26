@@ -25,8 +25,8 @@ export default async function QuoteDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [quoteResult, lineItemsResult, extrasResult, jobsResult, invoicesResult] = await Promise.all([
-    supabase.from("quotes").select("*, customer:customers(id, name, customer_contacts(*))").eq("id", id).single(),
+  const [quoteResult, lineItemsResult, extrasResult, jobsResult, invoicesResult, productsResult, scopeRolesResult] = await Promise.all([
+    supabase.from("quotes").select("*, customer:customers(id, name, customer_contacts(*)), template:quote_rule_templates(id, name, slug)").eq("id", id).single(),
     supabase
       .from("quote_line_items")
       .select("*, quote_products(supplier_id, cost_updated_at, suppliers(id, name, email))")
@@ -35,7 +35,15 @@ export default async function QuoteDetailPage({
     supabase.from("quote_extras").select("*").eq("quote_id", id).order("sort_order"),
     supabase.from("jobs").select("id, number, customer:customers(name)").order("number", { ascending: false }).limit(200),
     supabase.from("invoices").select("*").eq("quote_id", id).order("created_at", { ascending: true }),
+    supabase.from("quote_products").select("id, scope_role, name, sku"),
+    supabase.from("quote_scope_roles").select("slug, description"),
   ]);
+  const roleDescriptions: Record<string, string> = {};
+  for (const r of scopeRolesResult.data ?? []) {
+    if (r.description && r.description.trim().length > 0) {
+      roleDescriptions[r.slug] = r.description.trim();
+    }
+  }
   const jobs = (jobsResult.data ?? []).map((j: any) => ({
     id: j.id, number: j.number,
     customer_name: Array.isArray(j.customer) ? j.customer[0]?.name : j.customer?.name || null,
@@ -81,6 +89,11 @@ export default async function QuoteDetailPage({
             <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isProgress ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
               {isProgress ? "Progress Payments" : "Full Quote"}
             </span>
+            {quote.template?.name && (
+              <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
+                Template: {quote.template.name}
+              </span>
+            )}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {quote.customer?.name || quote.client_name}
@@ -114,43 +127,69 @@ export default async function QuoteDetailPage({
             separate_studio_zone: quote.separate_studio_zone ?? false,
           }}
           scopeOverrides={quote.scope_overrides ?? null}
+          productScopeRoles={(productsResult.data ?? []) as any}
+          roleDescriptions={roleDescriptions}
           contactEmail={quote.customer?.customer_contacts?.find((c: any) => c.is_primary)?.email ?? null}
           jobId={quote.job_id ?? null}
           jobs={jobs}
         />
       </div>
 
-      {/* Payment tracking for progress quotes */}
-      {isProgress && quote.status === "accepted" && (
-        <div className="mt-5 grid grid-cols-2 gap-4">
-          <div className={`rounded-lg border-2 p-4 ${quote.pp1_paid ? "border-emerald-500/30 bg-emerald-500/5" : "border-border"}`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase">PP1 — On Acceptance</p>
-                <p className="text-xl font-bold font-mono mt-1">${pricing ? fmt(pricing.pp1.total * 1.1) : "—"}</p>
+      {/* Payment tracking for progress quotes — derived from linked invoices */}
+      {isProgress && quote.status === "accepted" && (() => {
+        const pp1Inv = invoices.find((i) => i.invoice_type === "progress_pp1" && i.status !== "void");
+        const pp2Inv = invoices.find((i) => i.invoice_type === "progress_pp2" && i.status !== "void");
+
+        function derivedPaymentState(inv: typeof pp1Inv): { label: string; tone: "paid" | "due" | "draft" | "pending" } {
+          if (!inv) return { label: "Pending", tone: "pending" };
+          if (inv.status === "paid") return { label: "Paid", tone: "paid" };
+          if (inv.status === "draft") return { label: "Draft", tone: "draft" };
+          return { label: "Awaiting payment", tone: "due" };
+        }
+
+        const TONE_CLASSES: Record<"paid" | "due" | "draft" | "pending", { border: string; pill: string }> = {
+          paid: { border: "border-emerald-500/30 bg-emerald-500/5", pill: "bg-emerald-500/10 text-emerald-400" },
+          due: { border: "border-amber-500/30 bg-amber-500/5", pill: "bg-amber-500/10 text-amber-400" },
+          draft: { border: "border-blue-500/30 bg-blue-500/5", pill: "bg-blue-500/10 text-blue-400" },
+          pending: { border: "border-border", pill: "bg-muted text-muted-foreground" },
+        };
+
+        const pp1State = derivedPaymentState(pp1Inv);
+        const pp2State = derivedPaymentState(pp2Inv);
+
+        return (
+          <div className="mt-5 grid grid-cols-2 gap-4">
+            <div className={`rounded-lg border-2 p-4 ${TONE_CLASSES[pp1State.tone].border}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase">PP1 — On Acceptance</p>
+                  <p className="text-xl font-bold font-mono mt-1">${pricing ? fmt(pricing.pp1.total * 1.1) : "—"}</p>
+                  {pp1Inv?.xero_invoice_number && (
+                    <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{pp1Inv.xero_invoice_number}</p>
+                  )}
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-medium ${TONE_CLASSES[pp1State.tone].pill}`}>
+                  {pp1State.label}
+                </span>
               </div>
-              {quote.pp1_paid ? (
-                <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400">Paid</span>
-              ) : (
-                <span className="rounded-full bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-400">Pending</span>
-              )}
+            </div>
+            <div className={`rounded-lg border-2 p-4 ${TONE_CLASSES[pp2State.tone].border}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase">PP2 — On Completion</p>
+                  <p className="text-xl font-bold font-mono mt-1">${pricing ? fmt(pricing.pp2.total * 1.1) : "—"}</p>
+                  {pp2Inv?.xero_invoice_number && (
+                    <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{pp2Inv.xero_invoice_number}</p>
+                  )}
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-medium ${TONE_CLASSES[pp2State.tone].pill}`}>
+                  {pp2State.label}
+                </span>
+              </div>
             </div>
           </div>
-          <div className={`rounded-lg border-2 p-4 ${quote.pp2_paid ? "border-emerald-500/30 bg-emerald-500/5" : "border-border"}`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase">PP2 — On Completion</p>
-                <p className="text-xl font-bold font-mono mt-1">${pricing ? fmt(pricing.pp2.total * 1.1) : "—"}</p>
-              </div>
-              {quote.pp2_paid ? (
-                <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400">Paid</span>
-              ) : (
-                <span className="rounded-full bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-400">Pending</span>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Pricing summary cards */}
       {pricing && (

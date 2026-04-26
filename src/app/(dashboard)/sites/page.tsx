@@ -61,7 +61,7 @@ export default async function SitesPage({
 
       <SitesSearch defaultQuery={params.q} defaultState={params.state} />
 
-      <div className="mt-4 overflow-hidden rounded-lg border border-border">
+      <div className="mt-4 overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/50">

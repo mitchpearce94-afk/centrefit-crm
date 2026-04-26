@@ -50,7 +50,7 @@ export default async function InvoicesPage() {
     <div>
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Invoices</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Invoices</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Generated in Xero. Status mirrored here via refresh.
           </p>
@@ -58,39 +58,39 @@ export default async function InvoicesPage() {
       </div>
 
       {/* Metrics */}
-      <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-[10px] font-medium text-muted-foreground uppercase">Outstanding</p>
-          <p className="text-lg font-bold font-mono mt-1">${fmt(outstanding)}</p>
+      <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="surface-card card-hover p-5">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Outstanding</p>
+          <p className="num-display num-gradient mt-2 text-2xl font-semibold">${fmt(outstanding)}</p>
         </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-[10px] font-medium text-muted-foreground uppercase">Overdue</p>
-          <p className={`text-lg font-bold font-mono mt-1 ${overdue > 0 ? "text-red-400" : ""}`}>${fmt(overdue)}</p>
+        <div className={`surface-card card-hover p-5 ${overdue > 0 ? "border-destructive/30 bg-destructive/5" : ""}`}>
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Overdue</p>
+          <p className={`num-display mt-2 text-2xl font-semibold ${overdue > 0 ? "text-destructive" : "num-gradient"}`}>${fmt(overdue)}</p>
         </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-[10px] font-medium text-muted-foreground uppercase">Paid this month</p>
-          <p className="text-lg font-bold font-mono mt-1 text-emerald-400">${fmt(paidThisMonth)}</p>
+        <div className="surface-card card-hover p-5">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Paid this month</p>
+          <p className="num-display mt-2 text-2xl font-semibold text-emerald-400">${fmt(paidThisMonth)}</p>
         </div>
       </div>
 
       {/* List */}
-      <div className="mt-6 rounded-lg border border-border overflow-hidden">
+      <div className="surface-card mt-6 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-muted-foreground">
+          <thead className="bg-muted/40 text-muted-foreground">
             <tr className="text-left">
-              <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Invoice</th>
-              <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Type</th>
-              <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Customer</th>
-              <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Status</th>
-              <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider text-right">Total</th>
-              <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider text-right">Due</th>
-              <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Due date</th>
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Invoice</th>
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Type</th>
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Customer</th>
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Status</th>
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider text-right">Total</th>
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider text-right">Due</th>
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Due date</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {list.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground text-sm">
+                <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground text-sm">
                   No invoices yet. Generate one from an accepted quote.
                 </td>
               </tr>
@@ -99,7 +99,7 @@ export default async function InvoicesPage() {
               const colour = STATUS_COLOURS[inv.status] ?? "#6b7280";
               const isOverdue = inv.status === "authorised" && inv.due_date && new Date(inv.due_date) < new Date();
               return (
-                <tr key={inv.id} className="hover:bg-muted/30">
+                <tr key={inv.id} className="transition-colors hover:bg-accent/40">
                   <td className="px-4 py-2.5">
                     <Link href={`/invoices/${inv.id}`} className="font-mono text-sm text-foreground hover:text-primary transition-colors">
                       {inv.xero_invoice_number ?? "—"}

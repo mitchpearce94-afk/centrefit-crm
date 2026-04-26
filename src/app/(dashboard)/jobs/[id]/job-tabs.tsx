@@ -10,6 +10,8 @@ import { NotesPanel } from "./notes-panel";
 import { TimePanel } from "./time-panel";
 import { StaffPanel } from "./staff-panel";
 import { NbnPanel } from "./nbn-panel";
+import { JobInvoices } from "./job-invoices";
+import { JobProcurement } from "./job-procurement";
 
 interface StaffOption {
   id: string;
@@ -33,6 +35,12 @@ export function JobTabs({
   hasOpenTimer,
   openTimerId,
   scheduleEntries,
+  invoices,
+  linkedQuotes,
+  procurementItems,
+  suppliers,
+  productPrices,
+  billingSettings,
 }: {
   jobId: string;
   job: any;
@@ -48,6 +56,12 @@ export function JobTabs({
   hasOpenTimer: boolean;
   openTimerId?: string;
   scheduleEntries?: any[];
+  invoices: any[];
+  linkedQuotes: any[];
+  procurementItems: any[];
+  suppliers: any[];
+  productPrices: Record<string, { sell_price: number; cost_price: number }>;
+  billingSettings: { labour_sell_rate: number; callout_fee_sell: number };
 }) {
   const [activeTab, setActiveTab] = useState("job");
   const showNbn = isNbnJob || nbnSteps.length > 0;
@@ -61,17 +75,20 @@ export function JobTabs({
     { id: "time", label: "Time", count: timeEntries.length },
     { id: "staff", label: "Staff", count: job.job_staff?.length ?? 0 },
     ...(showNbn ? [{ id: "nbn", label: "NBN Steps", count: nbnSteps.length }] : []),
+    { id: "quoting", label: "Quoting", count: linkedQuotes.length },
+    { id: "procurement", label: "Procurement", count: procurementItems.length },
+    { id: "invoicing", label: "Invoicing", count: invoices.length },
   ];
 
   return (
     <div>
       {/* Tab bar */}
-      <div className="flex gap-0 border-b border-border overflow-x-auto">
+      <div className="flex gap-0 border-b border-border overflow-x-auto scrollbar-hide">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`shrink-0 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            className={`shrink-0 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
               activeTab === tab.id
                 ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
@@ -120,7 +137,85 @@ export function JobTabs({
         {activeTab === "nbn" && (
           <NbnPanel jobId={jobId} steps={nbnSteps} isNbnJob={isNbnJob} />
         )}
+        {activeTab === "quoting" && (
+          <QuotingPanel jobId={jobId} linkedQuotes={linkedQuotes} />
+        )}
+        {activeTab === "procurement" && (
+          <div>
+            <div className="mb-2 flex justify-end">
+              <Link
+                href={`/procurement/${jobId}`}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Open in Procurement →
+              </Link>
+            </div>
+            <JobProcurement jobId={jobId} items={procurementItems} suppliers={suppliers} />
+          </div>
+        )}
+        {activeTab === "invoicing" && (
+          <JobInvoices
+            jobId={jobId}
+            customerId={job.customer_id ?? null}
+            jobDescription={job.description ?? null}
+            jobNumber={job.number ?? null}
+            invoices={invoices}
+            linkedQuotes={linkedQuotes}
+            checklistItems={checklistItems}
+            workEntries={workEntries}
+            productPrices={productPrices}
+            billingSettings={billingSettings}
+          />
+        )}
       </div>
+    </div>
+  );
+}
+
+/* ── Quoting Tab ── */
+function QuotingPanel({
+  jobId,
+  linkedQuotes,
+}: {
+  jobId: string;
+  linkedQuotes: Array<{ id: string; ref: string; status: string; total?: number | null }>;
+}) {
+  if (linkedQuotes.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center">
+        <p className="text-sm text-muted-foreground mb-3">No quotes linked to this job yet.</p>
+        <Link
+          href={`/quoting/new?jobId=${jobId}`}
+          className="inline-flex rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+        >
+          + New quote for this job
+        </Link>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      {linkedQuotes.map((q) => (
+        <Link
+          key={q.id}
+          href={`/quoting/${q.id}`}
+          className="block rounded-lg border border-border bg-card p-4 hover:border-primary transition-colors"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-foreground font-mono">{q.ref}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5 capitalize">{q.status}</p>
+            </div>
+            <span className="text-xs text-muted-foreground">Open →</span>
+          </div>
+        </Link>
+      ))}
+      <Link
+        href={`/quoting/new?jobId=${jobId}`}
+        className="inline-flex rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors mt-3"
+      >
+        + Add another quote
+      </Link>
     </div>
   );
 }

@@ -5,10 +5,11 @@ import { RulesPageTabs } from "./rules-page-tabs";
 
 export default async function SettingsRulesPage() {
   const supabase = await createClient();
-  const [{ data: dbRules }, { data: products }, { data: labourTimings }] = await Promise.all([
-    supabase.from("quote_dependency_rules").select("*").order("preset, sort_order"),
+  const [{ data: dbRules }, { data: products }, { data: labourTimings }, { data: templates }] = await Promise.all([
+    supabase.from("quote_dependency_rules").select("*").order("template_id, sort_order"),
     supabase.from("quote_products").select("id, name, sku, category").eq("is_active", true).order("category, name"),
     supabase.from("labour_timings").select("*").order("sort_order"),
+    supabase.from("quote_rule_templates").select("*").order("sort_order"),
   ]);
 
   return (
@@ -19,7 +20,13 @@ export default async function SettingsRulesPage() {
       </p>
       <div className="mt-5">
         <RulesPageTabs
-          dependencyTab={<RulesManager dbRules={dbRules ?? []} products={products ?? []} />}
+          dependencyTab={
+            <RulesManager
+              dbRules={dbRules ?? []}
+              products={products ?? []}
+              templates={templates ?? []}
+            />
+          }
           labourTab={<LabourTimingsManager timings={labourTimings ?? []} />}
         />
       </div>

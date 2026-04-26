@@ -2,16 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { Resend } from "resend";
 import { generateScopeOfWorks } from "@/lib/quote-engine";
-import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions";
+import { generateQuotePdfBuffer, type QuoteForPdf } from "@/lib/quote-pdf";
+import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.server";
+import { emailHeader, emailFooter, emailLayout } from "@/lib/emails/brand";
 import crypto from "crypto";
 
 function getResend() {
   return new Resend(process.env.RESEND_API_KEY);
 }
 
-function fmt(n: number): string {
-  return n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 export async function POST(req: NextRequest) {
   const { quoteId, email } = await req.json();
@@ -21,10 +20,9 @@ export async function POST(req: NextRequest) {
 
   const supabase = await createClient();
 
-  // Fetch quote
   const { data: quote, error } = await supabase
     .from("quotes")
-    .select("*, customer:customers(id, name)")
+    .select("*, customer:customers(id, name, customer_contacts(name, email, is_primary))")
     .eq("id", quoteId)
     .single();
 
@@ -32,15 +30,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Quote not found" }, { status: 404 });
   }
 
-  const pricing = quote.pricing_snapshot;
+  const pricing = quote.pricing_snapshot as {
+    totalExGST: number;
+    totalIncGST: number;
+    gst: number;
+    fullPriceExGST?: number;
+    discount?: { percent: number; amount: number };
+    pp1?: { total: number };
+    pp2?: { total: number };
+  } | null;
   if (!pricing) {
     return NextResponse.json({ error: "Quote has no pricing" }, { status: 400 });
   }
 
-  // Generate a response token
-  const responseToken = crypto.randomBytes(32).toString("hex");
-
-  // Save the token and email
+  // Reuse the existing response_token if the quote has one — re-sends keep
+  // the same link so any email already in a recipient's inbox still works.
+  // Only mint a fresh token on the very first send.
+  const responseToken: string =
+    (quote.response_token as string | null) ?? crypto.randomBytes(32).toString("hex");
   await supabase.from("quotes").update({
     status: "sent",
     sent_at: new Date().toISOString(),
@@ -48,18 +55,17 @@ export async function POST(req: NextRequest) {
     response_token: responseToken,
   }).eq("id", quoteId);
 
-  // Auto-transition linked job to "Quote Sent"
   if (quote.job_id) {
     await autoTransitionJobStatusServer(quote.job_id, "quote_sent", supabase);
   }
 
   const clientName = quote.customer?.name || quote.client_name;
   const isProgress = quote.quote_type === "progress";
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://crm.centrefitgroup.com.au";
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${req.nextUrl.origin}`;
   const respondUrl = `${baseUrl}/quote-response/${responseToken}`;
 
-  // Build scope of works for the email
-  const deviceCounts = quote.device_counts || {};
+  // Build the full scope so we can attach a PDF mirroring what the customer
+  // would see in the in-CRM preview.
   const siteInfo = {
     site_sqm: quote.site_sqm ?? 0,
     door_count: quote.door_count ?? 0,
@@ -73,164 +79,104 @@ export async function POST(req: NextRequest) {
     ceiling_tv_mount_count: quote.ceiling_tv_mount_count ?? 0,
     separate_studio_zone: quote.separate_studio_zone ?? false,
   };
-  const scope = generateScopeOfWorks(deviceCounts, siteInfo, quote.scope_overrides ?? undefined);
+  const [{ data: scopeBomRows }, { data: scopeProductRows }, { data: scopeRoleRows }] = await Promise.all([
+    supabase.from("quote_line_items").select("product_id, quantity").eq("quote_id", quoteId),
+    supabase.from("quote_products").select("id, scope_role, name, sku"),
+    supabase.from("quote_scope_roles").select("slug, description"),
+  ]);
+  const scopeBom = (scopeBomRows ?? []).map((r: { product_id: string | null; quantity: number }) => ({
+    product_id: r.product_id ?? null,
+    quantity: Number(r.quantity) || 0,
+  }));
+  const scopeProducts = (scopeProductRows ?? []) as Array<{ id: string; scope_role: string }>;
+  const roleDescriptions: Record<string, string> = {};
+  for (const r of scopeRoleRows ?? []) {
+    if (r.description && r.description.trim().length > 0) roleDescriptions[r.slug] = r.description.trim();
+  }
+  const scope = generateScopeOfWorks(scopeBom, scopeProducts, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions);
 
-  // Build scope HTML
-  const scopeHtml = scope.sections.map(section => {
-    const visible = section.items.filter(i => i.included && i.text.trim());
-    if (visible.length === 0) return '';
-    return `
-    <tr><td style="padding:16px 0 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#334155;border-bottom:1px solid #e2e8f0">${section.heading}</td></tr>
-    ${visible.map(item => {
-      const isExclusion = item.id === 'electrical_exclusion';
-      return `<tr><td style="padding:4px 0 4px 12px;font-size:12px;color:${isExclusion ? '#dc2626' : '#475569'};font-weight:${isExclusion ? '700' : '400'};line-height:1.6;border-left:${isExclusion ? 'none' : '2px solid #e2e8f0'}">${item.text}</td></tr>`;
-    }).join('')}
-  `;
-  }).join('');
+  // Generate PDF attachment
+  let pdfBuffer: Buffer;
+  try {
+    const quoteForPdf: QuoteForPdf = {
+      ref: quote.ref,
+      createdAt: quote.created_at,
+      clientName,
+      siteName: quote.site_name,
+      siteAddress: quote.site_address,
+      isProgress,
+      pricing,
+    };
+    pdfBuffer = await generateQuotePdfBuffer(quoteForPdf, scope);
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Failed to generate PDF: ${err instanceof Error ? err.message : String(err)}` },
+      { status: 500 },
+    );
+  }
 
-  const visibleNotes = scope.notes.filter(n => n.included && n.text.trim());
-  const notesHtml = visibleNotes.length > 0 ? `
-    <tr><td style="padding:16px 0">
-      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px 20px">
-        ${visibleNotes.map(note => `<p style="font-size:11px;color:#92400e;margin:0 0 6px;line-height:1.5"><strong>PLEASE NOTE:</strong>&nbsp;&nbsp;${note.text}</p>`).join('')}
-      </div>
-    </td></tr>
-  ` : '';
+  // ── Build summary email body ─────────────────────────────────────────────
+  // The body is intentionally short. The full quote — totals, scope of works,
+  // by-others, standards, etc — lives in the attached PDF AND on the
+  // quote-response page they click through to.
 
-  // Payment section
-  const paymentHtml = isProgress ? `
-    <tr><td style="padding:16px 0">
-      <table width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td width="48%" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:20px;text-align:center">
-          <p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin:0 0 8px">Payment 1 — Due on Acceptance</p>
-          <p style="font-size:22px;font-weight:700;color:#0f172a;font-family:monospace;margin:0">$${fmt(pricing.pp1.total * 1.1)}</p>
-          <p style="font-size:11px;color:#94a3b8;margin:4px 0 0">inc GST</p>
-        </td>
-        <td width="4%"></td>
-        <td width="48%" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:20px;text-align:center">
-          <p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin:0 0 8px">Payment 2 — Due on Completion</p>
-          <p style="font-size:22px;font-weight:700;color:#0f172a;font-family:monospace;margin:0">$${fmt(pricing.pp2.total * 1.1)}</p>
-          <p style="font-size:11px;color:#94a3b8;margin:4px 0 0">inc GST</p>
-        </td>
-      </tr></table>
-    </td></tr>
-  ` : '';
+  const contacts = quote.customer?.customer_contacts ?? [];
+  const matchedContact =
+    contacts.find((c: { email?: string | null; is_primary?: boolean }) => c.email && email && c.email.toLowerCase() === email.toLowerCase()) ??
+    contacts.find((c: { is_primary?: boolean }) => c.is_primary) ??
+    contacts[0] ??
+    null;
+  const contactFirstName = matchedContact?.name?.trim().split(/\s+/)[0] ?? null;
+  const greeting = contactFirstName ? `Hi ${contactFirstName},` : "Hi,";
 
-  const emailHtml = `
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',system-ui,-apple-system,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 16px">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1)">
+  const subtitleParts = [quote.site_name, quote.site_address].filter(Boolean);
 
-  <!-- Header -->
-  <tr><td style="background:linear-gradient(135deg,#0f172a,#1e293b);padding:32px 40px;color:#ffffff">
-    <table width="100%"><tr>
-      <td><p style="font-size:11px;color:#94a3b8;margin:0">Centrefit Group Pty Ltd</p><p style="font-size:11px;color:#94a3b8;margin:0">ABN: 55 168 413 161</p></td>
-      <td style="text-align:right"><p style="font-size:24px;font-weight:700;margin:0;letter-spacing:-0.5px">QUOTATION</p><p style="font-size:14px;color:#60a5fa;font-weight:600;margin:4px 0 0">${quote.ref}</p><p style="font-size:11px;color:#94a3b8;margin:4px 0 0">${new Date(quote.created_at).toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })}</p></td>
-    </tr></table>
+  const emailHtml = emailLayout(`
+  ${emailHeader({ rightLabel: "Quotation", rightValue: quote.ref })}
+
+  <!-- Body -->
+  <tr><td style="padding:32px 32px 12px">
+    <h1 style="font-size:20px;font-weight:600;color:#0f172a;margin:0 0 4px;letter-spacing:-0.3px">Your Centrefit quote is ready</h1>
+    <p style="font-size:13px;color:#475569;margin:14px 0 0;line-height:1.6">${greeting}</p>
+    <p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">
+      Thanks for the opportunity to quote ${quote.site_name ? `<strong>${quote.site_name}</strong>` : "your project"}. Your detailed quotation is attached as a PDF and is also available online via the link below — including the full scope of works, pricing breakdown, ongoing costs and applicable standards.
+    </p>
+    <p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">
+      Please review the attached PDF, then click below to view it online and accept or decline.
+    </p>
   </td></tr>
 
-  <!-- Client bar -->
-  <tr><td style="background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:16px 40px">
-    <p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin:0 0 4px">Prepared For</p>
-    <p style="font-size:16px;font-weight:700;margin:0;color:#0f172a">${clientName}</p>
-    ${quote.site_name ? `<p style="font-size:13px;color:#475569;margin:2px 0 0">${quote.site_name}</p>` : ''}
-    ${quote.site_address ? `<p style="font-size:11px;color:#94a3b8;margin:2px 0 0">${quote.site_address}</p>` : ''}
+  ${subtitleParts.length > 0 ? `
+  <tr><td style="padding:0 32px 8px">
+    <p style="font-size:11px;color:#94a3b8;margin:0;line-height:1.5">${subtitleParts.join(' · ')}</p>
+  </td></tr>` : ''}
+
+  <!-- View / respond button — centred via td align="center" + inline-block link -->
+  <tr><td align="center" style="padding:28px 32px 8px;text-align:center">
+    <a href="${respondUrl}" style="display:inline-block;background:#3b82f6;color:#ffffff;text-align:center;padding:14px 28px;border-radius:10px;font-size:14px;font-weight:700;text-decoration:none;letter-spacing:0.3px;mso-padding-alt:0">
+      View Quote &amp; Respond Online
+    </a>
+    <p style="font-size:11px;color:#94a3b8;margin:14px 0 0;text-align:center;line-height:1.5">
+      You can review the full quote and accept or decline at the link above. Valid for 30 days.
+    </p>
   </td></tr>
 
-  <!-- Content -->
-  <tr><td style="padding:32px 40px">
-
-    <!-- Scope of Works -->
-    <table width="100%" cellpadding="0" cellspacing="0">
-      <tr><td style="font-size:13px;text-transform:uppercase;letter-spacing:1.5px;color:#0f172a;font-weight:700;padding:0 0 16px;border-bottom:2px solid #0f172a">Scope of Works</td></tr>
-      ${scopeHtml}
-      ${notesHtml}
-    </table>
-
-    <!-- Pricing -->
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px">
-      <tr><td style="font-size:12px;text-transform:uppercase;letter-spacing:1.5px;color:#64748b;font-weight:700;padding:0 0 16px;border-bottom:2px solid #e2e8f0">Pricing</td></tr>
-      <tr><td>
-        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin-top:16px">
-          <div style="padding:20px 24px">
-            <table width="100%">
-              ${pricing.discount?.percent > 0 ? `
-              <tr><td style="font-size:14px;color:#94a3b8">Subtotal (ex GST)</td><td style="text-align:right;font-size:14px;color:#94a3b8;font-family:monospace;text-decoration:line-through">$${fmt(pricing.fullPriceExGST)}</td></tr>
-              <tr><td style="font-size:14px;color:#16a34a;padding-top:4px">${pricing.discount.percent}% Discount</td><td style="text-align:right;font-size:14px;color:#16a34a;font-family:monospace;padding-top:4px">-$${fmt(pricing.discount.amount)}</td></tr>
-              ` : ''}
-              <tr><td style="font-size:14px;color:#64748b${pricing.discount?.percent > 0 ? ';padding-top:8px;border-top:1px solid #e2e8f0' : ''}">Total (ex GST)</td><td style="text-align:right;font-size:16px;font-weight:600;color:#0f172a;font-family:monospace${pricing.discount?.percent > 0 ? ';padding-top:8px;border-top:1px solid #e2e8f0' : ''}">$${fmt(pricing.totalExGST)}</td></tr>
-              <tr><td style="font-size:14px;color:#64748b;padding-top:4px">GST (10%)</td><td style="text-align:right;font-size:14px;color:#475569;font-family:monospace;padding-top:4px">$${fmt(pricing.gst)}</td></tr>
-            </table>
-          </div>
-          <div style="background:#0f172a;padding:16px 24px">
-            <table width="100%"><tr>
-              <td style="font-size:14px;font-weight:700;color:#ffffff;text-transform:uppercase;letter-spacing:0.5px">Total (inc GST)</td>
-              <td style="text-align:right;font-size:24px;font-weight:800;color:#ffffff;font-family:monospace">$${fmt(pricing.totalIncGST)}</td>
-            </tr></table>
-          </div>
-        </div>
-      </td></tr>
-    </table>
-
-    ${paymentHtml}
-
-    <!-- Accept / Decline buttons -->
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px">
-      <tr>
-        <td width="48%">
-          <a href="${respondUrl}?action=accept" style="display:block;background:#16a34a;color:#ffffff;text-align:center;padding:16px;border-radius:10px;font-size:16px;font-weight:700;text-decoration:none;letter-spacing:0.5px">
-            ACCEPT QUOTE
-          </a>
-        </td>
-        <td width="4%"></td>
-        <td width="48%">
-          <a href="${respondUrl}?action=decline" style="display:block;background:#ffffff;color:#dc2626;text-align:center;padding:16px;border-radius:10px;font-size:16px;font-weight:700;text-decoration:none;letter-spacing:0.5px;border:2px solid #fca5a5">
-            DECLINE
-          </a>
-        </td>
-      </tr>
-    </table>
-
-    <!-- Standards -->
-    <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e2e8f0">
-      <p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;font-weight:700;margin:0 0 8px">Standards and Codes of Practice</p>
-      ${scope.standards.map(std => `<p style="font-size:10px;color:#94a3b8;margin:0 0 2px">${std}</p>`).join('')}
-    </div>
-
-    <!-- Terms -->
-    <div style="margin-top:16px;font-size:10px;color:#94a3b8;line-height:1.6">
-      <p style="margin:0 0 3px">This quotation is valid for 30 days from the date of issue.</p>
-      <p style="margin:0 0 3px">Any and all electrical works are not included in this quotation.</p>
-    </div>
-
-  </td></tr>
-
-  <!-- Footer -->
-  <tr><td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 40px;text-align:center">
-    <p style="font-size:10px;color:#94a3b8;margin:0">Centrefit Group Pty Ltd · ABN 55 168 413 161</p>
-    <p style="font-size:10px;color:#94a3b8;margin:2px 0 0">1/25 Paisley Drive, Lawnton QLD 4501 · (07) 3188 5115</p>
-  </td></tr>
-
-</table>
-</td></tr>
-</table>
-</body>
-</html>`;
+  ${emailFooter("Reply to this email if you have any questions.")}
+`);
 
   try {
+    const filename = `Centrefit-Quote-${quote.ref}.pdf`;
     const { error: sendError } = await getResend().emails.send({
-      // TEMP: using Resend's test sender until centrefitgroup.com.au is
-      // verified as a sending domain. Only delivers to the email the Resend
-      // account signed up with. Revert to quotes@centrefitgroup.com.au once
-      // domain is verified in Resend dashboard.
-      from: "CentreFit <onboarding@resend.dev>",
+      from: "Centrefit Quotes <quotes@centrefit.com.au>",
       to: email,
       subject: `Quotation ${quote.ref} — ${clientName}${quote.site_name ? ` — ${quote.site_name}` : ''}`,
       html: emailHtml,
+      attachments: [
+        {
+          filename,
+          content: pdfBuffer.toString("base64"),
+        },
+      ],
     });
 
     if (sendError) {
@@ -238,7 +184,10 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: 500 },
+    );
   }
 }

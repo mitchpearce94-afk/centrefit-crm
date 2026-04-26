@@ -94,7 +94,7 @@ export default async function EnquiriesPage({
       )}
 
       {enquiries.length > 0 && (
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="rounded-lg border border-border bg-card overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border text-left bg-muted/30 text-muted-foreground">

@@ -117,6 +117,17 @@ export async function POST(req: NextRequest) {
       separate_studio_zone: quote.separate_studio_zone ?? false,
     };
 
+    // Pull this quote's BOM + product scope_roles for the scope generator.
+    const [{ data: scopeBomRows }, { data: scopeProductRows }] = await Promise.all([
+      supabase.from("quote_line_items").select("product_id, quantity").eq("quote_id", quoteId),
+      supabase.from("quote_products").select("id, scope_role, name, sku"),
+    ]);
+    const scopeBom = (scopeBomRows ?? []).map((r) => ({
+      product_id: r.product_id ?? null,
+      quantity: Number(r.quantity) || 0,
+    }));
+    const scopeProducts = (scopeProductRows ?? []) as Array<{ id: string; scope_role: string }>;
+
     if (body.type === "full") {
       if (quote.quote_type === "progress") {
         return NextResponse.json(
@@ -125,7 +136,8 @@ export async function POST(req: NextRequest) {
         );
       }
       const description = formatScopeDescription(
-        quote.device_counts ?? {},
+        scopeBom,
+        scopeProducts,
         siteInfo,
         quote.scope_overrides ?? null,
         `CentreFit Installation — Quote ${quote.ref}`,
@@ -172,7 +184,8 @@ export async function POST(req: NextRequest) {
         ? `Progress Payment 1 — On Acceptance (Quote ${quote.ref})`
         : `Progress Payment 2 — On Completion (Quote ${quote.ref})`;
       const description = formatScopeDescription(
-        quote.device_counts ?? {},
+        scopeBom,
+        scopeProducts,
         siteInfo,
         quote.scope_overrides ?? null,
         header,
@@ -255,6 +268,7 @@ export async function POST(req: NextRequest) {
       amount_paid: Math.max(0, xeroResult.total - xeroResult.amountDue),
       status: xeroResult.status.toLowerCase() === "paid" ? "paid"
         : xeroResult.status.toLowerCase() === "voided" ? "void"
+        : xeroResult.status.toLowerCase() === "draft" ? "draft"
         : "authorised",
       xero_invoice_id: xeroResult.invoiceID,
       xero_invoice_number: xeroResult.invoiceNumber,

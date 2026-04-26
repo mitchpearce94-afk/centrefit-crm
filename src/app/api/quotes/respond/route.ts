@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions";
+import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.server";
 import { createInvoiceFromAcceptedQuote } from "@/lib/invoices/create-from-quote";
 
 export async function POST(req: NextRequest) {

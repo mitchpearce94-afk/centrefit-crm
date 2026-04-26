@@ -67,10 +67,20 @@ export default async function DashboardPage({
     filteredSchedule = filteredSchedule.filter((e: any) => e.staff?.id === params.staff || false);
   }
 
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 5) return "Working late,";
+    if (h < 12) return "Good morning,";
+    if (h < 17) return "Good afternoon,";
+    return "Good evening,";
+  })();
+
   return (
     <div>
-      <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Welcome back, {displayName}</p>
+      <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {greeting} <span className="text-foreground font-medium">{displayName}</span>
+      </p>
 
       {/* Filters */}
       <DashboardFilters
@@ -81,7 +91,7 @@ export default async function DashboardPage({
       />
 
       {/* Stats */}
-      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Active Jobs" value={String(filteredJobs.length)} href="/jobs" />
         <StatCard label="Customers" value={String(totalCustomers ?? 0)} href="/customers" />
         <StatCard label="Overdue" value={String(overdueJobs.length)} warning={overdueJobs.length > 0} />
@@ -92,23 +102,30 @@ export default async function DashboardPage({
         />
       </div>
 
-      <div className="mt-8 grid gap-8 lg:grid-cols-2">
+      <div className="mt-8 grid gap-6 lg:grid-cols-2">
         {/* Recent Jobs */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold">Recent Jobs</h2>
-            <Link href="/jobs" className="text-sm text-primary hover:text-primary/80 transition-colors">View all</Link>
+            <h2 className="text-base font-semibold tracking-tight">Recent Jobs</h2>
+            <Link href="/jobs" className="text-xs font-medium text-primary hover:text-primary/80 transition-colors">View all →</Link>
           </div>
-          <div className="rounded-lg border border-border overflow-hidden">
+          <div className="surface-card overflow-hidden">
             {recentJobs.length > 0 ? (
               recentJobs.map((job: any) => (
-                <Link key={job.id} href={`/jobs/${job.id}`} className="flex items-center justify-between border-b border-border last:border-0 px-4 py-3 hover:bg-muted/30 transition-colors">
-                  <div>
-                    <span className="font-mono text-sm font-medium">{job.number}</span>
-                    <span className="ml-2 text-sm text-muted-foreground">{job.customer?.name}</span>
+                <Link
+                  key={job.id}
+                  href={`/jobs/${job.id}`}
+                  className="group flex items-center justify-between border-b border-border last:border-0 px-4 py-3 transition-colors hover:bg-accent/40"
+                >
+                  <div className="min-w-0">
+                    <span className="font-mono text-sm font-semibold text-foreground">{job.number}</span>
+                    <span className="ml-2 text-sm text-muted-foreground truncate">{job.customer?.name}</span>
                   </div>
                   {job.status && (
-                    <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: `${job.status.colour}20`, color: job.status.colour }}>
+                    <span
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                      style={{ backgroundColor: `${job.status.colour}1f`, color: job.status.colour }}
+                    >
                       <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: job.status.colour }} />
                       {job.status.name}
                     </span>
@@ -116,8 +133,8 @@ export default async function DashboardPage({
                 </Link>
               ))
             ) : (
-              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                {params.staff || params.category ? "No jobs match the current filters." : "No active jobs."}
+              <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                {params.staff || params.category ? "No jobs match the current filters." : "No active jobs — looking quiet today."}
               </div>
             )}
           </div>
@@ -126,33 +143,40 @@ export default async function DashboardPage({
         {/* Today's Schedule */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold">Today&apos;s Schedule</h2>
-            <Link href="/scheduler" className="text-sm text-primary hover:text-primary/80 transition-colors">Full schedule</Link>
+            <h2 className="text-base font-semibold tracking-tight">Today&apos;s Schedule</h2>
+            <Link href="/scheduler" className="text-xs font-medium text-primary hover:text-primary/80 transition-colors">Full schedule →</Link>
           </div>
-          <div className="rounded-lg border border-border overflow-hidden">
+          <div className="surface-card overflow-hidden">
             {filteredSchedule.length > 0 ? (
               filteredSchedule.map((entry: any) => (
-                <Link key={entry.id} href={`/jobs/${entry.job?.id}`} className="flex items-center justify-between border-b border-border last:border-0 px-4 py-3 hover:bg-muted/30 transition-colors">
-                  <div className="flex items-center gap-2">
+                <Link
+                  key={entry.id}
+                  href={`/jobs/${entry.job?.id}`}
+                  className="group flex items-center justify-between border-b border-border last:border-0 px-4 py-3 transition-colors hover:bg-accent/40"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
                     {entry.staff && (
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-medium text-white" style={{ backgroundColor: entry.staff.colour ?? "#3b82f6" }}>
+                      <span
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ring-1 ring-white/10"
+                        style={{ backgroundColor: entry.staff.colour ?? "#3b82f6" }}
+                      >
                         {entry.staff.initials}
                       </span>
                     )}
-                    <div>
-                      <span className="font-mono text-sm font-medium">{entry.job?.number}</span>
+                    <div className="min-w-0">
+                      <span className="font-mono text-sm font-semibold text-foreground">{entry.job?.number}</span>
                       <span className="ml-2 text-sm text-muted-foreground">
                         {entry.job?.customer?.name}{entry.job?.site ? ` · ${entry.job.site.name}` : ""}
                       </span>
                     </div>
                   </div>
-                  <span className="text-xs text-muted-foreground">
-                    {entry.start_time && entry.end_time ? `${entry.start_time.slice(0, 5)} - ${entry.end_time.slice(0, 5)}` : "All day"}
+                  <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                    {entry.start_time && entry.end_time ? `${entry.start_time.slice(0, 5)} – ${entry.end_time.slice(0, 5)}` : "All day"}
                   </span>
                 </Link>
               ))
             ) : (
-              <div className="px-4 py-8 text-center text-sm text-muted-foreground">No jobs scheduled today.</div>
+              <div className="px-4 py-10 text-center text-sm text-muted-foreground">Nothing on today.</div>
             )}
           </div>
         </div>
@@ -162,10 +186,18 @@ export default async function DashboardPage({
 }
 
 function StatCard({ label, value, href, warning }: { label: string; value: string; href?: string; warning?: boolean }) {
+  const baseClass = warning
+    ? "border-destructive/30 bg-destructive/5 hover:border-destructive/50"
+    : "border-border bg-card hover:border-border-strong";
   const content = (
-    <div className={`rounded-lg border p-5 transition-colors ${warning ? "border-destructive/30 bg-destructive/5" : "border-border bg-card"} ${href ? "hover:bg-muted/50 cursor-pointer" : ""}`}>
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${warning ? "text-destructive" : ""}`}>{value}</p>
+    <div className={`surface-card card-hover relative overflow-hidden p-5 ${baseClass} ${href ? "cursor-pointer" : ""}`}>
+      {warning && (
+        <span className="pointer-events-none absolute right-3 top-3 inline-flex h-2 w-2 rounded-full bg-destructive/80 shadow-[0_0_12px] shadow-destructive/40" />
+      )}
+      <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className={`num-display mt-2 text-3xl font-semibold ${warning ? "text-destructive" : "num-gradient"}`}>
+        {value}
+      </p>
     </div>
   );
   return href ? <Link href={href}>{content}</Link> : content;

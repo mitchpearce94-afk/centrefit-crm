@@ -74,7 +74,12 @@ export default async function InvoiceDetailPage({
             )}
           </p>
         </div>
-        <InvoiceActions invoiceId={inv.id} payLink={inv.xero_online_url} />
+        <InvoiceActions
+          invoiceId={inv.id}
+          payLink={inv.xero_online_url}
+          status={inv.status}
+          xeroInvoiceId={inv.xero_invoice_id}
+        />
       </div>
 
       {/* Totals */}

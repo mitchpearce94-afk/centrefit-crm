@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useState } from "react";
@@ -28,10 +29,25 @@ const settingsNav = [
   { name: "Checklists", href: "/settings/checklists", icon: ChecklistIcon },
   { name: "Products", href: "/settings/products", icon: PackageIcon },
   { name: "Rules", href: "/settings/rules", icon: RulesIcon },
+  { name: "Scope Roles", href: "/settings/scope-roles", icon: FileTextIcon },
   { name: "Integrations", href: "/settings/integrations", icon: PlugIcon },
 ];
 
-export function Sidebar({ user }: { user: User }) {
+interface StaffSummary {
+  display_name: string;
+  initials: string;
+  role: string;
+  colour: string | null;
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Admin",
+  finance_manager: "Finance",
+  project_manager: "PM",
+  field_staff: "Field",
+};
+
+export function Sidebar({ user, staff }: { user: User; staff: StaffSummary | null }) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -43,35 +59,54 @@ export function Sidebar({ user }: { user: User }) {
     router.refresh();
   }
 
+  const initials = staff?.initials ?? user.email?.charAt(0).toUpperCase() ?? "·";
+  const displayName = staff?.display_name ?? user.email ?? "";
+  const roleLabel = staff?.role ? ROLE_LABELS[staff.role] ?? staff.role : null;
+  const avatarColor = staff?.colour ?? "#3b82f6";
+
   return (
     <>
-      {/* Mobile hamburger */}
+      {/* Mobile hamburger — sits inside the mobile top bar from layout */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="fixed top-4 left-4 z-50 rounded-md bg-card p-2 lg:hidden"
+        className="fixed top-2 left-2 z-50 inline-flex h-11 w-11 items-center justify-center rounded-md text-foreground hover:bg-accent active:bg-accent lg:hidden"
         aria-label="Open menu"
       >
-        <MenuIcon className="h-5 w-5" />
+        <MenuIcon className="h-6 w-6" />
       </button>
 
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/60 lg:hidden"
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-56 flex-col border-r border-border bg-card transition-transform lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-border bg-card transition-transform lg:static lg:w-56 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex h-14 items-center border-b border-border px-4">
-          <span className="text-sm font-bold tracking-wide">CENTREFIT</span>
-          <span className="ml-1.5 text-xs text-muted-foreground">CRM</span>
-        </div>
+        <Link
+          href="/"
+          onClick={() => setMobileOpen(false)}
+          className="flex h-16 items-center justify-center gap-2 border-b border-border px-3 transition-colors hover:bg-accent/40"
+        >
+          <Image
+            src="/centrefit-logo.png"
+            alt="Centrefit Group"
+            width={240}
+            height={60}
+            priority
+            className="h-10 w-auto"
+            style={{ filter: "brightness(0) invert(1)" }}
+          />
+          <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
+            CRM
+          </span>
+        </Link>
 
         <nav className="flex-1 overflow-y-auto px-2 py-3">
           <div className="space-y-0.5">
@@ -86,12 +121,15 @@ export function Sidebar({ user }: { user: User }) {
                   key={item.name}
                   href={item.href}
                   onClick={() => setMobileOpen(false)}
-                  className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
+                  className={`relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-all ${
                     isActive
                       ? "bg-primary/10 text-primary font-medium"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
                   }`}
                 >
+                  {isActive && (
+                    <span className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary" />
+                  )}
                   <item.icon className="h-4 w-4 shrink-0" />
                   {item.name}
                 </Link>
@@ -100,7 +138,7 @@ export function Sidebar({ user }: { user: User }) {
           </div>
 
           {/* Settings section */}
-          <div className="mt-4 pt-4 border-t border-border">
+          <div className="mt-5 pt-4 border-t border-border">
             <div className="flex items-center gap-2 px-3 py-1.5">
               <SettingsIcon className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Settings</span>
@@ -113,12 +151,15 @@ export function Sidebar({ user }: { user: User }) {
                     key={item.name}
                     href={item.href}
                     onClick={() => setMobileOpen(false)}
-                    className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
+                    className={`relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-all ${
                       isActive
                         ? "bg-primary/10 text-primary font-medium"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                        : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
                     }`}
                   >
+                    {isActive && (
+                      <span className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary" />
+                    )}
                     <item.icon className="h-4 w-4 shrink-0" />
                     {item.name}
                   </Link>
@@ -129,20 +170,40 @@ export function Sidebar({ user }: { user: User }) {
         </nav>
 
         <div className="border-t border-border p-3">
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-xs font-medium text-primary">
-              {user.email?.charAt(0).toUpperCase()}
+          <div className="flex items-center gap-2.5">
+            <div
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white ring-1 ring-white/10"
+              style={{ backgroundColor: avatarColor }}
+            >
+              {initials}
             </div>
-            <div className="flex-1 truncate text-xs text-muted-foreground">
-              {user.email}
+            <div className="flex-1 min-w-0">
+              <p className="truncate text-xs font-medium text-foreground">{displayName}</p>
+              <div className="mt-0.5 flex items-center gap-1.5">
+                {roleLabel && (
+                  <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary">
+                    {roleLabel}
+                  </span>
+                )}
+                <span className="truncate text-[10px] text-muted-foreground">{user.email}</span>
+              </div>
             </div>
           </div>
-          <button
-            onClick={handleSignOut}
-            className="mt-2 w-full rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            Sign out
-          </button>
+          <div className="mt-2 flex gap-1.5">
+            <Link
+              href="/account"
+              onClick={() => setMobileOpen(false)}
+              className="flex-1 rounded-md px-3 py-1.5 text-center text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              My account
+            </Link>
+            <button
+              onClick={handleSignOut}
+              className="flex-1 rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
     </>

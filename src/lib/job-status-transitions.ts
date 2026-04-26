@@ -112,46 +112,20 @@ export async function autoTransitionJobStatus(
     is_system: true,
   });
 
+  if (targetStatus.name === 'Ready to Invoice') {
+    try {
+      await fetch(`/api/jobs/${jobId}/auto-pp2`, { method: 'POST' });
+    } catch (err) {
+      console.error(`[Auto-transition] PP2 auto-create failed for job ${jobId}:`, err);
+    }
+  }
+
   return targetStatus.name;
 }
 
 /**
- * Server-side version using the server Supabase client.
+ * Centralised auto-transition rule lookup — exported so server-side code
+ * (`./job-status-transitions.server.ts`) can reuse the same rules without
+ * pulling client-only deps.
  */
-export async function autoTransitionJobStatusServer(
-  jobId: string,
-  action: string,
-  supabase: any,
-): Promise<string | null> {
-  const rule = AUTO_TRANSITIONS[action];
-  if (!rule) return null;
-
-  const { data: job } = await supabase
-    .from('jobs')
-    .select('id, status_id, status:statuses(id, name)')
-    .eq('id', jobId)
-    .single();
-
-  if (!job) return null;
-
-  const currentStatus = Array.isArray(job.status) ? job.status[0] : job.status;
-  if (!currentStatus || !rule.from.includes(currentStatus.name)) return null;
-
-  const { data: targetStatus } = await supabase
-    .from('statuses')
-    .select('id, name')
-    .eq('name', rule.to)
-    .single();
-
-  if (!targetStatus) return null;
-
-  await supabase.from('jobs').update({ status_id: targetStatus.id }).eq('id', jobId);
-  await supabase.from('job_notes').insert({
-    job_id: jobId,
-    content: `Status auto-changed from "${currentStatus.name}" to "${targetStatus.name}"`,
-    type: 'system',
-    is_system: true,
-  });
-
-  return targetStatus.name;
-}
+export const AUTO_TRANSITION_RULES = AUTO_TRANSITIONS;

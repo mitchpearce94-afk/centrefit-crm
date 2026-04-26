@@ -133,7 +133,7 @@ export default async function ProcurementIndexPage() {
             Jobs with an accepted quote but no procurement started. Click into the job and hit
             Start Ordering.
           </p>
-          <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <div className="rounded-lg border border-border bg-card overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-border text-left bg-muted/30 text-muted-foreground">

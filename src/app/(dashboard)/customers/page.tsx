@@ -32,39 +32,40 @@ export default async function CustomersPage({
 
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Customers</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Customers</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {customers?.length ?? 0} active customers
+            <span className="font-medium text-foreground tabular-nums">{customers?.length ?? 0}</span> active customers
           </p>
         </div>
         <Link
           href="/customers/new"
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
         >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
           Add Customer
         </Link>
       </div>
 
       <CustomerSearch defaultQuery={params.q} defaultType={params.type} />
 
-      <div className="mt-4 overflow-hidden rounded-lg border border-border">
+      <div className="surface-card mt-4 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border bg-muted/50">
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Name</th>
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden sm:table-cell">Type</th>
-              <th className="px-4 py-3 text-right font-medium text-muted-foreground hidden md:table-cell">Sites</th>
-              <th className="px-4 py-3 text-right font-medium text-muted-foreground hidden md:table-cell">Contacts</th>
-              <th className="px-4 py-3 text-right font-medium text-muted-foreground hidden lg:table-cell">Revenue</th>
+            <tr className="border-b border-border bg-muted/40">
+              <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Name</th>
+              <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hidden sm:table-cell">Type</th>
+              <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hidden md:table-cell">Sites</th>
+              <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hidden md:table-cell">Contacts</th>
+              <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hidden lg:table-cell">Revenue</th>
             </tr>
           </thead>
           <tbody>
             {customers?.map((customer: Customer & { customer_contacts: { id: string }[]; customer_sites: { id: string }[] }) => (
               <tr
                 key={customer.id}
-                className="border-b border-border last:border-0 transition-colors hover:bg-muted/30"
+                className="border-b border-border last:border-0 transition-colors hover:bg-accent/40"
               >
                 <td className="px-4 py-3">
                   <Link

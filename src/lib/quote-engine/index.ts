@@ -62,13 +62,20 @@ export type {
 export { calculateQuoteSummary } from './pricing'
 export type { QuoteSummary } from './pricing'
 
-// Scope of Works
-export { generateScopeOfWorks } from './scope-of-works'
+// Scope of Works (BOM-driven, system-card layout)
+export {
+  generateScopeOfWorks,
+  renderScopeAsHtml,
+  renderScopeAsText,
+  BOMRollup,
+} from './scope-of-works'
 export type {
-  ScopeItem,
-  ScopeNote,
-  ScopeSection,
   ScopeDocument,
+  ScopeSystemBlock,
+  ScopeByOthersBlock,
+  ScopeOngoingCost,
+  ScopeSummary,
   ScopeOverrides,
-  ScopeOverrideMap,
+  BOMLineForScope,
+  ProductForScope,
 } from './scope-of-works'

@@ -35,9 +35,23 @@ export function StaffList({
   currentUserId: string;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showInvite, setShowInvite] = useState(false);
 
   return (
     <div className="space-y-3 max-w-2xl">
+      {isAdmin && (
+        <div className="flex justify-end">
+          <button
+            onClick={() => setShowInvite(true)}
+            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            + Invite teammate
+          </button>
+        </div>
+      )}
+      {showInvite && (
+        <InviteForm onDone={() => setShowInvite(false)} />
+      )}
       {staff.map((member) => (
         <div key={member.id}>
           {editingId === member.id ? (
@@ -90,12 +104,17 @@ export function StaffList({
                 </div>
               </div>
               {isAdmin && (
-                <button
-                  onClick={() => setEditingId(member.id)}
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Edit
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setEditingId(member.id)}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Edit
+                  </button>
+                  {member.id !== currentUserId && (
+                    <DeleteStaffButton member={member} />
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -103,10 +122,140 @@ export function StaffList({
       ))}
       {staff.length === 0 && (
         <p className="text-sm text-muted-foreground py-8 text-center">
-          No staff members. Create users in Supabase Auth to add team members.
+          No staff members yet. Click "Invite teammate" to send your first invitation.
         </p>
       )}
     </div>
+  );
+}
+
+function InviteForm({ onDone }: { onDone: () => void }) {
+  const router = useRouter();
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+  const [email, setEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [initials, setInitials] = useState("");
+  const [role, setRole] = useState<StaffRole>("field_staff");
+  const [phone, setPhone] = useState("");
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || !displayName.trim()) {
+      toast("Email and name are required", "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/staff/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim(),
+          display_name: displayName.trim(),
+          initials: initials.trim() || null,
+          role,
+          phone: phone.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Invite failed");
+      toast(`Invitation sent to ${email.trim()}`);
+      onDone();
+      router.refresh();
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : "Invite failed", "error");
+    }
+    setBusy(false);
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="rounded-lg border border-primary/30 bg-card p-4 space-y-3"
+    >
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold">Invite teammate</p>
+        <button
+          type="button"
+          onClick={onDone}
+          className="text-xs text-muted-foreground hover:text-foreground"
+        >
+          Cancel
+        </button>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Creates the account and emails a temporary password from <span className="font-mono text-foreground">noreply@centrefit.com.au</span>. They sign in with email + password and change it from their account.
+      </p>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground">Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="mt-1 block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder="name@example.com"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground">Display name</label>
+          <input
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            required
+            className="mt-1 block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground">Initials</label>
+          <input
+            value={initials}
+            onChange={(e) => setInitials(e.target.value)}
+            maxLength={3}
+            className="mt-1 block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm uppercase focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder="auto"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground">Role</label>
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value as StaffRole)}
+            className="mt-1 block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="field_staff">Field Staff</option>
+            <option value="project_manager">Project Manager</option>
+            <option value="finance_manager">Finance Manager</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground">Phone</label>
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            className="mt-1 block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder="04XX XXX XXX"
+          />
+        </div>
+      </div>
+
+      <div className="flex gap-2 pt-1">
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {busy ? "Sending..." : "Send invitation"}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -262,5 +411,58 @@ function StaffEditForm({
         </button>
       </div>
     </form>
+  );
+}
+
+function DeleteStaffButton({ member }: { member: Staff }) {
+  const router = useRouter();
+  const { toast } = useToast();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function handleDelete() {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/staff/${member.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Delete failed");
+      toast(`Removed ${member.display_name}`);
+      router.refresh();
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : "Delete failed", "error");
+    }
+    setBusy(false);
+    setConfirming(false);
+  }
+
+  if (!confirming) {
+    return (
+      <button
+        onClick={() => setConfirming(true)}
+        className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+      >
+        Delete
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[11px] text-muted-foreground">Delete?</span>
+      <button
+        onClick={handleDelete}
+        disabled={busy}
+        className="rounded-md bg-destructive px-2 py-1 text-[11px] font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 transition-colors"
+      >
+        {busy ? "..." : "Yes"}
+      </button>
+      <button
+        onClick={() => setConfirming(false)}
+        disabled={busy}
+        className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent transition-colors"
+      >
+        Cancel
+      </button>
+    </div>
   );
 }

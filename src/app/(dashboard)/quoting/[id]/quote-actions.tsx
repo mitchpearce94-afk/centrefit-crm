@@ -4,7 +4,7 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
-import { generateScopeOfWorks } from "@/lib/quote-engine";
+import { generateScopeOfWorks, renderScopeAsHtml } from "@/lib/quote-engine";
 import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 import type { SiteInfo, ScopeOverrides } from "@/lib/quote-engine";
 import { ScopeEditor } from "./scope-editor";
@@ -27,6 +27,8 @@ interface Props {
   createdAt: string;
   siteInfo: SiteInfo;
   scopeOverrides: ScopeOverrides | null;
+  productScopeRoles: { id: string; scope_role: string }[];
+  roleDescriptions: Record<string, string>;
   contactEmail: string | null;
   jobId: string | null;
   jobs?: { id: string; number: string; customer_name: string | null }[];
@@ -35,7 +37,7 @@ interface Props {
 export function QuoteActions({
   quoteId, status, quoteRef, clientName, siteName, siteAddress,
   quoteType, pricing, deviceCounts, lineItems, createdAt,
-  siteInfo, scopeOverrides, contactEmail, jobId, jobs = [],
+  siteInfo, scopeOverrides, productScopeRoles, roleDescriptions, contactEmail, jobId, jobs = [],
 }: Props) {
   const router = useRouter();
   const supabase = createClient();
@@ -61,14 +63,6 @@ export function QuoteActions({
       toast(`Quote marked as ${newStatus}`);
       router.refresh();
     }
-    setUpdating(false);
-  }
-
-  async function markPayment(field: "pp1_paid" | "pp2_paid") {
-    setUpdating(true);
-    const { error } = await supabase.from("quotes").update({ [field]: true, [`${field}_at`]: new Date().toISOString() }).eq("id", quoteId);
-    if (error) toast(error.message, "error");
-    else { toast("Payment recorded"); router.refresh(); }
     setUpdating(false);
   }
 
@@ -121,7 +115,8 @@ export function QuoteActions({
   }
 
   const isProgress = quoteType === "progress";
-  const scope = generateScopeOfWorks(deviceCounts, siteInfo, scopeOverrides ?? undefined);
+  const scopeBom = lineItems.map((li: any) => ({ product_id: li.product_id ?? null, quantity: Number(li.quantity) || 0 }));
+  const scope = generateScopeOfWorks(scopeBom, productScopeRoles, siteInfo, scopeOverrides ?? undefined, roleDescriptions);
   const hasScopeOverrides = !!scopeOverrides;
 
   function openBOMWindow(mode: "warehouse" | "supplier") {
@@ -283,14 +278,6 @@ export function QuoteActions({
           </>
         )}
 
-        {/* Payment tracking */}
-        {status === "accepted" && (
-          <>
-            <button onClick={() => markPayment("pp1_paid")} disabled={updating} className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-50 transition-colors">Record PP1</button>
-            <button onClick={() => markPayment("pp2_paid")} disabled={updating} className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-50 transition-colors">Record PP2</button>
-          </>
-        )}
-
         {/* Revert to Draft — for sent/declined/accepted */}
         {(status === "sent" || status === "declined" || status === "accepted") && (
           <button onClick={revertToDraft} disabled={updating} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 transition-colors">Revert to Draft</button>
@@ -427,51 +414,8 @@ export function QuoteActions({
               {/* Content area */}
               <div style={{ padding: "32px 48px" }}>
 
-                {/* ── SCOPE OF WORKS ── */}
-                <div style={{ marginBottom: "32px" }}>
-                  <p style={{ fontSize: "14px", textTransform: "uppercase", letterSpacing: "1.5px", color: "#0f172a", fontWeight: 700, margin: "0 0 20px", borderBottom: "2px solid #0f172a", paddingBottom: "8px" }}>Scope of Works</p>
-
-                  {scope.sections.map((section) => {
-                    const visible = section.items.filter((i) => i.included && i.text.trim());
-                    if (visible.length === 0) return null;
-                    return (
-                      <div key={section.id} className="scope-section" style={{ marginBottom: "24px" }}>
-                        <p style={{ fontSize: "12px", fontWeight: 700, color: "#334155", textTransform: "uppercase", letterSpacing: "1px", margin: "0 0 12px", paddingBottom: "4px", borderBottom: "1px solid #e2e8f0" }}>{section.heading}</p>
-                        {visible.map((item) => {
-                          const isExclusion = item.id === "electrical_exclusion";
-                          return (
-                            <p key={item.id} style={{
-                              fontSize: "12px",
-                              color: isExclusion ? "#dc2626" : "#475569",
-                              fontWeight: isExclusion ? 700 : 400,
-                              margin: "0 0 8px",
-                              paddingLeft: isExclusion ? 0 : "12px",
-                              borderLeft: isExclusion ? "none" : "2px solid #e2e8f0",
-                              lineHeight: "1.6",
-                            }}>
-                              {item.text}
-                            </p>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-
-                  {/* Please Note items */}
-                  {(() => {
-                    const visibleNotes = scope.notes.filter((n) => n.included && n.text.trim());
-                    if (visibleNotes.length === 0) return null;
-                    return (
-                      <div className="notes-block" style={{ marginTop: "16px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "16px 20px" }}>
-                        {visibleNotes.map((note, i) => (
-                          <p key={note.id} style={{ fontSize: "11px", color: "#92400e", margin: i === 0 ? 0 : "6px 0 0", lineHeight: "1.5" }}>
-                            <strong>PLEASE NOTE:</strong>&nbsp;&nbsp;{note.text}
-                          </p>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </div>
+                {/* ── SCOPE OF WORKS — system-card layout ── */}
+                <div style={{ marginBottom: "32px" }} dangerouslySetInnerHTML={{ __html: renderScopeAsHtml(scope) }} />
 
                 {/* ── PRICING ── */}
                 <div className="pricing-block" style={{ marginBottom: "32px" }}>
@@ -517,27 +461,11 @@ export function QuoteActions({
                   </div>
                 )}
 
-                {/* Terms */}
-                <div className="terms-block" style={{ marginBottom: "32px" }}>
-                  <p style={{ fontSize: "12px", textTransform: "uppercase", letterSpacing: "1.5px", color: "#64748b", fontWeight: 700, margin: "0 0 12px", borderBottom: "2px solid #e2e8f0", paddingBottom: "8px" }}>Terms & Conditions</p>
-                  <div style={{ fontSize: "11px", color: "#64748b", lineHeight: "1.7" }}>
-                    <p style={{ margin: "0 0 6px" }}>This quotation is valid for 30 days from the date of issue.</p>
-                    <p style={{ margin: "0 0 6px" }}>Any and all electrical works are not included in this quotation.</p>
-                    <p style={{ margin: "0 0 6px" }}>The fitting of electronic door strikes is not included and will be invoiced directly by the locksmith.</p>
-                    <p style={{ margin: "0 0 6px" }}>Monthly security monitoring fees of $55.00 ex GST applies to this service (Direct Debit).</p>
-                    <p style={{ margin: "0 0 6px" }}>Annual mobile app subscription of $133.50 ex GST applies (Direct Debit).</p>
-                    <p style={{ margin: "0 0 6px" }}>Full training for all facility staff is included.</p>
-                  </div>
-                </div>
-
-                {/* Standards */}
-                <div className="standards-block" style={{ marginBottom: "24px" }}>
-                  <p style={{ fontSize: "12px", textTransform: "uppercase", letterSpacing: "1.5px", color: "#64748b", fontWeight: 700, margin: "0 0 12px", borderBottom: "2px solid #e2e8f0", paddingBottom: "8px" }}>Standards and Codes of Practice</p>
-                  <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: "1.7" }}>
-                    {scope.standards.map((std, i) => (
-                      <p key={i} style={{ margin: "0 0 3px" }}>{std}</p>
-                    ))}
-                  </div>
+                {/* Validity note — concise, since exclusions/standards/ongoing-costs are inside the scope above */}
+                <div className="terms-block" style={{ marginBottom: "16px" }}>
+                  <p style={{ fontSize: "11px", color: "#94a3b8", textAlign: "center", margin: 0 }}>
+                    This quotation is valid for 30 days from the date of issue.
+                  </p>
                 </div>
               </div>
 
@@ -559,9 +487,11 @@ export function QuoteActions({
         <ScopeEditor
           quoteId={quoteId}
           status={status}
-          deviceCounts={deviceCounts}
+          bom={scopeBom}
+          productScopeRoles={productScopeRoles}
           siteInfo={siteInfo}
           initialOverrides={scopeOverrides}
+          roleDescriptions={roleDescriptions}
           onClose={() => setShowScopeEditor(false)}
         />
       )}

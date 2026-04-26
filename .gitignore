@@ -37,6 +37,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# tooling
+/.claude-flow/
+
+# stray screenshots at repo root
+/*.png
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

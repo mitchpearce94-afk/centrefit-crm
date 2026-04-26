@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
@@ -18,6 +19,7 @@ interface Product {
   markup: number;
   sell_price: number;
   device_type: string | null;
+  scope_role: string | null;
   is_default: boolean;
   is_active: boolean;
 }
@@ -27,9 +29,14 @@ interface Supplier {
   name: string;
 }
 
+interface ScopeRoleOption {
+  slug: string;
+  label: string;
+}
+
 const inputClass = "block w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
 
-export function ProductCatalog({ products, suppliers }: { products: Product[]; suppliers: Supplier[] }) {
+export function ProductCatalog({ products, suppliers, scopeRoles }: { products: Product[]; suppliers: Supplier[]; scopeRoles: ScopeRoleOption[] }) {
   const router = useRouter();
   const supabase = createClient();
   const { toast } = useToast();
@@ -199,6 +206,7 @@ export function ProductCatalog({ products, suppliers }: { products: Product[]; s
               <AddProductForm
                 category={category}
                 suppliers={suppliers}
+                scopeRoles={scopeRoles}
                 onSaved={() => { setAddingToCategory(null); router.refresh(); }}
                 onCancel={() => setAddingToCategory(null)}
               />
@@ -222,13 +230,19 @@ export function ProductCatalog({ products, suppliers }: { products: Product[]; s
                   </thead>
                   <tbody>
                     {items.map((p) => (
-                      editingId === p.id ? (
-                        <EditProductRow key={p.id} product={p} suppliers={suppliers} onSave={updateProduct} onCancel={() => setEditingId(null)} />
-                      ) : (
                         <tr key={p.id} className={`border-b border-border last:border-0 ${!p.is_active ? "opacity-40" : ""}`}>
                           <td className="px-3 py-2">
                             <span className="text-sm">{p.name}</span>
                             {p.device_type && <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{p.device_type}</span>}
+                            {p.scope_role ? (
+                              <span className="ml-1.5 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400" title="Scope role">
+                                {scopeRoles.find(r => r.slug === p.scope_role)?.label ?? p.scope_role}
+                              </span>
+                            ) : (
+                              <span className="ml-1.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400" title="Untagged — will land in Miscellaneous on quotes">
+                                Untagged
+                              </span>
+                            )}
                           </td>
                           <td className="px-3 py-2 text-xs text-muted-foreground font-mono hidden md:table-cell">{p.sku || "—"}</td>
                           <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">{p.supplier}</td>
@@ -246,7 +260,6 @@ export function ProductCatalog({ products, suppliers }: { products: Product[]; s
                             </button>
                           </td>
                         </tr>
-                      )
                     ))}
                   </tbody>
                 </table>
@@ -255,14 +268,31 @@ export function ProductCatalog({ products, suppliers }: { products: Product[]; s
           </div>
         );
       })}
+
+      {/* Edit modal — rendered once at the catalog level, opens for the
+          currently-edited product. */}
+      {editingId && (() => {
+        const product = products.find((p) => p.id === editingId);
+        if (!product) return null;
+        return (
+          <EditProductModal
+            product={product}
+            suppliers={suppliers}
+            scopeRoles={scopeRoles}
+            onSave={updateProduct}
+            onCancel={() => setEditingId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
 
 /* ── Add Product Form ── */
-function AddProductForm({ category, suppliers, onSaved, onCancel }: {
+function AddProductForm({ category, suppliers, scopeRoles, onSaved, onCancel }: {
   category: string;
   suppliers: { id: string; name: string }[];
+  scopeRoles: ScopeRoleOption[];
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -276,6 +306,7 @@ function AddProductForm({ category, suppliers, onSaved, onCancel }: {
   const [costPrice, setCostPrice] = useState("");
   const [markup, setMarkup] = useState("0.50");
   const [deviceType, setDeviceType] = useState("");
+  const [scopeRole, setScopeRole] = useState("");
   const [isDefault, setIsDefault] = useState(false);
 
   const categoryDevices = DEVICE_TYPES.filter(d => d.category === category);
@@ -295,6 +326,7 @@ function AddProductForm({ category, suppliers, onSaved, onCancel }: {
       cost_price: parseFloat(costPrice),
       markup: parseFloat(markup),
       device_type: deviceType || null,
+      scope_role: scopeRole || null,
       is_default: isDefault,
       is_active: true,
     });
@@ -344,6 +376,13 @@ function AddProductForm({ category, suppliers, onSaved, onCancel }: {
             </select>
           </div>
         )}
+        <div className="col-span-2">
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Scope Role <span className="font-normal text-muted-foreground/60">(drives where this product appears in the SoW)</span></label>
+          <select value={scopeRole} onChange={(e) => setScopeRole(e.target.value)} className={inputClass}>
+            <option value="">(untagged)</option>
+            {scopeRoles.map(r => <option key={r.slug} value={r.slug}>{r.label}</option>)}
+          </select>
+        </div>
         <div className="flex items-end pb-2">
           <label className="flex items-center gap-2 text-xs cursor-pointer">
             <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} className="rounded border-border" />
@@ -361,10 +400,11 @@ function AddProductForm({ category, suppliers, onSaved, onCancel }: {
   );
 }
 
-/* ── Edit Product Row ── */
-function EditProductRow({ product, suppliers, onSave, onCancel }: {
+/* ── Edit Product Modal ── */
+function EditProductModal({ product, suppliers, scopeRoles, onSave, onCancel }: {
   product: Product;
   suppliers: { id: string; name: string }[];
+  scopeRoles: ScopeRoleOption[];
   onSave: (id: string, updates: Partial<Product>) => void;
   onCancel: () => void;
 }) {
@@ -374,11 +414,35 @@ function EditProductRow({ product, suppliers, onSave, onCancel }: {
   const [costPrice, setCostPrice] = useState(product.cost_price.toString());
   const [markup, setMarkup] = useState(product.markup.toString());
   const [deviceType, setDeviceType] = useState(product.device_type || "");
+  const [scopeRole, setScopeRole] = useState(product.scope_role || "");
   const [isDefault, setIsDefault] = useState(product.is_default);
 
   const categoryDevices = DEVICE_TYPES.filter(d => d.category === product.category);
+  const sellPreview = (parseFloat(costPrice || "0") * (1 + parseFloat(markup || "0.5"))).toFixed(2);
 
-  function handleSave() {
+  // Track whether we're on the client so createPortal doesn't run during SSR.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
+  // Lock body scroll while the modal is open.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  // Esc to close.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onCancel();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || !costPrice) return;
     const selectedSupplier = suppliers.find(s => s.id === supplierId);
     onSave(product.id, {
       name: name.trim(),
@@ -388,45 +452,132 @@ function EditProductRow({ product, suppliers, onSave, onCancel }: {
       cost_price: parseFloat(costPrice),
       markup: parseFloat(markup),
       device_type: deviceType || null,
+      scope_role: scopeRole || null,
       is_default: isDefault,
     } as any);
   }
 
-  return (
-    <tr className="border-b border-border bg-primary/5">
-      <td className="px-2 py-2">
-        <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputClass} text-xs`} />
-      </td>
-      <td className="px-2 py-2 hidden md:table-cell">
-        <input value={sku} onChange={(e) => setSku(e.target.value)} className={`${inputClass} text-xs`} />
-      </td>
-      <td className="px-2 py-2 hidden lg:table-cell">
-        <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className={`${inputClass} text-xs`}>
-          <option value="">Select...</option>
-          {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-      </td>
-      <td className="px-2 py-2">
-        <input type="number" step="0.01" value={costPrice} onChange={(e) => setCostPrice(e.target.value)} className={`${inputClass} text-xs w-20 text-right`} />
-      </td>
-      <td className="px-2 py-2">
-        <select value={markup} onChange={(e) => setMarkup(e.target.value)} className={`${inputClass} text-xs w-20`}>
-          <option value="0.25">25%</option>
-          <option value="0.50">50%</option>
-          <option value="0.75">75%</option>
-          <option value="1.00">100%</option>
-        </select>
-      </td>
-      <td className="px-2 py-2 text-right text-xs font-mono text-muted-foreground">
-        ${(parseFloat(costPrice || "0") * (1 + parseFloat(markup || "0.5"))).toFixed(2)}
-      </td>
-      <td className="px-2 py-2 text-center hidden sm:table-cell">
-        <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} className="rounded border-border" />
-      </td>
-      <td className="px-2 py-2 text-right space-x-1">
-        <button onClick={handleSave} className="text-xs text-primary hover:text-primary/80 transition-colors">Save</button>
-        <button onClick={onCancel} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Cancel</button>
-      </td>
-    </tr>
+  if (!mounted) return null;
+
+  const modal = (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+    >
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm pointer-events-none" />
+      <form
+        onSubmit={handleSubmit}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="relative w-full max-w-[640px] max-h-[92vh] overflow-y-auto rounded-xl bg-background border border-border shadow-2xl"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{product.category}</p>
+            <h2 className="text-base font-semibold text-foreground truncate">Edit product</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18" /><path d="M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Name *</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} required className={inputClass} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">SKU</label>
+              <input value={sku} onChange={(e) => setSku(e.target.value)} className={inputClass} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Cost price *</label>
+              <input type="number" step="0.01" value={costPrice} onChange={(e) => setCostPrice(e.target.value)} required className={inputClass} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Markup</label>
+              <select value={markup} onChange={(e) => setMarkup(e.target.value)} className={inputClass}>
+                <option value="0.25">25%</option>
+                <option value="0.50">50%</option>
+                <option value="0.75">75%</option>
+                <option value="1.00">100%</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Sell price</label>
+              <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm font-mono text-foreground">${sellPreview}</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Supplier</label>
+              <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className={inputClass}>
+                <option value="">Select supplier...</option>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            {categoryDevices.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Device type</label>
+                <select value={deviceType} onChange={(e) => setDeviceType(e.target.value)} className={inputClass}>
+                  <option value="">None (ancillary)</option>
+                  {categoryDevices.map(d => <option key={d.code} value={d.code}>{d.legend}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">
+              Scope role
+              <span className="ml-1 font-normal text-muted-foreground/60">— drives where this product appears in the SoW</span>
+            </label>
+            <select value={scopeRole} onChange={(e) => setScopeRole(e.target.value)} className={inputClass}>
+              <option value="">(untagged)</option>
+              {scopeRoles.map(r => <option key={r.slug} value={r.slug}>{r.label}</option>)}
+            </select>
+          </div>
+
+          <label className="flex items-center gap-2 text-xs cursor-pointer pt-1 select-none">
+            <input
+              type="checkbox"
+              checked={isDefault}
+              onChange={(e) => setIsDefault(e.target.checked)}
+              className="rounded border-border accent-primary"
+            />
+            <span>Default product for this device type</span>
+          </label>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4 bg-muted/30">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-border px-4 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="rounded-md bg-primary px-5 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            Save changes
+          </button>
+        </div>
+      </form>
+    </div>
   );
+
+  return createPortal(modal, document.body);
 }

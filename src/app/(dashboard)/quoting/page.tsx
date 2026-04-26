@@ -38,47 +38,48 @@ export default async function QuotingPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Quoting</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Quoting</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {allQuotes.length} total quotes
+            <span className="font-medium text-foreground tabular-nums">{allQuotes.length}</span> total quotes
           </p>
         </div>
         <Link
           href="/quoting/new"
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
         >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
           New Quote
         </Link>
       </div>
 
       {/* Stats bar */}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-xs font-medium text-muted-foreground">Total</p>
-          <p className="mt-1 text-2xl font-bold">{allQuotes.length}</p>
+        <div className="surface-card card-hover p-4">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Total</p>
+          <p className="num-display num-gradient mt-2 text-2xl font-semibold">{allQuotes.length}</p>
         </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-xs font-medium text-muted-foreground">Draft</p>
-          <p className="mt-1 text-2xl font-bold" style={{ color: STATUS_COLOURS.draft }}>{draftCount}</p>
+        <div className="surface-card card-hover p-4">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Draft</p>
+          <p className="num-display mt-2 text-2xl font-semibold" style={{ color: STATUS_COLOURS.draft }}>{draftCount}</p>
         </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-xs font-medium text-muted-foreground">Sent</p>
-          <p className="mt-1 text-2xl font-bold" style={{ color: STATUS_COLOURS.sent }}>{sentCount}</p>
+        <div className="surface-card card-hover p-4">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sent</p>
+          <p className="num-display mt-2 text-2xl font-semibold" style={{ color: STATUS_COLOURS.sent }}>{sentCount}</p>
         </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-xs font-medium text-muted-foreground">Accepted</p>
-          <p className="mt-1 text-2xl font-bold" style={{ color: STATUS_COLOURS.accepted }}>{acceptedCount}</p>
+        <div className="surface-card card-hover p-4">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Accepted</p>
+          <p className="num-display mt-2 text-2xl font-semibold" style={{ color: STATUS_COLOURS.accepted }}>{acceptedCount}</p>
         </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-xs font-medium text-muted-foreground">Expired</p>
-          <p className="mt-1 text-2xl font-bold" style={{ color: STATUS_COLOURS.expired }}>{expiredCount}</p>
+        <div className="surface-card card-hover p-4">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Expired</p>
+          <p className="num-display mt-2 text-2xl font-semibold" style={{ color: STATUS_COLOURS.expired }}>{expiredCount}</p>
         </div>
       </div>
 
       {/* Quotes table */}
-      <div className="mt-4 overflow-hidden rounded-lg border border-border">
+      <div className="mt-4 overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/50">

@@ -14,7 +14,7 @@ import {
   recalcLabour,
   checkMandatoryLabour,
   calculateQuoteSummary,
-  getSnapFitnessRules,
+  generateScopeOfWorks,
 } from "@/lib/quote-engine";
 import type {
   DeviceCounts,
@@ -26,6 +26,7 @@ import type {
   QuoteSummary,
   LabourTimingOverrides,
   ElecOptions,
+  DependencyRule,
 } from "@/lib/quote-engine";
 
 interface CustomerOption {
@@ -58,8 +59,77 @@ interface QuoteProduct {
   markup: number;
   sell_price: number;
   device_type: string | null;
+  scope_role: string | null;
   is_default: boolean;
   is_active: boolean;
+}
+
+interface RuleTemplate {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  is_default: boolean;
+  is_active: boolean;
+  sort_order: number;
+}
+
+interface RuleRow {
+  id: string;
+  template_id: string | null;
+  description: string;
+  is_active: boolean;
+  trigger_code: string | null;
+  trigger_condition: string;
+  trigger_value: number | null;
+  trigger_min: number | null;
+  trigger_max: number | null;
+  trigger_site_field: string | null;
+  trigger_site_value: number | null;
+  trigger_site_op: string | null;
+  quantity_mode: string;
+  quantity_value: number | null;
+  quantity_site_field: string | null;
+  quantity_multiplier: number | null;
+  quantity_divisor: number | null;
+  quantity_formula: string | null;
+  quantity_custom_key: string | null;
+  auto_add_product_id: string | null;
+  sort_order: number;
+}
+
+function rulesForTemplate(allRules: RuleRow[], templateId: string | null, products: Product[]): DependencyRule[] {
+  if (!templateId) return [];
+  return allRules
+    .filter((r) => r.template_id === templateId && r.is_active && r.auto_add_product_id)
+    .map<DependencyRule>((r) => {
+      const product = products.find((p) => p.id === r.auto_add_product_id);
+      return {
+        id: r.id,
+        preset: "",
+        description: r.description,
+        is_active: r.is_active,
+        trigger_code: r.trigger_code,
+        trigger_condition: r.trigger_condition,
+        trigger_value: r.trigger_value ?? undefined,
+        trigger_min: r.trigger_min ?? undefined,
+        trigger_max: r.trigger_max ?? undefined,
+        trigger_site_field: r.trigger_site_field ?? undefined,
+        trigger_site_value: r.trigger_site_value ?? undefined,
+        trigger_site_op: r.trigger_site_op ?? undefined,
+        quantity_mode: r.quantity_mode,
+        quantity_value: r.quantity_value ?? undefined,
+        quantity_site_field: r.quantity_site_field ?? undefined,
+        quantity_multiplier: r.quantity_multiplier ?? undefined,
+        quantity_divisor: r.quantity_divisor ?? undefined,
+        quantity_formula: r.quantity_formula ?? undefined,
+        quantity_custom_key: r.quantity_custom_key ?? undefined,
+        auto_add_product_id: r.auto_add_product_id ?? undefined,
+        auto_add_product_sku: product?.sku ?? null,
+        auto_add_product_name: product?.name ?? null,
+        sort_order: r.sort_order,
+      };
+    });
 }
 
 const STEPS = ["Client", "Devices", "BOM", "Labour", "Extras", "Summary"];
@@ -96,6 +166,7 @@ interface ExistingQuote {
   siteName: string;
   siteAddress: string;
   quoteType: string;
+  templateId: string | null;
   siteInfo: SiteInfo;
   deviceCounts: DeviceCounts;
   labourData: LabourData | null;
@@ -115,6 +186,8 @@ export function QuoteWizard({
   billingSettings,
   jobs = [],
   labourTimings = {},
+  templates = [],
+  allRules = [],
 }: {
   customers: CustomerOption[];
   products: QuoteProduct[];
@@ -123,6 +196,8 @@ export function QuoteWizard({
   billingSettings?: any;
   jobs?: { id: string; number: string; customer_name: string | null }[];
   labourTimings?: LabourTimingOverrides;
+  templates?: RuleTemplate[];
+  allRules?: RuleRow[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -140,6 +215,14 @@ export function QuoteWizard({
 
   // Job linking
   const [linkedJobId, setLinkedJobId] = useState(existingQuote?.jobId || searchParams.get("job") || "");
+
+  // Template selection — must be picked before BOM is generated
+  const defaultTemplateId =
+    existingQuote?.templateId ??
+    templates.find((t) => t.is_default)?.id ??
+    templates[0]?.id ??
+    null;
+  const [templateId, setTemplateId] = useState<string | null>(defaultTemplateId);
 
   // Step 1: Client
   const [customerId, setCustomerId] = useState(existingQuote?.customerId || "");
@@ -601,7 +684,7 @@ export function QuoteWizard({
   function enterStep(newStep: number) {
     if (quoteMode === "plan") {
       if (newStep === 2 && !bomGenerated) {
-        const rules = getSnapFitnessRules(products);
+        const rules = rulesForTemplate(allRules, templateId, products);
         setBomItems(generateBOM(deviceCounts, products, rules, siteInfo));
         setBomGenerated(true);
       }
@@ -618,7 +701,7 @@ export function QuoteWizard({
   }
 
   function regenerateBOM() {
-    const rules = getSnapFitnessRules(products);
+    const rules = rulesForTemplate(allRules, templateId, products);
     setBomItems(generateBOM(deviceCounts, products, rules, siteInfo));
     setBomGenerated(true);
   }
@@ -818,6 +901,7 @@ export function QuoteWizard({
       elec_doing_rough_in: elecDoingRoughIn,
       elec_doing_fit_off: elecDoingFitOff,
       quote_type: quoteType,
+      template_id: quoteMode === "manual" ? null : templateId,
       pricing_snapshot: {
         ...summary,
         ...(quoteMode === "manual" ? { scope_of_works: manualScope, quote_mode: "manual" } : { quote_mode: "plan" }),
@@ -1028,6 +1112,7 @@ export function QuoteWizard({
       return [...prev, newItem];
     });
     setBomAddSearch("");
+    setBomAddCategory(null);
   }
 
   function addCustomToBom(category: string) {
@@ -1108,6 +1193,47 @@ export function QuoteWizard({
             </div>
           </div>
 
+          {/* Template selection — applies the chosen ruleset to this quote's BOM. Plan mode only. */}
+          {quoteMode === "plan" && templates.length > 0 && (() => {
+            const activeTpl = templates.find((t) => t.id === templateId);
+            const ruleCount = templateId
+              ? allRules.filter((r) => r.template_id === templateId && r.is_active).length
+              : 0;
+            return (
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Rule template
+                  <span className="ml-1 text-muted-foreground/60">— which ruleset builds the BOM for this quote</span>
+                </label>
+                <select
+                  value={templateId ?? ""}
+                  onChange={(e) => {
+                    const newId = e.target.value || null;
+                    if (bomGenerated && newId !== templateId) {
+                      if (!confirm("Changing the template will regenerate the BOM next time you enter the BOM step. Custom edits to BOM lines may be lost. Continue?")) return;
+                      setBomGenerated(false);
+                      setBomItems([]);
+                    }
+                    setTemplateId(newId);
+                  }}
+                  className={inputClass}
+                >
+                  {templates.map((tpl) => (
+                    <option key={tpl.id} value={tpl.id}>
+                      {tpl.name}{tpl.is_default ? " (default)" : ""}
+                    </option>
+                  ))}
+                </select>
+                {activeTpl && (
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    {activeTpl.description ? `${activeTpl.description} · ` : ""}
+                    <span className="font-mono tabular-nums">{ruleCount}</span> active rule{ruleCount === 1 ? "" : "s"}
+                  </p>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Plan Selection — plan mode only */}
           {quoteMode === "plan" && (
           <div>
@@ -1145,20 +1271,6 @@ export function QuoteWizard({
               </div>
             )}
           </div>
-          )}
-
-          {/* Manual Scope of Works — manual mode only */}
-          {quoteMode === "manual" && (
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Scope of Works</label>
-              <textarea
-                value={manualScope}
-                onChange={(e) => setManualScope(e.target.value)}
-                rows={5}
-                placeholder="Describe the scope of works for this quote..."
-                className={inputClass}
-              />
-            </div>
           )}
 
           {/* Link to Job */}
@@ -1782,6 +1894,150 @@ export function QuoteWizard({
               })}
             </>
           )}
+
+          {/* Untagged-product warning — banner when any BOM line has a product
+              with no scope_role assigned. They'll still appear in the SoW
+              (under Miscellaneous) but tagging them puts them in the right
+              system block with proper wording. */}
+          {(() => {
+            const lineItems = quoteMode === "manual" ? manualBomItems : bomItems;
+            const productLookup = new Map(rawProducts.map((p) => [p.id, p]));
+            const untagged: { name: string; sku: string }[] = [];
+            const seen = new Set<string>();
+            for (const it of lineItems) {
+              const pid = (it as any).product_id;
+              if (!pid || seen.has(pid)) continue;
+              const product = productLookup.get(pid);
+              if (!product) continue;
+              if (!product.scope_role) {
+                seen.add(pid);
+                untagged.push({ name: product.name, sku: product.sku ?? "" });
+              }
+            }
+            if (untagged.length === 0) return null;
+            return (
+              <div className="mt-6 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
+                <div className="flex items-start gap-3">
+                  <svg className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-amber-300 uppercase tracking-wider">
+                      {untagged.length} untagged {untagged.length === 1 ? "product" : "products"} on this BOM
+                    </p>
+                    <p className="text-[11px] text-amber-200/90 mt-1 leading-relaxed">
+                      These products don't have a scope role and will land in the <strong>Additional items</strong> block on the scope of works. Tag them in <a href="/settings/products" target="_blank" rel="noopener noreferrer" className="underline hover:text-amber-100">Settings → Products</a> so they appear in the right system block.
+                    </p>
+                    <ul className="mt-2 space-y-0.5 text-[11px] text-amber-200/80">
+                      {untagged.slice(0, 8).map((u, i) => (
+                        <li key={i} className="font-mono">• {u.name}{u.sku ? ` (${u.sku})` : ""}</li>
+                      ))}
+                      {untagged.length > 8 && (
+                        <li className="text-amber-200/60 italic">…and {untagged.length - 8} more</li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Scope of Works preview — auto-generated from BOM */}
+          <details className="mt-6 rounded-lg border border-border bg-card overflow-hidden group">
+            <summary className="flex items-center justify-between bg-muted/40 px-4 py-2.5 cursor-pointer list-none select-none hover:bg-muted/60 transition-colors">
+              <div className="flex items-center gap-2">
+                <svg className="h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Scope of Works Preview</h3>
+                <span className="text-[10px] text-muted-foreground/70">— auto-generated from this quote's BOM</span>
+              </div>
+            </summary>
+            <div className="p-4">
+              {(() => {
+                const scopeBom = (quoteMode === "manual" ? manualBomItems : bomItems).map((it: any) => ({
+                  product_id: it.product_id ?? null,
+                  quantity: Number(it.quantity) || 0,
+                }));
+                const scopeProducts = rawProducts.map((p) => ({ id: p.id, scope_role: p.scope_role ?? null, name: p.name, sku: p.sku }));
+                const scope = generateScopeOfWorks(scopeBom, scopeProducts, siteInfo);
+                if (scope.systems.length === 0) {
+                  return <p className="text-xs text-muted-foreground italic">Add items to the BOM to see the scope of works.</p>;
+                }
+                return (
+                  <div className="space-y-3 text-xs">
+                    {/* Summary lead */}
+                    {scope.summary.lead && (
+                      <p className="text-[11px] text-foreground/80 leading-relaxed">{scope.summary.lead}</p>
+                    )}
+
+                    {/* System cards */}
+                    {scope.systems.map((sys) => (
+                      <div key={sys.id} className="rounded-md border border-border bg-background overflow-hidden">
+                        <div className="flex items-center justify-between gap-2 bg-muted/40 px-3 py-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-foreground text-[10px] font-bold text-background">{sys.iconLabel}</span>
+                            <span className="text-[12px] font-semibold text-foreground">{sys.name}</span>
+                          </div>
+                          {sys.countSummary && (
+                            <span className="text-[10px] font-mono text-muted-foreground">{sys.countSummary}</span>
+                          )}
+                        </div>
+                        <div className="px-3 py-2">
+                          {sys.lead && <p className="text-[11px] text-foreground/80 mb-1.5 leading-relaxed">{sys.lead}</p>}
+                          <ul className="space-y-1">
+                            {sys.items.map((it, i) => (
+                              <li key={i} className="text-[11px] text-muted-foreground leading-relaxed pl-3 relative">
+                                <span className="absolute left-0 top-2 h-1 w-1 rounded-full bg-emerald-500" />
+                                <span dangerouslySetInnerHTML={{ __html: it }} />
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* By Others */}
+                    {scope.byOthers.map((blk) => (
+                      <div key={blk.id} className="rounded-md border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+                        <div className="px-3 py-1.5 bg-amber-500/10">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-300">{blk.name}</span>
+                        </div>
+                        <ul className="px-3 py-2 space-y-1">
+                          {blk.items.map((it, i) => (
+                            <li key={i} className="text-[11px] text-amber-200/90 leading-relaxed pl-3 relative">
+                              <span className="absolute left-0 top-2 h-1 w-1 rounded-full bg-amber-500" />
+                              <span dangerouslySetInnerHTML={{ __html: it }} />
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+
+                    {/* Hard exclusion */}
+                    {scope.hardExclusion && (
+                      <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-1.5 text-center text-[11px] font-semibold text-destructive">
+                        {scope.hardExclusion}
+                      </div>
+                    )}
+
+                    {/* Ongoing costs */}
+                    {scope.ongoingCosts.length > 0 && (
+                      <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Ongoing Costs</p>
+                        {scope.ongoingCosts.map((c, i) => (
+                          <div key={c.id} className={`flex justify-between gap-3 py-0.5 text-[11px] ${i < scope.ongoingCosts.length - 1 ? "border-b border-dashed border-border" : ""}`}>
+                            <span className="text-muted-foreground">{c.desc}</span>
+                            <span className="font-mono text-foreground">{c.price}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          </details>
         </div>
       )}
 

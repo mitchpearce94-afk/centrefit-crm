@@ -3,8 +3,6 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { StatusTransition } from "./status-transition";
 import { JobTabs } from "./job-tabs";
-import { JobInvoices } from "./job-invoices";
-import { JobProcurement } from "./job-procurement";
 
 export default async function JobDetailPage({
   params,
@@ -71,7 +69,7 @@ export default async function JobDetailPage({
         .order("created_at", { ascending: true }),
       supabase
         .from("quotes")
-        .select("id, ref, status")
+        .select("id, ref, status, quote_type, pricing_snapshot")
         .eq("job_id", id),
       supabase
         .from("billing_settings")
@@ -167,37 +165,12 @@ export default async function JobDetailPage({
           hasOpenTimer={hasOpenTimer}
           openTimerId={(timeResult.data ?? []).find((t: any) => !t.end_time)?.id}
           scheduleEntries={scheduleResult.data ?? []}
-        />
-      </div>
-
-      {/* ── Invoices linked to this job ── */}
-      <JobInvoices
-        jobId={id}
-        customerId={(job as any).customer_id ?? null}
-        jobDescription={(job as any).description ?? null}
-        jobNumber={(job as any).number ?? null}
-        invoices={(invoicesResult.data ?? []) as any[]}
-        linkedQuotes={(linkedQuotesResult.data ?? []) as any[]}
-        checklistItems={(checklistResult.data ?? []) as any[]}
-        workEntries={(workResult.data ?? []) as any[]}
-        productPrices={productPrices}
-        billingSettings={billingSettings}
-      />
-
-      {/* ── Procurement / stock ordering ── */}
-      <div className="mt-4">
-        <div className="mb-2 flex justify-end">
-          <Link
-            href={`/procurement/${id}`}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            Open in Procurement →
-          </Link>
-        </div>
-        <JobProcurement
-          jobId={id}
-          items={(procurementResult.data ?? []) as any[]}
+          invoices={(invoicesResult.data ?? []) as any[]}
+          linkedQuotes={(linkedQuotesResult.data ?? []) as any[]}
+          procurementItems={(procurementResult.data ?? []) as any[]}
           suppliers={(suppliersResult.data ?? []) as any[]}
+          productPrices={productPrices}
+          billingSettings={billingSettings}
         />
       </div>
     </div>

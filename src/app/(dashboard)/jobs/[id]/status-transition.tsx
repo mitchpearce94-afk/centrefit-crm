@@ -51,13 +51,27 @@ export function StatusTransition({
     if (error) {
       toast(error.message, "error");
     } else {
-      // Add system note for status change
       const newStatus = allStatuses.find((s) => s.id === newStatusId);
       await supabase.from("job_notes").insert({
         job_id: jobId,
         content: `Status changed from "${currentStatus.name}" to "${newStatus?.name}"`,
         type: "system",
       });
+
+      if (newStatus?.name === "Ready to Invoice") {
+        try {
+          const res = await fetch(`/api/jobs/${jobId}/auto-pp2`, { method: "POST" });
+          const data = await res.json();
+          if (data?.created?.length) {
+            toast(`PP2 invoice generated: ${data.created[0].xeroInvoiceNumber ?? "draft"}`);
+          } else if (data?.errors?.length) {
+            toast(`PP2 auto-create failed: ${data.errors[0].message}`, "error");
+          }
+        } catch (err: unknown) {
+          toast(err instanceof Error ? err.message : "PP2 auto-create failed", "error");
+        }
+      }
+
       router.refresh();
     }
     setUpdating(false);

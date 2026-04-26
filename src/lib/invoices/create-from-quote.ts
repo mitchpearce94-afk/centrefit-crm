@@ -73,6 +73,17 @@ export async function createInvoiceFromAcceptedQuote(
     separate_studio_zone: quote.separate_studio_zone ?? false,
   };
 
+  // BOM + product scope_roles for the scope-of-works generator
+  const [{ data: scopeBomRows }, { data: scopeProductRows }] = await Promise.all([
+    supabase.from("quote_line_items").select("product_id, quantity").eq("quote_id", quoteId),
+    supabase.from("quote_products").select("id, scope_role, name, sku"),
+  ]);
+  const scopeBom = (scopeBomRows ?? []).map((r) => ({
+    product_id: r.product_id ?? null,
+    quantity: Number(r.quantity) || 0,
+  }));
+  const scopeProducts = (scopeProductRows ?? []) as Array<{ id: string; scope_role: string }>;
+
   let headerDescription: string;
   let lineItems: XeroLineItemInput[];
   let subtotal: number;
@@ -81,7 +92,8 @@ export async function createInvoiceFromAcceptedQuote(
     const amount = Number(pricing.totalExGST ?? 0);
     if (amount <= 0) throw new Error("Quote has no billable total");
     const description = formatScopeDescription(
-      quote.device_counts ?? {},
+      scopeBom,
+      scopeProducts,
       siteInfo,
       quote.scope_overrides ?? null,
       `CentreFit Installation — Quote ${quote.ref}`,
@@ -94,7 +106,8 @@ export async function createInvoiceFromAcceptedQuote(
     if (amount <= 0) throw new Error("No PP1 amount in the quote pricing snapshot");
     const header = `Progress Payment 1 — On Acceptance (Quote ${quote.ref})`;
     const description = formatScopeDescription(
-      quote.device_counts ?? {},
+      scopeBom,
+      scopeProducts,
       siteInfo,
       quote.scope_overrides ?? null,
       header,
@@ -153,7 +166,9 @@ export async function createInvoiceFromAcceptedQuote(
           ? "paid"
           : xeroResult.status.toLowerCase() === "voided"
             ? "void"
-            : "authorised",
+            : xeroResult.status.toLowerCase() === "draft"
+              ? "draft"
+              : "authorised",
       xero_invoice_id: xeroResult.invoiceID,
       xero_invoice_number: xeroResult.invoiceNumber,
       xero_online_url: xeroResult.onlineInvoiceUrl,

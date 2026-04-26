@@ -197,18 +197,12 @@ export function QuoteInvoices({ quoteId, quoteStatus, quoteType, pricing, invoic
     } else if (isAccepted) {
       const amount = Number(pricing?.pp2?.total ?? 0);
       slots.push(
-        <div key="pp2-btn" className="rounded-lg border border-dashed border-border bg-muted/20 p-4 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-foreground">PP2 — On Completion</p>
-            <p className="text-xs text-muted-foreground mt-0.5">${fmt(amount)} ex GST / ${fmt(amount * 1.1)} inc GST</p>
-          </div>
-          <button
-            onClick={() => handleGenerate("progress_pp2")}
-            disabled={busy === "progress_pp2" || amount <= 0}
-            className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 transition-colors"
-          >
-            {busy === "progress_pp2" ? "Generating…" : "Generate PP2 Invoice"}
-          </button>
+        <div key="pp2-pending" className="rounded-lg border border-dashed border-border bg-muted/20 p-4">
+          <p className="text-sm font-medium text-foreground">PP2 — On Completion</p>
+          <p className="text-xs text-muted-foreground mt-0.5">${fmt(amount)} ex GST / ${fmt(amount * 1.1)} inc GST</p>
+          <p className="text-[11px] text-muted-foreground mt-2 italic">
+            Generates automatically when the linked job moves to "Ready to Invoice".
+          </p>
         </div>,
       );
     }

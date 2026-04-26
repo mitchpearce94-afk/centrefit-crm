@@ -22,6 +22,12 @@ interface LinkedQuote {
   id: string;
   ref: string;
   status: string;
+  quote_type?: "full" | "progress" | null;
+  pricing_snapshot?: {
+    totalExGST?: number;
+    pp1?: { total: number };
+    pp2?: { total: number };
+  } | null;
 }
 
 interface ChecklistItem {
@@ -442,6 +448,30 @@ export function JobInvoices({
           </p>
         )}
         {invoices.map(renderInvoiceCard)}
+        {(() => {
+          const progressQuote = linkedQuotes.find((q) => q.quote_type === "progress" && q.status === "accepted");
+          if (!progressQuote) return null;
+          const pp2Exists = invoices.some((i) => i.invoice_type === "progress_pp2" && i.status !== "void");
+          if (pp2Exists) return null;
+          const pp2Amount = Number(progressQuote.pricing_snapshot?.pp2?.total ?? 0);
+          if (pp2Amount <= 0) return null;
+          return (
+            <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="text-sm font-medium text-foreground">PP2 — On Completion</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    ${fmt(pp2Amount)} ex GST / ${fmt(pp2Amount * 1.1)} inc GST
+                  </p>
+                </div>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Pending</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-2 italic">
+                Generates automatically when this job moves to "Ready to Invoice".
+              </p>
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── ADHOC INVOICE MODAL ── */}
