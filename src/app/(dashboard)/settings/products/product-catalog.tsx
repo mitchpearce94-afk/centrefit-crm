@@ -46,6 +46,18 @@ export function ProductCatalog({ products, suppliers, scopeRoles }: { products: 
   const [addingToCategory, setAddingToCategory] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
 
+  // Defensive client-side sort so the picker is always alphabetical
+  // regardless of what the server returns (covers stale builds, new
+  // roles added without a sort_order, etc.)
+  const sortedScopeRoles = useMemo(
+    () => [...scopeRoles].sort((a, b) => a.label.localeCompare(b.label)),
+    [scopeRoles]
+  );
+  const sortedSuppliers = useMemo(
+    () => [...suppliers].sort((a, b) => a.name.localeCompare(b.name)),
+    [suppliers]
+  );
+
   const filtered = useMemo(() => {
     let list = products;
     if (!showInactive) list = list.filter((p) => p.is_active);
@@ -205,8 +217,8 @@ export function ProductCatalog({ products, suppliers, scopeRoles }: { products: 
             {addingToCategory === category && (
               <AddProductForm
                 category={category}
-                suppliers={suppliers}
-                scopeRoles={scopeRoles}
+                suppliers={sortedSuppliers}
+                scopeRoles={sortedScopeRoles}
                 onSaved={() => { setAddingToCategory(null); router.refresh(); }}
                 onCancel={() => setAddingToCategory(null)}
               />
@@ -277,8 +289,8 @@ export function ProductCatalog({ products, suppliers, scopeRoles }: { products: 
         return (
           <EditProductModal
             product={product}
-            suppliers={suppliers}
-            scopeRoles={scopeRoles}
+            suppliers={sortedSuppliers}
+            scopeRoles={sortedScopeRoles}
             onSave={updateProduct}
             onCancel={() => setEditingId(null)}
           />
