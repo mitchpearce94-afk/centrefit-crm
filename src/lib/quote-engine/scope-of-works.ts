@@ -120,7 +120,7 @@ const HANDLED_ROLES = new Set([
   'duress_button', 'duress_pendant', 'duress_intercom', 'rf_receiver',
   'light_siren',
   // Access Control
-  'door_strike', 'rex_button',
+  'door_strike', 'mag_lock', 'rex_button',
   'access_control_system', 'card_reader', 'standalone_keypad',
   // Surveillance
   'camera', 'nvr', 'monitor', 'camera_mount',
@@ -243,6 +243,7 @@ export function generateScopeOfWorks(
   const rfReceivers     = r.count('rf_receiver');
   const sirens          = r.count('light_siren');
   const doorStrikes     = r.count('door_strike');
+  const magLocks        = r.count('mag_lock');
   const rexButtons      = r.count('rex_button');
   const accessControllers = r.count('access_control_system');
   const cardReaders     = r.count('card_reader');
@@ -321,6 +322,7 @@ export function generateScopeOfWorks(
     if (cardReaders > 0)       items.push(roleBullet(roleDescriptions, 'card_reader', cardReaders, `<strong>(${cardReaders}) card ${plural(cardReaders, 'reader')}</strong> — proximity / NFC, integrated with the access controller`));
     if (keypads > 0)           items.push(roleBullet(roleDescriptions, 'standalone_keypad', keypads, `<strong>(${keypads}) standalone PIN ${plural(keypads, 'keypad')}</strong> — code-based door entry`));
     if (doorStrikes > 0)       items.push(roleBullet(roleDescriptions, 'door_strike', doorStrikes, `<strong>(${doorStrikes}) FES20 electric ${plural(doorStrikes, 'striker')}</strong> and door ${plural(doorStrikes, 'loop')}`));
+    if (magLocks > 0)          items.push(roleBullet(roleDescriptions, 'mag_lock', magLocks, `<strong>(${magLocks}) magnetic ${plural(magLocks, 'lock')}</strong> with mounting hardware`));
     if (rexButtons > 0)        items.push(roleBullet(roleDescriptions, 'rex_button', rexButtons, `<strong>(${rexButtons}) REX (request-to-exit) push ${plural(rexButtons, 'button')}</strong>`));
     items.push(`Integration with the alarm panel for app-based door control`);
 
@@ -575,8 +577,11 @@ export function generateScopeOfWorks(
   }
 
   const locksmithItems: string[] = [];
-  if (doorStrikes > 0) {
-    locksmithItems.push('<strong>Fitting of all electronic door strikes</strong> — invoiced directly by the locksmith to the customer');
+  if (doorStrikes > 0 || magLocks > 0) {
+    const parts: string[] = [];
+    if (doorStrikes > 0) parts.push(`electronic door ${plural(doorStrikes, 'strike')}`);
+    if (magLocks > 0) parts.push(`magnetic ${plural(magLocks, 'lock')}`);
+    locksmithItems.push(`<strong>Fitting of all ${parts.join(' and ')}</strong> — invoiced directly by the locksmith to the customer`);
   }
 
   const baseByOthers: ScopeByOthersBlock[] = [];
