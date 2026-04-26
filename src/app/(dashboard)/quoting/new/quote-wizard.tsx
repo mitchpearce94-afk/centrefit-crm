@@ -79,6 +79,7 @@ interface RuleRow {
   template_id: string | null;
   description: string;
   is_active: boolean;
+  is_universal: boolean;
   trigger_code: string | null;
   trigger_condition: string;
   trigger_value: number | null;
@@ -99,9 +100,17 @@ interface RuleRow {
 }
 
 function rulesForTemplate(allRules: RuleRow[], templateId: string | null, products: Product[]): DependencyRule[] {
-  if (!templateId) return [];
+  // Universal rules fire on every quote regardless of template; template-specific
+  // rules only fire when their template matches. A rule with no template is
+  // included as universal even if the flag isn't set, so older rules don't
+  // silently drop out.
   return allRules
-    .filter((r) => r.template_id === templateId && r.is_active && r.auto_add_product_id)
+    .filter((r) => {
+      if (!r.is_active || !r.auto_add_product_id) return false;
+      if (r.is_universal) return true;
+      if (!templateId) return false;
+      return r.template_id === templateId;
+    })
     .map<DependencyRule>((r) => {
       const product = products.find((p) => p.id === r.auto_add_product_id);
       return {
@@ -132,7 +141,7 @@ function rulesForTemplate(allRules: RuleRow[], templateId: string | null, produc
     });
 }
 
-const STEPS = ["Client", "Devices", "BOM", "Labour", "Extras", "Summary"];
+const STEPS = ["Client", "Rules", "BOM", "Labour", "Extras", "Summary"];
 
 const DRAFT_KEY = "centrefit-quote-draft";
 
@@ -1348,78 +1357,105 @@ export function QuoteWizard({
 
       {/* STEP 2: DEVICES */}
       {step === 1 && (
-        <div className="space-y-6">
+        <div className="space-y-6 max-w-3xl">
           {quoteMode === "manual" ? (
-            <>
-              <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
-                <p className="text-sm text-primary">Manual quote — device counts not required. Enter site info for dependency rules if applicable.</p>
-              </div>
-              <h3 className="text-sm font-semibold">Site Info</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-2xl">
-                {([["site_sqm","Site Area (sqm)"],["door_count","Door Count"],["external_camera_count","External Cameras"],["concrete_mount_black","Concrete Mounts (Black)"],["concrete_mount_white","Concrete Mounts (White)"],["cardio_count","Cardio Machines"],["tv_count","Wall TVs"],["ceiling_tv_count","Ceiling TVs"],["wall_tv_mount_count","Wall TV Mounts"],["ceiling_tv_mount_count","Ceiling TV Mounts"]] as [keyof SiteInfo, string][]).map(([field, label]) => (
-                  <div key={field}>
-                    <label className="block text-xs font-medium text-muted-foreground mb-1">{label}</label>
-                    <input type="number" min="0" value={(siteInfo[field] as number) || ""} onChange={(e) => setSI(field, parseInt(e.target.value) || 0)} className={`${inputClass} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`} />
-                  </div>
-                ))}
-              </div>
-              <label className="flex items-center gap-2 text-sm mt-2">
-                <button type="button" onClick={() => setSI("separate_studio_zone", !siteInfo.separate_studio_zone)} className={`relative h-5 w-9 rounded-full transition-colors ${siteInfo.separate_studio_zone ? "bg-primary" : "bg-muted"}`}>
-                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${siteInfo.separate_studio_zone ? "left-[18px]" : "left-0.5"}`} />
-                </button>
-                Separate Studio Zone
-              </label>
-            </>
-          ) : (
-            <>
-              {/* Device count summary */}
-              {Object.values(deviceCounts).some((v) => v > 0) && (
-                <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
-                  <p className="text-xs font-medium text-primary mb-1">
-                    {Object.values(deviceCounts).reduce((a, b) => a + b, 0)} devices selected
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(deviceCounts).filter(([, v]) => v > 0).map(([code, count]) => {
-                      const dt = DEVICE_TYPES.find((d) => d.code === code);
-                      return (
-                        <span key={code} className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                          {count}x {dt?.legend || code}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div className="lg:columns-2 gap-6 space-y-6">
-                {Array.from(devicesByCategory).map(([category, types]) => (
-                  <div key={category} className="rounded-lg border border-border bg-card overflow-hidden break-inside-avoid">
-                    <div className="bg-muted/50 px-4 py-2 border-b border-border">
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{category}</h3>
+            <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+              <p className="text-sm text-primary">Rules don't apply to manual quotes — click Next to continue.</p>
+            </div>
+          ) : (() => {
+            const universalRules = allRules.filter((r) => r.is_universal && r.is_active && r.auto_add_product_id);
+            const templateRules = allRules.filter((r) => !r.is_universal && r.template_id === templateId && r.is_active && r.auto_add_product_id);
+            const activeTpl = templates.find((t) => t.id === templateId);
+            return (
+              <>
+                {/* Active template card */}
+                <div className="rounded-lg border border-border bg-card p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Active template</p>
+                      <h3 className="text-base font-semibold mt-1">{activeTpl?.name ?? "(none selected)"}</h3>
+                      {activeTpl?.description && (
+                        <p className="text-xs text-muted-foreground mt-1">{activeTpl.description}</p>
+                      )}
                     </div>
-                    <div className="divide-y divide-border">
-                      {types.map((dt) => {
-                        const count = deviceCounts[dt.code] || 0;
+                    <div className="text-right shrink-0">
+                      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Will fire</p>
+                      <p className="text-2xl font-bold font-mono mt-1">{universalRules.length + templateRules.length}</p>
+                      <p className="text-[11px] text-muted-foreground">{universalRules.length} universal · {templateRules.length} template</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-3">
+                    These rules fire when generating the BOM. Change the template on the previous step, or <a href="/settings/rules" target="_blank" rel="noopener" className="text-primary hover:underline">manage rules in Settings</a>.
+                  </p>
+                </div>
+
+                {/* Universal Rules */}
+                <div>
+                  <div className="flex items-baseline justify-between gap-2 mb-2">
+                    <div className="flex items-baseline gap-2">
+                      <h3 className="text-sm font-semibold">Universal rules</h3>
+                      <span className="text-xs text-muted-foreground">— fire on every quote regardless of template</span>
+                    </div>
+                    <span className="text-xs font-mono text-muted-foreground">{universalRules.length}</span>
+                  </div>
+                  {universalRules.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-border bg-card/30 px-4 py-3 text-xs text-muted-foreground">
+                      No universal rules yet. Promote a rule to universal in <a href="/settings/rules" target="_blank" rel="noopener" className="text-primary hover:underline">Settings → Rules</a> to fire it on every quote.
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-border bg-card divide-y divide-border">
+                      {universalRules.map((r) => {
+                        const product = rawProducts.find((p) => p.id === r.auto_add_product_id);
                         return (
-                          <div key={dt.code} className={`flex items-center justify-between px-4 py-2.5 ${count > 0 ? "bg-primary/[0.03]" : ""}`}>
-                            <span className="text-sm">{dt.legend}</span>
-                            <input
-                              type="number"
-                              min="0"
-                              value={count || ""}
-                              onChange={(e) => setDC(dt.code, parseInt(e.target.value) || 0)}
-                              placeholder="0"
-                              className={`w-16 rounded-md border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary ${count > 0 ? "border-primary/40 text-foreground" : "border-border text-muted-foreground"}`}
-                            />
+                          <div key={r.id} className="px-4 py-2.5 flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{r.description}</p>
+                              {product && (
+                                <p className="text-[11px] text-muted-foreground font-mono truncate">→ {product.name} <span className="opacity-60">({product.sku})</span></p>
+                              )}
+                            </div>
+                            <span className="shrink-0 rounded bg-amber-500/10 text-amber-400 px-1.5 py-0.5 text-[10px] uppercase tracking-wider font-semibold border border-amber-500/20">universal</span>
                           </div>
                         );
                       })}
                     </div>
+                  )}
+                </div>
+
+                {/* Template Rules */}
+                <div>
+                  <div className="flex items-baseline justify-between gap-2 mb-2">
+                    <div className="flex items-baseline gap-2">
+                      <h3 className="text-sm font-semibold">{activeTpl?.name ?? "Template"} rules</h3>
+                      <span className="text-xs text-muted-foreground">— only fire on {activeTpl?.name ?? "this template"} quotes</span>
+                    </div>
+                    <span className="text-xs font-mono text-muted-foreground">{templateRules.length}</span>
                   </div>
-                ))}
-              </div>
-            </>
-          )}
+                  {templateRules.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-border bg-card/30 px-4 py-3 text-xs text-muted-foreground">
+                      {activeTpl?.slug === "default"
+                        ? <>This is the empty <strong>Default</strong> template — only universal rules apply.</>
+                        : <>No rules in this template yet. Add them in <a href="/settings/rules" target="_blank" rel="noopener" className="text-primary hover:underline">Settings → Rules</a>.</>}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-border bg-card divide-y divide-border">
+                      {templateRules.map((r) => {
+                        const product = rawProducts.find((p) => p.id === r.auto_add_product_id);
+                        return (
+                          <div key={r.id} className="px-4 py-2.5">
+                            <p className="text-sm font-medium">{r.description}</p>
+                            {product && (
+                              <p className="text-[11px] text-muted-foreground font-mono">→ {product.name} <span className="opacity-60">({product.sku})</span></p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
 
