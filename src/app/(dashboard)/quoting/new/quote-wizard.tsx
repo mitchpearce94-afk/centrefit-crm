@@ -194,7 +194,7 @@ export function QuoteWizard({
   plans: PlanFile[];
   existingQuote?: ExistingQuote;
   billingSettings?: any;
-  jobs?: { id: string; number: string; customer_name: string | null }[];
+  jobs?: { id: string; number: string; customer_name: string | null; site_name: string | null }[];
   labourTimings?: LabourTimingOverrides;
   templates?: RuleTemplate[];
   allRules?: RuleRow[];
@@ -412,21 +412,20 @@ export function QuoteWizard({
     }
   }, []);
 
-  // Auto-prefill customer + site from linked job (?job=X in URL)
-  // Runs after plan auto-select so the job's specific site wins over the plan's first-site fallback.
+  // Customer + site are sourced from the linked job — re-fetch whenever the
+  // user changes the Link-to-Job dropdown (also fires once on mount when the
+  // wizard loads with ?job=X or with an existingQuote.jobId).
   useEffect(() => {
-    const jobParam = searchParams.get("job");
-    if (!jobParam || isEditing) return;
+    if (!linkedJobId) return;
     supabase
       .from("jobs")
       .select("id, customer_id, site_id, customer:customers!customer_id(id, name, customer_sites(id, name, address, suburb, state, postcode))")
-      .eq("id", jobParam)
+      .eq("id", linkedJobId)
       .single()
       .then(({ data }) => {
         if (!data) return;
         const job = data as any;
         if (job.customer_id) {
-          // Ensure the customer is in our local list (in case it was freshly created)
           if (!customers.find((c) => c.id === job.customer_id) && job.customer) {
             customers.push({
               id: job.customer.id,
@@ -452,7 +451,7 @@ export function QuoteWizard({
         }
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [linkedJobId]);
 
   // ── Draft persistence (new quotes only) ──
   // Restore draft on mount
@@ -1182,6 +1181,26 @@ export function QuoteWizard({
       {/* STEP 1: CLIENT */}
       {step === 0 && (
         <div className="space-y-4 max-w-2xl">
+          {/* Link to Job — mandatory. Customer + site are derived from the job. */}
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">
+              Link to Job <span className="text-destructive">*</span>
+            </label>
+            <select value={linkedJobId} onChange={(e) => setLinkedJobId(e.target.value)} className={inputClass}>
+              <option value="">Select a job...</option>
+              {jobs.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.number}{j.site_name ? ` — ${j.site_name}` : ''}{j.customer_name ? ` (${j.customer_name})` : ''}
+                </option>
+              ))}
+            </select>
+            {!linkedJobId && (
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Quotes must be attached to a job. Customer and site details come from the job — to change them, edit the job's customer or site directly.
+              </p>
+            )}
+          </div>
+
           {/* Quote Mode Toggle */}
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-2">Quote Mode</label>
@@ -1201,6 +1220,29 @@ export function QuoteWizard({
               >
                 <p className="text-sm font-medium">Manual Quote</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">Manually select products and set labour hours</p>
+              </button>
+            </div>
+          </div>
+
+          {/* Quote Type */}
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-2">Quote Type</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setQuoteType("full")}
+                className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${quoteType === "full" ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground"}`}
+              >
+                <p className="text-sm font-medium">Full Quote</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Single payment — total price invoiced at once</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuoteType("progress")}
+                className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${quoteType === "progress" ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground"}`}
+              >
+                <p className="text-sm font-medium">Progress Payments</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">PP1 on acceptance, PP2 on completion</p>
               </button>
             </div>
           </div>
@@ -1285,146 +1327,6 @@ export function QuoteWizard({
           </div>
           )}
 
-          {/* Link to Job */}
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Link to Job</label>
-            <select value={linkedJobId} onChange={(e) => setLinkedJobId(e.target.value)} className={inputClass}>
-              <option value="">No job linked</option>
-              {jobs.map((j) => (
-                <option key={j.id} value={j.id}>
-                  {j.number}{j.customer_name ? ` — ${j.customer_name}` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Quote Type */}
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-2">Quote Type</label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setQuoteType("full")}
-                className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${quoteType === "full" ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground"}`}
-              >
-                <p className="text-sm font-medium">Full Quote</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">Single payment — total price invoiced at once</p>
-              </button>
-              <button
-                type="button"
-                onClick={() => setQuoteType("progress")}
-                className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${quoteType === "progress" ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground"}`}
-              >
-                <p className="text-sm font-medium">Progress Payments</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">PP1 on acceptance, PP2 on completion</p>
-              </button>
-            </div>
-          </div>
-
-          {/* Customer / Site Search */}
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Customer / Site</label>
-            {customerId ? (
-              <div className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">
-                <div className="flex-1">
-                  <span className="text-sm font-medium">{selectedCustomer?.name}</span>
-                  {selectedSite && <span className="text-sm text-muted-foreground"> — {selectedSite.name}</span>}
-                </div>
-                <button type="button" onClick={() => { setCustomerId(""); setSiteId(""); setCustomerSearch(""); }} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Change</button>
-              </div>
-            ) : (
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Search by customer name or site name..."
-                  value={customerSearch}
-                  onChange={(e) => setCustomerSearch(e.target.value)}
-                  className={inputClass}
-                />
-                {customerSearchResults.length > 0 && (
-                  <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-card shadow-xl">
-                    {customerSearchResults.map((result, i) => (
-                      <button
-                        key={`${result.customerId}-${result.siteId ?? "no-site"}-${i}`}
-                        type="button"
-                        onClick={() => {
-                          selectCustomer(result.customerId);
-                          if (result.siteId) selectSite(result.siteId);
-                          setCustomerSearch("");
-                        }}
-                        className="flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm hover:bg-accent transition-colors border-b border-border last:border-0"
-                      >
-                        <div>
-                          {result.siteName ? (
-                            <>
-                              <span className="font-medium">{result.siteName}</span>
-                              <span className="block text-xs text-muted-foreground">Customer: {result.customerName}</span>
-                            </>
-                          ) : (
-                            <span className="font-medium">{result.customerName}</span>
-                          )}
-                        </div>
-                        {result.siteName && (
-                          <span className="ml-auto shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">Site</span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {customerSearch.length >= 2 && customerSearchResults.length === 0 && (
-                  <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-border bg-card px-3 py-3 text-sm text-muted-foreground shadow-xl">
-                    No customers or sites found
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Site picker if customer selected but no site via search */}
-            {customerId && !siteId && selectedCustomer && selectedCustomer.customer_sites.length > 0 && (
-              <div className="mt-2">
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Select site</label>
-                <select value={siteId} onChange={(e) => selectSite(e.target.value)} className={inputClass}>
-                  <option value="">No specific site</option>
-                  {selectedCustomer.customer_sites.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
-                </select>
-              </div>
-            )}
-
-            {/* Primary contact */}
-            {selectedCustomer && selectedCustomer.customer_contacts.length > 0 && (
-              <div className="mt-2 rounded-md border border-border bg-card px-3 py-2">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase mb-1">Primary Contact</p>
-                {(() => {
-                  const contact = selectedCustomer.customer_contacts.find((c) => c.is_primary) || selectedCustomer.customer_contacts[0];
-                  return (
-                    <div className="flex gap-4 text-sm">
-                      <span className="font-medium">{contact.name}</span>
-                      {(contact.mobile || contact.phone) && <span className="text-muted-foreground">{contact.mobile || contact.phone}</span>}
-                      {contact.email && <span className="text-muted-foreground">{contact.email}</span>}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-          </div>
-
-          {/* Manual entry fields (shown when no customer selected) */}
-          {!customerId && (
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Client Name</label>
-              <input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="e.g. Snap Fitness" className={inputClass} />
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Site Name</label>
-              <input value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="e.g. Pimpama" className={inputClass} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Site Address</label>
-              <input value={siteAddress} onChange={(e) => setSiteAddress(e.target.value)} className={inputClass} />
-            </div>
-          </div>
           <h3 className="text-sm font-semibold mt-6">Site Info</h3>
           <p className="text-xs text-muted-foreground -mt-2">Used by dependency rules for ancillary products.</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -2472,9 +2374,17 @@ export function QuoteWizard({
           <button onClick={() => enterStep(step - 1)} className="rounded-md border border-border px-5 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Back</button>
         )}
         <div className="flex-1" />
-        {step < STEPS.length - 1 && (
-          <button onClick={() => enterStep(step + 1)} className="rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">Next</button>
-        )}
+        {step < STEPS.length - 1 && (() => {
+          const blocked = step === 0 && !linkedJobId;
+          return (
+            <button
+              onClick={() => enterStep(step + 1)}
+              disabled={blocked}
+              title={blocked ? "Link this quote to a job to continue" : undefined}
+              className="rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >Next</button>
+          );
+        })()}
         {step === STEPS.length - 1 && (
           <button onClick={handleSave} disabled={saving || labourWarnings.length > 0} className="rounded-md bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
             {saving ? "Saving..." : "Save Quote"}

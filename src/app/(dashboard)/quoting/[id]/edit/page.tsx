@@ -18,7 +18,7 @@ export default async function EditQuotePage({
     supabase.from("quote_products").select("*").eq("is_active", true).order("category, name"),
     supabase.from("plan_files").select("*").is("quote_id", null).order("created_at", { ascending: false }),
     supabase.from("plan_files").select("*").eq("quote_id", id).maybeSingle(),
-    supabase.from("jobs").select("id, number, customer:customers!customer_id(name)").order("number", { ascending: false }).limit(200),
+    supabase.from("jobs").select("id, number, customer:customers!customer_id(name), site:customer_sites!site_id(name)").order("number", { ascending: false }).limit(200),
     supabase.from("billing_settings").select("*").single(),
     supabase.from("labour_timings").select("code, minutes_per").order("sort_order"),
     supabase.from("quote_rule_templates").select("*").eq("is_active", true).order("sort_order"),
@@ -79,6 +79,7 @@ export default async function EditQuotePage({
     id: j.id,
     number: j.number,
     customer_name: Array.isArray(j.customer) ? j.customer[0]?.name ?? null : j.customer?.name ?? null,
+    site_name: Array.isArray(j.site) ? j.site[0]?.name ?? null : j.site?.name ?? null,
   }));
 
   return (
