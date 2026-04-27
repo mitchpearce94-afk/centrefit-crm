@@ -9,6 +9,7 @@ import {
   type ScopeOverrides,
   type SiteInfo,
   type ScopeSystemBlock,
+  type ScopeByOthersBlock,
 } from "@/lib/quote-engine";
 
 interface Props {
@@ -77,6 +78,17 @@ export function ScopeEditor({
   }, []);
 
   const [systems, setSystems] = useState<SystemEdit[]>(seedSystems);
+
+  // "By Others" blocks (electrician, locksmith). Auto always emits them as
+  // included; an override flips `included` to false. Item-level editing isn't
+  // exposed yet — only the include toggle.
+  const seedByOthers: ScopeByOthersBlock[] = useMemo(() => {
+    const includedIds = new Set(initial.byOthers.map((b) => b.id));
+    return auto.byOthers.map((b) => ({ ...b, included: includedIds.has(b.id) }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [byOthers, setByOthers] = useState<ScopeByOthersBlock[]>(seedByOthers);
+
   const [hideHardExclusion, setHideHardExclusion] = useState(!!initialOverrides?.hideHardExclusion);
   const [summaryLead, setSummaryLead] = useState<string>(
     initialOverrides?.summaryLead ?? auto.summary.lead,
@@ -98,6 +110,10 @@ export function ScopeEditor({
 
   function patchSystem(id: string, patch: Partial<SystemEdit>) {
     setSystems((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch, isDirty: true } : s)));
+  }
+
+  function toggleByOthers(id: string, included: boolean) {
+    setByOthers((prev) => prev.map((b) => (b.id === id ? { ...b, included } : b)));
   }
 
   function revertSystem(id: string) {
@@ -132,6 +148,15 @@ export function ScopeEditor({
     }
 
     if (Object.keys(sysOverrides).length > 0) ov.systems = sysOverrides;
+
+    // Persist any "By Others" blocks the user has excluded. Auto emits them as
+    // included, so we only need to record exclusions.
+    const byOthersOverrides: NonNullable<ScopeOverrides["byOthers"]> = {};
+    for (const b of byOthers) {
+      if (!b.included) byOthersOverrides[b.id] = { included: false };
+    }
+    if (Object.keys(byOthersOverrides).length > 0) ov.byOthers = byOthersOverrides;
+
     if (hideHardExclusion) ov.hideHardExclusion = true;
     if (summaryLeadDirty) ov.summaryLead = summaryLead;
 
@@ -303,6 +328,56 @@ export function ScopeEditor({
               )}
             </div>
           ))}
+
+          {/* By Others blocks (electrician / locksmith) — include/exclude toggle */}
+          {byOthers.length > 0 && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5">
+              <div className="px-4 py-2.5 border-b border-amber-500/20">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-300">By Others</span>
+                <span className="text-[11px] text-muted-foreground ml-2">— work the engine flags as someone else's responsibility. Untick when Centrefit is doing it.</span>
+              </div>
+              <div className="p-4 space-y-2">
+                {byOthers.map((blk) => {
+                  const dirty = !blk.included;
+                  return (
+                    <div
+                      key={blk.id}
+                      className={`rounded-md border ${blk.included ? "border-amber-500/30 bg-amber-500/5" : "border-dashed border-border bg-muted/20 opacity-70"}`}
+                    >
+                      <label className="flex items-start gap-2.5 px-3 py-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={blk.included}
+                          onChange={(e) => toggleByOthers(blk.id, e.target.checked)}
+                          disabled={readOnly}
+                          className="mt-0.5 h-4 w-4 rounded accent-primary"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-foreground">{blk.name}</span>
+                            {dirty && (
+                              <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-400">Excluded</span>
+                            )}
+                          </div>
+                          <ul className={`mt-1 space-y-0.5 ${blk.included ? "" : "line-through opacity-60"}`}>
+                            {blk.items.map((it, i) => (
+                              <li
+                                key={i}
+                                className="text-[11px] text-amber-200/90 leading-relaxed pl-3 relative"
+                              >
+                                <span className="absolute left-0 top-1.5 h-1 w-1 rounded-full bg-amber-500" />
+                                <span dangerouslySetInnerHTML={{ __html: it }} />
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Hard exclusion toggle */}
           {auto.hardExclusion && (
