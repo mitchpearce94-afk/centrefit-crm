@@ -1,0 +1,157 @@
+import { NextRequest, NextResponse } from "next/server";
+import crypto from "node:crypto";
+import { createServiceRoleClient } from "@/lib/supabase/service";
+import { getAuthedClient } from "@/lib/xero/client";
+import { fetchXeroInvoice } from "@/lib/xero/invoices";
+import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.server";
+
+/**
+ * Xero webhook receiver.
+ *
+ * Xero pings this endpoint when subscribed events fire (we subscribe to
+ * INVOICE updates in the Xero developer portal). Each request is signed with
+ * an HMAC-SHA256 of the raw body using `XERO_WEBHOOK_KEY` as the secret —
+ * we MUST verify before doing anything, otherwise anyone can post arbitrary
+ * payloads at us.
+ *
+ * Handshake: Xero verifies a new webhook by sending a signed empty/test
+ * payload. If the signature matches we return 200, otherwise 401. Both
+ * responses must be empty body and complete in <5s or Xero marks the
+ * webhook unhealthy and stops sending events.
+ *
+ * On INVOICE.UPDATE we refresh the local invoice row by re-fetching from
+ * Xero, then fire `invoice_paid` if the refresh shows it just flipped to
+ * paid. Webhooks for non-mapped invoices (no local row) are silently
+ * ignored.
+ */
+
+interface XeroWebhookEvent {
+  resourceUrl: string;
+  resourceId: string;
+  eventDateUtc: string;
+  eventType: "CREATE" | "UPDATE" | string;
+  eventCategory: "INVOICE" | string;
+  tenantId: string;
+  tenantType: string;
+}
+
+interface XeroWebhookPayload {
+  events: XeroWebhookEvent[];
+  firstEventSequence: number;
+  lastEventSequence: number;
+  entropy: string;
+}
+
+function timingSafeEq(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
+
+export async function POST(req: NextRequest) {
+  const key = process.env.XERO_WEBHOOK_KEY;
+  if (!key) {
+    console.error("[xero-webhook] XERO_WEBHOOK_KEY not set; refusing.");
+    return new NextResponse(null, { status: 500 });
+  }
+
+  // Read the raw body — signature is computed over it byte-for-byte.
+  const raw = await req.text();
+  const sig = req.headers.get("x-xero-signature") ?? "";
+  const expected = crypto.createHmac("sha256", key).update(raw, "utf8").digest("base64");
+
+  if (!timingSafeEq(sig, expected)) {
+    // Unsigned / wrong key — could be Xero's "intent to receive" dry-run
+    // testing the wrong key, or a malicious request. Either way, 401.
+    return new NextResponse(null, { status: 401 });
+  }
+
+  // Parse only after signature passes.
+  let payload: XeroWebhookPayload;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    return new NextResponse(null, { status: 400 });
+  }
+
+  // Acknowledge fast — Xero requires <5s response. Process events inline
+  // anyway because they're cheap (single-invoice refresh + maybe a status
+  // transition); push to background queue if this ever gets heavy.
+  const supabase = createServiceRoleClient();
+
+  for (const event of payload.events ?? []) {
+    if (event.eventCategory !== "INVOICE") continue;
+    if (event.eventType !== "UPDATE" && event.eventType !== "CREATE") continue;
+
+    try {
+      await processInvoiceEvent(supabase, event);
+    } catch (err) {
+      // Don't fail the whole batch if one event errors — log and move on.
+      console.error(`[xero-webhook] event ${event.resourceId} failed:`, err);
+    }
+  }
+
+  return new NextResponse(null, { status: 200 });
+}
+
+async function processInvoiceEvent(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  event: XeroWebhookEvent,
+) {
+  const xeroInvoiceId = event.resourceId;
+
+  // Find the matching local invoice. If we don't have one, this invoice was
+  // created outside the CRM (manual Xero entry, or pre-CRM legacy) — ignore.
+  const { data: invoice } = await supabase
+    .from("invoices")
+    .select("id, status, job_id, invoice_type, xero_invoice_id")
+    .eq("xero_invoice_id", xeroInvoiceId)
+    .maybeSingle();
+  if (!invoice) return;
+
+  // Refresh from Xero — gives us authoritative status, amountDue, paidOn date.
+  // Pass the service-role supabase client so token refresh persistence works
+  // past RLS (webhook is anonymous — no JWT/cookies).
+  const { client, conn } = await getAuthedClient(supabase);
+  const latest = await fetchXeroInvoice(client, conn.tenant_id, xeroInvoiceId);
+
+  const status = latest.status.toLowerCase();
+  const normalisedStatus =
+    status === "paid" ? "paid"
+    : status === "voided" ? "void"
+    : status === "draft" ? "draft"
+    : "authorised";
+
+  const wasPaid = invoice.status === "paid";
+  const nowPaid = normalisedStatus === "paid";
+
+  await supabase
+    .from("invoices")
+    .update({
+      amount_due: latest.amountDue,
+      amount_paid: latest.amountPaid,
+      status: normalisedStatus,
+      paid_at: nowPaid
+        ? (latest.fullyPaidOnDate
+            ? new Date(latest.fullyPaidOnDate).toISOString()
+            : new Date().toISOString())
+        : null,
+      xero_last_synced_at: new Date().toISOString(),
+      xero_last_error: null,
+    })
+    .eq("id", invoice.id);
+
+  // Only transition the job once, on the paid edge.
+  if (!wasPaid && nowPaid && invoice.job_id) {
+    // PP2 / final-payment path uses the existing `payment_received` rule
+    // (Invoice Sent → Complete). PP1 / full path uses the new `invoice_paid`
+    // rule (Awaiting Invoice Payment → Pending Schedule).
+    const action = invoice.invoice_type === "progress_pp2" ? "payment_received" : "invoice_paid";
+    try {
+      await autoTransitionJobStatusServer(invoice.job_id, action, supabase);
+    } catch (err) {
+      console.error(`[xero-webhook] auto-transition failed for job ${invoice.job_id}:`, err);
+    }
+  }
+}

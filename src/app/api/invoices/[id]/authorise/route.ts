@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthedClient } from "@/lib/xero/client";
 import { authoriseXeroInvoice } from "@/lib/xero/invoices";
+import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.server";
 
 export async function POST(
   _req: NextRequest,
@@ -12,7 +13,7 @@ export async function POST(
 
   const { data: invoice, error } = await supabase
     .from("invoices")
-    .select("id, xero_invoice_id, status")
+    .select("id, xero_invoice_id, status, job_id, invoice_type")
     .eq("id", id)
     .single();
   if (error || !invoice) {
@@ -57,6 +58,19 @@ export async function POST(
     .single();
   if (updErr) {
     return NextResponse.json({ error: updErr.message }, { status: 500 });
+  }
+
+  // Auto-transition the linked job. PP1 / full invoices park the job at
+  // "Awaiting Invoice Payment" until the webhook confirms payment. PP2 final
+  // invoices keep the existing `invoice_sent → Invoice Sent` rule, which
+  // applies from "Ready to Invoice" only.
+  if (invoice.job_id) {
+    const action = invoice.invoice_type === "progress_pp2" ? "invoice_sent" : "invoice_authorised";
+    try {
+      await autoTransitionJobStatusServer(invoice.job_id, action, supabase);
+    } catch (err) {
+      console.error(`[authorise] auto-transition failed for job ${invoice.job_id}:`, err);
+    }
   }
 
   return NextResponse.json({ invoice: updated });

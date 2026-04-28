@@ -55,6 +55,21 @@ const AUTO_TRANSITIONS: Record<string, { from: string[]; to: string }> = {
     from: ['Invoice Sent'],
     to: 'Complete',
   },
+
+  // PP1 / "full on acceptance" flow: authorising the invoice (not the final
+  // PP2 one) parks the job in "Awaiting Invoice Payment" until Xero confirms
+  // payment via webhook. Payment then bumps the job back to "Pending Schedule"
+  // so it can be put on the calendar.
+  invoice_authorised: {
+    from: ['Pending Schedule', 'Quote Sent', 'Quote Draft', 'Quote Expired',
+           'Sub-Quote Needed', 'Lead / Unassigned', 'Assigned', 'Follow Up',
+           'On Hold', 'Design Phase', 'Awaiting Approval'],
+    to: 'Awaiting Invoice Payment',
+  },
+  invoice_paid: {
+    from: ['Awaiting Invoice Payment'],
+    to: 'Pending Schedule',
+  },
 };
 
 /**

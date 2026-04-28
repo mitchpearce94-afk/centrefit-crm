@@ -2,6 +2,14 @@ import { XeroClient } from "xero-node";
 import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+// SupabaseClient overload that also accepts the SSR-flavoured client
+// (returned by `createClient` from `@/lib/supabase/server` and
+// `createServiceRoleClient` from `@/lib/supabase/service`). The two libraries
+// publish slightly different generic shapes, but the call surface we use
+// (`from(...).select/.update`) is identical, so we type the override loosely.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnySupabaseClient = SupabaseClient | any;
+
 // Scopes we request from Xero. `offline_access` is required to get a refresh token.
 // Apps created after 2 Mar 2026 use granular scopes — accounting.transactions is
 // deprecated and split into accounting.invoices + accounting.payments +
@@ -70,12 +78,18 @@ export async function getConnection(
 /**
  * Return an authenticated XeroClient ready to call API methods. Handles token
  * refresh if the access token has expired or is about to expire.
+ *
+ * Pass `supabaseOverride` from contexts where the cookie-based server client
+ * won't work — primarily the Xero webhook handler, which is anonymous and
+ * needs to use the service-role key to read/write `xero_connections` past RLS.
  */
-export async function getAuthedClient(): Promise<{
+export async function getAuthedClient(
+  supabaseOverride?: AnySupabaseClient,
+): Promise<{
   client: XeroClient;
   conn: XeroConnection;
 }> {
-  const supabase = await createClient();
+  const supabase = supabaseOverride ?? (await createClient());
   const conn = await getConnection(supabase);
   if (!conn) throw new Error("Xero is not connected");
 
