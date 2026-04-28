@@ -91,20 +91,26 @@ export async function createInvoiceFromAcceptedQuote(
   if (type === "full") {
     const amount = Number(pricing.totalExGST ?? 0);
     if (amount <= 0) throw new Error("Quote has no billable total");
+    // Line-item description is just the SoW. Quote linkage lives in the Xero
+    // Reference field (set further down to quote.ref), so no need to repeat it
+    // here. headerDescription stays as a CRM-local display label only.
     const description = formatScopeDescription(
       scopeBom,
       scopeProducts,
       siteInfo,
       quote.scope_overrides ?? null,
-      `CentreFit Installation — Quote ${quote.ref}`,
     );
     headerDescription = `Installation per quote ${quote.ref}`;
     lineItems = [{ description, quantity: 1, unitAmount: amount }];
     subtotal = amount;
   } else {
+    // Progress payments keep a minimal "Progress Payment 1" header on the line
+    // item — the customer needs to know which milestone this invoice covers
+    // (PP1 vs PP2 with otherwise identical descriptions). Quote ref is
+    // redundant with the Xero Reference field, so it's dropped from the prefix.
     const amount = Number(pricing.pp1?.total ?? 0);
     if (amount <= 0) throw new Error("No PP1 amount in the quote pricing snapshot");
-    const header = `Progress Payment 1 — On Acceptance (Quote ${quote.ref})`;
+    const header = `Progress Payment 1 — On Acceptance`;
     const description = formatScopeDescription(
       scopeBom,
       scopeProducts,
@@ -112,7 +118,7 @@ export async function createInvoiceFromAcceptedQuote(
       quote.scope_overrides ?? null,
       header,
     );
-    headerDescription = header;
+    headerDescription = `Progress Payment 1 — Quote ${quote.ref}`;
     lineItems = [{ description, quantity: 1, unitAmount: amount }];
     subtotal = amount;
   }
