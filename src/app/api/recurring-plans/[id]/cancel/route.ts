@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { cancelMandate } from "@/lib/gocardless/client";
+import { cancelMandate, getBillingRequest } from "@/lib/gocardless/client";
 import { getAuthedClient } from "@/lib/xero/client";
 import { cancelRepeatingInvoice } from "@/lib/xero/repeating-invoices";
 
@@ -39,7 +39,7 @@ export async function POST(
 
   const { data: plan, error: planErr } = await supabase
     .from("recurring_plans")
-    .select("id, status, gc_mandate_id, xero_repeating_invoice_id, xero_repeating_invoice_secondary_id")
+    .select("id, status, gc_mandate_id, gc_billing_request_id, xero_repeating_invoice_id, xero_repeating_invoice_secondary_id")
     .eq("id", id)
     .maybeSingle();
   if (planErr || !plan) {
@@ -50,23 +50,48 @@ export async function POST(
     return NextResponse.json({ status: "already_cancelled" });
   }
 
-  // Pending / failed → hard delete. Items cascade.
-  if (plan.status === "pending_mandate" || plan.status === "failed") {
-    const { error } = await supabase.from("recurring_plans").delete().eq("id", id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ status: "deleted" });
-  }
-
-  // Active / paused → cancel mandate + Xero RIs + soft cancel.
   const errors: string[] = [];
 
-  if (plan.gc_mandate_id) {
+  // Always check for a real mandate to cancel BEFORE deleting/soft-cancelling.
+  // Covers two cases the previous code missed:
+  //   1. Plan is pending_mandate but the customer already signed — mandate
+  //      exists in GC, awaiting bank verification. Hard-deleting the CRM
+  //      row would orphan the mandate and it'd keep pulling funds when
+  //      verified.
+  //   2. Webhook race — BR is fulfilled in GC but our webhook hasn't yet
+  //      populated gc_mandate_id locally. We fetch the BR to find the
+  //      mandate and cancel it.
+  let mandateToCancel = plan.gc_mandate_id;
+  if (!mandateToCancel && plan.gc_billing_request_id) {
     try {
-      await cancelMandate(plan.gc_mandate_id);
+      const br = await getBillingRequest(plan.gc_billing_request_id);
+      mandateToCancel = br.links.mandate_request_mandate ?? null;
+    } catch (err) {
+      errors.push(`BR lookup: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  if (mandateToCancel) {
+    try {
+      await cancelMandate(mandateToCancel);
     } catch (err) {
       errors.push(`GC mandate cancel: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+
+  // Pending / failed (with no mandate) → hard delete. Items cascade.
+  // If we just cancelled a mandate above, also hard-delete since these are
+  // pre-active states; the cancelled-mandate audit trail lives in GC.
+  if (plan.status === "pending_mandate" || plan.status === "failed") {
+    const { error } = await supabase.from("recurring_plans").delete().eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({
+      status: "deleted",
+      cancelledMandate: mandateToCancel ?? null,
+      warnings: errors.length > 0 ? errors : undefined,
+    });
+  }
+
+  // Active / paused → cancel Xero RIs + soft cancel (mandate already cancelled above).
 
   const riIds = [plan.xero_repeating_invoice_id, plan.xero_repeating_invoice_secondary_id].filter(Boolean) as string[];
   if (riIds.length > 0) {
