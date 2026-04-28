@@ -76,6 +76,10 @@ export interface ScopeOverrides {
     items?: string[];
   } | undefined>;
   ongoingCosts?: Record<string, { included?: boolean } | undefined>;
+  /** Override the assumptions block. `included: false` hides it; `items` replaces the list. */
+  assumptions?: { included?: boolean; items?: string[] };
+  /** Override the standards block. `included: false` hides it; `items` replaces the list. */
+  standards?: { included?: boolean; items?: string[] };
   hideHardExclusion?: boolean;
   /** Override the auto-generated intro paragraph at the top of the SoW. */
   summaryLead?: string;
@@ -643,7 +647,7 @@ export function generateScopeOfWorks(
     : 'ANY AND ALL ELECTRICAL WORKS ARE NOT INCLUDED IN THIS QUOTE';
 
   // ── Assumptions + Standards ──────────────────────────────────────────────
-  const assumptions = [
+  const baseAssumptions = [
     'Site is at fit-out stage with frame complete and roof closed before rough-in is booked.',
     'Power and internet are live before fit-off is booked.',
     "Customer's electrician's data/AV cabling is run and labelled to drawings before fit-off.",
@@ -651,7 +655,7 @@ export function generateScopeOfWorks(
     'Site has safe ladder/scaffold access where ceilings exceed 3.0 m.',
   ];
 
-  const standards = [
+  const baseStandards = [
     'AS/NZS 2201.1-2007 (Intruder alarm systems)',
     'AS 4806 (CCTV — management & operation)',
     'AS/NZS 62676.1.2:2020 (Video surveillance)',
@@ -659,6 +663,15 @@ export function generateScopeOfWorks(
     'AS/CA S009:2020 (Customer cabling — wiring rules)',
     'AS 11801.5:2019 (Generic cabling for customer premises)',
   ];
+
+  // Apply per-quote overrides: `included: false` hides the block entirely;
+  // `items` replaces the auto list verbatim.
+  const assumptions = overrides?.assumptions?.included === false
+    ? []
+    : (overrides?.assumptions?.items ?? baseAssumptions);
+  const standards = overrides?.standards?.included === false
+    ? []
+    : (overrides?.standards?.items ?? baseStandards);
 
   return {
     summary,
