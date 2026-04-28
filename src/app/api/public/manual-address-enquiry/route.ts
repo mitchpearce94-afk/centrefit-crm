@@ -73,23 +73,42 @@ export async function POST(req: NextRequest) {
   try { form = await req.formData(); }
   catch { return NextResponse.json({ error: "Invalid form data" }, { status: 400, headers: cors }); }
 
-  const name = String(form.get("name") ?? "").trim();
+  // Contact: support both the legacy single `name` and the new
+  // first_name/last_name split sent by the customer-type-aware form.
+  const firstName = String(form.get("first_name") ?? "").trim();
+  const lastName = String(form.get("last_name") ?? "").trim();
+  const legacyName = String(form.get("name") ?? "").trim();
+  const name = (firstName || lastName)
+    ? [firstName, lastName].filter(Boolean).join(" ")
+    : legacyName;
+
   const email = String(form.get("email") ?? "").trim().toLowerCase();
   const phone = String(form.get("phone") ?? "").trim() || null;
-  const businessName = String(form.get("business_name") ?? "").trim() || null;
   const planSku = String(form.get("plan_sku") ?? "").trim() || null;
   const line1 = String(form.get("line1") ?? "").trim();
   const line2 = String(form.get("line2") ?? "").trim() || null;
   const suburb = String(form.get("suburb") ?? "").trim();
   const state = String(form.get("state") ?? "").trim();
   const postcode = String(form.get("postcode") ?? "").trim();
-  const customerType = (String(form.get("customer_type") ?? "") || null) as
-    | "residential" | "business" | null;
+  const customerType = ((String(form.get("customer_type") ?? "") || null) as
+    | "residential" | "business" | null);
   const notes = String(form.get("notes") ?? "").trim() || null;
+
+  // Residential-only ID fields (ANL compliance — same shape the regular
+  // checkout collects, so staff has everything to set the customer up).
+  const dob = String(form.get("dob") ?? "").trim() || null;
+  const idTypeRaw = String(form.get("id_type") ?? "").trim() || null;
+  const idType = idTypeRaw && ["drivers", "passport"].includes(idTypeRaw) ? idTypeRaw : null;
+  const idNumber = String(form.get("id_number") ?? "").trim() || null;
+
+  // Business-only fields.
+  const businessName = String(form.get("business_name") ?? "").trim() || null;
+  const abn = String(form.get("abn") ?? "").trim() || null;
+  const tradingName = String(form.get("trading_name") ?? "").trim() || null;
 
   if (!name || !email || !line1 || !suburb || !state || !postcode) {
     return NextResponse.json(
-      { error: "name, email, line1, suburb, state and postcode are required" },
+      { error: "Name, email, and full service address are required" },
       { status: 400, headers: cors },
     );
   }
@@ -98,6 +117,22 @@ export async function POST(req: NextRequest) {
   }
   if (!/^\d{4}$/.test(postcode)) {
     return NextResponse.json({ error: "Invalid postcode" }, { status: 400, headers: cors });
+  }
+  if (customerType === "residential") {
+    if (!dob || !idType || !idNumber) {
+      return NextResponse.json(
+        { error: "Residential signups require date of birth + ID type + ID number" },
+        { status: 400, headers: cors },
+      );
+    }
+  }
+  if (customerType === "business") {
+    if (!businessName || !abn) {
+      return NextResponse.json(
+        { error: "Business signups require business name + ABN" },
+        { status: 400, headers: cors },
+      );
+    }
   }
 
   const supabase = createServiceRoleClient();
@@ -137,14 +172,24 @@ export async function POST(req: NextRequest) {
       phone,
       company: businessName,
       customer_type: customerType,
-      plan_name: planSku, // staff sees the SKU; legacy column reused
+      plan_name: planSku,
       address: fullAddress,
       tier: "manual_lookup",
       proof_file_url: proofUrl,
       proof_file_name: proofFileName,
       notes,
+      // Compliance fields — persist whichever side of the form was filled
+      // so the CRM enquiry detail page renders them in the existing
+      // residential / business switch (no new UI needed).
+      dob,
+      id_type: idType,
+      id_number: idNumber,
+      abn,
+      trading_name: tradingName,
       raw_payload: {
         source: "website_manual_address_form",
+        first_name: firstName || null,
+        last_name: lastName || null,
         line1, line2, suburb, state, postcode,
         plan_sku: planSku,
       },
