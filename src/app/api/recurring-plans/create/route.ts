@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createRedirectFlow } from "@/lib/gocardless/client";
+import { createBillingRequest, createBillingRequestFlow } from "@/lib/gocardless/client";
 import { aliasEmail } from "@/lib/recurring/alias";
 import { sendMandateSignupEmail, type MandateLink } from "@/lib/emails/recurring-mandate-signup";
 
@@ -156,25 +156,46 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Plan items insert failed: ${itemsErr.message}` }, { status: 500 });
     }
 
-    // Build the email for this plan + the GoCardless redirect flow.
+    // Build the email for this plan + the GoCardless Billing Request flow.
     //
-    // AU BECS accounts on GoCardless block direct POST /customers — they
-    // require the customer to fill in their own details on a GC-hosted
-    // form. We use `prefilled_customer` to pre-populate the form and skip
-    // the standalone POST /customers call. GC creates the customer record
-    // when the redirect flow is completed; we capture its ID at that point
-    // via the /complete endpoint hit from the success-redirect page.
+    // We use Billing Requests (newer GC API) instead of Redirect Flows so we
+    // can pass `lock_customer_details: true` — that locks all the prefilled
+    // fields so the customer can't edit them on the hosted form. Critical
+    // when we're using `+sitename` aliases for multi-site mandate ↔ Xero
+    // contact mapping; an editable email field would let customers
+    // accidentally break the linkage.
+    //
+    // The completion / customer + mandate ID capture happens via the GC
+    // webhook on `billing_requests.fulfilled`, not via a return-redirect.
     const aliasFor = useAliasEmails
       ? aliasEmail(primary.email, siteLabel, plan.id.slice(0, 6))
       : primary.email;
     let signupUrl: string;
-    let redirectFlowId: string;
+    let billingRequestId: string;
     try {
-      const redirect = await createRedirectFlow(
+      const br = await createBillingRequest(
         {
-          description: `Centrefit recurring billing — ${siteLabel}`,
-          session_token: plan.id,
-          success_redirect_url: `${appUrl}/recurring-thanks?plan=${plan.id}`,
+          mandate_request: {
+            scheme: "becs",
+            currency: "AUD",
+            description: `Centrefit recurring billing — ${siteLabel}`,
+          },
+          metadata: {
+            plan_id: plan.id,
+            customer_id: customer.id,
+            site_label: siteLabel.slice(0, 50),
+          },
+        },
+        `plan-${plan.id}-br`,
+      );
+      billingRequestId = br.id;
+
+      const flow = await createBillingRequestFlow(
+        {
+          redirect_uri: `${appUrl}/recurring-thanks?plan=${plan.id}`,
+          links: { billing_request: br.id },
+          lock_customer_details: true,
+          show_redirect_buttons: true,
           prefilled_customer: {
             email: aliasFor,
             company_name: customer.name,
@@ -187,10 +208,9 @@ export async function POST(req: NextRequest) {
             country_code: "AU",
           },
         },
-        `plan-${plan.id}-redirect`,
+        `plan-${plan.id}-brf`,
       );
-      redirectFlowId = redirect.id;
-      signupUrl = redirect.redirect_url;
+      signupUrl = flow.authorisation_url;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       // Mark the plan failed so the user can retry. Don't abort the whole batch.
@@ -207,11 +227,11 @@ export async function POST(req: NextRequest) {
     await supabase
       .from("recurring_plans")
       .update({
-        gc_redirect_flow_id: redirectFlowId,
+        gc_billing_request_id: billingRequestId,
         alias_email: aliasFor,
         signup_link_url: signupUrl,
-        // gc_customer_id + gc_mandate_id get set by /api/recurring-plans/complete
-        // when the customer returns to the success-redirect page.
+        // gc_customer_id + gc_mandate_id get set by the GC webhook on
+        // billing_requests.fulfilled when the customer signs.
       })
       .eq("id", plan.id);
 

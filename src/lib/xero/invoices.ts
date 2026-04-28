@@ -134,8 +134,14 @@ export async function fetchXeroInvoice(
 ): Promise<{
   amountDue: number;
   amountPaid: number;
+  total: number;
   status: string;
   fullyPaidOnDate: string | null;
+  invoiceNumber: string | null;
+  contactID: string | null;
+  dueDate: string | null;
+  /** Set when Xero auto-generated this invoice from a RepeatingInvoice template. */
+  repeatingInvoiceID: string | null;
 }> {
   const res = await xero.accountingApi.getInvoice(tenantId, xeroInvoiceId);
   const invoice = res.body.invoices?.[0];
@@ -144,8 +150,13 @@ export async function fetchXeroInvoice(
   return {
     amountDue: Number(invoice.amountDue ?? 0),
     amountPaid: Number(invoice.amountPaid ?? 0),
+    total: Number(invoice.total ?? 0),
     status: String(invoice.status ?? "UNKNOWN"),
     fullyPaidOnDate: invoice.fullyPaidOnDate ?? null,
+    invoiceNumber: invoice.invoiceNumber ?? null,
+    contactID: invoice.contact?.contactID ?? null,
+    dueDate: invoice.dueDate ?? null,
+    repeatingInvoiceID: invoice.repeatingInvoiceID ?? null,
   };
 }
 

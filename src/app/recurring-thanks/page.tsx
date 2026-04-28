@@ -1,29 +1,40 @@
-import { CompleteFlow } from "./complete-flow";
-
 /**
- * Public landing page after a customer completes their direct debit setup
- * on the GoCardless-hosted form. They land here from the
- * `success_redirect_url` we set when creating the redirect flow, with
- * `?redirect_flow_id=...` appended by GC.
+ * Public landing page after a customer signs their direct debit on the
+ * GoCardless-hosted Billing Request flow. They land here from the
+ * `redirect_uri` we set on the BR flow.
  *
- * The client component calls our /api/recurring-plans/complete endpoint
- * to finalise the GC redirect flow and persist the mandate IDs. The page
- * shows a loading state during that, then a success or error state.
- *
- * No auth — must be in the public-paths list in middleware.
+ * No completion call is needed — Billing Requests fulfil themselves when
+ * the customer signs, and we capture the customer + mandate IDs via the
+ * GC webhook on `billing_requests.fulfilled`.
  */
-export default async function RecurringThanksPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ redirect_flow_id?: string }>;
-}) {
-  const params = await searchParams;
-  const redirectFlowId = params.redirect_flow_id ?? null;
-
+export default function RecurringThanksPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-6">
       <div className="max-w-md text-center space-y-4">
-        <CompleteFlow redirectFlowId={redirectFlowId} />
+        <div className="w-16 h-16 mx-auto rounded-full bg-emerald-500/10 flex items-center justify-center">
+          <svg
+            className="w-8 h-8 text-emerald-500"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.5}
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h1 className="text-2xl font-semibold text-foreground">Direct debit confirmed</h1>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Thanks — we've got your direct debit details. Your account will be
+          activated in 1–3 business days once the bank verifies the mandate.
+          You'll receive an email confirmation when your first invoice is
+          issued.
+        </p>
+        <p className="text-xs text-muted-foreground pt-4">
+          Questions? Reply to your setup email or contact{" "}
+          <a href="mailto:accounts@centrefit.com.au" className="underline">
+            accounts@centrefit.com.au
+          </a>
+        </p>
       </div>
     </div>
   );

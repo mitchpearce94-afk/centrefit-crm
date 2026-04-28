@@ -206,4 +206,95 @@ export async function getMandate(mandateId: string): Promise<GcMandate> {
   return res.mandates;
 }
 
+// ─── Billing Requests (newer API, supports field locking) ────────────────────
+//
+// AU BECS accounts block direct POST /customers but support the Billing
+// Request flow. BRs let us lock prefilled customer fields so the customer
+// can't accidentally edit the email — critical when we're using `+sitename`
+// aliases for multi-site mandate→Xero contact mapping.
+
+export interface GcBillingRequestInput {
+  mandate_request: {
+    scheme: string; // "becs" for AU
+    currency?: string;
+    metadata?: Record<string, string>;
+    description?: string;
+  };
+  metadata?: Record<string, string>;
+}
+
+export interface GcBillingRequest {
+  id: string;
+  status:
+    | "pending"
+    | "ready_to_fulfil"
+    | "fulfilling"
+    | "fulfilled"
+    | "cancelled"
+    | "failed";
+  created_at: string;
+  links: {
+    customer?: string;
+    customer_billing_detail?: string;
+    mandate_request?: string;
+    mandate_request_mandate?: string;
+    payment_request?: string;
+    payment_request_payment?: string;
+  };
+  metadata: Record<string, string>;
+}
+
+export interface GcBillingRequestFlowInput {
+  redirect_uri: string;
+  exit_uri?: string;
+  links: { billing_request: string };
+  prefilled_customer?: GcCustomerInput;
+  /** Locks all prefilled customer detail fields. Customer cannot edit them. */
+  lock_customer_details?: boolean;
+  /** Lock individual fields. Use this OR lock_customer_details, not both. */
+  lock_bank_account_details?: boolean;
+  /** Auto-fulfil the billing request once the customer completes. */
+  auto_fulfil?: boolean;
+  /** Show the success / cancel redirect buttons on the GC-hosted form. */
+  show_redirect_buttons?: boolean;
+}
+
+export interface GcBillingRequestFlow {
+  id: string;
+  authorisation_url: string;
+  expires_at: string;
+  redirect_uri: string;
+  links: { billing_request: string };
+}
+
+export async function createBillingRequest(
+  input: GcBillingRequestInput,
+  idempotencyKey?: string,
+): Promise<GcBillingRequest> {
+  const res = await gcFetch<{ billing_requests: GcBillingRequest }>("/billing_requests", {
+    method: "POST",
+    body: { billing_requests: input },
+    idempotencyKey,
+  });
+  return res.billing_requests;
+}
+
+export async function createBillingRequestFlow(
+  input: GcBillingRequestFlowInput,
+  idempotencyKey?: string,
+): Promise<GcBillingRequestFlow> {
+  const res = await gcFetch<{ billing_request_flows: GcBillingRequestFlow }>(
+    "/billing_request_flows",
+    { method: "POST", body: { billing_request_flows: input }, idempotencyKey },
+  );
+  return res.billing_request_flows;
+}
+
+export async function getBillingRequest(billingRequestId: string): Promise<GcBillingRequest> {
+  const res = await gcFetch<{ billing_requests: GcBillingRequest }>(
+    `/billing_requests/${billingRequestId}`,
+  );
+  return res.billing_requests;
+}
+
 export { GoCardlessApiError };

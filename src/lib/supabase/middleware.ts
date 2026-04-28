@@ -44,7 +44,6 @@ export async function updateSession(request: NextRequest) {
     !request.nextUrl.pathname.startsWith("/api/nbn-enquiries/create") &&
     !request.nextUrl.pathname.startsWith("/api/xero/webhook") &&
     !request.nextUrl.pathname.startsWith("/api/gocardless/webhook") &&
-    !request.nextUrl.pathname.startsWith("/api/recurring-plans/complete") &&
     !request.nextUrl.pathname.startsWith("/quote-response") &&
     !request.nextUrl.pathname.startsWith("/recurring-thanks")
   ) {

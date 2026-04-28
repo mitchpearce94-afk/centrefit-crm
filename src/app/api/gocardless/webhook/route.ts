@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { verifyGoCardlessSignature } from "@/lib/gocardless/webhook-verify";
-import { getMandate } from "@/lib/gocardless/client";
+import { getMandate, getBillingRequest } from "@/lib/gocardless/client";
 import { getAuthedClient } from "@/lib/xero/client";
 import { findOrCreateContact } from "@/lib/xero/contacts";
 import { createRepeatingInvoice, type PlanFrequency } from "@/lib/xero/repeating-invoices";
@@ -28,7 +28,11 @@ interface GcEvent {
   action: string;
   created_at: string;
   details: { cause?: string; description?: string };
-  links: { mandate?: string; customer?: string };
+  links: {
+    mandate?: string;
+    customer?: string;
+    billing_request?: string;
+  };
 }
 
 interface GcWebhookPayload {
@@ -59,15 +63,58 @@ export async function POST(req: NextRequest) {
   const supabase = createServiceRoleClient();
 
   for (const event of payload.events ?? []) {
-    if (event.resource_type !== "mandates") continue;
     try {
-      await handleMandateEvent(supabase, event);
+      if (event.resource_type === "billing_requests") {
+        await handleBillingRequestEvent(supabase, event);
+      } else if (event.resource_type === "mandates") {
+        await handleMandateEvent(supabase, event);
+      }
     } catch (err) {
       console.error(`[gc-webhook] event ${event.id} failed:`, err);
     }
   }
 
   return new NextResponse(null, { status: 200 });
+}
+
+/**
+ * Billing Request lifecycle. Centrefit's flow uses BRs (not redirect_flows)
+ * so we can lock customer details on the GC-hosted form. The fulfilled event
+ * fires once the customer signs and GC has provisioned the mandate — at
+ * which point we extract the customer + mandate IDs and persist them on
+ * the plan. The mandate.active event still fires later (separately) once
+ * the bank verifies the mandate, and that's what triggers Xero RI creation.
+ */
+async function handleBillingRequestEvent(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  event: GcEvent,
+) {
+  const billingRequestId = event.links.billing_request;
+  if (!billingRequestId) return;
+
+  const { data: plan } = await supabase
+    .from("recurring_plans")
+    .select("id, status, gc_customer_id, gc_mandate_id")
+    .eq("gc_billing_request_id", billingRequestId)
+    .maybeSingle();
+  if (!plan) return;
+
+  // We only care about transitions that surface customer + mandate IDs.
+  if (event.action !== "fulfilled" && event.action !== "ready_to_fulfil") return;
+
+  // Re-fetch the BR for authoritative linkage data.
+  const br = await getBillingRequest(billingRequestId);
+  const customerId = br.links.customer ?? null;
+  const mandateId = br.links.mandate_request_mandate ?? null;
+  if (!customerId && !mandateId) return;
+
+  await supabase
+    .from("recurring_plans")
+    .update({
+      gc_customer_id: customerId,
+      gc_mandate_id: mandateId,
+    })
+    .eq("id", plan.id);
 }
 
 async function handleMandateEvent(
