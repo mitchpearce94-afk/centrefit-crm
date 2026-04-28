@@ -15,11 +15,13 @@ import "server-only";
 const LIVE_BASE = "https://api.gocardless.com";
 const SANDBOX_BASE = "https://api-sandbox.gocardless.com";
 
-// GoCardless API version. Pinned to 2018-11-29 — well-tested stable
-// version with full Billing Request support, including
-// `lock_customer_details` on billing_request_flows. The 2015-07-06
-// snapshot we used initially didn't recognise the lock field.
-const GC_VERSION = "2018-11-29";
+// GoCardless API version. 2015-07-06 is the only one we've confirmed
+// works with our account — bumping to 2018-11-29 returned
+// "version_not_found" 400. lock_customer_details on
+// billing_request_flows isn't recognised on this version, so we ship
+// without it and rely on the alias-explanation callout in the mandate
+// signup email instead.
+const GC_VERSION = "2015-07-06";
 
 function baseUrl(): string {
   return process.env.GOCARDLESS_ENVIRONMENT === "sandbox" ? SANDBOX_BASE : LIVE_BASE;

@@ -211,7 +211,10 @@ export async function POST(req: NextRequest) {
           redirect_uri: `${appUrl}/recurring-thanks?plan=${plan.id}`,
           links: { billing_request: br.id },
           show_redirect_buttons: true,
-          lock_customer_details: true,
+          // lock_customer_details intentionally omitted — not supported on
+          // GC API version 2015-07-06 (the only version we've confirmed
+          // works with this account). The mandate-signup email explains
+          // the alias and asks customers not to change it.
           prefilled_customer: prefilled,
         },
         `plan-${plan.id}-brf`,
