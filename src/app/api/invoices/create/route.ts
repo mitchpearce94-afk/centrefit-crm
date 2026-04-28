@@ -37,12 +37,17 @@ export async function POST(req: NextRequest) {
 
   // ── Build line items + resolve customer depending on mode ──
   let customerId: string | null = null;
+  let siteId: string | null = null;
   let quoteId: string | null = body.quoteId ?? null;
   let jobId: string | null = body.jobId ?? null;
   let reference: string | undefined;
   let headerDescription = "";
   let lineItems: XeroLineItemInput[] = [];
   let subtotal = 0;
+  // For quote-linked paths we also stash freeform site label/address from
+  // the quote so the description can lead with "Site: ..." even when the
+  // quote pre-dates the customer_sites split (legacy text fields).
+  let siteHeader = "";
 
   if (body.type === "adhoc") {
     if (!body.customerId) {
@@ -95,8 +100,12 @@ export async function POST(req: NextRequest) {
       );
     }
     customerId = quote.customer_id;
+    siteId = quote.site_id ?? null;
     jobId = jobId ?? quote.job_id ?? null;
     reference = quote.ref;
+    if (quote.site_name || quote.site_address) {
+      siteHeader = `Site: ${[quote.site_name, quote.site_address].filter(Boolean).join(" — ")}\n\n`;
+    }
 
     const pricing = quote.pricing_snapshot as { totalExGST?: number; pp1?: { total: number }; pp2?: { total: number } } | null;
     if (!pricing) {
@@ -135,7 +144,7 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
-      const description = formatScopeDescription(
+      const description = siteHeader + formatScopeDescription(
         scopeBom,
         scopeProducts,
         siteInfo,
@@ -183,7 +192,7 @@ export async function POST(req: NextRequest) {
       const header = isPP1
         ? `Progress Payment 1 — On Acceptance (Quote ${quote.ref})`
         : `Progress Payment 2 — On Completion (Quote ${quote.ref})`;
-      const description = formatScopeDescription(
+      const description = siteHeader + formatScopeDescription(
         scopeBom,
         scopeProducts,
         siteInfo,
@@ -221,18 +230,36 @@ export async function POST(req: NextRequest) {
     customer.customer_contacts?.find((c: { is_primary: boolean }) => c.is_primary) ??
     customer.customer_contacts?.[0];
 
+  // Resolve site row if we have one, so the contact gets the per-site
+  // mapping + address attached (workstream Xero polish, 2026-04-29).
+  let siteRow: { id: string; name: string; address: string | null; suburb: string | null; state: string | null; postcode: string | null; xero_contact_id: string | null } | null = null;
+  if (siteId) {
+    const { data } = await supabase
+      .from("customer_sites")
+      .select("id, name, address, suburb, state, postcode, xero_contact_id")
+      .eq("id", siteId)
+      .maybeSingle();
+    if (data) siteRow = data;
+  }
+
   // ── Create in Xero ──
   let xeroResult;
   try {
     const { client: xero, conn } = await getAuthedClient();
-    const xeroContactId = await findOrCreateContact(supabase, xero, conn.tenant_id, {
-      id: customer.id,
-      name: customer.name,
-      xero_contact_id: customer.xero_contact_id,
-      email: primary?.email ?? null,
-      phone: primary?.phone ?? null,
-      abn: customer.abn ?? null,
-    });
+    const xeroContactId = await findOrCreateContact(
+      supabase,
+      xero,
+      conn.tenant_id,
+      {
+        id: customer.id,
+        name: customer.name,
+        xero_contact_id: customer.xero_contact_id,
+        email: primary?.email ?? null,
+        phone: primary?.phone ?? null,
+        abn: customer.abn ?? null,
+      },
+      siteRow,
+    );
 
     xeroResult = await createXeroInvoice({
       xero,

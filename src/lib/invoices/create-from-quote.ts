@@ -84,6 +84,37 @@ export async function createInvoiceFromAcceptedQuote(
   }));
   const scopeProducts = (scopeProductRows ?? []) as Array<{ id: string; scope_role: string }>;
 
+  // Resolve site if the quote has one. We use this both for naming the Xero
+  // contact (so multi-site customers don't lump everything under one Xero
+  // record) and for the site-address block on the invoice line description.
+  let site: {
+    id: string;
+    name: string;
+    address: string | null;
+    suburb: string | null;
+    state: string | null;
+    postcode: string | null;
+    xero_contact_id: string | null;
+  } | null = null;
+  if (quote.site_id) {
+    const { data: siteRow } = await supabase
+      .from("customer_sites")
+      .select("id, name, address, suburb, state, postcode, xero_contact_id")
+      .eq("id", quote.site_id)
+      .maybeSingle();
+    if (siteRow) site = siteRow;
+  }
+  // If quote has no site_id but has freeform site_name/site_address (legacy),
+  // use those for display + the contact's billing-address slot, with no
+  // persistence (we won't auto-create a customer_sites row from this path).
+  const siteLabel = site?.name ?? quote.site_name ?? null;
+  const siteAddrText = site
+    ? [site.address, site.suburb, site.state, site.postcode].filter(Boolean).join(", ")
+    : (quote.site_address ?? null);
+  const siteHeader = siteLabel || siteAddrText
+    ? `Site: ${[siteLabel, siteAddrText].filter(Boolean).join(" — ")}\n\n`
+    : "";
+
   let headerDescription: string;
   let lineItems: XeroLineItemInput[];
   let subtotal: number;
@@ -91,10 +122,11 @@ export async function createInvoiceFromAcceptedQuote(
   if (type === "full") {
     const amount = Number(pricing.totalExGST ?? 0);
     if (amount <= 0) throw new Error("Quote has no billable total");
-    // Line-item description is just the SoW. Quote linkage lives in the Xero
-    // Reference field (set further down to quote.ref), so no need to repeat it
-    // here. headerDescription stays as a CRM-local display label only.
-    const description = formatScopeDescription(
+    // Site header up top so the customer (and Mitchell, eyeballing the PDF)
+    // can immediately see WHICH site this invoice covers. Then the SoW.
+    // Quote linkage lives in the Xero Reference field (set below), so we
+    // don't repeat the quote ref in the description.
+    const description = siteHeader + formatScopeDescription(
       scopeBom,
       scopeProducts,
       siteInfo,
@@ -111,7 +143,7 @@ export async function createInvoiceFromAcceptedQuote(
     const amount = Number(pricing.pp1?.total ?? 0);
     if (amount <= 0) throw new Error("No PP1 amount in the quote pricing snapshot");
     const header = `Progress Payment 1 — On Acceptance`;
-    const description = formatScopeDescription(
+    const description = siteHeader + formatScopeDescription(
       scopeBom,
       scopeProducts,
       siteInfo,
@@ -135,14 +167,30 @@ export async function createInvoiceFromAcceptedQuote(
     customer.customer_contacts?.[0];
 
   const { client: xero, conn } = await getAuthedClient();
-  const xeroContactId = await findOrCreateContact(supabase, xero, conn.tenant_id, {
-    id: customer.id,
-    name: customer.name,
-    xero_contact_id: customer.xero_contact_id,
-    email: primary?.email ?? null,
-    phone: primary?.phone ?? null,
-    abn: customer.abn ?? null,
-  });
+  const xeroContactId = await findOrCreateContact(
+    supabase,
+    xero,
+    conn.tenant_id,
+    {
+      id: customer.id,
+      name: customer.name,
+      xero_contact_id: customer.xero_contact_id,
+      email: primary?.email ?? null,
+      phone: primary?.phone ?? null,
+      abn: customer.abn ?? null,
+    },
+    site
+      ? {
+          id: site.id,
+          name: site.name,
+          xero_contact_id: site.xero_contact_id,
+          address: site.address,
+          suburb: site.suburb,
+          state: site.state,
+          postcode: site.postcode,
+        }
+      : null,
+  );
 
   const xeroResult = await createXeroInvoice({
     xero,

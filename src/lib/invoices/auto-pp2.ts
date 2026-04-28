@@ -106,8 +106,24 @@ export async function tryCreatePP2ForJob(
       }));
       const scopeProducts = (scopeProductRows ?? []) as Array<{ id: string; scope_role: string }>;
 
+      // Pull site info so the invoice has a "Site:" header + the Xero contact
+      // resolves to the per-site billing entity (matches the quote-driven flow
+      // in lib/invoices/create-from-quote.ts).
+      let siteRow: { id: string; name: string; address: string | null; suburb: string | null; state: string | null; postcode: string | null; xero_contact_id: string | null } | null = null;
+      if (quote.site_id) {
+        const { data } = await supabase
+          .from("customer_sites")
+          .select("id, name, address, suburb, state, postcode, xero_contact_id")
+          .eq("id", quote.site_id)
+          .maybeSingle();
+        if (data) siteRow = data;
+      }
+      const siteHeader = siteRow || quote.site_name || quote.site_address
+        ? `Site: ${[siteRow?.name ?? quote.site_name, siteRow ? [siteRow.address, siteRow.suburb, siteRow.state, siteRow.postcode].filter(Boolean).join(", ") : quote.site_address].filter(Boolean).join(" — ")}\n\n`
+        : "";
+
       const header = `Progress Payment 2 — On Completion (Quote ${quote.ref})`;
-      const description = formatScopeDescription(
+      const description = siteHeader + formatScopeDescription(
         scopeBom,
         scopeProducts,
         siteInfo,
@@ -117,14 +133,20 @@ export async function tryCreatePP2ForJob(
       const lineItems: XeroLineItemInput[] = [{ description, quantity: 1, unitAmount: amount }];
 
       const { client: xero, conn } = await getAuthedClient();
-      const xeroContactId = await findOrCreateContact(supabase, xero, conn.tenant_id, {
-        id: customer.id,
-        name: customer.name,
-        xero_contact_id: customer.xero_contact_id,
-        email: primary?.email ?? null,
-        phone: primary?.phone ?? null,
-        abn: customer.abn ?? null,
-      });
+      const xeroContactId = await findOrCreateContact(
+        supabase,
+        xero,
+        conn.tenant_id,
+        {
+          id: customer.id,
+          name: customer.name,
+          xero_contact_id: customer.xero_contact_id,
+          email: primary?.email ?? null,
+          phone: primary?.phone ?? null,
+          abn: customer.abn ?? null,
+        },
+        siteRow,
+      );
 
       const xeroResult = await createXeroInvoice({
         xero,
