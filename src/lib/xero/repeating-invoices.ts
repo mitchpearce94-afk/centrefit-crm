@@ -123,3 +123,35 @@ export async function cancelRepeatingInvoice(
     repeatingInvoices: [{ status: "DELETED" } as never],
   });
 }
+
+/**
+ * Update an existing RepeatingInvoice template's line items in place. The
+ * schedule (period, unit, nextScheduledDate, dueDays) is preserved by Xero
+ * — sending only `lineItems` is a partial update, not a full replace. Used
+ * by the plan-edit flow when a customer adds or removes services from an
+ * already-active plan: the next auto-generated child invoice fires with
+ * the new lines, but the cadence and run dates don't reset.
+ */
+export async function updateRepeatingInvoiceLines(
+  xero: XeroClient,
+  tenantId: string,
+  repeatingInvoiceId: string,
+  lineItems: RepeatingInvoiceLineInput[],
+): Promise<void> {
+  if (lineItems.length === 0) {
+    throw new Error("Cannot update a RepeatingInvoice to zero line items — cancel it instead");
+  }
+  await xero.accountingApi.updateRepeatingInvoice(tenantId, repeatingInvoiceId, {
+    repeatingInvoices: [
+      {
+        lineItems: lineItems.map((li) => ({
+          description: li.description.slice(0, 4000),
+          quantity: li.quantity ?? 1,
+          unitAmount: li.unitAmount,
+          accountCode: li.accountCode ?? DEFAULT_SALES_ACCOUNT_CODE,
+          taxType: li.taxType ?? DEFAULT_TAX_TYPE_INCLUSIVE,
+        })),
+      } as never,
+    ],
+  });
+}

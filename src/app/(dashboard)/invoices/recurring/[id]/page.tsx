@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { CancelButton } from "./cancel-button";
+import { EditServicesButton } from "./edit-services-button";
 
 const STATUS_LABEL: Record<string, string> = {
   pending_mandate: "Awaiting Mandate",
@@ -26,18 +27,25 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: plan } = await supabase
-    .from("recurring_plans")
-    .select(`
-      id, status, next_invoice_date, alias_email, signup_link_url, signup_emailed_at,
-      gc_customer_id, gc_mandate_id, xero_repeating_invoice_id, xero_contact_id,
-      created_at, notes,
-      customers(id, name),
-      customer_sites(id, name, address, suburb, state, postcode),
-      recurring_plan_items(id, service_name, description, price_inc_gst, frequency, quantity)
-    `)
-    .eq("id", id)
-    .maybeSingle();
+  const [{ data: plan }, { data: catalogue }] = await Promise.all([
+    supabase
+      .from("recurring_plans")
+      .select(`
+        id, status, next_invoice_date, alias_email, signup_link_url, signup_emailed_at,
+        gc_customer_id, gc_mandate_id, xero_repeating_invoice_id, xero_contact_id,
+        created_at, notes,
+        customers(id, name),
+        customer_sites(id, name, address, suburb, state, postcode),
+        recurring_plan_items(id, service_id, service_name, description, price_inc_gst, frequency, quantity)
+      `)
+      .eq("id", id)
+      .maybeSingle(),
+    supabase
+      .from("recurring_services")
+      .select("id, code, name, description, price_inc_gst, frequency")
+      .eq("active", true)
+      .order("sort_order"),
+  ]);
 
   if (!plan) notFound();
 
@@ -68,6 +76,16 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: colour }} />
             {STATUS_LABEL[plan.status] ?? plan.status}
           </span>
+          {plan.status !== "cancelled" && (
+            <EditServicesButton
+              planId={plan.id}
+              catalogue={(catalogue ?? []) as never}
+              currentItems={items.map((i) => ({
+                serviceId: (i as { service_id: string | null }).service_id ?? "",
+                quantity: i.quantity ?? 1,
+              })).filter((i) => !!i.serviceId)}
+            />
+          )}
           <CancelButton
             planId={plan.id}
             status={plan.status}
