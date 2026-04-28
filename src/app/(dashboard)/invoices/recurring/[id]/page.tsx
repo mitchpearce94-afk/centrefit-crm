@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { CancelButton } from "./cancel-button";
 
 const STATUS_LABEL: Record<string, string> = {
   pending_mandate: "Awaiting Mandate",
@@ -51,7 +52,7 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <Link href="/invoices/recurring" className="text-xs text-muted-foreground hover:text-foreground">
             ← Recurring plans
@@ -59,13 +60,21 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
           <h1 className="text-2xl font-semibold tracking-tight mt-1">{customer?.name ?? "—"}</h1>
           {site?.name && <p className="text-sm text-muted-foreground mt-0.5">{site.name}</p>}
         </div>
-        <span
-          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
-          style={{ backgroundColor: `${colour}20`, color: colour }}
-        >
-          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: colour }} />
-          {STATUS_LABEL[plan.status] ?? plan.status}
-        </span>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
+            style={{ backgroundColor: `${colour}20`, color: colour }}
+          >
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: colour }} />
+            {STATUS_LABEL[plan.status] ?? plan.status}
+          </span>
+          <CancelButton
+            planId={plan.id}
+            status={plan.status}
+            customerName={customer?.name ?? "this customer"}
+            siteLabel={site?.name ?? null}
+          />
+        </div>
       </div>
 
       {/* Status detail */}

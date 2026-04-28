@@ -273,16 +273,19 @@ async function activatePlan(
     if (frequency === "yearly") yearlyRiId = ri.repeatingInvoiceID;
   }
 
+  // Primary = monthly when both exist (most common cadence). Secondary holds
+  // the yearly RI ID so cancel can find both cleanly.
+  const primaryRiId = monthlyRiId ?? yearlyRiId;
+  const secondaryRiId = monthlyRiId && yearlyRiId ? yearlyRiId : null;
+
   await supabase
     .from("recurring_plans")
     .update({
       status: "active",
       xero_contact_id: xeroContactId,
-      xero_repeating_invoice_id: monthlyRiId ?? yearlyRiId,
+      xero_repeating_invoice_id: primaryRiId,
+      xero_repeating_invoice_secondary_id: secondaryRiId,
       next_invoice_date: todayStr,
-      notes: yearlyRiId && monthlyRiId
-        ? `Yearly RepeatingInvoice ID: ${yearlyRiId}` // monthlyRiId is the primary
-        : null,
     })
     .eq("id", planId);
 }

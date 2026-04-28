@@ -206,6 +206,19 @@ export async function getMandate(mandateId: string): Promise<GcMandate> {
   return res.mandates;
 }
 
+/**
+ * Cancel a GoCardless mandate. After cancellation the mandate can no longer
+ * be used to take payments. Idempotent — calling on an already-cancelled
+ * mandate returns success without changing state.
+ */
+export async function cancelMandate(mandateId: string): Promise<GcMandate> {
+  const res = await gcFetch<{ mandates: GcMandate }>(
+    `/mandates/${mandateId}/actions/cancel`,
+    { method: "POST" },
+  );
+  return res.mandates;
+}
+
 // ─── Billing Requests (newer API, supports field locking) ────────────────────
 //
 // AU BECS accounts block direct POST /customers but support the Billing
