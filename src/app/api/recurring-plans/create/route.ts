@@ -194,8 +194,11 @@ export async function POST(req: NextRequest) {
         {
           redirect_uri: `${appUrl}/recurring-thanks?plan=${plan.id}`,
           links: { billing_request: br.id },
-          lock_customer_details: true,
           show_redirect_buttons: true,
+          // lock_customer_details intentionally omitted: GC rejects it when
+          // any prefilled field is missing (e.g. site has no address). The
+          // email-explanation callout in the multi-site mandate-signup
+          // email handles the UX of "your email looks slightly different".
           prefilled_customer: {
             email: aliasFor,
             company_name: customer.name,
