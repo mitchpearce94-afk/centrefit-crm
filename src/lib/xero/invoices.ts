@@ -14,7 +14,7 @@ export const DEFAULT_SALES_ACCOUNT_CODE = "200";
 // Australian GST on income tax type. Xero accepts this identifier verbatim.
 export const DEFAULT_TAX_TYPE_OUTPUT = "OUTPUT";
 // Default payment term: 14 days from issue. Overridable per customer later.
-export const DEFAULT_DUE_DAYS = 14;
+export const DEFAULT_DUE_DAYS = 7;
 
 export interface XeroLineItemInput {
   description: string;
