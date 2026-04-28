@@ -196,11 +196,18 @@ export async function POST(req: NextRequest) {
       // Only include identity fields in prefilled_customer (NOT address) so
       // the lock applies to identity but the customer can still type in
       // their billing address on the form.
+      //
+      // Field mapping (per Mitchell, 2026-04-28):
+      //   company_name → the SITE name (the billing entity Centrefit invoices
+      //                  per facility, e.g. "Snap Fitness Tuggerah")
+      //   given/family → the primary contact (the human signing the mandate)
+      // siteLabel falls back to customer.name when there's no site, so single-
+      // entity customers still get a sensible value in company_name.
       const givenName = primary.name?.split(/\s+/)[0];
       const familyName = primary.name?.split(/\s+/).slice(1).join(" ");
       const prefilled: GcCustomerInput = {
         email: aliasFor,
-        company_name: customer.name,
+        company_name: siteLabel,
         country_code: "AU",
         ...(givenName ? { given_name: givenName } : {}),
         ...(familyName ? { family_name: familyName } : {}),
