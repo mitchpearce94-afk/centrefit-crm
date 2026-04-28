@@ -42,6 +42,7 @@ export async function updateSession(request: NextRequest) {
     !request.nextUrl.pathname.startsWith("/api/quotes/respond") &&
     !request.nextUrl.pathname.startsWith("/api/quotes/by-token/") &&
     !request.nextUrl.pathname.startsWith("/api/nbn-enquiries/create") &&
+    !request.nextUrl.pathname.startsWith("/api/xero/webhook") &&
     !request.nextUrl.pathname.startsWith("/quote-response")
   ) {
     const url = request.nextUrl.clone();
