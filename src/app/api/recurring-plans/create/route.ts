@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createCustomer, createRedirectFlow } from "@/lib/gocardless/client";
+import { createRedirectFlow } from "@/lib/gocardless/client";
 import { aliasEmail } from "@/lib/recurring/alias";
 import { sendMandateSignupEmail, type MandateLink } from "@/lib/emails/recurring-mandate-signup";
 
@@ -150,34 +150,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Plan items insert failed: ${itemsErr.message}` }, { status: 500 });
     }
 
-    // Build alias email + GoCardless customer + redirect flow.
+    // Build alias email + GoCardless redirect flow.
+    //
+    // AU BECS accounts on GoCardless block direct POST /customers — they
+    // require the customer to fill in their own details on a GC-hosted
+    // form. We use `prefilled_customer` to pre-populate the form (incl.
+    // alias email) and skip the standalone POST /customers call. GC creates
+    // the customer record when the redirect flow is completed; we capture
+    // its ID at that point via the /complete endpoint hit from the
+    // success-redirect page.
     const aliasFor = aliasEmail(primary.email, siteLabel, plan.id.slice(0, 6));
-    let gcCustomerId: string;
     let signupUrl: string;
     let redirectFlowId: string;
     try {
-      const gcCustomer = await createCustomer(
-        {
-          email: aliasFor,
-          company_name: customer.name,
-          given_name: primary.name?.split(/\s+/)[0],
-          family_name: primary.name?.split(/\s+/).slice(1).join(" ") || undefined,
-          address_line1: site?.address ?? undefined,
-          city: site?.suburb ?? undefined,
-          region: site?.state ?? undefined,
-          postal_code: site?.postcode ?? undefined,
-          country_code: "AU",
-        },
-        `plan-${plan.id}-customer`,
-      );
-      gcCustomerId = gcCustomer.id;
-
       const redirect = await createRedirectFlow(
         {
           description: `Centrefit recurring billing — ${siteLabel}`,
           session_token: plan.id,
           success_redirect_url: `${appUrl}/recurring-thanks?plan=${plan.id}`,
-          links: { customer: gcCustomer.id },
           prefilled_customer: {
             email: aliasFor,
             company_name: customer.name,
@@ -210,10 +200,11 @@ export async function POST(req: NextRequest) {
     await supabase
       .from("recurring_plans")
       .update({
-        gc_customer_id: gcCustomerId,
         gc_redirect_flow_id: redirectFlowId,
         alias_email: aliasFor,
         signup_link_url: signupUrl,
+        // gc_customer_id + gc_mandate_id get set by /api/recurring-plans/complete
+        // when the customer returns to the success-redirect page.
       })
       .eq("id", plan.id);
 
