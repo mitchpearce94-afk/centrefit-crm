@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAuthedClient } from "@/lib/xero/client";
 import { authoriseXeroInvoice } from "@/lib/xero/invoices";
 import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.server";
+import { logDocumentActivity } from "@/lib/activity/log";
 
 export async function POST(
   _req: NextRequest,
@@ -72,6 +73,14 @@ export async function POST(
       console.error(`[authorise] auto-transition failed for job ${invoice.job_id}:`, err);
     }
   }
+
+  await logDocumentActivity({
+    supabase,
+    documentType: "invoice",
+    documentId: id,
+    eventType: "invoice.authorised",
+    metadata: { online_url: result.onlineInvoiceUrl ?? null },
+  });
 
   return NextResponse.json({ invoice: updated });
 }

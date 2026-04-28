@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { EnquiryActions } from "./enquiry-actions";
+import { ConvertToRecurringButton } from "./convert-to-recurring-button";
+import { ProofFileLink } from "./proof-file-link";
 
 export default async function EnquiryDetailPage({
   params,
@@ -115,6 +117,41 @@ export default async function EnquiryDetailPage({
             <section className="rounded-lg border border-border bg-card p-5">
               <h3 className="text-sm font-semibold mb-3">Notes</h3>
               <p className="text-sm text-muted-foreground whitespace-pre-wrap">{enquiry.notes}</p>
+            </section>
+          )}
+
+          {enquiry.tier === "manual_lookup" && (
+            <section className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-amber-300">Manual address lookup</h3>
+                <span className="rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  Tier: manual
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Customer&apos;s address didn&apos;t match Kinetix&apos;s geocoder. Look the address up in Kinetix backend, attach the right LOC ID below, then convert to a recurring plan.
+              </p>
+              {enquiry.proof_file_url && (
+                <ProofFileLink path={enquiry.proof_file_url} fileName={enquiry.proof_file_name ?? "proof"} />
+              )}
+              {enquiry.recurring_plan_id ? (
+                <Link
+                  href={`/invoices/recurring/${enquiry.recurring_plan_id}`}
+                  className="inline-flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+                >
+                  Plan created — open in recurring billing →
+                </Link>
+              ) : (
+                <ConvertToRecurringButton
+                  enquiryId={enquiry.id}
+                  enquiryName={enquiry.name}
+                  enquiryEmail={enquiry.email}
+                  enquiryPhone={enquiry.phone}
+                  company={enquiry.company}
+                  planSku={enquiry.plan_name}
+                  address={enquiry.address}
+                />
+              )}
             </section>
           )}
         </div>

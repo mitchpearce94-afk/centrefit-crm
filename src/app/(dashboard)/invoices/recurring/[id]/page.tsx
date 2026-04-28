@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { CancelButton } from "./cancel-button";
 import { EditServicesButton } from "./edit-services-button";
+import { EditStartDateButton } from "./edit-start-date-button";
 
 const STATUS_LABEL: Record<string, string> = {
   pending_mandate: "Awaiting Mandate",
@@ -31,7 +32,7 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
     supabase
       .from("recurring_plans")
       .select(`
-        id, status, next_invoice_date, alias_email, signup_link_url, signup_emailed_at,
+        id, status, next_invoice_date, first_invoice_date, alias_email, signup_link_url, signup_emailed_at,
         gc_customer_id, gc_mandate_id, xero_repeating_invoice_id, xero_contact_id,
         created_at, notes,
         customers(id, name),
@@ -103,6 +104,15 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
           <dd className="font-medium">{STATUS_LABEL[plan.status] ?? plan.status}</dd>
           <dt className="text-muted-foreground">Next invoice date</dt>
           <dd className="font-mono">{plan.next_invoice_date ? new Date(plan.next_invoice_date).toLocaleDateString("en-AU") : "—"}</dd>
+          <dt className="text-muted-foreground">Billing starts</dt>
+          <dd className="font-mono flex items-center gap-2">
+            {plan.first_invoice_date
+              ? new Date(plan.first_invoice_date).toLocaleDateString("en-AU")
+              : <span className="text-muted-foreground">When mandate verifies</span>}
+            {plan.status === "pending_mandate" && (
+              <EditStartDateButton planId={plan.id} currentDate={plan.first_invoice_date ?? null} />
+            )}
+          </dd>
           <dt className="text-muted-foreground">Mandate signup emailed</dt>
           <dd className="text-xs text-muted-foreground">{plan.signup_emailed_at ? new Date(plan.signup_emailed_at).toLocaleString("en-AU") : "—"}</dd>
           <dt className="text-muted-foreground">Alias email used</dt>

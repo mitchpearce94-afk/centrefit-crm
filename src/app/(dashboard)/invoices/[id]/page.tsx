@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { InvoiceActions } from "./invoice-actions";
+import { DocumentActivityTimeline } from "@/components/document-activity-timeline";
 
 function fmt(n: number): string {
   return n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -173,6 +174,10 @@ export default async function InvoiceDetailPage({
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="mt-6">
+        <DocumentActivityTimeline documentType="invoice" documentId={inv.id} />
       </div>
 
       <p className="mt-6 text-xs text-muted-foreground">

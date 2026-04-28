@@ -24,6 +24,9 @@ export interface SendDDRecurringInvoiceInput {
   xeroOnlineUrl: string | null;
   /** Plain text describing what's being billed (e.g. "NBN Plan 100/40"). */
   serviceSummary: string;
+  /** Local invoice id, passed as a custom header so Resend webhook events
+   *  (delivered/opened/bounced) can be attached to this invoice's timeline. */
+  invoiceId?: string;
 }
 
 /**
@@ -90,6 +93,10 @@ export async function sendDDRecurringInvoiceEmail(input: SendDDRecurringInvoiceI
     replyTo: REPLY_TO,
     subject,
     html: emailLayout(body),
+    headers: input.invoiceId ? {
+      "X-Cf-Doc-Type": "invoice",
+      "X-Cf-Doc-Id": input.invoiceId,
+    } : undefined,
   });
 }
 

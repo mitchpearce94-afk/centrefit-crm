@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useToast } from "@/components/ui/toast";
 
@@ -36,12 +36,32 @@ export function NewRecurringPlanWizard({
   services: Service[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
 
-  const [customerId, setCustomerId] = useState<string | null>(null);
-  // Sites = ordered list of "drafts" — one per facility we're onboarding.
-  const [sites, setSites] = useState<SiteDraft[]>([]);
+  // Manual-lookup conversion bridges through query params (workstream D):
+  //   ?customer=<id>&site=<id>&plan_sku=<code>&from_enquiry=<id>
+  // We pre-select customer + site, pre-tick the matching service, and on
+  // submit stamp the resulting plan id back onto the enquiry.
+  const initialCustomerId = searchParams.get("customer");
+  const initialSiteId = searchParams.get("site");
+  const initialPlanSku = searchParams.get("plan_sku");
+  const fromEnquiryId = searchParams.get("from_enquiry");
+
+  const [customerId, setCustomerId] = useState<string | null>(initialCustomerId);
+  const [sites, setSites] = useState<SiteDraft[]>(() => {
+    if (initialCustomerId) {
+      const seedItems = new Map<string, number>();
+      if (initialPlanSku) {
+        const svc = services.find((s) => s.code === initialPlanSku);
+        if (svc) seedItems.set(svc.id, 1);
+      }
+      return [{ siteId: initialSiteId ?? null, items: seedItems }];
+    }
+    return [];
+  });
+  const [firstInvoiceDate, setFirstInvoiceDate] = useState<string>("");
 
   const customer = useMemo(
     () => customers.find((c) => c.id === customerId) ?? null,
@@ -136,6 +156,7 @@ export function NewRecurringPlanWizard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerId: customer.id,
+          firstInvoiceDate: firstInvoiceDate || null,
           sites: sites.map((s) => ({
             siteId: s.siteId,
             items: Array.from(s.items.entries()).map(([serviceId, quantity]) => ({
@@ -149,6 +170,17 @@ export function NewRecurringPlanWizard({
         toast(json.error ?? "Failed to create plan", "error");
         setSubmitting(false);
         return;
+      }
+      // If we came in from a manual-lookup enquiry, stamp the new plan id
+      // back so the enquiry detail page shows "Plan created — open" next time.
+      if (fromEnquiryId && json.planIds?.[0]) {
+        try {
+          await fetch(`/api/nbn-enquiries/${fromEnquiryId}/link-recurring-plan`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ recurringPlanId: json.planIds[0] }),
+          });
+        } catch { /* non-blocking */ }
       }
       toast(`Created ${json.planIds.length} plan${json.planIds.length === 1 ? "" : "s"} — mandate email sent to ${primary.email}`);
       router.push("/invoices/recurring");
@@ -229,6 +261,21 @@ export function NewRecurringPlanWizard({
           <div className="flex items-center gap-2">
             <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">3</span>
             <h2 className="text-base font-semibold">Review &amp; send</h2>
+          </div>
+          <div className="rounded-md border border-border bg-muted/10 p-3">
+            <label className="block">
+              <span className="text-xs font-medium text-muted-foreground">Start billing on (optional)</span>
+              <input
+                type="date"
+                value={firstInvoiceDate}
+                min={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setFirstInvoiceDate(e.target.value)}
+                className="mt-1 w-full rounded-md border border-border bg-input px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <span className="mt-1 block text-[11px] text-muted-foreground">
+                Leave blank to bill from the day the customer&apos;s mandate is verified. Pick a future date for sites that haven&apos;t opened yet (e.g. a gym launching in 3 months).
+              </span>
+            </label>
           </div>
           <div className="rounded-md border border-border bg-muted/20 p-4 space-y-1.5 text-sm">
             <div className="flex justify-between">

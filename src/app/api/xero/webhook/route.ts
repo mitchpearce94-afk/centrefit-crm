@@ -5,6 +5,8 @@ import { getAuthedClient } from "@/lib/xero/client";
 import { fetchXeroInvoice } from "@/lib/xero/invoices";
 import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.server";
 import { sendDDRecurringInvoiceEmail } from "@/lib/emails/dd-recurring-invoice";
+import { logDocumentActivity } from "@/lib/activity/log";
+import { enqueueNotification } from "@/lib/notifications/enqueue";
 
 /**
  * Xero webhook receiver.
@@ -152,6 +154,22 @@ async function processInvoiceEvent(
     })
     .eq("id", invoice.id);
 
+  // Log Xero state transitions on the invoice timeline. We only emit on the
+  // edge — if the webhook fires repeatedly with the same status (Xero does
+  // this when something orthogonal to status changes), we skip.
+  if (invoice.status !== normalisedStatus) {
+    await logDocumentActivity({
+      supabase,
+      documentType: "invoice",
+      documentId: invoice.id,
+      eventType: `invoice.${normalisedStatus === "paid" ? "paid"
+        : normalisedStatus === "void" ? "voided"
+        : normalisedStatus === "authorised" ? "authorised_in_xero"
+        : "status_changed"}`,
+      metadata: { from: invoice.status, to: normalisedStatus, amount_due: latest.amountDue, amount_paid: latest.amountPaid },
+    });
+  }
+
   // Only transition the job once, on the paid edge.
   if (!wasPaid && nowPaid && invoice.job_id) {
     // PP2 / final-payment path uses the existing `payment_received` rule
@@ -163,6 +181,20 @@ async function processInvoiceEvent(
     } catch (err) {
       console.error(`[xero-webhook] auto-transition failed for job ${invoice.job_id}:`, err);
     }
+  }
+
+  // Notify finance + the quote owner on the paid edge.
+  if (!wasPaid && nowPaid) {
+    await enqueueNotification({
+      supabase,
+      typeCode: "invoice.paid",
+      refType: "invoice",
+      refId: invoice.id,
+      audience: { allActive: true },
+      title: `Invoice paid · $${Number(latest.total).toFixed(2)}`,
+      body: latest.invoiceNumber ? `${latest.invoiceNumber} marked paid in Xero.` : "Invoice marked paid in Xero.",
+      href: `/invoices/${invoice.id}`,
+    });
   }
 }
 
@@ -240,6 +272,14 @@ async function ingestRecurringChildInvoice(
     return;
   }
 
+  await logDocumentActivity({
+    supabase,
+    documentType: "invoice",
+    documentId: inserted.id,
+    eventType: "invoice.created",
+    metadata: { source: "recurring", xero_invoice_number: latest.invoiceNumber, recurring_plan_id: plan.id },
+  });
+
   // Send the DD-aware email. Best-effort — log but don't throw if Resend fails.
   try {
     const customer = Array.isArray(plan.customers) ? plan.customers[0] : plan.customers;
@@ -265,6 +305,7 @@ async function ingestRecurringChildInvoice(
       debitDate: latest.dueDate,
       xeroOnlineUrl: null, // RI children don't have OnlineInvoiceUrl unless explicitly fetched separately
       serviceSummary,
+      invoiceId: inserted.id,
     });
   } catch (err) {
     console.error(`[xero-webhook] DD recurring email failed for plan ${plan.id}:`, err);

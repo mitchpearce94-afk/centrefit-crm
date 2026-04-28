@@ -3,6 +3,7 @@ import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/sidebar";
 import { ToastProvider } from "@/components/ui/toast";
+import { NotificationsBell } from "@/components/notifications-bell";
 
 export default async function DashboardLayout({
   children,
@@ -49,6 +50,12 @@ export default async function DashboardLayout({
             <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
               CRM
             </span>
+            <div className="ml-auto">
+              <NotificationsBell />
+            </div>
+          </div>
+          <div className="hidden lg:flex sticky top-0 z-30 h-12 items-center justify-end gap-2 border-b border-border bg-card px-6">
+            <NotificationsBell />
           </div>
           <div className="p-4 md:p-6">{children}</div>
         </main>

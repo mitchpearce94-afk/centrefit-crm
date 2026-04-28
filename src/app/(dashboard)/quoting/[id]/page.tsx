@@ -5,6 +5,7 @@ import { DEVICE_TYPES } from "@/lib/quote-engine";
 import { QuoteActions } from "./quote-actions";
 import { QuoteInvoices } from "./quote-invoices";
 import { SupplierPricing } from "./supplier-pricing";
+import { DocumentActivityTimeline } from "@/components/document-activity-timeline";
 
 function fmt(n: number): string {
   return n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -416,6 +417,10 @@ export default async function QuoteDetailPage({
         pricing={pricing}
         invoices={invoices}
       />
+
+      <div className="mt-6">
+        <DocumentActivityTimeline documentType="quote" documentId={quote.id} />
+      </div>
 
       <p className="mt-6 text-xs text-muted-foreground">Created {new Date(quote.created_at).toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
     </div>

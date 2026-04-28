@@ -5,6 +5,7 @@ import { generateScopeOfWorks } from "@/lib/quote-engine";
 import { generateQuotePdfBuffer, type QuoteForPdf } from "@/lib/quote-pdf";
 import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.server";
 import { emailHeader, emailFooter, emailLayout } from "@/lib/emails/brand";
+import { logDocumentActivity } from "@/lib/activity/log";
 import crypto from "crypto";
 
 function getResend() {
@@ -171,6 +172,13 @@ export async function POST(req: NextRequest) {
       to: email,
       subject: `Quotation ${quote.ref} — ${clientName}${quote.site_name ? ` — ${quote.site_name}` : ''}`,
       html: emailHtml,
+      // Custom headers — picked up by /api/resend/webhook to link
+      // delivered / opened / bounced events to this quote on the activity
+      // timeline (workstream E).
+      headers: {
+        "X-Cf-Doc-Type": "quote",
+        "X-Cf-Doc-Id": quote.id,
+      },
       attachments: [
         {
           filename,
@@ -182,6 +190,14 @@ export async function POST(req: NextRequest) {
     if (sendError) {
       return NextResponse.json({ error: sendError.message }, { status: 500 });
     }
+
+    await logDocumentActivity({
+      supabase,
+      documentType: "quote",
+      documentId: quote.id,
+      eventType: "quote.sent",
+      metadata: { to: email, ref: quote.ref },
+    });
 
     return NextResponse.json({ success: true });
   } catch (err: unknown) {

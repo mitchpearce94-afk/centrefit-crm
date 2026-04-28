@@ -3,6 +3,8 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.server";
 import { createInvoiceFromAcceptedQuote } from "@/lib/invoices/create-from-quote";
+import { logDocumentActivity } from "@/lib/activity/log";
+import { enqueueNotification } from "@/lib/notifications/enqueue";
 
 export async function POST(req: NextRequest) {
   const { token, action } = await req.json();
@@ -34,7 +36,7 @@ export async function POST(req: NextRequest) {
     .update(update)
     .eq("response_token", token)
     .eq("status", "sent")
-    .select("id, ref, job_id")
+    .select("id, ref, job_id, created_by, customer:customers(name)")
     .maybeSingle();
 
   if (updateError) {
@@ -59,6 +61,34 @@ export async function POST(req: NextRequest) {
   }
 
   const quote = updated;
+
+  // Log the customer-driven action on the quote timeline.
+  await logDocumentActivity({
+    supabase,
+    documentType: "quote",
+    documentId: quote.id,
+    eventType: `quote.${newStatus}`,
+    actor: "recipient",
+    metadata: {
+      ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      user_agent: req.headers.get("user-agent") ?? null,
+    },
+  });
+
+  // Notify the quote owner (workstream F).
+  const customerName = (Array.isArray((quote as { customer?: { name?: string }[] }).customer)
+    ? (quote as { customer?: { name?: string }[] }).customer?.[0]?.name
+    : (quote as { customer?: { name?: string } }).customer?.name) ?? "Customer";
+  await enqueueNotification({
+    supabase,
+    typeCode: `quote.${newStatus}`,
+    refType: "quote",
+    refId: quote.id,
+    audience: { staffId: (quote as { created_by?: string }).created_by },
+    title: newStatus === "accepted" ? `Quote ${quote.ref} accepted` : `Quote ${quote.ref} declined`,
+    body: `${customerName} ${newStatus} ${quote.ref}.`,
+    href: `/quoting/${quote.id}`,
+  });
 
   // Auto-transition linked job
   if (quote.job_id) {

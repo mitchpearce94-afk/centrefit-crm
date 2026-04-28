@@ -1,5 +1,7 @@
 import { createClient as createServiceClient } from "@supabase/supabase-js";
+import { headers } from "next/headers";
 import { generateScopeOfWorks } from "@/lib/quote-engine";
+import { logDocumentActivity, shouldLogView } from "@/lib/activity/log";
 import { QuoteResponseView } from "./response-view";
 
 export const dynamic = "force-dynamic";
@@ -82,6 +84,21 @@ export default async function QuoteResponsePage({
   const scope = generateScopeOfWorks(bom, products, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions);
 
   const clientName = quote.customer?.name || quote.client_name;
+
+  // Log a 'viewed' event on the timeline, deduped by IP within 1 hour so
+  // a customer scrolling/refreshing the page doesn't flood the log.
+  const hdrs = await headers();
+  const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? hdrs.get("x-real-ip") ?? "unknown";
+  if (await shouldLogView(sb, "quote", quote.id, ip)) {
+    await logDocumentActivity({
+      supabase: sb,
+      documentType: "quote",
+      documentId: quote.id,
+      eventType: "quote.viewed",
+      actor: "recipient",
+      metadata: { ip, user_agent: hdrs.get("user-agent") ?? null },
+    });
+  }
 
   return (
     <QuoteResponseView

@@ -5,6 +5,7 @@ import { getMandate, getBillingRequest } from "@/lib/gocardless/client";
 import { getAuthedClient } from "@/lib/xero/client";
 import { findOrCreateContact } from "@/lib/xero/contacts";
 import { createRepeatingInvoice, type PlanFrequency } from "@/lib/xero/repeating-invoices";
+import { enqueueNotification } from "@/lib/notifications/enqueue";
 
 /**
  * GoCardless webhook receiver.
@@ -176,6 +177,16 @@ async function handleMandateEvent(
           notes: `${event.action} via GC: ${event.details.description ?? event.details.cause ?? ""}`.slice(0, 1000),
         })
         .eq("id", plan.id);
+      await enqueueNotification({
+        supabase,
+        typeCode: "mandate.failed",
+        refType: "recurring_plan",
+        refId: plan.id,
+        audience: { allActive: true },
+        title: `Mandate ${event.action}`,
+        body: `${event.details.description ?? event.details.cause ?? "GC reported a mandate state change."}`,
+        href: `/invoices/recurring/${plan.id}`,
+      });
       break;
 
     default:
@@ -196,9 +207,9 @@ async function activatePlan(
   const { data: plan } = await supabase
     .from("recurring_plans")
     .select(`
-      id, status, customer_id, site_id, gc_mandate_id, xero_repeating_invoice_id,
+      id, status, customer_id, site_id, gc_mandate_id, xero_repeating_invoice_id, first_invoice_date,
       customers(id, name, abn, xero_contact_id, customer_contacts(name, email, phone, is_primary)),
-      customer_sites(name, address, suburb, state, postcode)
+      customer_sites(name, address, suburb, state, postcode, xero_contact_id)
     `)
     .eq("id", planId)
     .single();
@@ -234,21 +245,43 @@ async function activatePlan(
 
   const { client: xero, conn } = await getAuthedClient(supabase);
 
-  // Resolve the Xero contact for this site/customer. We pass the plan's
-  // primary contact + abn through findOrCreateContact, which deduplicates
-  // by xero_contact_id if already linked.
-  const xeroContactId = await findOrCreateContact(supabase, xero, conn.tenant_id, {
-    id: customer.id,
-    name: site?.name ? `${customer.name} — ${site.name}` : customer.name,
-    xero_contact_id: customer.xero_contact_id,
-    email: primary?.email ?? null,
-    phone: primary?.phone ?? null,
-    abn: customer.abn ?? null,
-  });
+  // Resolve the Xero contact via the site-aware helper so the per-site
+  // mapping persists on customer_sites.xero_contact_id and the site address
+  // is attached for the invoice "Bill To" block. Helper handles dedupe
+  // against pre-existing Xero contacts (loose name match).
+  const xeroContactId = await findOrCreateContact(
+    supabase,
+    xero,
+    conn.tenant_id,
+    {
+      id: customer.id,
+      name: customer.name,
+      xero_contact_id: customer.xero_contact_id,
+      email: primary?.email ?? null,
+      phone: primary?.phone ?? null,
+      abn: customer.abn ?? null,
+    },
+    plan.site_id && site
+      ? {
+          id: plan.site_id,
+          name: site.name,
+          xero_contact_id: (site as { xero_contact_id?: string | null }).xero_contact_id ?? null,
+          address: site.address ?? null,
+          suburb: site.suburb ?? null,
+          state: site.state ?? null,
+          postcode: site.postcode ?? null,
+        }
+      : null,
+  );
 
-  // First invoice fires today (auto-debit kicks in via the linked mandate).
+  // First invoice fires on the customer-chosen start date (workstream A) or
+  // today by default (legacy behaviour). Xero rejects past dates, so a stale
+  // pre-active first_invoice_date that's now in the past gets bumped to today.
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
+  const startDate = plan.first_invoice_date && plan.first_invoice_date >= todayStr
+    ? plan.first_invoice_date
+    : todayStr;
 
   let monthlyRiId: string | null = null;
   let yearlyRiId: string | null = null;
@@ -260,7 +293,7 @@ async function activatePlan(
       xeroContactId,
       reference: `Plan ${plan.id.slice(0, 8)}`,
       frequency,
-      nextScheduledDate: todayStr,
+      nextScheduledDate: startDate,
       dueDays: 7,
       childStatus: "AUTHORISED",
       lineItems: group.map((it) => ({
@@ -285,7 +318,20 @@ async function activatePlan(
       xero_contact_id: xeroContactId,
       xero_repeating_invoice_id: primaryRiId,
       xero_repeating_invoice_secondary_id: secondaryRiId,
-      next_invoice_date: todayStr,
+      next_invoice_date: startDate,
     })
     .eq("id", planId);
+
+  await enqueueNotification({
+    supabase,
+    typeCode: "mandate.active",
+    refType: "recurring_plan",
+    refId: planId,
+    audience: { allActive: true },
+    title: `${customer.name} mandate active`,
+    body: site?.name
+      ? `${site.name} — recurring billing live, first invoice ${startDate}.`
+      : `Recurring billing live, first invoice ${startDate}.`,
+    href: `/invoices/recurring/${planId}`,
+  });
 }
