@@ -105,6 +105,12 @@ export async function POST(req: NextRequest) {
   const mandateLinks: MandateLink[] = [];
   const createdPlanIds: string[] = [];
 
+  // Alias the customer's email per-site only when this submission has more
+  // than one site — otherwise the customer sees their normal email on the
+  // GC-hosted form, which is way less confusing. For multi-site, the alias
+  // is necessary for unambiguous Xero contact mapping.
+  const useAliasEmails = body.sites.length > 1;
+
   for (const siteInput of body.sites) {
     const siteId = siteInput.siteId ?? null;
     const site = siteId
@@ -150,16 +156,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Plan items insert failed: ${itemsErr.message}` }, { status: 500 });
     }
 
-    // Build alias email + GoCardless redirect flow.
+    // Build the email for this plan + the GoCardless redirect flow.
     //
     // AU BECS accounts on GoCardless block direct POST /customers — they
     // require the customer to fill in their own details on a GC-hosted
-    // form. We use `prefilled_customer` to pre-populate the form (incl.
-    // alias email) and skip the standalone POST /customers call. GC creates
-    // the customer record when the redirect flow is completed; we capture
-    // its ID at that point via the /complete endpoint hit from the
-    // success-redirect page.
-    const aliasFor = aliasEmail(primary.email, siteLabel, plan.id.slice(0, 6));
+    // form. We use `prefilled_customer` to pre-populate the form and skip
+    // the standalone POST /customers call. GC creates the customer record
+    // when the redirect flow is completed; we capture its ID at that point
+    // via the /complete endpoint hit from the success-redirect page.
+    const aliasFor = useAliasEmails
+      ? aliasEmail(primary.email, siteLabel, plan.id.slice(0, 6))
+      : primary.email;
     let signupUrl: string;
     let redirectFlowId: string;
     try {

@@ -91,7 +91,6 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
                 readOnly
                 value={plan.signup_link_url}
                 className="flex-1 rounded-md border border-border bg-input px-2 py-1 text-xs font-mono"
-                onFocus={(e) => e.currentTarget.select()}
               />
               <a
                 href={plan.signup_link_url}
