@@ -1,21 +1,25 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 /**
  * Diagnostic endpoint for the GoCardless integration.
  *
- * Hits 3 endpoints and reports the raw response for each, so we can
- * differentiate "token doesn't work at all" vs "GET works, POST doesn't"
- * vs "POST /customers blocked, redirect_flows works" — these all look
- * identical from the orchestrator failure path but have different fixes.
+ * Default: probe API versions for `lock_customer_details` support.
+ * `?customer=CU0xxx` mode: pull the actual GC customer record to see
+ *   what fields were stored at sign-up (separates "we didn't send the
+ *   field" from "customer cleared it on the form").
  *
- * Auth-gated (logged-in CRM users only). Remove or gate to admin once
- * the integration is healthy.
+ * Auth-gated (logged-in CRM users only).
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+
+  const customerId = req.nextUrl.searchParams.get("customer");
+  if (customerId) {
+    return inspectCustomer(customerId);
+  }
 
   const token = process.env.GOCARDLESS_API_TOKEN;
   const env = process.env.GOCARDLESS_ENVIRONMENT;
@@ -122,5 +126,25 @@ export async function GET() {
     tokenLength: token.length,
     tokenPrefix: token.slice(0, 5),
     probes,
+  });
+}
+
+async function inspectCustomer(customerId: string) {
+  const token = process.env.GOCARDLESS_API_TOKEN;
+  const env = process.env.GOCARDLESS_ENVIRONMENT;
+  if (!token) return NextResponse.json({ error: "GOCARDLESS_API_TOKEN not set" }, { status: 500 });
+  const base = env === "sandbox" ? "https://api-sandbox.gocardless.com" : "https://api.gocardless.com";
+
+  const res = await fetch(`${base}/customers/${customerId}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "GoCardless-Version": "2015-07-06",
+      Accept: "application/json",
+    },
+  });
+  const body = await res.text();
+  return NextResponse.json({
+    status: res.status,
+    body: (() => { try { return JSON.parse(body); } catch { return body; } })(),
   });
 }
