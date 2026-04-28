@@ -47,12 +47,12 @@ export default async function InvoicesPage() {
   })();
 
   return (
-    <div>
+    <>
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Invoices</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Generated in Xero. Status mirrored here via refresh.
+            One-off invoices generated from accepted quotes and jobs. Status mirrored from Xero via webhook.
           </p>
         </div>
       </div>
@@ -142,6 +142,6 @@ export default async function InvoicesPage() {
           </tbody>
         </table>
       </div>
-    </div>
+    </>
   );
 }
