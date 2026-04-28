@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createBillingRequest, createBillingRequestFlow } from "@/lib/gocardless/client";
+import {
+  createBillingRequest,
+  createBillingRequestFlow,
+  type GcCustomerInput,
+} from "@/lib/gocardless/client";
 import { aliasEmail } from "@/lib/recurring/alias";
 import { sendMandateSignupEmail, type MandateLink } from "@/lib/emails/recurring-mandate-signup";
 
@@ -105,12 +109,6 @@ export async function POST(req: NextRequest) {
   const mandateLinks: MandateLink[] = [];
   const createdPlanIds: string[] = [];
 
-  // Alias the customer's email per-site only when this submission has more
-  // than one site — otherwise the customer sees their normal email on the
-  // GC-hosted form, which is way less confusing. For multi-site, the alias
-  // is necessary for unambiguous Xero contact mapping.
-  const useAliasEmails = body.sites.length > 1;
-
   for (const siteInput of body.sites) {
     const siteId = siteInput.siteId ?? null;
     const site = siteId
@@ -158,18 +156,23 @@ export async function POST(req: NextRequest) {
 
     // Build the email for this plan + the GoCardless Billing Request flow.
     //
-    // We use Billing Requests (newer GC API) instead of Redirect Flows so we
-    // can pass `lock_customer_details: true` — that locks all the prefilled
-    // fields so the customer can't edit them on the hosted form. Critical
-    // when we're using `+sitename` aliases for multi-site mandate ↔ Xero
-    // contact mapping; an editable email field would let customers
-    // accidentally break the linkage.
+    // Standardised approach (locked in 2026-04-28): every plan gets the
+    // `+sitename` alias regardless of whether this is single-site or
+    // multi-site. Combined with `lock_customer_details: true` on the BR
+    // flow, this means:
+    //   - Customer can't edit the email on the GC-hosted form, so the
+    //     mandate ↔ Xero contact mapping is unambiguous every time.
+    //   - The mandate-signup email explains the alias (callout block).
+    //   - Workflow stays identical between single and multi-site plans.
     //
-    // The completion / customer + mandate ID capture happens via the GC
-    // webhook on `billing_requests.fulfilled`, not via a return-redirect.
-    const aliasFor = useAliasEmails
-      ? aliasEmail(primary.email, siteLabel, plan.id.slice(0, 6))
-      : primary.email;
+    // We DON'T prefill address — that's left blank for the customer to fill
+    // on the form (we don't always have site addresses). Only fields that
+    // appear in `prefilled_customer` are subject to the lock; address
+    // remains editable so the customer enters the bank's billing address.
+    //
+    // BR fulfilment + customer/mandate ID capture happens via the GC
+    // webhook on `billing_requests.fulfilled`.
+    const aliasFor = aliasEmail(primary.email, siteLabel, plan.id.slice(0, 6));
     let signupUrl: string;
     let billingRequestId: string;
     try {
@@ -190,26 +193,26 @@ export async function POST(req: NextRequest) {
       );
       billingRequestId = br.id;
 
+      // Only include identity fields in prefilled_customer (NOT address) so
+      // the lock applies to identity but the customer can still type in
+      // their billing address on the form.
+      const givenName = primary.name?.split(/\s+/)[0];
+      const familyName = primary.name?.split(/\s+/).slice(1).join(" ");
+      const prefilled: GcCustomerInput = {
+        email: aliasFor,
+        company_name: customer.name,
+        country_code: "AU",
+        ...(givenName ? { given_name: givenName } : {}),
+        ...(familyName ? { family_name: familyName } : {}),
+      };
+
       const flow = await createBillingRequestFlow(
         {
           redirect_uri: `${appUrl}/recurring-thanks?plan=${plan.id}`,
           links: { billing_request: br.id },
           show_redirect_buttons: true,
-          // lock_customer_details intentionally omitted: GC rejects it when
-          // any prefilled field is missing (e.g. site has no address). The
-          // email-explanation callout in the multi-site mandate-signup
-          // email handles the UX of "your email looks slightly different".
-          prefilled_customer: {
-            email: aliasFor,
-            company_name: customer.name,
-            given_name: primary.name?.split(/\s+/)[0] ?? "",
-            family_name: primary.name?.split(/\s+/).slice(1).join(" ") || undefined,
-            address_line1: site?.address ?? undefined,
-            city: site?.suburb ?? undefined,
-            region: site?.state ?? undefined,
-            postal_code: site?.postcode ?? undefined,
-            country_code: "AU",
-          },
+          lock_customer_details: true,
+          prefilled_customer: prefilled,
         },
         `plan-${plan.id}-brf`,
       );

@@ -15,9 +15,11 @@ import "server-only";
 const LIVE_BASE = "https://api.gocardless.com";
 const SANDBOX_BASE = "https://api-sandbox.gocardless.com";
 
-// GoCardless requires this version header. Pinning to a stable release
-// — bump deliberately when GC publishes breaking changes.
-const GC_VERSION = "2015-07-06";
+// GoCardless API version. Pinned to 2018-11-29 — well-tested stable
+// version with full Billing Request support, including
+// `lock_customer_details` on billing_request_flows. The 2015-07-06
+// snapshot we used initially didn't recognise the lock field.
+const GC_VERSION = "2018-11-29";
 
 function baseUrl(): string {
   return process.env.GOCARDLESS_ENVIRONMENT === "sandbox" ? SANDBOX_BASE : LIVE_BASE;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useToast } from "@/components/ui/toast";
@@ -182,16 +182,7 @@ export function NewRecurringPlanWizard({
           <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">1</span>
           <h2 className="text-base font-semibold">Customer</h2>
         </div>
-        <select
-          value={customerId ?? ""}
-          onChange={(e) => pickCustomer(e.target.value)}
-          className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-        >
-          <option value="">Select a customer...</option>
-          {customers.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
+        <CustomerPicker customers={customers} selected={customer} onPick={pickCustomer} />
         {customer && (
           <p className="text-xs text-muted-foreground">
             Primary contact: <span className="text-foreground">{primary?.name ?? "—"}</span>
@@ -271,6 +262,114 @@ export function NewRecurringPlanWizard({
             {submitting ? "Creating..." : "Create plan & send mandate links"}
           </button>
         </section>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Searchable customer picker. Click to open, type to filter, click result to
+ * select. Closes on outside click or Esc. Beats a native <select> when the
+ * customer list grows past 20-ish entries — Centrefit will hit that quickly.
+ */
+function CustomerPicker({
+  customers,
+  selected,
+  onPick,
+}: {
+  customers: Customer[];
+  selected: Customer | null;
+  onPick: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    if (open) {
+      document.addEventListener("mousedown", onClickOutside);
+      document.addEventListener("keydown", onKey);
+      // Focus the search input once the panel opens.
+      setTimeout(() => inputRef.current?.focus(), 0);
+      return () => {
+        document.removeEventListener("mousedown", onClickOutside);
+        document.removeEventListener("keydown", onKey);
+      };
+    }
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return customers;
+    return customers.filter((c) => c.name.toLowerCase().includes(q));
+  }, [customers, query]);
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between rounded-md border border-border bg-input px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+      >
+        <span className={selected ? "text-foreground" : "text-muted-foreground"}>
+          {selected ? selected.name : "Select a customer..."}
+        </span>
+        <svg className="h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute z-30 mt-1 w-full rounded-md border border-border bg-card shadow-lg overflow-hidden">
+          <div className="border-b border-border p-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search customers..."
+              className="w-full rounded-md border border-border bg-input px-3 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            {filtered.length === 0 && (
+              <div className="px-3 py-4 text-center text-xs text-muted-foreground">No matches</div>
+            )}
+            {filtered.map((c) => {
+              const isSelected = selected?.id === c.id;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => {
+                    onPick(c.id);
+                    setOpen(false);
+                    setQuery("");
+                  }}
+                  className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                    isSelected ? "bg-primary/10 text-primary" : "hover:bg-accent"
+                  }`}
+                >
+                  {c.name}
+                  {c.customer_sites.length > 0 && (
+                    <span className="ml-2 text-[11px] text-muted-foreground">
+                      {c.customer_sites.length} {c.customer_sites.length === 1 ? "site" : "sites"}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
     </div>
   );
