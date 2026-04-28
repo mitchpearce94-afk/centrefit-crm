@@ -40,52 +40,81 @@ export async function GET() {
     }
   }
 
-  const probes = await Promise.all([
-    // 1. GET /creditors — read endpoint, lowest privilege. If this 403s, token
-    //    or account is broken.
-    probe("GET /creditors", { method: "GET", headers }, "/creditors"),
+  // Probe multiple GoCardless API versions to find which ones the account
+  // accepts AND which ones support `lock_customer_details` on
+  // billing_request_flows. We do this dynamically because GC's version
+  // calendar isn't well-documented and 2018-11-29 returned version_not_found.
+  const versionsToTry = [
+    "2015-07-06",
+    "2016-04-13",
+    "2017-02-27",
+    "2017-09-12",
+    "2018-04-11",
+    "2018-09-11",
+    "2018-09-13",
+    "2019-08-13",
+    "2020-06-18",
+    "2021-09-23",
+    "2022-04-29",
+    "2023-04-04",
+    "2024-08-14",
+  ];
 
-    // 2. GET /customers?limit=1 — read endpoint scoped to customers.
-    probe("GET /customers", { method: "GET", headers }, "/customers?limit=1"),
+  async function probeVersion(version: string) {
+    const v = { ...headers, "GoCardless-Version": version };
 
-    // 3. POST /customers — the actual write the orchestrator uses. Minimal
-    //    payload to isolate from any field-validation issues.
-    probe(
-      "POST /customers (minimal)",
-      {
-        method: "POST",
-        headers: { ...headers, "Idempotency-Key": `debug-${Date.now()}` },
-        body: JSON.stringify({
-          customers: {
+    // Step 1: create a BR (we need one before testing flows). If creating
+    // the BR fails with version_not_found, this version is invalid.
+    const brRes = await fetch(`${base}/billing_requests`, {
+      method: "POST",
+      headers: { ...v, "Idempotency-Key": `debug-v-${version}-${Date.now()}` },
+      body: JSON.stringify({
+        billing_requests: {
+          mandate_request: { scheme: "becs", currency: "AUD" },
+        },
+      }),
+    });
+    const brBody = await brRes.text();
+    if (brRes.status === 400 && brBody.includes("version_not_found")) {
+      return { version, valid: false, reason: "version_not_found", lockSupported: false };
+    }
+    if (!brRes.ok) {
+      return { version, valid: false, reason: `BR create ${brRes.status}: ${brBody.slice(0, 200)}`, lockSupported: false };
+    }
+    let brId: string;
+    try { brId = JSON.parse(brBody).billing_requests.id; }
+    catch { return { version, valid: false, reason: "BR parse fail", lockSupported: false }; }
+
+    // Step 2: try to create a BRF with lock_customer_details: true.
+    const brfRes = await fetch(`${base}/billing_request_flows`, {
+      method: "POST",
+      headers: { ...v, "Idempotency-Key": `debug-vf-${version}-${Date.now()}` },
+      body: JSON.stringify({
+        billing_request_flows: {
+          redirect_uri: "https://crm.centrefit.com.au/recurring-thanks",
+          links: { billing_request: brId },
+          lock_customer_details: true,
+          prefilled_customer: {
             email: "debug+probe@centrefit.com.au",
+            company_name: "Debug",
             given_name: "Debug",
             family_name: "Probe",
             country_code: "AU",
           },
-        }),
-      },
-      "/customers",
-    ),
+        },
+      }),
+    });
+    const brfBody = await brfRes.text();
+    return {
+      version,
+      valid: true,
+      lockStatus: brfRes.status,
+      lockSupported: brfRes.ok,
+      lockBody: brfBody.slice(0, 400),
+    };
+  }
 
-    // 4. POST /redirect_flows (without an existing customer) — the alternative
-    //    customer-creation path. If 1+2 work but 3 fails and 4 works, the AU
-    //    account quirk is confirmed and we just route around POST /customers.
-    probe(
-      "POST /redirect_flows (no prefill)",
-      {
-        method: "POST",
-        headers: { ...headers, "Idempotency-Key": `debug-rf-${Date.now()}` },
-        body: JSON.stringify({
-          redirect_flows: {
-            description: "Centrefit GC API diagnostic",
-            session_token: `debug-${Date.now()}`,
-            success_redirect_url: "https://crm.centrefit.com.au/recurring-thanks",
-          },
-        }),
-      },
-      "/redirect_flows",
-    ),
-  ]);
+  const probes = await Promise.all(versionsToTry.map(probeVersion));
 
   return NextResponse.json({
     environment: env,
