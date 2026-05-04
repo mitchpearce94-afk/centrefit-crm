@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
+import { KebabMenu } from "@/components/ui/kebab-menu";
 import { generateScopeOfWorks, renderScopeAsHtml } from "@/lib/quote-engine";
 import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 import type { SiteInfo, ScopeOverrides } from "@/lib/quote-engine";
@@ -88,7 +89,9 @@ export function QuoteActions({
     setSending(false);
   }
 
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [showLinkJobModal, setShowLinkJobModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   async function handleDelete() {
     setUpdating(true);
@@ -227,96 +230,179 @@ export function QuoteActions({
     w.document.close();
   }
 
+  // Status-driven primary action — the one button we keep in the header
+  // alongside Preview, picked to match the next workflow step.
+  const primaryAction =
+    status === "draft"
+      ? { label: "Mark as Sent", onClick: () => updateStatus("sent", { sent_at: new Date().toISOString() }), tone: "blue" as const }
+      : status === "sent"
+      ? { label: "Mark Accepted", onClick: () => updateStatus("accepted", { accepted_at: new Date().toISOString() }), tone: "emerald" as const }
+      : null;
+
+  const linkedJob = jobs.find((j) => j.id === currentJobId);
+
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">
-        {/* Edit — draft only */}
-        {status === "draft" && (
-          <button onClick={() => router.push(`/quoting/${quoteId}/edit`)} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Edit</button>
-        )}
-
-        <button onClick={() => setShowPreview(true)} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors">Preview Quote</button>
-
-        {/* Scope of Works — edit clauses + custom lines */}
+      <div className="flex flex-wrap items-center gap-2 justify-end">
         <button
-          onClick={() => setShowScopeEditor(true)}
-          className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${
-            hasScopeOverrides
-              ? "border-amber-500/40 bg-amber-500/5 text-amber-300 hover:bg-amber-500/10"
-              : "border-border text-muted-foreground hover:text-foreground hover:bg-accent"
-          }`}
+          onClick={() => setShowPreview(true)}
+          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
-          Scope of Works{hasScopeOverrides ? " • Edited" : ""}
+          Preview Quote
         </button>
 
-        {/* Warehouse Pick List */}
-        <button onClick={() => openBOMWindow("warehouse")} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Warehouse BOM</button>
-
-        {/* Supplier Purchase Orders */}
-        <button onClick={() => openBOMWindow("supplier")} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Supplier Orders</button>
-
-        {/* Mark as Sent */}
-        {status === "draft" && (
-          <button onClick={() => updateStatus("sent", { sent_at: new Date().toISOString() })} disabled={updating} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors">Mark as Sent</button>
+        {primaryAction && (
+          <button
+            onClick={primaryAction.onClick}
+            disabled={updating}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50 transition-colors ${
+              primaryAction.tone === "blue" ? "bg-blue-600 hover:bg-blue-500" : "bg-emerald-600 hover:bg-emerald-500"
+            }`}
+          >
+            {primaryAction.label}
+          </button>
         )}
 
-        {/* Send to Customer email */}
-        {(status === "draft" || status === "sent") && (
-          <div className="flex items-center gap-1.5">
-            <input type="email" value={sendEmail} onChange={(e) => setSendEmail(e.target.value)} placeholder="customer@email.com" className="h-8 w-48 rounded-md border border-border bg-input px-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
-            <button onClick={handleSendToCustomer} disabled={sending} className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors">
-              {sending ? "Sending..." : "Send to Customer"}
-            </button>
-          </div>
-        )}
-
-        {/* Accept / Decline */}
-        {status === "sent" && (
-          <>
-            <button onClick={() => updateStatus("accepted", { accepted_at: new Date().toISOString() })} disabled={updating} className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors">Accepted</button>
-            <button onClick={() => updateStatus("declined", { declined_at: new Date().toISOString() })} disabled={updating} className="rounded-md border border-red-500/30 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50 transition-colors">Declined</button>
-          </>
-        )}
-
-        {/* Revert to Draft — for sent/declined/accepted */}
-        {(status === "sent" || status === "declined" || status === "accepted") && (
-          <button onClick={revertToDraft} disabled={updating} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 transition-colors">Revert to Draft</button>
-        )}
-
-        {/* Link to Job */}
-        <select
-          value={currentJobId || ""}
-          onChange={async (e) => {
-            const newJobId = e.target.value || null;
-            setCurrentJobId(newJobId);
-            await supabase.from("quotes").update({ job_id: newJobId }).eq("id", quoteId);
-            // Auto-transition the newly linked job based on current quote status
-            if (newJobId) {
-              const actionMap: Record<string, string> = { draft: "quote_created", sent: "quote_sent", accepted: "quote_accepted", declined: "quote_declined" };
-              if (actionMap[status]) await autoTransitionJobStatus(newJobId, actionMap[status], supabase);
-            }
-            router.refresh();
-          }}
-          className="h-8 rounded-md border border-border bg-input px-2 text-xs text-foreground focus:border-primary focus:outline-none"
-        >
-          <option value="">No job linked</option>
-          {jobs.map((j) => (
-            <option key={j.id} value={j.id}>
-              {j.number}{j.customer_name ? ` — ${j.customer_name}` : ''}
-            </option>
-          ))}
-        </select>
-
-        {/* Delete */}
-        {!confirmDelete ? (
-          <button onClick={() => setConfirmDelete(true)} className="rounded-md border border-red-500/20 px-3 py-1.5 text-xs text-red-400/60 hover:text-red-400 hover:border-red-500/40 transition-colors">Delete</button>
-        ) : (
-          <div className="flex items-center gap-1.5">
-            <button onClick={handleDelete} disabled={updating} className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500 disabled:opacity-50 transition-colors">Confirm Delete</button>
-            <button onClick={() => setConfirmDelete(false)} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">Cancel</button>
-          </div>
-        )}
+        <KebabMenu
+          sections={[
+            {
+              items: [
+                { label: "Edit Quote", onClick: () => router.push(`/quoting/${quoteId}/edit`), hidden: status !== "draft" },
+                { label: `Scope of Works${hasScopeOverrides ? " • Edited" : ""}`, onClick: () => setShowScopeEditor(true) },
+                { label: "Warehouse Pick List", onClick: () => openBOMWindow("warehouse") },
+                { label: "Supplier Orders", onClick: () => openBOMWindow("supplier") },
+              ],
+            },
+            {
+              items: [
+                { label: "Send to Customer…", onClick: () => setShowSendModal(true), hidden: status !== "draft" && status !== "sent" },
+                { label: "Mark Declined", onClick: () => updateStatus("declined", { declined_at: new Date().toISOString() }), hidden: status !== "sent" },
+                { label: "Revert to Draft", onClick: revertToDraft, hidden: status === "draft" },
+              ],
+            },
+            {
+              items: [
+                { label: linkedJob ? `Linked to ${linkedJob.number} — change…` : "Link to Job…", onClick: () => setShowLinkJobModal(true) },
+              ],
+            },
+            {
+              items: [
+                { label: "Delete Quote", onClick: () => setShowDeleteModal(true), danger: true },
+              ],
+            },
+          ]}
+        />
       </div>
+
+      {/* ── SEND TO CUSTOMER MODAL ── */}
+      {showSendModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !sending && setShowSendModal(false)} />
+          <div className="relative w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-2xl">
+            <h3 className="text-base font-semibold">Send Quote to Customer</h3>
+            <p className="mt-1 text-xs text-muted-foreground">{quoteRef} — {clientName}</p>
+            <label className="mt-4 block text-xs font-medium text-muted-foreground">Recipient email</label>
+            <input
+              type="email"
+              value={sendEmail}
+              onChange={(e) => setSendEmail(e.target.value)}
+              placeholder="customer@email.com"
+              autoFocus
+              className="mt-1 h-9 w-full rounded-md border border-border bg-input px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setShowSendModal(false)}
+                disabled={sending}
+                className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  await handleSendToCustomer();
+                  if (!sending) setShowSendModal(false);
+                }}
+                disabled={sending}
+                className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+              >
+                {sending ? "Sending…" : "Send"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── LINK TO JOB MODAL ── */}
+      {showLinkJobModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowLinkJobModal(false)} />
+          <div className="relative w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-2xl">
+            <h3 className="text-base font-semibold">Link Quote to a Job</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Linking will auto-transition the job's status to match this quote.</p>
+            <select
+              value={currentJobId || ""}
+              onChange={async (e) => {
+                const newJobId = e.target.value || null;
+                setCurrentJobId(newJobId);
+                await supabase.from("quotes").update({ job_id: newJobId }).eq("id", quoteId);
+                if (newJobId) {
+                  const actionMap: Record<string, string> = { draft: "quote_created", sent: "quote_sent", accepted: "quote_accepted", declined: "quote_declined" };
+                  if (actionMap[status]) await autoTransitionJobStatus(newJobId, actionMap[status], supabase);
+                }
+                setShowLinkJobModal(false);
+                router.refresh();
+              }}
+              className="mt-4 h-9 w-full rounded-md border border-border bg-input px-3 text-sm text-foreground focus:border-primary focus:outline-none"
+            >
+              <option value="">— No job linked —</option>
+              {jobs.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.number}{j.customer_name ? ` — ${j.customer_name}` : ""}
+                </option>
+              ))}
+            </select>
+            <div className="mt-5 flex justify-end">
+              <button
+                onClick={() => setShowLinkJobModal(false)}
+                className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── DELETE CONFIRM MODAL ── */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !updating && setShowDeleteModal(false)} />
+          <div className="relative w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-2xl">
+            <h3 className="text-base font-semibold">Delete this quote?</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {quoteRef} for <span className="font-medium text-foreground">{clientName}</span> will be permanently deleted, along with all line items and extras. Any linked plan will be unlinked but kept.
+            </p>
+            <p className="mt-2 text-xs text-amber-400">This cannot be undone.</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                disabled={updating}
+                className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={updating}
+                className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500 disabled:opacity-50 transition-colors"
+              >
+                {updating ? "Deleting…" : "Delete Quote"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── QUOTE PREVIEW MODAL ── */}
       {showPreview && pricing && (
