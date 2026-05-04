@@ -67,7 +67,7 @@ export function KebabMenu({ sections, triggerLabel = "More", align = "right", cl
       {open && (
         <div
           role="menu"
-          className={`absolute z-50 mt-1 min-w-[200px] rounded-md border border-border bg-popover shadow-lg overflow-hidden ${align === "right" ? "right-0" : "left-0"}`}
+          className={`absolute z-50 mt-1 min-w-[200px] rounded-md border border-border bg-card-elevated shadow-xl overflow-hidden ${align === "right" ? "right-0" : "left-0"}`}
         >
           {visibleSections.map((section, si) => (
             <div key={si} className={si > 0 ? "border-t border-border" : ""}>
