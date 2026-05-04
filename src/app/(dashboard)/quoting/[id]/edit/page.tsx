@@ -67,6 +67,9 @@ export default async function EditQuotePage({
     elecDoingFitOff: quote.elec_doing_fit_off ?? false,
     lineItems: lineItemsResult.data ?? [],
     extras: extrasResult.data ?? [],
+    quoteMode: (quote.quote_mode as "plan" | "manual" | undefined) ?? "plan",
+    isInterstate: quote.is_interstate ?? false,
+    manualScope: quote.labour_data?.scope_of_works ?? "",
   };
 
   // Merge plans: include the one linked to this quote so the dropdown can show it

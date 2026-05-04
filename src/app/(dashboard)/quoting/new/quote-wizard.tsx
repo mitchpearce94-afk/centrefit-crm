@@ -188,6 +188,9 @@ interface ExistingQuote {
   elecDoingFitOff?: boolean;
   lineItems: any[];
   extras: any[];
+  quoteMode?: "plan" | "manual";
+  isInterstate?: boolean;
+  manualScope?: string;
 }
 
 export function QuoteWizard({
@@ -254,28 +257,46 @@ export function QuoteWizard({
   // Step 2: Devices
   const [deviceCounts, setDeviceCounts] = useState<DeviceCounts>(existingQuote?.deviceCounts || {});
 
-  // Step 3: BOM — rehydrate from saved line items when editing
-  const [bomItems, setBomItems] = useState<BOMItem[]>(
-    existingQuote?.lineItems?.length
-      ? existingQuote.lineItems.map((li: any) => ({
-          device_type_code: li.device_type_code ?? null,
-          device_type_legend: li.device_type_legend ?? null,
-          category: li.category ?? "",
-          product_id: li.product_id ?? null,
-          product_name: li.product_name ?? "",
-          sku: li.sku ?? "",
-          supplier: li.supplier ?? "",
-          quantity: li.quantity ?? 0,
-          cost_price: Number(li.cost_price) || 0,
-          markup: Number(li.markup) || 0,
-          sell_price: Number(li.sell_price) || 0,
-          notes: li.notes ?? "",
-          auto_added: !!li.auto_added,
-          rule_description: li.rule_description ?? null,
-        }))
-      : []
+  // Quote mode: plan-based or manual. MUST be declared before bomItems /
+  // manualBomItems so the rehydration logic below can route saved line items
+  // into the correct bucket.
+  const [quoteMode, setQuoteMode] = useState<"plan" | "manual">(
+    (existingQuote?.quoteMode as "plan" | "manual" | undefined) ?? "plan"
   );
-  const [bomGenerated, setBomGenerated] = useState(!!existingQuote?.lineItems?.length);
+
+  // Saved line items get rehydrated into ONE bucket only — manualBomItems for
+  // a saved manual quote, bomItems for a plan quote. Loading them into both
+  // (or into the wrong bucket) is what caused manual quotes to look like plan
+  // quotes on edit.
+  const _savedAsBomItems = useMemo<BOMItem[]>(() => {
+    if (!existingQuote?.lineItems?.length) return [];
+    return existingQuote.lineItems.map((li: any) => ({
+      device_type_code: li.device_type_code ?? null,
+      device_type_legend: li.device_type_legend ?? null,
+      category: li.category ?? "",
+      product_id: li.product_id ?? null,
+      product_name: li.product_name ?? "",
+      sku: li.sku ?? "",
+      supplier: li.supplier ?? "",
+      quantity: li.quantity ?? 0,
+      cost_price: Number(li.cost_price) || 0,
+      markup: Number(li.markup) || 0,
+      sell_price: Number(li.sell_price) || 0,
+      notes: li.notes ?? "",
+      auto_added: !!li.auto_added,
+      rule_description: li.rule_description ?? null,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Step 3: BOM — only populated for saved plan quotes; manual quotes route
+  // their items to manualBomItems below.
+  const [bomItems, setBomItems] = useState<BOMItem[]>(
+    existingQuote?.quoteMode === "manual" ? [] : _savedAsBomItems
+  );
+  const [bomGenerated, setBomGenerated] = useState(
+    existingQuote?.quoteMode !== "manual" && _savedAsBomItems.length > 0
+  );
 
   // Step 4: Labour
   const [labourData, setLabourData] = useState<LabourData | null>(existingQuote?.labourData || null);
@@ -291,17 +312,39 @@ export function QuoteWizard({
   const [electricianCost, setElectricianCost] = useState(existingQuote?.electricianCost ?? 0);
   const [elecDoingRoughIn, setElecDoingRoughIn] = useState(existingQuote?.elecDoingRoughIn ?? false);
   const [elecDoingFitOff, setElecDoingFitOff] = useState(existingQuote?.elecDoingFitOff ?? false);
-  const isInterstate = siteInfo.state ? siteInfo.state !== 'QLD' : false;
+  // isInterstate is now persisted per-quote (quotes.is_interstate). On edit
+  // we restore the saved value so the elec markup (1.3x QLD vs 2x interstate)
+  // stays exactly as the user saw it when they hit save. On create we derive
+  // it from the site's state and keep it in sync as the user picks a site.
+  const [isInterstate, setIsInterstate] = useState<boolean>(
+    existingQuote?.isInterstate ?? (siteInfo.state ? siteInfo.state !== 'QLD' : false)
+  );
+  useEffect(() => {
+    if (isEditing) return;
+    setIsInterstate(siteInfo.state ? siteInfo.state !== 'QLD' : false);
+  }, [siteInfo.state, isEditing]);
 
   // Step 6
   const [discountPercent, setDiscountPercent] = useState(existingQuote?.discountPercent ?? 0);
 
-  // Quote mode: plan-based or manual
-  const [quoteMode, setQuoteMode] = useState<"plan" | "manual">("plan");
-
-  // Manual mode state
-  const [manualScope, setManualScope] = useState("");
-  const [manualBomItems, setManualBomItems] = useState<ManualBomItem[]>([]);
+  // Manual mode state — rehydrate from saved line items if this quote was
+  // saved in manual mode.
+  const [manualScope, setManualScope] = useState(existingQuote?.manualScope ?? "");
+  const [manualBomItems, setManualBomItems] = useState<ManualBomItem[]>(
+    existingQuote?.quoteMode === "manual"
+      ? _savedAsBomItems.map((item) => ({
+          product_id: item.product_id,
+          product_name: item.product_name,
+          sku: item.sku,
+          category: item.category,
+          supplier: item.supplier,
+          quantity: item.quantity,
+          cost_price: item.cost_price,
+          sell_price: item.sell_price,
+          isCustom: !item.product_id,
+        }))
+      : []
+  );
   const [manualLabourHours, setManualLabourHours] = useState(0);
   const [manualLabourAmount, setManualLabourAmount] = useState(0);
   const [manualCalloutDays, setManualCalloutDays] = useState(0);
@@ -748,11 +791,23 @@ export function QuoteWizard({
     }
     if (!labourData) return;
     if (quoteMode === "plan" && !bomGenerated) return;
+    // EDIT MODE — never auto-regen labour from BOM mutations. Labour only
+    // changes when the user explicitly edits a labour row.
+    if (isEditing) return;
     regenerateLabour();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bomItems, manualBomItems]);
 
   function enterStep(newStep: number) {
+    // EDIT MODE — never auto-regenerate. The saved quote is the source of
+    // truth; nothing should change just by walking through the steps.
+    // (Explicit user actions like clicking "Regenerate BOM" or editing a
+    // BOM line still work — those go through other code paths.)
+    if (isEditing) {
+      setStep(newStep);
+      document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     if (quoteMode === "plan") {
       if (newStep === 2 && !bomGenerated) {
         const rules = rulesForTemplate(allRules, templateId, products);
@@ -781,6 +836,15 @@ export function QuoteWizard({
   }
 
   function regenerateBOM() {
+    // Edit mode — regen wipes any manual BOM tweaks the user made before
+    // saving (price overrides, removed rule-added items, custom additions).
+    // Force a confirm so it's never accidental.
+    if (isEditing) {
+      const ok = window.confirm(
+        "Regenerate BOM? This re-runs dependency rules and will overwrite any manual changes you made to line items in this quote."
+      );
+      if (!ok) return;
+    }
     const rules = rulesForTemplate(allRules, templateId, products);
     setBomItems(generateBOM(deviceCounts, products, rules, siteInfo));
     setBomGenerated(true);
@@ -991,6 +1055,14 @@ export function QuoteWizard({
       electrician_cost: electricianCost || 0,
       elec_doing_rough_in: elecDoingRoughIn,
       elec_doing_fit_off: elecDoingFitOff,
+      // Persisted so the elec markup (1.3x QLD vs 2x interstate) doesn't flip
+      // when the quote is reopened — siteInfo.state isn't stored on quotes,
+      // so without this the edit page would silently reset to 30% markup.
+      is_interstate: isInterstate,
+      // Top-level quote_mode column so the edit loader can route saved line
+      // items into the right bucket (manualBomItems vs bomItems) without
+      // having to crack open labour_data.
+      quote_mode: quoteMode,
       quote_type: quoteType,
       template_id: quoteMode === "manual" ? null : templateId,
       pricing_snapshot: {
