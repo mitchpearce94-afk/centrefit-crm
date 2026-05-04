@@ -57,6 +57,7 @@ export const DEVICE_TYPES: DeviceType[] = [
   { code: 'duress_button', legend: 'Duress Button (wall mount)', cable: '6core_security', category: 'Security System' },
   { code: 'duress_pendant', legend: 'Duress Pendant (wireless)', cable: 'n-a', category: 'Security System' },
   { code: 'duress_intercom', legend: 'Duress Intercom', cable: '6core_security', category: 'Security System' },
+  { code: 'break_glass', legend: 'Break Glass', cable: '6core_security', category: 'Security System' },
   { code: 'light_siren', legend: 'External Light and Siren', cable: '6core_security', category: 'Security System' },
   // Digital Surveillance (2) — short card, column 2 top
   { code: 'camera_black', legend: 'Black Digital Surveillance Camera', cable: 'cat6', category: 'Digital Surveillance' },
