@@ -3,6 +3,10 @@ import crypto from "node:crypto";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { getAuthedClient } from "@/lib/xero/client";
 import { fetchXeroInvoice } from "@/lib/xero/invoices";
+import {
+  isXeroRateLimited,
+  captureXeroRateLimit,
+} from "@/lib/xero/rate-limit";
 import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.server";
 import { sendDDRecurringInvoiceEmail } from "@/lib/emails/dd-recurring-invoice";
 import { logDocumentActivity } from "@/lib/activity/log";
@@ -83,6 +87,18 @@ export async function POST(req: NextRequest) {
   // transition); push to background queue if this ever gets heavy.
   const supabase = createServiceRoleClient();
 
+  // Short-circuit the whole batch when we're in a known rate-limit cooldown.
+  // Xero retries failed deliveries on backoff anyway — better to ack 200 and
+  // let Xero re-fire the event after the window expires than to sit in a
+  // 429 retry loop and burn outbound capacity.
+  const limited = await isXeroRateLimited(supabase);
+  if (limited) {
+    console.warn(
+      `[xero-webhook] skipping batch — rate-limited until ${limited.until.toISOString()} (${limited.reason})`,
+    );
+    return new NextResponse(null, { status: 200 });
+  }
+
   for (const event of payload.events ?? []) {
     if (event.eventCategory !== "INVOICE") continue;
     if (event.eventType !== "UPDATE" && event.eventType !== "CREATE") continue;
@@ -90,6 +106,13 @@ export async function POST(req: NextRequest) {
     try {
       await processInvoiceEvent(supabase, event);
     } catch (err) {
+      // 429 from Xero — capture the cooldown so subsequent events in this
+      // batch (and the next batch) short-circuit instead of retrying.
+      const wasRateLimit = await captureXeroRateLimit(supabase, err);
+      if (wasRateLimit) {
+        console.warn(`[xero-webhook] hit Xero rate limit on ${event.resourceId} — skipping rest of batch`);
+        break;
+      }
       // Don't fail the whole batch if one event errors — log and move on.
       console.error(`[xero-webhook] event ${event.resourceId} failed:`, err);
     }

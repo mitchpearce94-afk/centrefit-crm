@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthedClient } from "@/lib/xero/client";
 import { fetchXeroInvoice } from "@/lib/xero/invoices";
+import {
+  isXeroRateLimited,
+  captureXeroRateLimit,
+} from "@/lib/xero/rate-limit";
 
 export async function POST(
   _req: NextRequest,
@@ -25,16 +29,38 @@ export async function POST(
     );
   }
 
+  // Short-circuit if we know we're rate-limited — don't waste a Xero call,
+  // give the UI a friendly explainer instead of a 502.
+  const limited = await isXeroRateLimited(supabase);
+  if (limited) {
+    const minutesLeft = Math.ceil((limited.until.getTime() - Date.now()) / 60000);
+    return NextResponse.json(
+      {
+        error: `Xero daily quota exhausted. Try again in ~${minutesLeft} minute${minutesLeft === 1 ? "" : "s"} (resumes ${limited.until.toLocaleString("en-AU", { timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit" })} Brisbane time).`,
+        rateLimited: true,
+        retryAt: limited.until.toISOString(),
+      },
+      { status: 429 },
+    );
+  }
+
   let latest;
   try {
     const { client, conn } = await getAuthedClient();
     latest = await fetchXeroInvoice(client, conn.tenant_id, invoice.xero_invoice_id);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    const wasRateLimit = await captureXeroRateLimit(supabase, err);
     await supabase
       .from("invoices")
       .update({ xero_last_error: message, xero_last_synced_at: new Date().toISOString() })
       .eq("id", id);
+    if (wasRateLimit) {
+      return NextResponse.json(
+        { error: "Xero rate-limited. Cooldown recorded; please try again later.", rateLimited: true },
+        { status: 429 },
+      );
+    }
     return NextResponse.json({ error: `Xero error: ${message}` }, { status: 502 });
   }
 
