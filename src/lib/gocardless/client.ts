@@ -17,10 +17,13 @@ const SANDBOX_BASE = "https://api-sandbox.gocardless.com";
 
 // GoCardless API version. 2015-07-06 is the only one we've confirmed
 // works with our account — bumping to 2018-11-29 returned
-// "version_not_found" 400. lock_customer_details on
-// billing_request_flows isn't recognised on this version, so we ship
-// without it and rely on the alias-explanation callout in the mandate
-// signup email instead.
+// "version_not_found" 400. `lock_customer_details` IS supported on
+// 2015-07-06 (confirmed by GC support 2026-05-05) but only when paired
+// with the `collect_customer_details` action on the billing request
+// FIRST — passing prefilled_customer on the flow alone leaves the
+// fields editable on the hosted page. See `collectCustomerDetails`
+// below for the action endpoint we now call between create-billing-
+// request and create-billing-request-flow.
 const GC_VERSION = "2015-07-06";
 
 function baseUrl(): string {
@@ -310,6 +313,48 @@ export async function createBillingRequestFlow(
 export async function getBillingRequest(billingRequestId: string): Promise<GcBillingRequest> {
   const res = await gcFetch<{ billing_requests: GcBillingRequest }>(
     `/billing_requests/${billingRequestId}`,
+  );
+  return res.billing_requests;
+}
+
+export interface GcCustomerBillingDetail {
+  address_line1?: string;
+  address_line2?: string;
+  city?: string;
+  region?: string;
+  postal_code?: string;
+  country_code?: string;
+}
+
+export interface CollectCustomerDetailsInput {
+  customer: {
+    email: string;
+    given_name?: string;
+    family_name?: string;
+    company_name?: string;
+    language?: string;
+  };
+  customer_billing_detail?: GcCustomerBillingDetail;
+}
+
+/**
+ * Attach prefilled customer details to a billing request via its
+ * `collect_customer_details` action. This is the missing step that
+ * `lock_customer_details: true` on the subsequent billing_request_flow
+ * actually depends on — without it, the lock is a no-op and the
+ * customer can still edit name/email on the hosted page.
+ *
+ * GC docs: POST /billing_requests/{id}/actions/collect_customer_details
+ * with `{ data: { customer, customer_billing_detail } }`.
+ */
+export async function collectCustomerDetails(
+  billingRequestId: string,
+  input: CollectCustomerDetailsInput,
+  idempotencyKey?: string,
+): Promise<GcBillingRequest> {
+  const res = await gcFetch<{ billing_requests: GcBillingRequest }>(
+    `/billing_requests/${billingRequestId}/actions/collect_customer_details`,
+    { method: "POST", body: { data: input }, idempotencyKey },
   );
   return res.billing_requests;
 }

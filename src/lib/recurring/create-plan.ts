@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   createBillingRequest,
   createBillingRequestFlow,
-  type GcCustomerInput,
+  collectCustomerDetails,
 } from "@/lib/gocardless/client";
 import { aliasEmail } from "@/lib/recurring/alias";
 import { sendMandateSignupEmail, type MandateLink } from "@/lib/emails/recurring-mandate-signup";
@@ -152,20 +152,37 @@ export async function createRecurringPlansForSites(
 
       const givenName = primary.name?.split(/\s+/)[0];
       const familyName = primary.name?.split(/\s+/).slice(1).join(" ");
-      const prefilled: GcCustomerInput = {
-        email: alias,
-        company_name: siteLabel,
-        country_code: "AU",
-        ...(givenName ? { given_name: givenName } : {}),
-        ...(familyName ? { family_name: familyName } : {}),
-      };
+
+      // Step 2 of the GC mandate flow: attach the customer detail to the
+      // billing request via collect_customer_details. Without this action
+      // the `lock_customer_details: true` flag on the flow below is a
+      // no-op — the customer can still edit name/email on the hosted page,
+      // which breaks our alias-per-site routing if they "fix" the alias
+      // back to their real email.
+      await collectCustomerDetails(
+        br.id,
+        {
+          customer: {
+            email: alias,
+            company_name: siteLabel,
+            ...(givenName ? { given_name: givenName } : {}),
+            ...(familyName ? { family_name: familyName } : {}),
+          },
+          customer_billing_detail: { country_code: "AU" },
+        },
+        `plan-${plan.id}-ccd`,
+      );
 
       const flow = await createBillingRequestFlow(
         {
           redirect_uri: `${appUrl}/recurring-thanks?plan=${plan.id}`,
           links: { billing_request: br.id },
           show_redirect_buttons: true,
-          prefilled_customer: prefilled,
+          // Locks the fields we attached above (alias email + company
+          // name + given/family). Country code goes on customer_billing_
+          // detail; the customer fills in the rest of their address on
+          // the hosted page (we don't have it server-side at signup time).
+          lock_customer_details: true,
         },
         `plan-${plan.id}-brf`,
       );
