@@ -45,8 +45,18 @@ const AUTO_TRANSITIONS: Record<string, { from: string[]; to: string }> = {
     from: ['Lead / Unassigned'],
     to: 'Assigned',
   },
+  // Booking a job onto the calendar can happen from any pre-completion
+  // status — Mitchell often schedules a job that's still mid-quote, awaiting
+  // payment, or parked on follow-up. Excludes only in-progress/work-done
+  // phases so we never demote a job that's already underway.
   job_scheduled: {
-    from: ['Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Follow Up'],
+    from: [
+      'Lead / Unassigned', 'Assigned',
+      'Design Phase', 'Plans sent to electrician', 'Awaiting Approval', 'Sub-Quote Needed',
+      'Quote Draft', 'Quote Sent', 'Quote Expired',
+      'Awaiting Invoice Payment', 'Pending Schedule', 'Scheduled',
+      'Follow Up', 'On Hold', 'Parts Dispatched', 'Parts Needed', 'Pending Tech',
+    ],
     to: 'Scheduled',
   },
   work_started: {
