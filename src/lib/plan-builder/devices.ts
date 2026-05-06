@@ -28,11 +28,14 @@ export const DEVICE_CATALOG: DeviceDefinition[] = [
 
   // AUDIO
   { id: 'volume-control', name: 'Volume Control', category: 'audio', cableType: 'speaker', symbolType: 'volume-control', fillColor: '#6600cc', strokeColor: '#9933ff', isVolumeControl: true, symbolImage: '/plan-builder/symbols/volume-control.png' },
-  // Speakers are split by colour — each maps to a distinct product in the quote
-  { id: 'speaker-roof-white', name: 'Speaker Roof Mount (White)', category: 'audio', cableType: 'speaker', symbolType: 'speaker-circle', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-roof-1.png' },
-  { id: 'speaker-roof-black', name: 'Speaker Roof Mount (Black)', category: 'audio', cableType: 'speaker', symbolType: 'speaker-gear', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-roof-2.png' },
-  { id: 'speaker-wall-white', name: 'Speaker Wall Mount (White)', category: 'audio', cableType: 'speaker', symbolType: 'speaker-wall-outline', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-wall-1.png' },
-  { id: 'speaker-wall-black', name: 'Speaker Wall Mount (Black)', category: 'audio', cableType: 'speaker', symbolType: 'speaker-wall-filled', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-wall-2.png' },
+  // Speakers are split by colour — each maps to a distinct product in the quote.
+  // symbol-{1}.png = filled (visually black), symbol-{2}.png = outline (visually
+  // white). Image paths were previously swapped — selecting "Black" placed a
+  // white-mapped device because the filled icon was wired to the white ID.
+  { id: 'speaker-roof-white', name: 'Speaker Roof Mount (White)', category: 'audio', cableType: 'speaker', symbolType: 'speaker-circle', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-roof-2.png' },
+  { id: 'speaker-roof-black', name: 'Speaker Roof Mount (Black)', category: 'audio', cableType: 'speaker', symbolType: 'speaker-gear', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-roof-1.png' },
+  { id: 'speaker-wall-white', name: 'Speaker Wall Mount (White)', category: 'audio', cableType: 'speaker', symbolType: 'speaker-wall-outline', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-wall-2.png' },
+  { id: 'speaker-wall-black', name: 'Speaker Wall Mount (Black)', category: 'audio', cableType: 'speaker', symbolType: 'speaker-wall-filled', fillColor: '#6600cc', strokeColor: '#9933ff', symbolImage: '/plan-builder/symbols/speaker-wall-1.png' },
 
   // DATA/COMMS
   { id: 'wifi-ap', name: 'Wi-Fi Access Point', category: 'data', cableType: 'cat6', symbolType: 'wifi-circle', fillColor: '#0066cc', strokeColor: '#3399ff', symbolImage: '/plan-builder/symbols/wifi-ap.png' },

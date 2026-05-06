@@ -90,6 +90,17 @@ const SITE_INFO_FIELDS = [
 
 // ── Resolve trigger code → numeric count ──
 
+// Legacy rule trigger codes that pre-date the speaker colour split. The
+// device catalogue now emits four codes (speaker_roof_black/white,
+// speaker_wall_black/white) but rules seeded earlier still reference the
+// old singular codes. Resolve them transparently so the 240W amp / 120W
+// amp / speaker cable / Clipsal bracket rules keep firing without a
+// DB migration.
+const LEGACY_CODE_ALIASES: Record<string, string[]> = {
+  speaker_roof: ['speaker_roof_black', 'speaker_roof_white'],
+  speaker_wall: ['speaker_wall_black', 'speaker_wall_white'],
+}
+
 function resolveTriggerCount(triggerCode: string | null, deviceCounts: DeviceCounts, siteInfo: SiteInfo = {}): number {
   if (!triggerCode) return 0
   const codes = triggerCode.split('+').map((c) => c.trim())
@@ -97,12 +108,17 @@ function resolveTriggerCount(triggerCode: string | null, deviceCounts: DeviceCou
     if (SITE_INFO_FIELDS.includes(code)) {
       return sum + (Number((siteInfo as Record<string, unknown>)[code]) || 0)
     }
-    let count = deviceCounts[code] || 0
-    // Uncabled reed switches don't need cable runs — subtract from cable formulas
-    if (code === 'reed_switch' && siteInfo.reed_switch_uncabled) {
-      count = Math.max(0, count - siteInfo.reed_switch_uncabled)
+    const expanded = LEGACY_CODE_ALIASES[code] ?? [code]
+    let codeSum = 0
+    for (const ec of expanded) {
+      let count = deviceCounts[ec] || 0
+      // Uncabled reed switches don't need cable runs — subtract from cable formulas
+      if (ec === 'reed_switch' && siteInfo.reed_switch_uncabled) {
+        count = Math.max(0, count - siteInfo.reed_switch_uncabled)
+      }
+      codeSum += count
     }
-    return sum + count
+    return sum + codeSum
   }, 0)
 }
 
