@@ -39,19 +39,16 @@ export function ChangePasswordForm({ forced = false, displayName }: Props) {
       return;
     }
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (user) {
-      const { error: flagErr } = await supabase
-        .from("staff")
-        .update({ must_change_password: false })
-        .eq("id", user.id);
-      if (flagErr) {
-        setError(`Password updated but couldn't clear flag: ${flagErr.message}. Try logging out and back in.`);
-        setBusy(false);
-        return;
-      }
+    // Clearing must_change_password lives behind a server route that uses
+    // the service-role key — the staff table's UPDATE policy is admin-only
+    // so non-admin invitees can't clear their own flag from the client.
+    // Without this, the dashboard layout bounces them straight back here.
+    const flagRes = await fetch("/api/auth/clear-password-flag", { method: "POST" });
+    if (!flagRes.ok) {
+      const data = await flagRes.json().catch(() => ({}));
+      setError(`Password updated but couldn't clear flag: ${data.error ?? "unknown error"}. Ask an admin to clear it manually.`);
+      setBusy(false);
+      return;
     }
 
     router.push("/");
