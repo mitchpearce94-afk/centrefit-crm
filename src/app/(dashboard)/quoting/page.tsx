@@ -9,8 +9,16 @@ const STATUS_COLOURS: Record<string, string> = {
   expired: "#f59e0b",
 };
 
-export default async function QuotingPage() {
+const FOLLOWUP_AGE_DAYS = 7;
+
+export default async function QuotingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const supabase = await createClient();
+  const params = await searchParams;
+  const tab = (params.tab ?? "all") as "all" | "followup" | "draft" | "sent" | "accepted" | "expired";
 
   const { data: quotes, error } = await supabase
     .from("quotes")
@@ -26,15 +34,30 @@ export default async function QuotingPage() {
   }
 
   const now = new Date();
+  const followupCutoffMs = now.getTime() - FOLLOWUP_AGE_DAYS * 86_400_000;
   const allQuotes = (quotes ?? []).map((q: any) => {
     const isExpired = q.expires_at && new Date(q.expires_at) < now && (q.status === "draft" || q.status === "sent");
-    return { ...q, displayStatus: isExpired ? "expired" : q.status };
+    const sentAtMs = q.sent_at ? new Date(q.sent_at).getTime() : null;
+    const needsFollowup =
+      q.status === "sent" &&
+      sentAtMs !== null &&
+      sentAtMs <= followupCutoffMs;
+    return { ...q, displayStatus: isExpired ? "expired" : q.status, _needsFollowup: needsFollowup, _sentAtMs: sentAtMs };
   });
 
   const draftCount = allQuotes.filter((q) => q.displayStatus === "draft").length;
   const sentCount = allQuotes.filter((q) => q.displayStatus === "sent").length;
   const acceptedCount = allQuotes.filter((q) => q.displayStatus === "accepted").length;
   const expiredCount = allQuotes.filter((q) => q.displayStatus === "expired").length;
+  const followupCount = allQuotes.filter((q) => q._needsFollowup).length;
+
+  const filtered =
+    tab === "followup" ? allQuotes.filter((q) => q._needsFollowup)
+    : tab === "draft" ? allQuotes.filter((q) => q.displayStatus === "draft")
+    : tab === "sent" ? allQuotes.filter((q) => q.displayStatus === "sent")
+    : tab === "accepted" ? allQuotes.filter((q) => q.displayStatus === "accepted")
+    : tab === "expired" ? allQuotes.filter((q) => q.displayStatus === "expired")
+    : allQuotes;
 
   return (
     <div>
@@ -78,6 +101,46 @@ export default async function QuotingPage() {
         </div>
       </div>
 
+      {/* Tab strip */}
+      <div className="mt-4 flex flex-wrap items-center gap-1 border-b border-border">
+        {[
+          { key: "all", label: "All", count: allQuotes.length },
+          { key: "followup", label: "Follow-up", count: followupCount, accent: followupCount > 0 },
+          { key: "draft", label: "Draft", count: draftCount },
+          { key: "sent", label: "Sent", count: sentCount },
+          { key: "accepted", label: "Accepted", count: acceptedCount },
+          { key: "expired", label: "Expired", count: expiredCount },
+        ].map((t) => {
+          const active = tab === t.key;
+          return (
+            <Link
+              key={t.key}
+              href={t.key === "all" ? "/quoting" : `/quoting?tab=${t.key}`}
+              className={`relative -mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
+                active
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+              {t.count > 0 && (
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                    t.accent
+                      ? "bg-amber-500/20 text-amber-300"
+                      : active
+                      ? "bg-primary/20 text-primary"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {t.count}
+                </span>
+              )}
+            </Link>
+          );
+        })}
+      </div>
+
       {/* Quotes table */}
       <div className="mt-4 overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-sm">
@@ -92,7 +155,7 @@ export default async function QuotingPage() {
             </tr>
           </thead>
           <tbody>
-            {allQuotes.map((quote: any) => {
+            {filtered.map((quote: any) => {
               const colour = STATUS_COLOURS[quote.displayStatus] ?? "#6b7280";
               const expiresDate = quote.expires_at ? new Date(quote.expires_at) : null;
               const daysLeft = expiresDate ? Math.ceil((expiresDate.getTime() - now.getTime()) / 86400000) : null;
@@ -116,13 +179,20 @@ export default async function QuotingPage() {
                     {quote.site_name ?? "\u2014"}
                   </td>
                   <td className="px-4 py-3">
-                    <span
-                      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium capitalize"
-                      style={{ backgroundColor: `${colour}20`, color: colour }}
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colour }} />
-                      {quote.displayStatus}
-                    </span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium capitalize"
+                        style={{ backgroundColor: `${colour}20`, color: colour }}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colour }} />
+                        {quote.displayStatus}
+                      </span>
+                      {quote._needsFollowup && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-300 uppercase tracking-wide">
+                          Follow-up
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-right text-muted-foreground hidden md:table-cell">
                     {expiresDate ? (
@@ -137,13 +207,14 @@ export default async function QuotingPage() {
                 </tr>
               );
             })}
-            {allQuotes.length === 0 && (
+            {filtered.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
-                  No quotes yet.{" "}
-                  <Link href="/quoting/new" className="text-primary hover:underline">
-                    Create your first quote
-                  </Link>
+                  {tab === "followup"
+                    ? "No quotes need a follow-up right now — sent quotes appear here once they pass 7 days without a customer response."
+                    : tab === "all"
+                    ? <>No quotes yet. <Link href="/quoting/new" className="text-primary hover:underline">Create your first quote</Link></>
+                    : `No ${tab} quotes.`}
                 </td>
               </tr>
             )}
