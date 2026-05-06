@@ -97,10 +97,16 @@ async function loadAndInjectSvg(pageNum: number, titleBlock: TitleBlockInfo, cli
   const response = await fetch(`/plan-builder/templates/page-${pageNum}.svg`);
   let svgText = await response.text();
 
-  const fields: Array<{ x: number; y: number; text: string; fontSize: number; bold: boolean; anchor: 'middle' | 'end' | 'start' }> = [];
-  if (titleBlock.client) fields.push({ x: TB.mainFieldX, y: TB.clientY, text: titleBlock.client, fontSize: TB.mainFontSize, bold: true, anchor: 'middle' });
-  if (titleBlock.projectName) fields.push({ x: TB.mainFieldX, y: TB.projectY, text: titleBlock.projectName, fontSize: TB.mainFontSize, bold: true, anchor: 'middle' });
-  if (titleBlock.worksAddress) fields.push({ x: TB.mainFieldX, y: TB.addressY, text: titleBlock.worksAddress, fontSize: TB.mainFontSize, bold: true, anchor: 'middle' });
+  // maxWidth (viewBox units) — when supplied and the rendered text would
+  // exceed it, we clamp via SVG's textLength + lengthAdjust so the glyphs
+  // squeeze to fit the cell instead of spilling outside the title-block
+  // border. Address is the worst offender ("Unit 12/345 Some Long Street,
+  // Suburb QLD 4000" easily overruns the cell at 130pt bold).
+  const MAIN_CELL_MAX_W = 2400; // client / project / address shared cell
+  const fields: Array<{ x: number; y: number; text: string; fontSize: number; bold: boolean; anchor: 'middle' | 'end' | 'start'; maxWidth?: number }> = [];
+  if (titleBlock.client) fields.push({ x: TB.mainFieldX, y: TB.clientY, text: titleBlock.client, fontSize: TB.mainFontSize, bold: true, anchor: 'middle', maxWidth: MAIN_CELL_MAX_W });
+  if (titleBlock.projectName) fields.push({ x: TB.mainFieldX, y: TB.projectY, text: titleBlock.projectName, fontSize: TB.mainFontSize, bold: true, anchor: 'middle', maxWidth: MAIN_CELL_MAX_W });
+  if (titleBlock.worksAddress) fields.push({ x: TB.mainFieldX, y: TB.addressY, text: titleBlock.worksAddress, fontSize: TB.mainFontSize, bold: true, anchor: 'middle', maxWidth: MAIN_CELL_MAX_W });
   if (titleBlock.date) fields.push({ x: TB.rightColX, y: TB.dateY, text: titleBlock.date, fontSize: TB.smallFontSize, bold: true, anchor: 'middle' });
   if (titleBlock.drawingNumber) fields.push({ x: 20655, y: TB.drawingNoY, text: titleBlock.drawingNumber, fontSize: TB.smallFontSize, bold: true, anchor: 'end' });
   if (titleBlock.revision) fields.push({ x: TB.rightColX, y: TB.revisionY, text: titleBlock.revision, fontSize: TB.smallFontSize, bold: true, anchor: 'middle' });
@@ -108,7 +114,14 @@ async function loadAndInjectSvg(pageNum: number, titleBlock: TitleBlockInfo, cli
   let injection = '';
   for (const f of fields) {
     const weight = f.bold ? ' font-weight="bold"' : '';
-    injection += `<text x="${f.x}" y="${f.y}" font-family="Arial, sans-serif" font-size="${f.fontSize}"${weight} text-anchor="${f.anchor}" fill="black">${escapeXml(f.text)}</text>\n`;
+    // Estimate natural width — Arial bold averages ~0.55 × fontSize per char.
+    // If the text fits, render it natural; if it'd overflow the cell, force
+    // it to fit via textLength + lengthAdjust='spacingAndGlyphs'. The
+    // glyphs compress very slightly but the address stays inside the box.
+    const estWidth = f.text.length * f.fontSize * 0.55;
+    const needsFit = f.maxWidth !== undefined && estWidth > f.maxWidth;
+    const fitAttrs = needsFit ? ` textLength="${f.maxWidth}" lengthAdjust="spacingAndGlyphs"` : '';
+    injection += `<text x="${f.x}" y="${f.y}" font-family="Arial, sans-serif" font-size="${f.fontSize}"${weight} text-anchor="${f.anchor}" fill="black"${fitAttrs}>${escapeXml(f.text)}</text>\n`;
   }
   if (clientLogo) {
     // Constrain logo to the title block box — centered within, never overflows

@@ -8,6 +8,14 @@ interface HistoryEntry {
   devices: PlacedDevice[];
   commsRackId: string | null;
   whitewashRects: WhitewashRect[];
+  // PDF element-deletion state — included on every entry so that
+  // undoing across a delete (e.g. from "place device" back through
+  // "delete pdf element") restores the correct background render. We
+  // store the small bookkeeping arrays only; the rendered image gets
+  // re-generated lazily on undo when deletedOpIndices actually change
+  // (re-rendering an A3-at-6× plan eagerly would balloon memory).
+  pdfElements: PdfElement[];
+  deletedOpIndices: number[];
 }
 
 interface PlanState {
@@ -94,8 +102,8 @@ interface PlanState {
   renameFloor: (floorId: string, name: string) => void;
   removeFloor: (floorId: string) => void;
   bumpRevision: (notes: string) => void;
-  undo: () => void;
-  redo: () => void;
+  undo: () => Promise<void>;
+  redo: () => Promise<void>;
   markClean: () => void;
   saveProject: () => void;
   loadProject: (data: string) => void;
@@ -112,6 +120,15 @@ const DEFAULT_TITLE_BLOCK: TitleBlockInfo = {
   date: new Date().toLocaleDateString('en-AU'),
   notes: '',
 };
+
+// Compare two deletedOpIndices arrays without mutating either.
+function sameOpIndices(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort((x, y) => x - y);
+  const sb = [...b].sort((x, y) => x - y);
+  for (let i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) return false;
+  return true;
+}
 
 function nearestNeighbourChain(deviceList: PlacedDevice[], startX: number, startY: number): PlacedDevice[] {
   if (deviceList.length === 0) return [];
@@ -239,7 +256,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   activeFloorId: 'floor-1',
   customDevices: [],
   revisions: [],
-  history: [{ devices: [], commsRackId: null, whitewashRects: [] }],
+  history: [{ devices: [], commsRackId: null, whitewashRects: [], pdfElements: [], deletedOpIndices: [] }],
   historyIndex: 0,
 
   addCustomDevice: (device) => {
@@ -354,15 +371,31 @@ export const usePlanStore = create<PlanState>((set, get) => ({
 
     // Remove deleted elements from the list
     const remainingElements = state.pdfElements.filter(el => !state.selectedElementIds.includes(el.id));
+    const newDeletedArray = Array.from(newDeletedIndices);
+
+    // Push to history so Ctrl+Z restores the deleted ops. We store only the
+    // bookkeeping (pdfElements + deletedOpIndices); the rendered image is
+    // re-generated lazily by undo/redo when deletedOpIndices actually change.
+    const newHistory = state.history.slice(0, state.historyIndex + 1);
+    newHistory.push({
+      devices: state.devices,
+      commsRackId: state.commsRackId,
+      whitewashRects: state.whitewashRects,
+      pdfElements: remainingElements,
+      deletedOpIndices: newDeletedArray,
+    });
 
     set({
       backgroundImage: result.dataUrl,
       backgroundWidth: result.width,
       backgroundHeight: result.height,
-      deletedOpIndices: Array.from(newDeletedIndices),
+      deletedOpIndices: newDeletedArray,
       pdfElements: remainingElements,
       selectedElementIds: [],
       hoveredElementId: null,
+      history: newHistory,
+      historyIndex: newHistory.length - 1,
+      isDirty: true,
     });
   },
 
@@ -381,7 +414,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     const newCommsRackId = isCommsRack ? instanceId : state.commsRackId;
     const newDevices = renumberDevices([...state.devices, newDevice], newCommsRackId);
     const newHistory = state.history.slice(0, state.historyIndex + 1);
-    newHistory.push({ devices: newDevices, commsRackId: newCommsRackId, whitewashRects: state.whitewashRects });
+    newHistory.push({ devices: newDevices, commsRackId: newCommsRackId, whitewashRects: state.whitewashRects, pdfElements: state.pdfElements, deletedOpIndices: [...state.deletedOpIndices] });
     const cableRuns = buildCableRuns(newDevices, newCommsRackId, getDeviceById);
     set({ devices: newDevices, commsRackId: newCommsRackId, cableRuns, history: newHistory, historyIndex: newHistory.length - 1, isDirty: true });
   },
@@ -391,7 +424,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     const newDevices = renumberDevices(state.devices.map(d => d.instanceId === instanceId ? { ...d, x, y } : d), state.commsRackId);
     const cableRuns = buildCableRuns(newDevices, state.commsRackId, getDeviceById);
     const newHistory = state.history.slice(0, state.historyIndex + 1);
-    newHistory.push({ devices: newDevices, commsRackId: state.commsRackId, whitewashRects: state.whitewashRects });
+    newHistory.push({ devices: newDevices, commsRackId: state.commsRackId, whitewashRects: state.whitewashRects, pdfElements: state.pdfElements, deletedOpIndices: [...state.deletedOpIndices] });
     set({ devices: newDevices, cableRuns, history: newHistory, historyIndex: newHistory.length - 1, isDirty: true });
   },
 
@@ -408,7 +441,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     const newDevices = renumberDevices(filtered, newCommsRackId);
     const cableRuns = buildCableRuns(newDevices, newCommsRackId, getDeviceById);
     const newHistory = state.history.slice(0, state.historyIndex + 1);
-    newHistory.push({ devices: newDevices, commsRackId: newCommsRackId, whitewashRects: state.whitewashRects });
+    newHistory.push({ devices: newDevices, commsRackId: newCommsRackId, whitewashRects: state.whitewashRects, pdfElements: state.pdfElements, deletedOpIndices: [...state.deletedOpIndices] });
     set({
       devices: newDevices, commsRackId: newCommsRackId, cableRuns,
       selectedDeviceId: state.selectedDeviceId === instanceId ? null : state.selectedDeviceId,
@@ -436,7 +469,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     const id = `ww-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const newWhitewashRects = [...state.whitewashRects, { id, x, y, width, height }];
     const newHistory = state.history.slice(0, state.historyIndex + 1);
-    newHistory.push({ devices: state.devices, commsRackId: state.commsRackId, whitewashRects: newWhitewashRects });
+    newHistory.push({ devices: state.devices, commsRackId: state.commsRackId, whitewashRects: newWhitewashRects, pdfElements: state.pdfElements, deletedOpIndices: [...state.deletedOpIndices] });
     set({ whitewashRects: newWhitewashRects, history: newHistory, historyIndex: newHistory.length - 1, isDirty: true });
   },
 
@@ -486,7 +519,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
       floors: [...updatedFloors, newFloor], activeFloorId: newId,
       backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, backgroundOffsetX: 0, backgroundOffsetY: 0, backgroundScale: 1, backgroundLocked: true, pdfFileName: '',
       devices: [], commsRackId: null, cableRuns: [], whitewashRects: [],
-      selectedDeviceId: null, history: [{ devices: [], commsRackId: null, whitewashRects: [] }], historyIndex: 0, isDirty: true,
+      selectedDeviceId: null, history: [{ devices: [], commsRackId: null, whitewashRects: [], pdfElements: [], deletedOpIndices: [] }], historyIndex: 0, isDirty: true,
     });
   },
 
@@ -508,7 +541,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
       backgroundOffsetX: target.backgroundOffsetX ?? 0, backgroundOffsetY: target.backgroundOffsetY ?? 0, backgroundScale: target.backgroundScale ?? 1, backgroundLocked: target.backgroundLocked ?? true,
       pdfFileName: target.pdfFileName, devices: targetDevices, commsRackId: target.commsRackId, cableRuns,
       whitewashRects: target.whitewashRects, selectedDeviceId: null,
-      history: [{ devices: target.devices, commsRackId: target.commsRackId, whitewashRects: target.whitewashRects }], historyIndex: 0, isDirty: true,
+      history: [{ devices: target.devices, commsRackId: target.commsRackId, whitewashRects: target.whitewashRects, pdfElements: [], deletedOpIndices: [] }], historyIndex: 0, isDirty: true,
     });
   },
 
@@ -530,7 +563,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
         backgroundOffsetX: target.backgroundOffsetX ?? 0, backgroundOffsetY: target.backgroundOffsetY ?? 0, backgroundScale: target.backgroundScale ?? 1, backgroundLocked: target.backgroundLocked ?? true,
         pdfFileName: target.pdfFileName, devices: target.devices, commsRackId: target.commsRackId, cableRuns,
         whitewashRects: target.whitewashRects, selectedDeviceId: null,
-        history: [{ devices: target.devices, commsRackId: target.commsRackId, whitewashRects: target.whitewashRects }], historyIndex: 0, isDirty: true,
+        history: [{ devices: target.devices, commsRackId: target.commsRackId, whitewashRects: target.whitewashRects, pdfElements: [], deletedOpIndices: [] }], historyIndex: 0, isDirty: true,
       });
     } else {
       set({ floors: remaining, isDirty: true });
@@ -548,22 +581,51 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     });
   },
 
-  undo: () => {
+  undo: async () => {
     const state = get();
     if (state.historyIndex <= 0) return;
     const newIndex = state.historyIndex - 1;
     const entry = state.history[newIndex];
     const cableRuns = buildCableRuns(entry.devices, entry.commsRackId, getDeviceById);
     set({ devices: entry.devices, commsRackId: entry.commsRackId, whitewashRects: entry.whitewashRects, historyIndex: newIndex, cableRuns });
+
+    // Re-render the PDF only if the deletion set actually differs — this
+    // avoids the cost of an A3-at-6× re-render for ordinary device
+    // operations that didn't touch the PDF layer.
+    if (state.pdfFile && !sameOpIndices(state.deletedOpIndices, entry.deletedOpIndices)) {
+      const result = await renderPdfPageFiltered(state.pdfFile, state.pdfPageNumber, new Set(entry.deletedOpIndices));
+      set({
+        backgroundImage: result.dataUrl,
+        backgroundWidth: result.width,
+        backgroundHeight: result.height,
+        deletedOpIndices: [...entry.deletedOpIndices],
+        pdfElements: entry.pdfElements,
+        selectedElementIds: [],
+        hoveredElementId: null,
+      });
+    }
   },
 
-  redo: () => {
+  redo: async () => {
     const state = get();
     if (state.historyIndex >= state.history.length - 1) return;
     const newIndex = state.historyIndex + 1;
     const entry = state.history[newIndex];
     const cableRuns = buildCableRuns(entry.devices, entry.commsRackId, getDeviceById);
     set({ devices: entry.devices, commsRackId: entry.commsRackId, whitewashRects: entry.whitewashRects, historyIndex: newIndex, cableRuns });
+
+    if (state.pdfFile && !sameOpIndices(state.deletedOpIndices, entry.deletedOpIndices)) {
+      const result = await renderPdfPageFiltered(state.pdfFile, state.pdfPageNumber, new Set(entry.deletedOpIndices));
+      set({
+        backgroundImage: result.dataUrl,
+        backgroundWidth: result.width,
+        backgroundHeight: result.height,
+        deletedOpIndices: [...entry.deletedOpIndices],
+        pdfElements: entry.pdfElements,
+        selectedElementIds: [],
+        hoveredElementId: null,
+      });
+    }
   },
 
   markClean: () => set({ isDirty: false }),
@@ -629,7 +691,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
           linkedJobId: parsed.linkedJobId || null, linkedJobNumber: parsed.linkedJobNumber || null, planFileId: parsed.planFileId || crypto.randomUUID(),
           customDevices: loadedCustomDevices,
           isDirty: false,
-          history: [{ devices: active.devices || [], commsRackId: active.commsRackId || null, whitewashRects: active.whitewashRects || [] }], historyIndex: 0,
+          history: [{ devices: active.devices || [], commsRackId: active.commsRackId || null, whitewashRects: active.whitewashRects || [], pdfElements: [], deletedOpIndices: [] }], historyIndex: 0,
         });
       } else {
         const v1Devices = renumberDevices(parsed.devices || [], parsed.commsRackId || null);
@@ -649,7 +711,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
           clientLogo: parsed.clientLogo || null, revisions: [], cableRuns,
           linkedJobId: parsed.linkedJobId || null, linkedJobNumber: parsed.linkedJobNumber || null, planFileId: parsed.planFileId || crypto.randomUUID(),
           isDirty: false,
-          history: [{ devices: floor.devices, commsRackId: floor.commsRackId, whitewashRects: floor.whitewashRects }], historyIndex: 0,
+          history: [{ devices: floor.devices, commsRackId: floor.commsRackId, whitewashRects: floor.whitewashRects, pdfElements: [], deletedOpIndices: [] }], historyIndex: 0,
         });
       }
     } catch (e) {
@@ -671,7 +733,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
       titleBlock: DEFAULT_TITLE_BLOCK, deviceScale: 1,
       floors: [{ id: 'floor-1', name: 'Ground Floor', backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, backgroundOffsetX: 0, backgroundOffsetY: 0, backgroundScale: 1, backgroundLocked: true, pdfFileName: '', devices: [], commsRackId: null, whitewashRects: [] }],
       activeFloorId: 'floor-1', revisions: [],
-      history: [{ devices: [], commsRackId: null, whitewashRects: [] }], historyIndex: 0,
+      history: [{ devices: [], commsRackId: null, whitewashRects: [], pdfElements: [], deletedOpIndices: [] }], historyIndex: 0,
     });
   },
 }));

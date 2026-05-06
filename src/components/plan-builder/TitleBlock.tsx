@@ -19,14 +19,14 @@ export default function TitleBlock() {
           <div className="text-gray-500 text-xs">Security &amp; AV</div>
         </div>
       </div>
-      <div className="flex items-center px-4 border-r border-gray-700 flex-1">
-        <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-xs">
-          <div><span className="text-gray-500">Client: </span><span className="text-white">{titleBlock.client}</span></div>
-          <div><span className="text-gray-500">Drawing #: </span><span className="text-white">{titleBlock.drawingNumber}</span></div>
-          <div><span className="text-gray-500">Project: </span><span className="text-white">{titleBlock.projectName || '—'}</span></div>
-          <div><span className="text-gray-500">Revision: </span><span className="text-white">{titleBlock.revision}</span></div>
-          <div><span className="text-gray-500">Address: </span><span className="text-white">{titleBlock.worksAddress || '—'}</span></div>
-          <div><span className="text-gray-500">Date: </span><span className="text-white">{titleBlock.date}</span></div>
+      <div className="flex items-center px-4 border-r border-gray-700 flex-1 min-w-0">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-xs w-full min-w-0">
+          <div className="flex min-w-0" title={titleBlock.client}><span className="text-gray-500 flex-shrink-0">Client: </span><span className="text-white truncate">{titleBlock.client}</span></div>
+          <div className="flex min-w-0" title={titleBlock.drawingNumber}><span className="text-gray-500 flex-shrink-0">Drawing #: </span><span className="text-white truncate">{titleBlock.drawingNumber}</span></div>
+          <div className="flex min-w-0" title={titleBlock.projectName}><span className="text-gray-500 flex-shrink-0">Project: </span><span className="text-white truncate">{titleBlock.projectName || '—'}</span></div>
+          <div className="flex min-w-0"><span className="text-gray-500 flex-shrink-0">Revision: </span><span className="text-white truncate">{titleBlock.revision}</span></div>
+          <div className="flex min-w-0" title={titleBlock.worksAddress}><span className="text-gray-500 flex-shrink-0">Address: </span><span className="text-white truncate">{titleBlock.worksAddress || '—'}</span></div>
+          <div className="flex min-w-0"><span className="text-gray-500 flex-shrink-0">Date: </span><span className="text-white truncate">{titleBlock.date}</span></div>
         </div>
       </div>
       <div className="flex items-center px-4 border-r border-gray-700" style={{ minWidth: '150px' }}>
