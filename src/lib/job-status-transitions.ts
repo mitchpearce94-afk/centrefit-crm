@@ -6,22 +6,30 @@ import { createClient } from '@/lib/supabase/client';
  * If the job's current status isn't in the 'from' list, no transition happens.
  */
 const AUTO_TRANSITIONS: Record<string, { from: string[]; to: string }> = {
+  // Plan / pre-quote lifecycle — design and electrician engagement happen
+  // before any quote is drafted. The 'Plans sent to electrician' status
+  // is the visible chase point while we wait for the sparky's number.
+  plans_sent_to_electrician: {
+    from: ['Lead / Unassigned', 'Assigned', 'Design Phase', 'Awaiting Approval', 'Follow Up', 'On Hold', 'Pending Tech'],
+    to: 'Plans sent to electrician',
+  },
+
   // Quote lifecycle — each step includes earlier statuses so transitions
   // still fire even if a previous step in the chain was skipped
   quote_created: {
-    from: ['Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Follow Up', 'On Hold', 'Design Phase', 'Awaiting Approval'],
+    from: ['Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Follow Up', 'On Hold', 'Design Phase', 'Plans sent to electrician', 'Awaiting Approval'],
     to: 'Quote Draft',
   },
   quote_sent: {
-    from: ['Quote Draft', 'Sub-Quote Needed', 'Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Follow Up', 'On Hold', 'Design Phase', 'Awaiting Approval'],
+    from: ['Quote Draft', 'Sub-Quote Needed', 'Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Follow Up', 'On Hold', 'Design Phase', 'Plans sent to electrician', 'Awaiting Approval'],
     to: 'Quote Sent',
   },
   quote_accepted: {
-    from: ['Quote Draft', 'Quote Sent', 'Quote Expired', 'Sub-Quote Needed', 'Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Follow Up', 'On Hold', 'Design Phase', 'Awaiting Approval'],
+    from: ['Quote Draft', 'Quote Sent', 'Quote Expired', 'Sub-Quote Needed', 'Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Follow Up', 'On Hold', 'Design Phase', 'Plans sent to electrician', 'Awaiting Approval'],
     to: 'Pending Schedule',
   },
   quote_declined: {
-    from: ['Quote Draft', 'Quote Sent', 'Quote Expired', 'Sub-Quote Needed', 'Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Design Phase', 'Awaiting Approval'],
+    from: ['Quote Draft', 'Quote Sent', 'Quote Expired', 'Sub-Quote Needed', 'Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Design Phase', 'Plans sent to electrician', 'Awaiting Approval'],
     to: 'Follow Up',
   },
 

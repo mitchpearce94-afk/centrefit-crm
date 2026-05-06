@@ -11,7 +11,7 @@ export default async function PlansPage() {
 
   const { data: plans } = await supabase
     .from('plan_files')
-    .select('id, name, client_name, site_name, state, revision, device_counts, cfp_url, pdf_url, created_at, updated_at, quote_id, job_id, job:jobs(id, number, status:statuses(id, name)), quote:quotes(id, job_id, job:jobs(id, number, status:statuses(id, name)))')
+    .select('id, name, client_name, site_name, state, revision, device_counts, cfp_url, pdf_url, created_at, updated_at, quote_id, job_id, sent_to_electrician_at, sent_to_electrician_email, job:jobs(id, number, status:statuses(id, name)), quote:quotes(id, job_id, job:jobs(id, number, status:statuses(id, name)))')
     .order('updated_at', { ascending: false });
 
   const allPlans = plans ?? [];
@@ -127,6 +127,17 @@ function PlanRow({ plan, countDevices, formatDate, completed }: { plan: any; cou
         <div className="flex items-center gap-2">
           <span className="font-medium text-sm text-foreground truncate">{[plan.client_name, plan.site_name].filter(Boolean).join(' — ') || plan.name}</span>
           <span className="flex-shrink-0 px-1.5 py-0.5 bg-amber-500/10 text-amber-500 rounded text-xs font-medium">Rev {plan.revision || 'A'}</span>
+          {plan.sent_to_electrician_at && (
+            <span
+              title={`Sent to ${plan.sent_to_electrician_email ?? "electrician"} on ${formatDate(plan.sent_to_electrician_at)}`}
+              className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 bg-cyan-500/10 text-cyan-400 rounded text-[10px] font-medium uppercase tracking-wide"
+            >
+              <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7z" />
+              </svg>
+              Sent to electrician
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
           <span>{formatDate(plan.updated_at || plan.created_at)}</span>
