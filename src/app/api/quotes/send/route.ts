@@ -5,6 +5,7 @@ import { generateScopeOfWorks } from "@/lib/quote-engine";
 import { generateQuotePdfBuffer, type QuoteForPdf } from "@/lib/quote-pdf";
 import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.server";
 import { emailHeader, emailFooter, emailLayout } from "@/lib/emails/brand";
+import { FROM_QUOTES, REPLY_TO_SALES } from "@/lib/emails/from-addresses";
 import { logDocumentActivity } from "@/lib/activity/log";
 import crypto from "crypto";
 
@@ -168,7 +169,8 @@ export async function POST(req: NextRequest) {
   try {
     const filename = `Centrefit-Quote-${quote.ref}.pdf`;
     const { error: sendError } = await getResend().emails.send({
-      from: "Centrefit Quotes <quotes@centrefit.com.au>",
+      from: FROM_QUOTES,
+      replyTo: REPLY_TO_SALES,
       to: email,
       subject: `Quotation ${quote.ref} — ${clientName}${quote.site_name ? ` — ${quote.site_name}` : ''}`,
       html: emailHtml,

@@ -4,6 +4,7 @@ import { getAuthedClient } from "@/lib/xero/client";
 import { authoriseXeroInvoice } from "@/lib/xero/invoices";
 import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.server";
 import { logDocumentActivity } from "@/lib/activity/log";
+import { enqueueNotification } from "@/lib/notifications/enqueue";
 
 export async function POST(
   _req: NextRequest,
@@ -80,6 +81,17 @@ export async function POST(
     documentId: id,
     eventType: "invoice.authorised",
     metadata: { online_url: result.onlineInvoiceUrl ?? null },
+  });
+
+  await enqueueNotification({
+    supabase,
+    typeCode: "invoice.authorised",
+    refType: "invoice",
+    refId: id,
+    audience: { allActive: true },
+    title: "Invoice authorised in Xero",
+    body: result.onlineInvoiceUrl ? "Ready to email or share online link." : undefined,
+    href: `/invoices/${id}`,
   });
 
   return NextResponse.json({ invoice: updated });

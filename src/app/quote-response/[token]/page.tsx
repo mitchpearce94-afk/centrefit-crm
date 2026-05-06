@@ -2,6 +2,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { headers } from "next/headers";
 import { generateScopeOfWorks } from "@/lib/quote-engine";
 import { logDocumentActivity, shouldLogView } from "@/lib/activity/log";
+import { enqueueNotification } from "@/lib/notifications/enqueue";
 import { QuoteResponseView } from "./response-view";
 
 export const dynamic = "force-dynamic";
@@ -97,6 +98,19 @@ export default async function QuoteResponsePage({
       eventType: "quote.viewed",
       actor: "recipient",
       metadata: { ip, user_agent: hdrs.get("user-agent") ?? null },
+    });
+    // Notify subscribed staff that the customer just opened the quote.
+    // shouldLogView dedupes within 1 hour so opens-and-refreshes don't
+    // spam the bell.
+    await enqueueNotification({
+      supabase: sb,
+      typeCode: "quote.viewed",
+      refType: "quote",
+      refId: quote.id,
+      audience: { allActive: true },
+      title: `${clientName} opened ${quote.ref}`,
+      body: quote.site_name ? `${quote.site_name} — quote viewed` : "Quote viewed by customer",
+      href: `/quoting/${quote.id}`,
     });
   }
 
