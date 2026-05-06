@@ -14,10 +14,13 @@ export function StateFolder({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="bg-card border border-border rounded-lg overflow-hidden">
+    // overflow-visible (default) so kebab dropdowns inside child rows can
+    // escape the folder box. Header & rows still render inside the rounded
+    // border because the wrapper has the bg/border applied directly.
+    <div className="bg-card border border-border rounded-lg">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full px-4 py-3 bg-accent/30 hover:bg-accent/50 transition-colors flex items-center justify-between cursor-pointer"
+        className="w-full px-4 py-3 bg-accent/30 hover:bg-accent/50 transition-colors flex items-center justify-between cursor-pointer rounded-t-lg"
       >
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground text-xs">{open ? "▼" : "▶"}</span>
