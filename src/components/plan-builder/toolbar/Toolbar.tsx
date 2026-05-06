@@ -113,10 +113,20 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
   };
 
   const [saving, setSaving] = useState(false);
+  // Track which step of the save the user is on so the button can show
+  // "Saving…" → "Generating PDF…" instead of just hanging on "Saving…".
+  const [savingPhase, setSavingPhase] = useState<"idle" | "uploading" | "rendering">("idle");
 
-  const saveToCloud = async () => {
+  /**
+   * Save everything to Supabase: .cfp + plan_files row + freshly-rendered PDF.
+   * Returns the generated PDF blob so callers (e.g. Export) can also trigger
+   * a browser download without doing the work twice.
+   */
+  const saveToCloud = async (): Promise<Blob | null> => {
     const store = usePlanStore.getState();
     setSaving(true);
+    setSavingPhase("uploading");
+    let pdfBlob: Blob | null = null;
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -148,7 +158,18 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
       await supabase.storage.from('plan-files').upload(cfpPath, cfpBlob, { upsert: true });
       const { data: cfpUrlData } = supabase.storage.from('plan-files').getPublicUrl(cfpPath);
 
-      // Upsert plan_files row
+      // Generate the PDF in parallel-ish — start it before the row upsert
+      // so the user's wall-clock save is the max(cfp+row, pdf-render) and
+      // not the sum. PDF render reads from the in-memory store, which is
+      // already up to date.
+      setSavingPhase("rendering");
+      const pdfPromise = exportToPdf({ download: false }).catch((err) => {
+        console.error("[Plan Builder] PDF render failed during save:", err);
+        return null as Blob | null;
+      });
+
+      // Initial row upsert (cfp_url + metadata) — done before the PDF
+      // finishes so the row exists even if PDF gen fails.
       const planRow = {
         id: planId,
         name: planName,
@@ -165,52 +186,69 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
         job_id: store.linkedJobId || null,
         updated_at: new Date().toISOString(),
       };
-
       const { error } = await supabase.from('plan_files').upsert(planRow, { onConflict: 'id' });
       if (error) {
         console.error('Failed to save plan:', error);
         alert('Failed to save plan to cloud: ' + error.message);
-      } else {
-        usePlanStore.setState({ planFileId: planId });
-        usePlanStore.getState().markClean();
-        // Update URL to reflect the saved plan ID so refresh works
-        if (window.location.pathname === '/plans/new') {
-          window.history.replaceState(null, '', `/plans/${planId}`);
+        return null;
+      }
+
+      usePlanStore.setState({ planFileId: planId });
+      // Wait for PDF + upload before marking clean / clearing the URL hint
+      // so the next "Send to electrician" sees the fresh file.
+      pdfBlob = await pdfPromise;
+      if (pdfBlob) {
+        const pdfPath = `plans/${planId}.pdf`;
+        const upRes = await supabase.storage.from('plan-files').upload(pdfPath, pdfBlob, { upsert: true, contentType: 'application/pdf' });
+        if (upRes.error) {
+          console.error('[Plan Builder] PDF upload failed:', upRes.error);
+        } else {
+          const { data: pdfUrlData } = supabase.storage.from('plan-files').getPublicUrl(pdfPath);
+          if (pdfUrlData?.publicUrl) {
+            await supabase
+              .from('plan_files')
+              .update({ pdf_url: pdfUrlData.publicUrl, updated_at: new Date().toISOString() })
+              .eq('id', planId);
+            console.log('[Plan Builder] PDF refreshed alongside save');
+          }
         }
+      }
+
+      usePlanStore.getState().markClean();
+      if (window.location.pathname === '/plans/new') {
+        window.history.replaceState(null, '', `/plans/${planId}`);
       }
     } catch (err) {
       console.error('Cloud save error:', err);
     }
     setSaving(false);
+    setSavingPhase("idle");
+    return pdfBlob;
   };
 
   const handleSave = async () => {
     usePlanStore.getState().saveProject(); // local .cfp download
-    await saveToCloud(); // also save to Supabase
+    await saveToCloud(); // also saves cfp + regenerates PDF + uploads
   };
 
   const handleExport = async () => {
-    await saveToCloud();
-    const pdfBlob = await exportToPdf();
-
-    // Upload PDF to Supabase Storage
-    if (pdfBlob) {
-      try {
-        const store = usePlanStore.getState();
-        const planId = store.planFileId;
-        if (planId) {
-          const supabase = createClient();
-          const pdfPath = `plans/${planId}.pdf`;
-          await supabase.storage.from('plan-files').upload(pdfPath, pdfBlob, { upsert: true, contentType: 'application/pdf' });
-          const { data: pdfUrlData } = supabase.storage.from('plan-files').getPublicUrl(pdfPath);
-          if (pdfUrlData?.publicUrl) {
-            await supabase.from('plan_files').update({ pdf_url: pdfUrlData.publicUrl, updated_at: new Date().toISOString() }).eq('id', planId);
-            console.log('[Plan Builder] PDF uploaded to storage');
-          }
-        }
-      } catch (err) {
-        console.error('Failed to upload PDF to storage:', err);
-      }
+    // saveToCloud already renders + uploads the fresh PDF. We just need to
+    // also surface it as a browser download for the user.
+    const pdfBlob = await saveToCloud();
+    if (!pdfBlob) return;
+    try {
+      const tb = usePlanStore.getState().titleBlock;
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      const filenameParts = [tb.state, tb.client, tb.projectName, tb.revision, tb.date].filter(Boolean);
+      a.download = filenameParts.length > 0
+        ? `${filenameParts.join(' - ').replace(/[^a-zA-Z0-9\-_ \/]/g, '')}.pdf`
+        : 'centrefit-plan.pdf';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('[Plan Builder] PDF download failed:', err);
     }
   };
 
@@ -340,7 +378,11 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
       </div>
 
       <div className="flex items-center gap-1 pr-3 border-r border-gray-700">
-        <button className="px-2.5 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded disabled:opacity-50" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+        <button className="px-2.5 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded disabled:opacity-50" onClick={handleSave} disabled={saving} title="Saves the .cfp AND regenerates the PDF so the stored copy matches what you've drawn">
+          {saving
+            ? (savingPhase === 'rendering' ? 'Generating PDF…' : 'Saving…')
+            : 'Save'}
+        </button>
         <input ref={projectInputRef} type="file" accept=".cfp,.json" className="hidden" onChange={handleProjectLoad} />
         <button className="px-2.5 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded"
           onClick={() => projectInputRef.current?.click()}>Load</button>

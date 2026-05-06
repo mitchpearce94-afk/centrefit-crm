@@ -306,7 +306,8 @@ function drawDynamicLegend(
   }
 }
 
-export async function exportToPdf(): Promise<Blob | null> {
+export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Blob | null> {
+  const triggerDownload = opts.download ?? true;
   const store = usePlanStore.getState();
   const { titleBlock, clientLogo, revisions } = store;
 
@@ -596,13 +597,16 @@ export async function exportToPdf(): Promise<Blob | null> {
 
   const pdfBytes = await outputDoc.save();
   const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  const filenameParts = [titleBlock.state, titleBlock.client, titleBlock.projectName, titleBlock.revision, titleBlock.date].filter(Boolean);
-  a.download = filenameParts.length > 0 ? `${filenameParts.join(' - ').replace(/[^a-zA-Z0-9\-_ \/]/g, '')}.pdf` : 'centrefit-plan.pdf';
-  a.click();
-  URL.revokeObjectURL(url);
+
+  if (triggerDownload) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const filenameParts = [titleBlock.state, titleBlock.client, titleBlock.projectName, titleBlock.revision, titleBlock.date].filter(Boolean);
+    a.download = filenameParts.length > 0 ? `${filenameParts.join(' - ').replace(/[^a-zA-Z0-9\-_ \/]/g, '')}.pdf` : 'centrefit-plan.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return blob;
 }
