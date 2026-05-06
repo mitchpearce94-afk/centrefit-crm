@@ -34,7 +34,9 @@ export default async function InvoiceDetailPage({
 
   const { data: invoice, error } = await supabase
     .from("invoices")
-    .select("*, customer:customers(id, name), quote:quotes(id, ref, status), job:jobs(id, number)")
+    .select(
+      "*, customer:customers(id, name), quote:quotes(id, ref, status, site:customer_sites(id, name, address, suburb)), job:jobs(id, number, site:customer_sites(id, name, address, suburb))"
+    )
     .eq("id", id)
     .single();
   if (error || !invoice) notFound();
@@ -83,6 +85,19 @@ export default async function InvoiceDetailPage({
               <> · <Link href={`/jobs/${inv.job.id}`} className="hover:text-foreground transition-colors">Job {inv.job.number}</Link></>
             )}
           </p>
+          {(() => {
+            const site = inv.quote?.site ?? inv.job?.site;
+            if (!site) return null;
+            const addressLine = [site.address, site.suburb].filter(Boolean).join(", ");
+            return (
+              <p className="mt-0.5 text-sm text-foreground/90">
+                <span className="font-medium">{site.name}</span>
+                {addressLine && (
+                  <span className="text-xs text-muted-foreground ml-2">{addressLine}</span>
+                )}
+              </p>
+            );
+          })()}
         </div>
         <InvoiceActions
           invoiceId={inv.id}

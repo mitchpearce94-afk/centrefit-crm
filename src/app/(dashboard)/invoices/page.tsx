@@ -24,7 +24,9 @@ export default async function InvoicesPage() {
 
   const { data: invoices } = await supabase
     .from("invoices")
-    .select("*, customer:customers(id, name), quote:quotes(id, ref)")
+    .select(
+      "*, customer:customers(id, name), quote:quotes(id, ref, site:customer_sites(id, name)), job:jobs(id, number, site:customer_sites(id, name))"
+    )
     .order("created_at", { ascending: false })
     .limit(500);
 
@@ -81,6 +83,7 @@ export default async function InvoicesPage() {
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Invoice</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Type</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Customer</th>
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Site</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Status</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider text-right">Total</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider text-right">Due</th>
@@ -90,7 +93,7 @@ export default async function InvoicesPage() {
           <tbody className="divide-y divide-border">
             {list.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground text-sm">
+                <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground text-sm">
                   No invoices yet. Generate one from an accepted quote.
                 </td>
               </tr>
@@ -98,6 +101,10 @@ export default async function InvoicesPage() {
             {list.map((inv) => {
               const colour = STATUS_COLOURS[inv.status] ?? "#6b7280";
               const isOverdue = inv.status === "authorised" && inv.due_date && new Date(inv.due_date) < new Date();
+              // Site comes via the linked quote or job — invoices don't carry
+              // a site_id of their own. Falls back to em-dash for ad-hoc /
+              // recurring invoices that don't trace back to either.
+              const siteName = inv.quote?.site?.name ?? inv.job?.site?.name ?? null;
               return (
                 <tr key={inv.id} className="transition-colors hover:bg-accent/40">
                   <td className="px-4 py-2.5">
@@ -110,6 +117,13 @@ export default async function InvoicesPage() {
                   </td>
                   <td className="px-4 py-2.5 text-xs text-muted-foreground">{TYPE_LABEL[inv.invoice_type] ?? inv.invoice_type}</td>
                   <td className="px-4 py-2.5 text-sm">{inv.customer?.name ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-sm">
+                    {siteName ? (
+                      <span className="text-foreground">{siteName}</span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5">
                     <span
                       className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize"
