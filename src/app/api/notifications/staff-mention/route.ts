@@ -45,6 +45,35 @@ export async function POST(req: NextRequest) {
     ? `${refLabel ?? ""} — ${sanitizedMessage}`.trim().replace(/^—\s*/, "")
     : refLabel ?? "Tap to view";
 
+  // For plan mentions, attach the plan's exported PDF so the recipient
+  // sees the actual drawings in their inbox — not just a link.
+  let attachments: { filename: string; content: Buffer }[] | undefined;
+  if (refType === "plan") {
+    const { data: plan } = await supabase
+      .from("plan_files")
+      .select("pdf_url, state, client_name, site_name, revision")
+      .eq("id", refId)
+      .maybeSingle();
+    if (plan?.pdf_url) {
+      try {
+        const res = await fetch(plan.pdf_url);
+        if (res.ok) {
+          const buf = Buffer.from(await res.arrayBuffer());
+          const safeBase = [plan.state, plan.client_name, plan.site_name, plan.revision ? `Rev ${plan.revision}` : null]
+            .filter(Boolean)
+            .join(" - ")
+            .replace(/[^a-zA-Z0-9\-_ ]/g, "")
+            .trim() || "plan";
+          attachments = [{ filename: `${safeBase}.pdf`, content: buf }];
+        } else {
+          console.warn(`[staff-mention] couldn't fetch plan PDF for ${refId}: HTTP ${res.status}`);
+        }
+      } catch (err) {
+        console.warn(`[staff-mention] couldn't fetch plan PDF for ${refId}:`, err);
+      }
+    }
+  }
+
   await enqueueNotification({
     supabase,
     typeCode: "staff.mention",
@@ -60,7 +89,8 @@ export async function POST(req: NextRequest) {
       message: sanitizedMessage,
       ref_label: refLabel ?? null,
     },
+    attachments,
   });
 
-  return NextResponse.json({ ok: true, count: staffIds.length });
+  return NextResponse.json({ ok: true, count: staffIds.length, attachedPdf: Boolean(attachments) });
 }

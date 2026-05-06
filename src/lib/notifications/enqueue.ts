@@ -48,6 +48,12 @@ export interface EnqueueNotificationInput {
   body?: string;
   href?: string;
   metadata?: Record<string, unknown>;
+  /**
+   * Files to attach to the email (e.g. plan PDF on a staff mention for a
+   * plan). Bell rows are unaffected — attachments are an email-only
+   * concern. Caller is responsible for fetching the bytes.
+   */
+  attachments?: { filename: string; content: Buffer }[];
 }
 
 interface StaffEmailRow {
@@ -81,7 +87,7 @@ async function resolveAudience(
 }
 
 export async function enqueueNotification(input: EnqueueNotificationInput): Promise<void> {
-  const { supabase, typeCode, refType, refId, audience, title, body, href, metadata } = input;
+  const { supabase, typeCode, refType, refId, audience, title, body, href, metadata, attachments } = input;
   try {
     const targets = await resolveAudience(supabase, audience);
     if (targets.length === 0) return;
@@ -161,6 +167,7 @@ export async function enqueueNotification(input: EnqueueNotificationInput): Prom
             body: body ?? null,
             href: fullHref,
             typeCode,
+            attachments,
           });
           if (!result.ok) {
             console.warn(`[notifications] email send failed`, {

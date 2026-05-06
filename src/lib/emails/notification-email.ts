@@ -21,6 +21,8 @@ export interface SendNotificationEmailInput {
   href: string | null;
   /** Tag for grouping in Resend (e.g. "quote.accepted"). */
   typeCode: string;
+  /** Files to attach (e.g. plan PDF on a Notify Staff for a plan). */
+  attachments?: { filename: string; content: Buffer }[];
 }
 
 export async function sendNotificationEmail(
@@ -49,7 +51,7 @@ export async function sendNotificationEmail(
   `);
 
   try {
-    const { error } = await getResend().emails.send({
+    const sendArgs: Parameters<ReturnType<typeof getResend>["emails"]["send"]>[0] = {
       from: FROM_NO_REPLY,
       to: input.to,
       subject: input.title,
@@ -58,7 +60,14 @@ export async function sendNotificationEmail(
         "X-Cf-Notification-Type": input.typeCode,
       },
       tags: [{ name: "type", value: input.typeCode.replace(/[^a-zA-Z0-9_]/g, "_") }],
-    });
+    };
+    if (input.attachments && input.attachments.length > 0) {
+      sendArgs.attachments = input.attachments.map((a) => ({
+        filename: a.filename,
+        content: a.content.toString("base64"),
+      }));
+    }
+    const { error } = await getResend().emails.send(sendArgs);
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (err) {
