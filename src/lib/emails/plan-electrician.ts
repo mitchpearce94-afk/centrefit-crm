@@ -31,14 +31,10 @@ export async function sendPlanToElectricianEmail(
     ${emailHeader({ rightLabel: "Plan", rightValue: input.planRevision ? `Rev ${input.planRevision}` : "" })}
 
     <tr><td style="padding:32px 32px 12px">
-      <h1 style="font-size:20px;font-weight:600;color:#0f172a;margin:0 0 4px;letter-spacing:-0.3px">Plan ready for your quote</h1>
+      <h1 style="font-size:20px;font-weight:600;color:#0f172a;margin:0 0 4px;letter-spacing:-0.3px">Plan attached for quote</h1>
       <p style="font-size:13px;color:#475569;margin:14px 0 0;line-height:1.6">${greeting}</p>
       <p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">
-        Please find attached the plans for <strong>${input.planLabel}</strong>${input.jobNumber ? ` (${input.jobNumber})` : ""}.
-        Could we please get your quote for the electrical works?
-      </p>
-      <p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">
-        If you have questions about the scope, reply to this email and we'll come back to you.
+        Plans attached for <strong>${input.planLabel}</strong>${input.jobNumber ? ` (${input.jobNumber})` : ""}. Can you please quote on this and get it back to me ASAP?
       </p>
     </td></tr>
     ${emailFooter("Reply with your quote when ready.")}

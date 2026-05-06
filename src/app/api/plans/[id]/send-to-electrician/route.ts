@@ -46,7 +46,7 @@ export async function POST(
 
   const { data: contact } = await supabase
     .from("state_electricians")
-    .select("contact_name, email")
+    .select("company_name, contact_name, email")
     .eq("state", plan.state)
     .maybeSingle();
   if (!contact?.email) {
@@ -110,9 +110,15 @@ export async function POST(
     documentType: "plan",
     documentId: id,
     eventType: "plan.sent_to_electrician",
-    metadata: { to: contact.email, state: plan.state, contact_name: contact.contact_name ?? null },
+    metadata: {
+      to: contact.email,
+      state: plan.state,
+      contact_name: contact.contact_name ?? null,
+      company_name: contact.company_name ?? null,
+    },
   });
 
+  const electricianLabel = [contact.company_name, contact.contact_name].filter(Boolean).join(" · ") || contact.email;
   await enqueueNotification({
     supabase,
     typeCode: "plan.sent_to_electrician",
@@ -120,7 +126,7 @@ export async function POST(
     refId: id,
     audience: { allActive: true },
     title: `Plans sent to ${plan.state} electrician`,
-    body: `${planLabel} → ${contact.email}`,
+    body: `${planLabel} → ${electricianLabel}`,
     href: `/plans`,
   });
 

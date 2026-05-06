@@ -7,7 +7,7 @@ export default async function ElectriciansSettingsPage() {
   const supabase = await createClient();
   const { data: rows } = await supabase
     .from("state_electricians")
-    .select("state, contact_name, email, phone, notes, updated_at")
+    .select("state, company_name, contact_name, email, phone, notes, updated_at")
     .order("state");
 
   return (
