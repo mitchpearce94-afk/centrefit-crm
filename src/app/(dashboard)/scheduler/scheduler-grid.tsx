@@ -5,8 +5,21 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { AssignJobModal } from "./assign-job-modal";
 
+type EntryType = "job" | "event" | "reminder";
 interface StaffMember { id: string; display_name: string; initials: string; colour: string; role: string; }
-interface ScheduleEntry { id: string; job_id: string; staff_id: string; schedule_date: string; start_time: string | null; end_time: string | null; notes: string | null; job?: { id: string; number: string; reference: string | null; customer?: { id: string; name: string }; site?: { id: string; name: string }; status?: { id: string; name: string; colour: string } }; }
+interface ScheduleEntry {
+  id: string;
+  job_id: string | null;
+  staff_id: string;
+  schedule_date: string;
+  end_date: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  notes: string | null;
+  entry_type: EntryType;
+  title: string | null;
+  job?: { id: string; number: string; reference: string | null; customer?: { id: string; name: string }; site?: { id: string; name: string }; status?: { id: string; name: string; colour: string } } | null;
+}
 interface JobOption { id: string; number: string; reference: string | null; customer?: { id: string; name: string }; site?: { id: string; name: string }; status?: { id: string; name: string; colour: string }; }
 
 const START_HOUR = 6;
@@ -62,7 +75,18 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
     const allDay = new Map<string, ScheduleEntry[]>();
     const timed = new Map<string, ScheduleEntry[]>();
     for (const e of entries) {
-      if (e.start_time && e.end_time) {
+      // Multi-day entries (end_date > schedule_date) render as all-day on
+      // every date they span. Single-day entries with start/end times go on
+      // the time grid; everything else lands in the all-day bar above.
+      const isMultiDay = !!e.end_date && e.end_date > e.schedule_date;
+      if (isMultiDay) {
+        let cursor = e.schedule_date;
+        while (cursor <= e.end_date!) {
+          if (!allDay.has(cursor)) allDay.set(cursor, []);
+          allDay.get(cursor)!.push(e);
+          cursor = addDaysStr(cursor, 1);
+        }
+      } else if (e.start_time && e.end_time) {
         if (!timed.has(e.schedule_date)) timed.set(e.schedule_date, []);
         timed.get(e.schedule_date)!.push(e);
       } else {
@@ -162,9 +186,9 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
                     <div key={date} className={`flex-1 border-r last:border-0 px-1.5 py-2 text-center min-w-[100px] cursor-pointer hover:bg-accent/30 ${today ? "bg-primary/10" : "bg-muted/50"}`} onClick={() => switchToDay(date)}>
                       <div className={`text-xs font-medium ${today ? "text-primary" : "text-muted-foreground"}`}>{d.toLocaleDateString("en-AU", { weekday: "short" })}</div>
                       <div className={`text-base font-bold ${today ? "text-primary" : ""}`}>{d.getDate()}</div>
-                      {allDay.map(e => { const s = getStaff(e); return (
-                        <button key={e.id} onClick={ev => { ev.stopPropagation(); setModal({ staffId: e.staff_id, date, entry: e }); }} className="mt-1 w-full rounded px-1 py-0.5 text-[10px] font-medium text-white truncate text-left" style={{ backgroundColor: s?.colour ?? "#6b7280" }}>
-                          {e.job?.number}
+                      {allDay.map(e => { const s = getStaff(e); const isJob = e.entry_type === "job"; return (
+                        <button key={`${e.id}-${date}`} onClick={ev => { ev.stopPropagation(); setModal({ staffId: e.staff_id, date: e.schedule_date, entry: e }); }} className={`mt-1 w-full rounded px-1 py-0.5 text-[10px] font-medium text-white truncate text-left ${!isJob ? "border border-dashed border-white/40" : ""}`} style={{ backgroundColor: s?.colour ?? "#6b7280" }} title={isJob ? e.job?.number ?? "" : (e.title ?? "")}>
+                          {isJob ? e.job?.number : (e.entry_type === "reminder" ? "⏰ " : "") + (e.title ?? "")}
                         </button>
                       ); })}
                     </div>
@@ -202,9 +226,9 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
             <div className="border-b border-border px-4 py-2 bg-muted/30">
               <span className="text-[10px] font-semibold text-muted-foreground uppercase">All Day</span>
               <div className="mt-1 space-y-1">
-                {(allDayByDate.get(selectedDay) ?? []).map(e => { const s = getStaff(e); return (
-                  <button key={e.id} onClick={() => setModal({ staffId: e.staff_id, date: selectedDay, entry: e })} className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium text-white" style={{ backgroundColor: s?.colour ?? "#6b7280" }}>
-                    {s?.initials} · {e.job?.number} — {e.job?.customer?.name}
+                {(allDayByDate.get(selectedDay) ?? []).map(e => { const s = getStaff(e); const isJob = e.entry_type === "job"; return (
+                  <button key={`${e.id}-${selectedDay}`} onClick={() => setModal({ staffId: e.staff_id, date: e.schedule_date, entry: e })} className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium text-white ${!isJob ? "border border-dashed border-white/40" : ""}`} style={{ backgroundColor: s?.colour ?? "#6b7280" }}>
+                    {s?.initials} · {isJob ? `${e.job?.number} — ${e.job?.customer?.name ?? ""}` : `${e.entry_type === "reminder" ? "⏰ " : ""}${e.title ?? ""}`}
                   </button>
                 ); })}
               </div>
@@ -273,8 +297,12 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, onCellClick, onEntryC
         const top = Math.max(0, (startMin / 60) * HOUR_PX);
         const height = Math.max(((endMin - startMin) / 60) * HOUR_PX, 28);
         const s = getStaff(entry);
-        const statusColour = entry.job?.status?.colour ?? "#6b7280";
         const staffColour = s?.colour ?? "#6b7280";
+        const isJob = entry.entry_type === "job";
+        // Job entries get a status-coloured left border; events/reminders use
+        // the staff colour with a dashed border so they're visually distinct
+        // from real work.
+        const leftBorderColour = isJob ? (entry.job?.status?.colour ?? "#6b7280") : staffColour;
 
         return (
           <div
@@ -286,13 +314,12 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, onCellClick, onEntryC
               e.preventDefault();
               e.stopPropagation();
               const eid = e.dataTransfer.getData("text/plain");
-              // Calculate which hour slot the drop landed on from the entry's top position
               const rect = e.currentTarget.parentElement!.getBoundingClientRect();
               const y = e.clientY - rect.top;
               const hour = Math.floor(y / HOUR_PX) + START_HOUR;
               if (eid && onDrop) onDrop(eid, date, hour);
             }}
-            className={`rounded-md border overflow-hidden cursor-pointer hover:brightness-110 transition-all ${draggingId === entry.id ? "opacity-40" : ""}`}
+            className={`rounded-md border overflow-hidden cursor-pointer hover:brightness-110 transition-all ${draggingId === entry.id ? "opacity-40" : ""} ${!isJob ? "border-dashed" : ""}`}
             style={{
               position: "absolute",
               top, height,
@@ -301,7 +328,8 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, onCellClick, onEntryC
               backgroundColor: `${staffColour}18`,
               borderColor: `${staffColour}50`,
               borderLeftWidth: 3,
-              borderLeftColor: statusColour,
+              borderLeftColor: leftBorderColour,
+              borderLeftStyle: isJob ? "solid" : "dashed",
             }}
             onClick={e => { e.stopPropagation(); onEntryClick(entry); }}
           >
@@ -312,9 +340,13 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, onCellClick, onEntryC
                     {s.initials}
                   </span>
                 )}
-                <span className="text-xs font-semibold font-mono truncate">{entry.job?.number}</span>
+                <span className="text-xs font-semibold truncate">
+                  {isJob
+                    ? <span className="font-mono">{entry.job?.number}</span>
+                    : <>{entry.entry_type === "reminder" ? "⏰ " : ""}{entry.title}</>}
+                </span>
               </div>
-              {height > 44 && (
+              {height > 44 && isJob && (
                 <p className="text-[10px] text-muted-foreground truncate mt-0.5">
                   {entry.job?.customer?.name}{entry.job?.site ? ` · ${entry.job.site.name}` : ""}
                 </p>

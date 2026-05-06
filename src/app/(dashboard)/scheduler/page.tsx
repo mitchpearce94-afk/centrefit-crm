@@ -67,13 +67,17 @@ export default async function SchedulerPage({
         .select("id, display_name, initials, colour, role")
         .eq("is_active", true)
         .order("display_name"),
+      // Pull anything that overlaps the visible week. Single-day entries
+      // are bounded by [monday, sunday]; multi-day entries are kept in the
+      // result if their end_date is on/after monday and they started on/
+      // before sunday — the grid expands them across the days they span.
       supabase
         .from("schedule_entries")
         .select(
           "*, job:jobs(id, number, reference, customer:customers(id, name), site:customer_sites(id, name), status:statuses(id, name, colour))"
         )
-        .gte("schedule_date", mondayISO)
         .lte("schedule_date", sundayISO)
+        .or(`end_date.gte.${mondayISO},and(end_date.is.null,schedule_date.gte.${mondayISO})`)
         .order("start_time"),
       jobsQuery,
       supabase.auth.getUser(),
