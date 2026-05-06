@@ -45,6 +45,7 @@ export function NotificationsBell() {
   const [unread, setUnread] = useState(0);
   const [rows, setRows] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   async function loadCount() {
@@ -73,6 +74,19 @@ export function NotificationsBell() {
     loadCount();
     const t = setInterval(loadCount, 60_000);
     return () => clearInterval(t);
+  }, []);
+
+  // Admin check — only admins see the gear-cog shortcut to /staff so they
+  // can edit anyone's preferences. Non-admins have no per-user prefs UI
+  // (intentionally — admin manages notification routing centrally).
+  useEffect(() => {
+    (async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase.from("staff").select("role").eq("id", user.id).maybeSingle();
+      setIsAdmin(data?.role === "admin");
+    })();
   }, []);
 
   // Click outside / Esc closes the panel.
@@ -153,13 +167,15 @@ export function NotificationsBell() {
                   Mark all read
                 </button>
               )}
-              <button
-                onClick={() => { setOpen(false); router.push("/settings/notifications"); }}
-                className="text-[11px] text-muted-foreground hover:text-foreground"
-                title="Notification settings"
-              >
-                ⚙
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => { setOpen(false); router.push("/staff"); }}
+                  className="text-[11px] text-muted-foreground hover:text-foreground"
+                  title="Manage notifications for any staff (admin only)"
+                >
+                  ⚙
+                </button>
+              )}
             </div>
           </div>
           <div className="max-h-96 overflow-y-auto">

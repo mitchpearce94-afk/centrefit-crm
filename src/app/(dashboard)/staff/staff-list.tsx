@@ -5,6 +5,24 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 import type { Staff, StaffRole } from "@/lib/types";
+import { StaffNotificationEditor } from "./staff-notification-editor";
+
+interface NotificationType {
+  code: string;
+  label: string;
+  category: string;
+  description: string | null;
+  default_enabled: boolean;
+  email_enabled: boolean;
+  priority: string;
+  sort_order: number;
+}
+
+interface PrefRow {
+  type_code: string;
+  enabled: boolean;
+  email_enabled: boolean | null;
+}
 
 const roleLabels: Record<StaffRole, string> = {
   admin: "Admin",
@@ -29,12 +47,17 @@ export function StaffList({
   staff,
   isAdmin,
   currentUserId,
+  notificationTypes,
+  prefsByStaff,
 }: {
   staff: Staff[];
   isAdmin: boolean;
   currentUserId: string;
+  notificationTypes: NotificationType[];
+  prefsByStaff: Record<string, PrefRow[]>;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [notifsOpenId, setNotifsOpenId] = useState<string | null>(null);
   const [showInvite, setShowInvite] = useState(false);
 
   return (
@@ -106,6 +129,12 @@ export function StaffList({
               {isAdmin && (
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => setNotifsOpenId(notifsOpenId === member.id ? null : member.id)}
+                    className={`text-xs transition-colors ${notifsOpenId === member.id ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    {notifsOpenId === member.id ? "Close notifications" : "Notifications"}
+                  </button>
+                  <button
                     onClick={() => setEditingId(member.id)}
                     className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                   >
@@ -116,6 +145,16 @@ export function StaffList({
                   )}
                 </div>
               )}
+            </div>
+          )}
+          {isAdmin && notifsOpenId === member.id && (
+            <div className="rounded-b-lg border border-t-0 border-border overflow-hidden -mt-1">
+              <StaffNotificationEditor
+                staffId={member.id}
+                staffName={member.display_name}
+                types={notificationTypes}
+                initialPrefs={prefsByStaff[member.id] ?? []}
+              />
             </div>
           )}
         </div>
