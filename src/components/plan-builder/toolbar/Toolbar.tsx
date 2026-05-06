@@ -227,8 +227,10 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
   };
 
   const handleSave = async () => {
-    usePlanStore.getState().saveProject(); // local .cfp download
-    await saveToCloud(); // also saves cfp + regenerates PDF + uploads
+    // Save = cloud-only. No browser downloads. Save to Supabase storage
+    // (.cfp + regenerated PDF + plan_files row). Use Export when you
+    // explicitly want the PDF on your machine.
+    await saveToCloud();
   };
 
   const handleExport = async () => {
