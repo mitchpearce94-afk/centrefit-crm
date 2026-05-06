@@ -2,7 +2,9 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { InvoiceActions } from "./invoice-actions";
+import { LineItemsEditor } from "./line-items-editor";
 import { DocumentActivityTimeline } from "@/components/document-activity-timeline";
+import { accountCodeLabel } from "@/lib/xero/account-codes";
 
 function fmt(n: number): string {
   return n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -40,7 +42,14 @@ export default async function InvoiceDetailPage({
   const inv = invoice as any;
   const colour = STATUS_COLOURS[inv.status] ?? "#6b7280";
   const isOverdue = inv.status === "authorised" && inv.due_date && new Date(inv.due_date) < new Date();
-  const lineItems = (inv.line_items ?? []) as Array<{ description: string; quantity?: number; unitAmount: number }>;
+  const lineItems = (inv.line_items ?? []) as Array<{
+    description: string;
+    quantity?: number;
+    unitAmount: number;
+    accountCode?: string;
+    taxType?: string;
+  }>;
+  const isDraft = inv.status === "draft" && !!inv.xero_invoice_id;
 
   return (
     <div>
@@ -157,23 +166,36 @@ export default async function InvoiceDetailPage({
 
       {/* Line items */}
       <div className="mt-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Line Items</h2>
-        <div className="rounded-lg border border-border overflow-hidden divide-y divide-border">
-          {lineItems.length === 0 && (
-            <p className="px-4 py-6 text-center text-xs text-muted-foreground italic">No line items.</p>
-          )}
-          {lineItems.map((li, idx) => (
-            <div key={idx} className="px-4 py-3">
-              <div className="flex items-start justify-between gap-4">
-                <p className="text-xs text-foreground whitespace-pre-wrap flex-1 min-w-0">{li.description}</p>
-                <div className="flex items-center gap-4 shrink-0 text-right">
-                  <span className="text-xs font-mono text-muted-foreground w-10 text-center">{li.quantity ?? 1}</span>
-                  <span className="text-sm font-mono font-medium w-24">${fmt(Number(li.unitAmount) * (li.quantity ?? 1))}</span>
+        {isDraft ? (
+          <LineItemsEditor invoiceId={inv.id} initialLines={lineItems} />
+        ) : (
+          <>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Line Items</h2>
+            <div className="rounded-lg border border-border overflow-hidden divide-y divide-border">
+              {lineItems.length === 0 && (
+                <p className="px-4 py-6 text-center text-xs text-muted-foreground italic">No line items.</p>
+              )}
+              {lineItems.map((li, idx) => (
+                <div key={idx} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-foreground whitespace-pre-wrap">{li.description}</p>
+                      {li.accountCode && (
+                        <p className="text-[10px] text-muted-foreground mt-1 font-mono">
+                          {accountCodeLabel(li.accountCode)}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 shrink-0 text-right">
+                      <span className="text-xs font-mono text-muted-foreground w-10 text-center">{li.quantity ?? 1}</span>
+                      <span className="text-sm font-mono font-medium w-24">${fmt(Number(li.unitAmount) * (li.quantity ?? 1))}</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </>
+        )}
       </div>
 
       <div className="mt-6">

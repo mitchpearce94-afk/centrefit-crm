@@ -36,6 +36,7 @@ export interface OrchestrationService {
   description: string | null;
   price_inc_gst: number | string;
   frequency: "monthly" | "yearly";
+  account_code: string;
   active: boolean;
 }
 
@@ -122,6 +123,7 @@ export async function createRecurringPlansForSites(
         description: svc.description,
         price_inc_gst: svc.price_inc_gst,
         frequency: svc.frequency,
+        account_code: svc.account_code,
         quantity: it.quantity ?? 1,
       };
     });

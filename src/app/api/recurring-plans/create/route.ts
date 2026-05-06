@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
   ));
   const { data: services } = await supabase
     .from("recurring_services")
-    .select("id, code, name, description, price_inc_gst, frequency, active")
+    .select("id, code, name, description, price_inc_gst, frequency, account_code, active")
     .in("id", allServiceIds);
   const servicesById = new Map((services ?? []).map((s) => [s.id, s]));
 

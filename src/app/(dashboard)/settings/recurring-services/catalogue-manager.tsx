@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
+import { XERO_SALES_ACCOUNTS, accountCodeLabel } from "@/lib/xero/account-codes";
 
 interface Service {
   id: string;
@@ -12,6 +13,7 @@ interface Service {
   description: string | null;
   price_inc_gst: number | string;
   frequency: "monthly" | "yearly";
+  account_code: string;
   active: boolean;
   sort_order: number;
 }
@@ -61,13 +63,14 @@ export function CatalogueManager({ initialServices }: { initialServices: Service
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Name</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider text-right">Price (incl. GST)</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Frequency</th>
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Xero Account</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Status</th>
               <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {services.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground text-sm">No services yet — add one above.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground text-sm">No services yet — add one above.</td></tr>
             )}
             {services.map((svc) => (
               <tr key={svc.id} className={svc.active ? "" : "opacity-60"}>
@@ -78,6 +81,7 @@ export function CatalogueManager({ initialServices }: { initialServices: Service
                 </td>
                 <td className="px-4 py-2.5 text-right font-mono">${Number(svc.price_inc_gst).toFixed(2)}</td>
                 <td className="px-4 py-2.5 text-xs capitalize text-muted-foreground">{svc.frequency}</td>
+                <td className="px-4 py-2.5 font-mono text-xs">{accountCodeLabel(svc.account_code)}</td>
                 <td className="px-4 py-2.5">
                   <span className={`text-xs ${svc.active ? "text-emerald-400" : "text-muted-foreground"}`}>
                     {svc.active ? "Active" : "Deactivated"}
@@ -122,6 +126,7 @@ function ServiceModal({
   const [description, setDescription] = useState(service?.description ?? "");
   const [price, setPrice] = useState(service?.price_inc_gst != null ? String(service.price_inc_gst) : "");
   const [frequency, setFrequency] = useState<"monthly" | "yearly">(service?.frequency ?? "monthly");
+  const [accountCode, setAccountCode] = useState(service?.account_code ?? "200");
   const [sortOrder, setSortOrder] = useState(service?.sort_order ?? 0);
   const [saving, setSaving] = useState(false);
 
@@ -142,6 +147,7 @@ function ServiceModal({
       description: description.trim() || null,
       price_inc_gst: priceNum,
       frequency,
+      account_code: accountCode,
       sort_order: sortOrder,
     };
     const { error } = service
@@ -196,6 +202,19 @@ function ServiceModal({
                 <option value="yearly">Yearly</option>
               </select>
             </div>
+          </div>
+          <div>
+            <label className="block text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Xero account (sales)</label>
+            <select value={accountCode} onChange={(e) => setAccountCode(e.target.value)}
+              className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary">
+              {XERO_SALES_ACCOUNTS.map((a) => (
+                <option key={a.code} value={a.code}>{a.code} · {a.name}</option>
+              ))}
+              {!XERO_SALES_ACCOUNTS.find((a) => a.code === accountCode) && (
+                <option value={accountCode}>{accountCode} (unknown)</option>
+              )}
+            </select>
+            <p className="text-[10px] text-muted-foreground mt-1">Maps to the GL account on every Xero invoice line for this service.</p>
           </div>
           <div>
             <label className="block text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Sort order</label>

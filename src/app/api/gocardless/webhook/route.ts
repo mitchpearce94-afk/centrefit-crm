@@ -221,7 +221,7 @@ async function activatePlan(
   // Pull plan items.
   const { data: items } = await supabase
     .from("recurring_plan_items")
-    .select("service_code, service_name, description, price_inc_gst, frequency, quantity")
+    .select("service_code, service_name, description, price_inc_gst, frequency, account_code, quantity")
     .eq("recurring_plan_id", planId);
   if (!items || items.length === 0) return;
 
@@ -300,6 +300,7 @@ async function activatePlan(
         description: it.description ?? it.service_name,
         quantity: it.quantity,
         unitAmount: Number(it.price_inc_gst),
+        accountCode: it.account_code,
       })),
     });
     if (frequency === "monthly") monthlyRiId = ri.repeatingInvoiceID;

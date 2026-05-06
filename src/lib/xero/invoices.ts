@@ -100,6 +100,60 @@ export async function createXeroInvoice({
 }
 
 /**
+ * Replace the line items on a DRAFT Xero invoice. Xero's updateInvoice
+ * replaces the lineItems array wholesale when one is supplied — there's no
+ * partial-update path, so the caller must send the full new set. Returns
+ * Xero's recomputed totals so the CRM mirror stays in sync.
+ *
+ * Only valid for DRAFT invoices — Xero rejects line-item changes on
+ * authorised/paid invoices. The caller must enforce that gate.
+ */
+export async function updateXeroInvoiceLines({
+  xero,
+  tenantId,
+  xeroInvoiceId,
+  lineItems,
+}: {
+  xero: XeroClient;
+  tenantId: string;
+  xeroInvoiceId: string;
+  lineItems: XeroLineItemInput[];
+}): Promise<{
+  subTotal: number;
+  totalTax: number;
+  total: number;
+  amountDue: number;
+  status: string;
+}> {
+  if (lineItems.length === 0) {
+    throw new Error("Cannot update Xero invoice to zero line items");
+  }
+  const res = await xero.accountingApi.updateInvoice(tenantId, xeroInvoiceId, {
+    invoices: [
+      {
+        lineAmountTypes: "Exclusive",
+        lineItems: lineItems.map((li) => ({
+          description: li.description.slice(0, 4000),
+          quantity: li.quantity ?? 1,
+          unitAmount: li.unitAmount,
+          accountCode: li.accountCode ?? DEFAULT_SALES_ACCOUNT_CODE,
+          taxType: li.taxType ?? DEFAULT_TAX_TYPE_OUTPUT,
+        })),
+      } as Record<string, unknown>,
+    ],
+  });
+  const invoice = res.body.invoices?.[0];
+  if (!invoice) throw new Error("Xero did not return an invoice on update");
+  return {
+    subTotal: Number(invoice.subTotal ?? 0),
+    totalTax: Number(invoice.totalTax ?? 0),
+    total: Number(invoice.total ?? 0),
+    amountDue: Number(invoice.amountDue ?? invoice.total ?? 0),
+    status: String(invoice.status ?? "DRAFT"),
+  };
+}
+
+/**
  * Promote a DRAFT invoice to AUTHORISED and fetch the resulting
  * OnlineInvoiceUrl (pay-now link). Called from the CRM's Authorise button.
  */

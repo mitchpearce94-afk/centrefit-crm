@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
   // that doesn't exist or is deactivated — surfaces config drift early.
   const { data: service } = await supabase
     .from("recurring_services")
-    .select("id, code, name, description, price_inc_gst, frequency, active")
+    .select("id, code, name, description, price_inc_gst, frequency, account_code, active")
     .eq("code", sku)
     .maybeSingle();
   if (!service) {

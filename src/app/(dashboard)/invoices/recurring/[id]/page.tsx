@@ -4,6 +4,7 @@ import Link from "next/link";
 import { CancelButton } from "./cancel-button";
 import { EditServicesButton } from "./edit-services-button";
 import { EditStartDateButton } from "./edit-start-date-button";
+import { accountCodeLabel } from "@/lib/xero/account-codes";
 
 const STATUS_LABEL: Record<string, string> = {
   pending_mandate: "Awaiting Mandate",
@@ -37,7 +38,7 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
         created_at, notes,
         customers(id, name),
         customer_sites(id, name, address, suburb, state, postcode),
-        recurring_plan_items(id, service_id, service_name, description, price_inc_gst, frequency, quantity)
+        recurring_plan_items(id, service_id, service_name, description, price_inc_gst, frequency, account_code, quantity)
       `)
       .eq("id", id)
       .maybeSingle(),
@@ -157,6 +158,7 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
               <th className="pb-2 text-right">Qty</th>
               <th className="pb-2 text-right">Price (incl. GST)</th>
               <th className="pb-2 text-right">Frequency</th>
+              <th className="pb-2 text-right">Xero Account</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -169,16 +171,17 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
                 <td className="py-2 text-right font-mono">{it.quantity}</td>
                 <td className="py-2 text-right font-mono">${fmt(Number(it.price_inc_gst))}</td>
                 <td className="py-2 text-right text-xs text-muted-foreground capitalize">{it.frequency}</td>
+                <td className="py-2 text-right font-mono text-xs">{accountCodeLabel((it as { account_code?: string }).account_code)}</td>
               </tr>
             ))}
             <tr className="border-t border-border">
               <td colSpan={2} className="pt-2 text-xs text-muted-foreground">Monthly recurring</td>
-              <td colSpan={2} className="pt-2 text-right font-mono font-semibold">${fmt(monthly)}</td>
+              <td colSpan={3} className="pt-2 text-right font-mono font-semibold">${fmt(monthly)}</td>
             </tr>
             {yearly > 0 && (
               <tr>
                 <td colSpan={2} className="text-xs text-muted-foreground">Yearly recurring</td>
-                <td colSpan={2} className="text-right font-mono font-semibold">${fmt(yearly)}</td>
+                <td colSpan={3} className="text-right font-mono font-semibold">${fmt(yearly)}</td>
               </tr>
             )}
           </tbody>

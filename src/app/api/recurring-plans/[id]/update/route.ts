@@ -64,7 +64,7 @@ export async function POST(
   const requestedIds = Array.from(new Set(body.items.map((i) => i.serviceId)));
   const { data: services } = await supabase
     .from("recurring_services")
-    .select("id, code, name, description, price_inc_gst, frequency, active")
+    .select("id, code, name, description, price_inc_gst, frequency, account_code, active")
     .in("id", requestedIds);
   const servicesById = new Map((services ?? []).map((s) => [s.id, s]));
   for (const itemId of requestedIds) {
@@ -92,6 +92,7 @@ export async function POST(
       description: svc.description,
       price_inc_gst: svc.price_inc_gst,
       frequency: svc.frequency,
+      account_code: svc.account_code,
       quantity: it.quantity ?? 1,
     };
   });
@@ -114,6 +115,7 @@ export async function POST(
       description: row.description ?? row.service_name,
       quantity: row.quantity,
       unitAmount: Number(row.price_inc_gst),
+      accountCode: row.account_code,
     });
   }
 
