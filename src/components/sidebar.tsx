@@ -27,6 +27,7 @@ const navigation = [
 const settingsNav = [
   { name: "Billing", href: "/settings/billing", icon: BillingIcon },
   { name: "Checklists", href: "/settings/checklists", icon: ChecklistIcon },
+  { name: "Electricians", href: "/settings/electricians", icon: PlugIcon },
   { name: "Products", href: "/settings/products", icon: PackageIcon },
   { name: "Rules", href: "/settings/rules", icon: RulesIcon },
   { name: "Scope Roles", href: "/settings/scope-roles", icon: FileTextIcon },

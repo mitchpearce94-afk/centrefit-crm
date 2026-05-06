@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { LoadPlanButton } from './load-plan-button';
-import { OpenPlanButton } from './open-plan-button';
 import { StateFolder } from './state-folder';
+import { PlanRowActions } from './plan-row-actions';
 
 const AU_STATES = ['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT'];
 
@@ -156,23 +156,16 @@ function PlanRow({ plan, countDevices, formatDate, completed }: { plan: any; cou
 
       {/* Actions */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
-        {plan.cfp_url && (
-          <OpenPlanButton cfpUrl={plan.cfp_url} planId={plan.id} />
-        )}
-        {plan.pdf_url && (() => {
-          const pdfName = [plan.state, plan.client_name, plan.site_name, plan.revision ? 'Rev ' + plan.revision : null].filter(Boolean).join(' - ').replace(/[^a-zA-Z0-9\-_ ]/g, '') + '.pdf';
-          return (
-            <a href={plan.pdf_url + '?t=' + new Date(plan.updated_at || plan.created_at).getTime()} download={pdfName}
-              className="px-2.5 py-1.5 bg-green-600/10 text-green-500 hover:bg-green-600/20 rounded text-xs font-medium transition-colors">
-              PDF
-            </a>
-          );
-        })()}
-        {plan.cfp_url && (
-          <a href={plan.cfp_url} download className="px-2.5 py-1.5 bg-accent text-muted-foreground hover:text-foreground rounded text-xs transition-colors">
-            .cfp
-          </a>
-        )}
+        <PlanRowActions
+          planId={plan.id}
+          cfpUrl={plan.cfp_url ?? null}
+          pdfUrl={plan.pdf_url ?? null}
+          pdfDownloadName={[plan.state, plan.client_name, plan.site_name, plan.revision ? 'Rev ' + plan.revision : null].filter(Boolean).join(' - ').replace(/[^a-zA-Z0-9\-_ ]/g, '') + '.pdf'}
+          state={plan.state ?? null}
+          refLabel={[plan.client_name, plan.site_name, plan.revision ? 'Rev ' + plan.revision : null].filter(Boolean).join(' — ') || plan.name || 'Plan'}
+          hasJobOrQuote={Boolean(plan.job_id || plan.quote_id)}
+          alreadySent={Boolean(plan.sent_to_electrician_at)}
+        />
       </div>
     </div>
   );

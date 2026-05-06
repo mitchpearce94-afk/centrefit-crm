@@ -23,7 +23,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *   });
  */
 
-export type NotificationRefType = "quote" | "invoice" | "job" | "recurring_plan" | "enquiry";
+export type NotificationRefType = "quote" | "invoice" | "job" | "recurring_plan" | "enquiry" | "plan";
 
 export type Audience =
   | { staffId: string | null | undefined }

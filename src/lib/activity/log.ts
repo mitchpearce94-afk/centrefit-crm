@@ -11,7 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *   - Webhook handler (no user, needs service-role)     → /lib/supabase/service
  * The RLS policy allows authenticated INSERT and lets service-role bypass.
  */
-export type DocumentType = "quote" | "invoice" | "recurring_plan";
+export type DocumentType = "quote" | "invoice" | "recurring_plan" | "plan";
 
 export interface LogActivityInput {
   supabase: SupabaseClient;
