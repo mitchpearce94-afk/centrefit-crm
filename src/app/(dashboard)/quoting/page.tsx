@@ -5,11 +5,14 @@ const STATUS_COLOURS: Record<string, string> = {
   draft: "#6b7280",
   sent: "#3b82f6",
   accepted: "#22c55e",
+  invoiced: "#06b6d4",
   declined: "#ef4444",
   expired: "#f59e0b",
 };
 
 const FOLLOWUP_AGE_DAYS = 7;
+
+type Tab = "active" | "followup" | "accepted" | "invoiced" | "declined" | "expired";
 
 export default async function QuotingPage({
   searchParams,
@@ -18,12 +21,15 @@ export default async function QuotingPage({
 }) {
   const supabase = await createClient();
   const params = await searchParams;
-  const tab = (params.tab ?? "all") as "all" | "followup" | "draft" | "sent" | "accepted" | "expired";
+  const tab = (params.tab ?? "active") as Tab;
 
-  const { data: quotes, error } = await supabase
-    .from("quotes")
-    .select("*, customer:customers(id, name)")
-    .order("created_at", { ascending: false });
+  const [{ data: quotes, error }, { data: invoiceLinks }] = await Promise.all([
+    supabase.from("quotes").select("*, customer:customers(id, name)").order("created_at", { ascending: false }),
+    // Any non-void invoice with a quote_id flips that quote's display status
+    // to "invoiced" — that's the signal Mitchell asked for ("once it's been
+    // sent to invoice it needs to change status").
+    supabase.from("invoices").select("quote_id").not("quote_id", "is", null).neq("status", "void"),
+  ]);
 
   if (error) {
     return (
@@ -33,31 +39,58 @@ export default async function QuotingPage({
     );
   }
 
+  const quoteIdsWithInvoices = new Set(
+    (invoiceLinks ?? []).map((r: { quote_id: string | null }) => r.quote_id as string),
+  );
+
   const now = new Date();
   const followupCutoffMs = now.getTime() - FOLLOWUP_AGE_DAYS * 86_400_000;
   const allQuotes = (quotes ?? []).map((q: any) => {
     const isExpired = q.expires_at && new Date(q.expires_at) < now && (q.status === "draft" || q.status === "sent");
+    const hasInvoice = quoteIdsWithInvoices.has(q.id);
     const sentAtMs = q.sent_at ? new Date(q.sent_at).getTime() : null;
     const needsFollowup =
       q.status === "sent" &&
       sentAtMs !== null &&
       sentAtMs <= followupCutoffMs;
-    return { ...q, displayStatus: isExpired ? "expired" : q.status, _needsFollowup: needsFollowup, _sentAtMs: sentAtMs };
+
+    // Display status precedence:
+    //   expired > invoiced (accepted + ≥1 non-void invoice) > raw status
+    const displayStatus = isExpired
+      ? "expired"
+      : q.status === "accepted" && hasInvoice
+      ? "invoiced"
+      : q.status;
+
+    return {
+      ...q,
+      displayStatus,
+      _needsFollowup: needsFollowup,
+      _sentAtMs: sentAtMs,
+      _hasInvoice: hasInvoice,
+    };
   });
 
+  // Active = action-needed quotes only. Excludes accepted/invoiced (they
+  // live in their own tabs), declined, and expired.
+  const activeQuotes = allQuotes.filter((q) => q.displayStatus === "draft" || q.displayStatus === "sent");
+
+  const activeCount = activeQuotes.length;
   const draftCount = allQuotes.filter((q) => q.displayStatus === "draft").length;
   const sentCount = allQuotes.filter((q) => q.displayStatus === "sent").length;
   const acceptedCount = allQuotes.filter((q) => q.displayStatus === "accepted").length;
+  const invoicedCount = allQuotes.filter((q) => q.displayStatus === "invoiced").length;
+  const declinedCount = allQuotes.filter((q) => q.displayStatus === "declined").length;
   const expiredCount = allQuotes.filter((q) => q.displayStatus === "expired").length;
   const followupCount = allQuotes.filter((q) => q._needsFollowup).length;
 
   const filtered =
     tab === "followup" ? allQuotes.filter((q) => q._needsFollowup)
-    : tab === "draft" ? allQuotes.filter((q) => q.displayStatus === "draft")
-    : tab === "sent" ? allQuotes.filter((q) => q.displayStatus === "sent")
     : tab === "accepted" ? allQuotes.filter((q) => q.displayStatus === "accepted")
+    : tab === "invoiced" ? allQuotes.filter((q) => q.displayStatus === "invoiced")
+    : tab === "declined" ? allQuotes.filter((q) => q.displayStatus === "declined")
     : tab === "expired" ? allQuotes.filter((q) => q.displayStatus === "expired")
-    : allQuotes;
+    : activeQuotes;
 
   return (
     <div>
@@ -84,16 +117,16 @@ export default async function QuotingPage({
           <p className="num-display num-gradient mt-2 text-2xl font-semibold">{allQuotes.length}</p>
         </div>
         <div className="surface-card card-hover p-4">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Draft</p>
-          <p className="num-display mt-2 text-2xl font-semibold" style={{ color: STATUS_COLOURS.draft }}>{draftCount}</p>
-        </div>
-        <div className="surface-card card-hover p-4">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sent</p>
-          <p className="num-display mt-2 text-2xl font-semibold" style={{ color: STATUS_COLOURS.sent }}>{sentCount}</p>
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Active</p>
+          <p className="num-display mt-2 text-2xl font-semibold" style={{ color: STATUS_COLOURS.sent }}>{activeCount}</p>
         </div>
         <div className="surface-card card-hover p-4">
           <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Accepted</p>
           <p className="num-display mt-2 text-2xl font-semibold" style={{ color: STATUS_COLOURS.accepted }}>{acceptedCount}</p>
+        </div>
+        <div className="surface-card card-hover p-4">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Invoiced</p>
+          <p className="num-display mt-2 text-2xl font-semibold" style={{ color: STATUS_COLOURS.invoiced }}>{invoicedCount}</p>
         </div>
         <div className="surface-card card-hover p-4">
           <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Expired</p>
@@ -104,18 +137,18 @@ export default async function QuotingPage({
       {/* Tab strip */}
       <div className="mt-4 flex flex-wrap items-center gap-1 border-b border-border">
         {[
-          { key: "all", label: "All", count: allQuotes.length },
+          { key: "active", label: "Active", count: activeCount },
           { key: "followup", label: "Follow-up", count: followupCount, accent: followupCount > 0 },
-          { key: "draft", label: "Draft", count: draftCount },
-          { key: "sent", label: "Sent", count: sentCount },
           { key: "accepted", label: "Accepted", count: acceptedCount },
+          { key: "invoiced", label: "Invoiced", count: invoicedCount },
+          { key: "declined", label: "Declined", count: declinedCount },
           { key: "expired", label: "Expired", count: expiredCount },
         ].map((t) => {
           const active = tab === t.key;
           return (
             <Link
               key={t.key}
-              href={t.key === "all" ? "/quoting" : `/quoting?tab=${t.key}`}
+              href={t.key === "active" ? "/quoting" : `/quoting?tab=${t.key}`}
               className={`relative -mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
                 active
                   ? "border-primary text-foreground"
@@ -212,8 +245,12 @@ export default async function QuotingPage({
                 <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
                   {tab === "followup"
                     ? "No quotes need a follow-up right now — sent quotes appear here once they pass 7 days without a customer response."
-                    : tab === "all"
-                    ? <>No quotes yet. <Link href="/quoting/new" className="text-primary hover:underline">Create your first quote</Link></>
+                    : tab === "active"
+                    ? (allQuotes.length === 0
+                      ? <>No quotes yet. <Link href="/quoting/new" className="text-primary hover:underline">Create your first quote</Link></>
+                      : "Nothing needing action — drafts and sent-not-yet-responded quotes show here.")
+                    : tab === "invoiced"
+                    ? "No quotes have been invoiced yet. Quotes move here automatically once an invoice is created from them."
                     : `No ${tab} quotes.`}
                 </td>
               </tr>
