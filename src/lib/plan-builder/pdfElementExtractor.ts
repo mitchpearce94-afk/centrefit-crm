@@ -123,24 +123,30 @@ export function extractElements(
   let filteredOut = 0;
 
   let i = 0;
+  const SHOW_TEXT_OPS = new Set([
+    OPS.showText, OPS.showSpacedText, OPS.nextLineShowText, OPS.nextLineSetSpacingShowText,
+  ]);
   while (i < fnArray.length) {
     const op = fnArray[i];
 
-    // TEXT BLOCK: BT ... ET
+    // TEXT BLOCK: BT ... ET — emit ONE element per text block so the whole
+    // paragraph is selectable and deletes cleanly as a unit. The bbox
+    // is built from show-text ops only (the actual rendered glyph
+    // extents). State ops like moveText / setTextMatrix have recorded
+    // bboxes that span "where the cursor moved to" and unioning them
+    // inflates the highlight to half the page — exactly the symptom
+    // you saw before. The opIndices still cover the whole block so
+    // deletion strips everything cleanly.
     if (op === OPS.beginText) {
       textBlocks++;
-      const startIdx = i;
       const opIndices: number[] = [];
+      const showTextIndices: number[] = [];
       let textLabel = '';
 
-      // Scan forward to endText
       while (i < fnArray.length && fnArray[i] !== OPS.endText) {
         opIndices.push(i);
-
-        // Collect text for label
-        if (fnArray[i] === OPS.showText || fnArray[i] === OPS.showSpacedText ||
-            fnArray[i] === OPS.nextLineShowText || fnArray[i] === OPS.nextLineSetSpacingShowText) {
-          // Try to match with textContent items
+        if (SHOW_TEXT_OPS.has(fnArray[i])) {
+          showTextIndices.push(i);
           if (textItemIndex < textItems.length) {
             if (textLabel) textLabel += ' ';
             textLabel += textItems[textItemIndex].str;
@@ -149,13 +155,15 @@ export function extractElements(
         }
         i++;
       }
-      // Include the endText operator
       if (i < fnArray.length) {
-        opIndices.push(i);
+        opIndices.push(i); // ET
         i++;
       }
 
-      const bbox = computeUnionBBox(opIndices, bboxReader, canvasWidth, canvasHeight);
+      // Tight bbox: only the show-text ops, not the state ops.
+      const bbox = showTextIndices.length > 0
+        ? computeUnionBBox(showTextIndices, bboxReader, canvasWidth, canvasHeight)
+        : computeUnionBBox(opIndices, bboxReader, canvasWidth, canvasHeight);
       if (!bbox) { filteredOut++; }
       else if (isFullPage(bbox, canvasWidth, canvasHeight, pageArea)) { filteredOut++; }
       else if (isTiny(bbox)) { filteredOut++; }
@@ -202,30 +210,59 @@ export function extractElements(
       continue;
     }
 
-    // PATH: moveTo/rectangle ... stroke/fill (for PDFs that don't use constructPath)
+    // PATH: moveTo/rectangle ... stroke/fill — split into one element per
+    // SUB-path (each moveTo / rectangle starts a new sub-path) so a single
+    // multi-subpath path doesn't become one giant unselectable blob.
+    // The rendering op (stroke/fill) is shared across all subpaths and
+    // included in every emitted element so filtering one out leaves the
+    // others rendering correctly.
     if (PATH_START_OPS.has(op) || op === OPS.lineTo || op === OPS.curveTo) {
       pathBlocks++;
-      const opIndices: number[] = [];
+      const subpaths: number[][] = [];
+      let current: number[] = [];
 
-      // Collect all path operators until a rendering op
       while (i < fnArray.length) {
-        opIndices.push(i);
-        if (PATH_RENDER_OPS.has(fnArray[i])) {
+        const cur = fnArray[i];
+        if (current.length > 0 && (cur === OPS.moveTo || cur === OPS.rectangle)) {
+          // Sub-path boundary — close the previous one
+          subpaths.push(current);
+          current = [];
+        }
+        current.push(i);
+        if (PATH_RENDER_OPS.has(cur)) {
           i++;
           break;
         }
         i++;
       }
+      if (current.length > 0) subpaths.push(current);
 
-      const bbox = computeUnionBBox(opIndices, bboxReader, canvasWidth, canvasHeight);
-      if (bbox && !isFullPage(bbox, canvasWidth, canvasHeight, pageArea) && !isTiny(bbox)) {
-        elements.push({
-          id: `el-${elementCounter++}`,
-          type: 'path',
-          label: 'Shape',
-          opIndices,
-          bbox,
-        });
+      // Identify the shared rendering op (last index of the last subpath
+      // if it's a render op) — every emitted element keeps it so deletion
+      // doesn't break the surviving subpaths' rendering.
+      let renderOpIdx: number | null = null;
+      const lastGroup = subpaths[subpaths.length - 1];
+      if (lastGroup) {
+        const tail = lastGroup[lastGroup.length - 1];
+        if (PATH_RENDER_OPS.has(fnArray[tail])) renderOpIdx = tail;
+      }
+
+      for (const sub of subpaths) {
+        const indicesForElement = renderOpIdx !== null && !sub.includes(renderOpIdx)
+          ? [...sub, renderOpIdx]
+          : sub;
+        const bbox = computeUnionBBox(indicesForElement, bboxReader, canvasWidth, canvasHeight);
+        if (bbox && !isFullPage(bbox, canvasWidth, canvasHeight, pageArea) && !isTiny(bbox)) {
+          elements.push({
+            id: `el-${elementCounter++}`,
+            type: 'path',
+            label: 'Shape',
+            opIndices: indicesForElement,
+            bbox,
+          });
+        } else {
+          filteredOut++;
+        }
       }
       continue;
     }
@@ -306,9 +343,19 @@ function isFullPage(
   return (bbox.width * bbox.height) > pageArea * 0.85;
 }
 
-/** Check if bbox is too small to be worth selecting (< 3px in either dimension) */
+/**
+ * Check if bbox is too small to be worth selecting. Filters genuine
+ * sub-pixel artefacts (single-point ops, render-empty shapes) while
+ * keeping legitimate thin elements like wall lines (long but 1px tall)
+ * and dimension ticks.
+ */
 function isTiny(bbox: { width: number; height: number }): boolean {
-  return bbox.width < 3 || bbox.height < 3;
+  // Both dimensions sub-pixel → noise.
+  if (bbox.width < 0.5 && bbox.height < 0.5) return true;
+  // Or area is microscopic (handles cases where a tiny non-zero bbox
+  // slips through but represents nothing visible).
+  if (bbox.width * bbox.height < 1) return true;
+  return false;
 }
 
 /**

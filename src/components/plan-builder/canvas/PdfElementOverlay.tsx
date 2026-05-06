@@ -61,22 +61,37 @@ export default function PdfElementOverlay() {
 }
 
 /**
- * Find the smallest element at canvas coordinates (x, y).
- * Returns the element ID or null.
- * Prefers smaller elements over larger ones (more specific selection).
+ * Find the most specific element at canvas coordinates (x, y).
+ *
+ * For thin elements (lines, wall strokes) the bbox is just a few pixels
+ * thick — without tolerance you'd have to land your cursor exactly on
+ * the pixel. We expand the hit box per-element by `tolerance` only on
+ * the dimension(s) that are thinner than the tolerance, so thick
+ * elements aren't made deliberately easier to hit (which would mean
+ * they steal clicks from things on top of them).
+ *
+ * Prefers smaller-area elements when multiple match — that's how
+ * Affinity-style "click the thing under my cursor" feels.
  */
 export function hitTestElements(
   canvasX: number,
   canvasY: number,
   elements: { id: string; bbox: { x: number; y: number; width: number; height: number } }[],
+  tolerance = 4,
 ): string | null {
   let bestId: string | null = null;
   let bestArea = Infinity;
 
   for (const el of elements) {
     const { x, y, width, height } = el.bbox;
-    if (canvasX >= x && canvasX <= x + width && canvasY >= y && canvasY <= y + height) {
-      const area = width * height;
+    // Per-axis padding: only inflate the dimension that's actually thin.
+    const padX = width < tolerance ? (tolerance - width) / 2 : 0;
+    const padY = height < tolerance ? (tolerance - height) / 2 : 0;
+    if (
+      canvasX >= x - padX && canvasX <= x + width + padX &&
+      canvasY >= y - padY && canvasY <= y + height + padY
+    ) {
+      const area = Math.max(width * height, 1);
       if (area < bestArea) {
         bestArea = area;
         bestId = el.id;
