@@ -6,11 +6,18 @@ import { createClient } from '@/lib/supabase/client';
  * If the job's current status isn't in the 'from' list, no transition happens.
  */
 const AUTO_TRANSITIONS: Record<string, { from: string[]; to: string }> = {
-  // Plan / pre-quote lifecycle — design and electrician engagement happen
-  // before any quote is drafted. The 'Plans sent to electrician' status
-  // is the visible chase point while we wait for the sparky's number.
+  // Plans-to-electrician can fire at any non-completion stage. Sometimes
+  // a draft quote already exists when we need to chase the sparky (a
+  // revision, swapping electrician, getting a 2nd quote). Excludes only
+  // final-completion statuses where the job's already physically wrapped.
   plans_sent_to_electrician: {
-    from: ['Lead / Unassigned', 'Assigned', 'Design Phase', 'Awaiting Approval', 'Follow Up', 'On Hold', 'Pending Tech'],
+    from: [
+      'Lead / Unassigned', 'Assigned',
+      'Design Phase', 'Plans sent to electrician', 'Awaiting Approval', 'Sub-Quote Needed',
+      'Quote Draft', 'Quote Sent', 'Quote Expired',
+      'Awaiting Invoice Payment', 'Pending Schedule', 'Scheduled',
+      'Follow Up', 'On Hold', 'Parts Dispatched', 'Parts Needed', 'Pending Tech',
+    ],
     to: 'Plans sent to electrician',
   },
 
