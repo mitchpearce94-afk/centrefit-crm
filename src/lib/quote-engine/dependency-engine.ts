@@ -169,6 +169,12 @@ function calculateCustomQuantity(key: string, deviceCounts: DeviceCounts, siteIn
       const total = (si.cardio_count || 0) + (si.tv_count || 0) + (si.ceiling_tv_count || 0)
       return total > 8 ? 1 : 0
     }
+    case 'cabinet_500mm_patch_leads': {
+      // Base of 2 per cabinet + 1 extra for every (up to) 2 card readers.
+      // 0 readers → 2, 1 reader → 3, 2 readers → 3, 3 readers → 4.
+      const readers = dc.card_reader || 0
+      return 2 + Math.ceil(readers / 2)
+    }
     default:
       return 0
   }
@@ -535,7 +541,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('UPS', 'PSD2000'), { ...cabinetTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'UPS for server cabinet' })
   pushRule(rules, find('Shelf', 'EPR-FS600'), { ...cabinetTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Cantilever shelf for cabinet' })
   pushRule(rules, find('250mm', 'ECPLS-C6B0.25'), { ...cabinetTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 48, description: '250mm Cat6 patch leads (48x)' })
-  pushRule(rules, find('500mm', 'ECPLS-C6B0.5'), { ...cabinetTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 5, description: '500mm Cat6 patch leads (5x)' })
+  pushRule(rules, find('500mm', 'ECPLS-C6B0.5'), { ...cabinetTrigger, id: ruleId(), quantity_mode: 'custom', quantity_custom_key: 'cabinet_500mm_patch_leads', description: '500mm Cat6 patch leads — base 2 + CEIL(card_reader / 2)' })
   pushRule(rules, find('Snap Plug', 'EMP-CAT6UTPST'), { ...cabinetTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Cat6 snap-in plugs (1 pack)' })
 
   // Clipsal mounting brackets
