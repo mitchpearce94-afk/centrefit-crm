@@ -106,6 +106,20 @@ export function QuoteActions({
     router.refresh();
   }
 
+  async function handleDuplicate() {
+    setUpdating(true);
+    try {
+      const res = await fetch(`/api/quotes/${quoteId}/duplicate`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Duplicate failed");
+      toast(`Cloned to ${data.ref} — opening editor`);
+      router.push(`/quoting/${data.id}/edit`);
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : "Duplicate failed", "error");
+    }
+    setUpdating(false);
+  }
+
   async function revertToDraft() {
     setUpdating(true);
     const { error } = await supabase.from("quotes").update({
@@ -268,6 +282,7 @@ export function QuoteActions({
             {
               items: [
                 { label: "Edit Quote", onClick: () => router.push(`/quoting/${quoteId}/edit`), hidden: status !== "draft" },
+                { label: "Duplicate Quote", onClick: handleDuplicate },
                 { label: `Scope of Works${hasScopeOverrides ? " • Edited" : ""}`, onClick: () => setShowScopeEditor(true) },
                 { label: "Warehouse Pick List", onClick: () => openBOMWindow("warehouse") },
                 { label: "Supplier Orders", onClick: () => openBOMWindow("supplier") },
