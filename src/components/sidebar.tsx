@@ -7,12 +7,16 @@ import { createClient } from "@/lib/supabase/client";
 import { useState } from "react";
 import type { User } from "@supabase/supabase-js";
 
-const navigation = [
-  { name: "Dashboard", href: "/", icon: LayoutIcon },
-  { name: "Jobs", href: "/jobs", icon: BriefcaseIcon },
+// `mobile: true` keeps the link visible on phone-sized screens; everything
+// else hides under sm: so techs see only Today / Jobs / Scheduler. Mitchell
+// said the mobile experience is primarily for techs filling jobs out on the
+// road — admin / financial / catalog screens are desktop-only territory.
+const navigation: { name: string; href: string; icon: (p: { className?: string }) => React.ReactElement; mobile?: boolean }[] = [
+  { name: "Today", href: "/", icon: LayoutIcon, mobile: true },
+  { name: "Jobs", href: "/jobs", icon: BriefcaseIcon, mobile: true },
   { name: "Customers", href: "/customers", icon: UsersIcon },
   { name: "Sites", href: "/sites", icon: MapPinIcon },
-  { name: "Scheduler", href: "/scheduler", icon: CalendarIcon },
+  { name: "Scheduler", href: "/scheduler", icon: CalendarIcon, mobile: true },
   { name: "NBN", href: "/nbn", icon: WifiIcon },
   // { name: "Pipeline", href: "/pipeline", icon: TrendingUpIcon },  // Hidden 2026-04-23 — not in use. Re-enable by uncommenting.
   { name: "Suppliers", href: "/suppliers", icon: PackageIcon },
@@ -123,7 +127,7 @@ export function Sidebar({ user, staff }: { user: User; staff: StaffSummary | nul
                   key={item.name}
                   href={item.href}
                   onClick={() => setMobileOpen(false)}
-                  className={`relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-all ${
+                  className={`relative ${item.mobile ? "flex" : "hidden lg:flex"} items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-all ${
                     isActive
                       ? "bg-primary/10 text-primary font-medium"
                       : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
@@ -139,8 +143,9 @@ export function Sidebar({ user, staff }: { user: User; staff: StaffSummary | nul
             })}
           </div>
 
-          {/* Settings section */}
-          <div className="mt-5 pt-4 border-t border-border">
+          {/* Settings section — desktop only. Techs don't manage rules,
+              electricians, products, etc. from a phone. */}
+          <div className="hidden lg:block mt-5 pt-4 border-t border-border">
             <div className="flex items-center gap-2 px-3 py-1.5">
               <SettingsIcon className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Settings</span>

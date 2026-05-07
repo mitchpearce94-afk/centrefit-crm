@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 import { TimeChooser } from "./time-chooser";
@@ -309,9 +310,19 @@ export function AssignJobModal({
 
             {entryType === "job" ? (
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
-                  Job
-                </label>
+                <div className="flex items-baseline justify-between mb-1">
+                  <label className="block text-xs font-medium text-muted-foreground">
+                    Job
+                  </label>
+                  {isEditing && jobId && selectedJob && (
+                    <Link
+                      href={`/jobs/${selectedJob.id}`}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      Open Job →
+                    </Link>
+                  )}
+                </div>
                 {jobId && selectedJob ? (
                   <div className="flex items-center justify-between rounded-md border border-border bg-card px-3 py-2">
                     <div>
@@ -341,7 +352,7 @@ export function AssignJobModal({
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder="Search by job number, customer, or site..."
-                      autoFocus
+                      autoFocus={!isEditing}
                       className={inputClass}
                     />
                     {filteredJobs.length > 0 && (

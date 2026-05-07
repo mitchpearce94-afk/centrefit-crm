@@ -170,3 +170,15 @@ h1, h2, h3 {
   background-clip: text;
   color: transparent;
 }
+
+/* iOS Safari auto-zooms on focus when an input's computed font-size is
+   under 16px — every focus on text-sm (14px) inputs caused a jarring
+   zoom-in. Force ≥16px on mobile across all form controls; desktop
+   keeps the original Tailwind sizing untouched. */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
