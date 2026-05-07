@@ -290,7 +290,7 @@ export function ScopeEditor({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-[920px] max-h-[92vh] overflow-hidden rounded-xl bg-background border border-border shadow-2xl flex flex-col">
+      <div className="relative w-full max-w-[920px] max-h-[92dvh] overflow-hidden rounded-xl bg-background border border-border shadow-2xl flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>

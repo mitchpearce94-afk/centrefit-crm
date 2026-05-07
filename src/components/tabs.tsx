@@ -21,7 +21,26 @@ export function Tabs({
 
   return (
     <div>
-      <div className="flex gap-0 border-b border-border overflow-x-auto">
+      {/* Mobile: native select. Browser's built-in picker beats every custom
+          dropdown on phones — full-height, accessible, OS-native scroll.
+          Hidden on sm+ where the horizontal strip below takes over. */}
+      <div className="sm:hidden mb-3">
+        <select
+          value={active}
+          onChange={(e) => setActive(e.target.value)}
+          className="block w-full rounded-md border border-border bg-input px-3 py-2.5 text-base font-medium text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        >
+          {tabs.map((tab) => (
+            <option key={tab.id} value={tab.id}>
+              {tab.label}
+              {tab.count !== undefined && tab.count > 0 ? ` (${tab.count})` : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Desktop: horizontal tab strip — unchanged. */}
+      <div className="hidden sm:flex gap-0 border-b border-border overflow-x-auto">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -41,6 +60,7 @@ export function Tabs({
           </button>
         ))}
       </div>
+
       <div className="pt-5">{children(active)}</div>
     </div>
   );

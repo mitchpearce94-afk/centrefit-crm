@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { AssignJobModal } from "./assign-job-modal";
@@ -43,6 +43,23 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   const supabase = createClient();
   const [view, setView] = useState<"week" | "day">("week");
   const [selectedDay, setSelectedDay] = useState(todayStr());
+  // Touch devices fall back to tap-to-open-modal because HTML5
+  // draggable doesn't fire reliably on iOS/Android — a long-press
+  // there triggers the OS text-selection menu, not a drag. Disabling
+  // draggable on touch also stops the awkward iOS "drag preview"
+  // ghost when you accidentally hold a block.
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+
+  // Default to day view on phones — week view's 800px-wide grid forces
+  // horizontal scroll and is unusable on a 375px viewport. Hydration-safe:
+  // server + first client render are "week"; we flip after mount once we
+  // can read the viewport. Brief frame of "week" on mobile is fine; what
+  // we're avoiding is field techs having to manually toggle every time.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(max-width: 767px)").matches) setView("day");
+    setIsTouchDevice(!window.matchMedia("(hover: hover)").matches);
+  }, []);
   const [modal, setModal] = useState<{ staffId: string; date: string; startTime?: string; entry?: ScheduleEntry } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
@@ -197,7 +214,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
               </div>
 
               {/* Time grid */}
-              <div className="overflow-y-auto" style={{ maxHeight: "calc(100vh - 300px)" }}>
+              <div className="overflow-y-auto" style={{ maxHeight: "calc(100dvh - 300px)" }}>
                 <div className="flex">
                   {/* Hour labels */}
                   <div className="w-16 shrink-0 border-r border-border" style={{ height: GRID_HEIGHT }}>
@@ -210,7 +227,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
 
                   {/* Day columns with absolute-positioned entries */}
                   {weekDates.map(date => (
-                    <DayCol key={date} date={date} hours={hours} entries={timedByDate.get(date) ?? []} getStaff={getStaff} isAdmin={isAdmin} onCellClick={openAssign} onEntryClick={e => setModal({ staffId: e.staff_id, date, entry: e })} onDrop={handleDrop} draggingId={draggingId} />
+                    <DayCol key={date} date={date} hours={hours} entries={timedByDate.get(date) ?? []} getStaff={getStaff} isAdmin={isAdmin} isTouchDevice={isTouchDevice} onCellClick={openAssign} onEntryClick={e => setModal({ staffId: e.staff_id, date, entry: e })} onDrop={handleDrop} draggingId={draggingId} />
                   ))}
                 </div>
               </div>
@@ -234,7 +251,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
               </div>
             </div>
           )}
-          <div className="overflow-y-auto" style={{ maxHeight: "calc(100vh - 320px)" }}>
+          <div className="overflow-y-auto" style={{ maxHeight: "calc(100dvh - 320px)" }}>
             <div className="flex">
               <div className="w-16 shrink-0 border-r border-border" style={{ height: GRID_HEIGHT }}>
                 {hours.map(h => (
@@ -243,7 +260,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
                   </div>
                 ))}
               </div>
-              <DayCol date={selectedDay} hours={hours} entries={timedByDate.get(selectedDay) ?? []} getStaff={getStaff} isAdmin={isAdmin} onCellClick={openAssign} onEntryClick={e => setModal({ staffId: e.staff_id, date: selectedDay, entry: e })} onDrop={handleDrop} draggingId={draggingId} />
+              <DayCol date={selectedDay} hours={hours} entries={timedByDate.get(selectedDay) ?? []} getStaff={getStaff} isAdmin={isAdmin} isTouchDevice={isTouchDevice} onCellClick={openAssign} onEntryClick={e => setModal({ staffId: e.staff_id, date: selectedDay, entry: e })} onDrop={handleDrop} draggingId={draggingId} />
             </div>
           </div>
           <button onClick={switchToWeek} className="w-full border-t border-border px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">← Back to week</button>
@@ -260,9 +277,9 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
 }
 
 /* Day column — explicit height, entries absolutely positioned to span full time range */
-function DayCol({ date, hours, entries, getStaff, isAdmin, onCellClick, onEntryClick, onDrop, draggingId }: {
+function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCellClick, onEntryClick, onDrop, draggingId }: {
   date: string; hours: number[]; entries: ScheduleEntry[]; getStaff: (e: ScheduleEntry) => StaffMember | undefined;
-  isAdmin: boolean; onCellClick: (date: string, hour: number) => void; onEntryClick: (e: ScheduleEntry) => void;
+  isAdmin: boolean; isTouchDevice: boolean; onCellClick: (date: string, hour: number) => void; onEntryClick: (e: ScheduleEntry) => void;
   onDrop?: (entryId: string, date: string, hour: number) => void; draggingId?: string | null;
 }) {
   const today = isToday(date);
@@ -307,7 +324,7 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, onCellClick, onEntryC
         return (
           <div
             key={entry.id}
-            draggable={isAdmin}
+            draggable={isAdmin && !isTouchDevice}
             onDragStart={e => { e.dataTransfer.setData("text/plain", entry.id); e.dataTransfer.effectAllowed = "move"; }}
             onDragOver={e => { e.preventDefault(); }}
             onDrop={e => {

@@ -564,7 +564,7 @@ function ProductFormModal(props: ProductFormModalProps) {
       <form
         onSubmit={handleSubmit}
         onMouseDown={(e) => e.stopPropagation()}
-        className="relative w-full max-w-[680px] max-h-[92vh] overflow-y-auto rounded-xl bg-background border border-border shadow-2xl"
+        className="relative w-full max-w-[680px] max-h-[92dvh] overflow-y-auto rounded-xl bg-background border border-border shadow-2xl"
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4">

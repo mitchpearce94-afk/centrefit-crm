@@ -401,19 +401,19 @@ function WorkEntryForm({
             ))}
           </div>
         )}
-        <div className="flex items-end gap-2">
-          <div className="flex-1">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+          <div className="flex-1 min-w-0">
             <input
               type="text"
               value={productSearch}
               onChange={(e) => setProductSearch(e.target.value)}
               placeholder="Filter products..."
-              className={`${inputClass} mb-1.5`}
+              className={`${inputClass} mb-1.5 text-base sm:text-sm`}
             />
             <select
               value={selectedProductId}
               onChange={(e) => setSelectedProductId(e.target.value)}
-              className={`${inputClass}`}
+              className={`${inputClass} text-base sm:text-sm`}
               size={6}
             >
               <option value="">— Select a product —</option>
@@ -428,14 +428,25 @@ function WorkEntryForm({
               ))}
             </select>
           </div>
-          <div className="flex flex-col gap-1.5 shrink-0">
-            <label className="text-[10px] font-medium text-muted-foreground">Qty</label>
-            <input type="number" value={newMaterialQty} onChange={(e) => setNewMaterialQty(e.target.value)} min="1" className={`${inputClass} w-16 text-center`} />
+          {/* On mobile: qty + Add stack horizontally below the picker, both
+              spread to full width so they're thumb-reachable. Desktop keeps
+              the existing column-on-the-right layout. */}
+          <div className="flex flex-row sm:flex-col items-end sm:items-stretch gap-2 sm:gap-1.5 sm:shrink-0">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-medium text-muted-foreground">Qty</label>
+              <input
+                type="number"
+                value={newMaterialQty}
+                onChange={(e) => setNewMaterialQty(e.target.value)}
+                min="1"
+                className={`${inputClass} w-20 sm:w-16 text-center text-base sm:text-sm`}
+              />
+            </div>
             <button
               type="button"
               onClick={addMaterial}
               disabled={!selectedProductId}
-              className="rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors"
+              className="flex-1 sm:flex-none rounded-md bg-primary px-4 py-3 sm:py-2 text-sm sm:text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors"
             >
               Add
             </button>

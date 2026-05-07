@@ -129,7 +129,7 @@ export default function CompletePlanModal({ onClose }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-gray-800 rounded-lg border border-gray-600 w-[520px] max-h-[85vh] flex flex-col">
+      <div className="bg-gray-800 rounded-lg border border-gray-600 w-[520px] max-h-[85dvh] flex flex-col">
         {/* Header */}
         <div className="px-5 py-4 border-b border-gray-700 flex-shrink-0">
           <h2 className="text-white font-bold text-base">Complete Plan</h2>

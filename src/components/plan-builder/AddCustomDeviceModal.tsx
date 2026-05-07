@@ -101,7 +101,7 @@ export default function AddCustomDeviceModal({ onClose }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-gray-800 rounded-lg p-5 w-[420px] border border-gray-600 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-gray-800 rounded-lg p-5 w-[420px] border border-gray-600 max-h-[90dvh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <h3 className="text-white font-bold text-sm mb-4">Add Custom Device</h3>
 
         {/* Device Name */}

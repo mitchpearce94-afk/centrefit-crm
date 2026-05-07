@@ -424,7 +424,7 @@ export function QuoteActions({
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowPreview(false)} />
 
-          <div className="relative w-full max-w-[850px] max-h-[95vh] overflow-y-auto rounded-xl shadow-2xl">
+          <div className="relative w-full max-w-[850px] max-h-[95dvh] overflow-y-auto rounded-xl shadow-2xl">
             {/* Floating toolbar */}
             <div className="sticky top-0 z-10 flex items-center justify-between bg-gray-900/95 backdrop-blur px-6 py-3 rounded-t-xl border-b border-white/10">
               <span className="text-sm font-medium text-white">Quote Preview — {quoteRef}</span>

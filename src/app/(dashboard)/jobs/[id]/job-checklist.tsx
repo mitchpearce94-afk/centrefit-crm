@@ -223,9 +223,9 @@ export function JobChecklist({
           <div className="relative">
             <button
               onClick={() => setShowActions(!showActions)}
-              className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
+              className="rounded-md border border-border px-3 py-2 sm:px-2 sm:py-1 text-xs text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
             >
-              <MoreIcon className="h-3.5 w-3.5" />
+              <MoreIcon className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
             </button>
             {showActions && (
               <>
@@ -304,17 +304,18 @@ function ChecklistTask({
       }`}
     >
       <div className="flex gap-3">
-        {/* Checkbox */}
+        {/* Checkbox — bigger tap target on touch (gloved hands) */}
         <button
           onClick={onToggle}
-          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-colors ${
+          aria-label={item.is_completed ? "Mark task incomplete" : "Mark task complete"}
+          className={`mt-0.5 flex h-7 w-7 sm:h-5 sm:w-5 shrink-0 items-center justify-center rounded border-2 transition-colors ${
             item.is_completed
               ? "border-success bg-success text-white"
               : "border-muted-foreground/40 hover:border-primary"
           }`}
         >
           {item.is_completed && (
-            <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <svg className="h-4 w-4 sm:h-3 sm:w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="20 6 9 17 4 12" />
             </svg>
           )}

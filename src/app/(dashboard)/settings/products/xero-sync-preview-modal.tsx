@@ -69,7 +69,7 @@ export function XeroSyncPreviewModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-lg border border-border bg-background shadow-xl flex flex-col">
+      <div className="w-full max-w-3xl max-h-[90dvh] overflow-hidden rounded-lg border border-border bg-background shadow-xl flex flex-col">
         <div className="border-b border-border px-5 py-4">
           <h2 className="text-base font-semibold">
             Preview Xero sync{report.tenantName ? ` → ${report.tenantName}` : ""}

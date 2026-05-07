@@ -84,8 +84,24 @@ export function JobTabs({
 
   return (
     <div>
-      {/* Tab bar */}
-      <div className="flex gap-0 border-b border-border overflow-x-auto scrollbar-hide">
+      {/* Mobile tab picker — native select beats horizontal scroll. */}
+      <div className="sm:hidden mb-3">
+        <select
+          value={activeTab}
+          onChange={(e) => setActiveTab(e.target.value)}
+          className="block w-full rounded-md border border-border bg-input px-3 py-2.5 text-base font-medium text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        >
+          {tabs.map((tab) => (
+            <option key={tab.id} value={tab.id}>
+              {tab.label}
+              {tab.count !== undefined && tab.count > 0 ? ` (${tab.count})` : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Desktop tab bar — unchanged. */}
+      <div className="hidden sm:flex gap-0 border-b border-border overflow-x-auto scrollbar-hide">
         {tabs.map((tab) => (
           <button
             key={tab.id}

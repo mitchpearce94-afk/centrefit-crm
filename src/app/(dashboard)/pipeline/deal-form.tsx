@@ -168,7 +168,7 @@ export function DealForm({
     <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
-      <div className="relative w-full max-w-lg rounded-t-2xl lg:rounded-2xl border border-border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full max-w-lg rounded-t-2xl lg:rounded-2xl border border-border bg-card shadow-2xl max-h-[90dvh] overflow-y-auto">
         <div className="p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold">
