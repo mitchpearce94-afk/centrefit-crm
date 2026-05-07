@@ -83,6 +83,8 @@ interface Props {
   workEntries: WorkEntry[];
   productPrices: Record<string, ProductPrice>;
   billingSettings: BillingSettings;
+  /** Admins see the Variance Invoice button on already-quoted jobs. */
+  isAdmin: boolean;
 }
 
 const STATUS_COLOURS: Record<Invoice["status"], string> = {
@@ -241,7 +243,7 @@ function buildAutoLineItems(
 export function JobInvoices({
   jobId, customerId, jobDescription, jobNumber,
   invoices, linkedQuotes, checklistItems, workEntries,
-  productPrices, billingSettings,
+  productPrices, billingSettings, isAdmin,
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -252,6 +254,10 @@ export function JobInvoices({
 
   const hasLinkedQuote = linkedQuotes.length > 0;
   const primaryQuote = linkedQuotes[0] ?? null;
+  // When a job already has a quote on it, any further invoice from this
+  // panel is a "variance" — extras / variations on top of the quoted price.
+  // Tech-visible by default, but only admins get the Send button.
+  const isVarianceMode = hasLinkedQuote;
 
   const totals = useMemo(() => {
     let subtotal = 0;
@@ -270,7 +276,16 @@ export function JobInvoices({
   }
 
   function openModal() {
-    rebuildFromJob();
+    if (isVarianceMode) {
+      // Variance invoices start blank — auto-pulling work-log entries on a
+      // job that's already been quoted will double-bill anything covered by
+      // the original quote. Admin types variance lines from scratch (the
+      // "Rebuild from job" link is still there as an escape hatch).
+      setDescription("");
+      setRows([newRow()]);
+    } else {
+      rebuildFromJob();
+    }
     setShowModal(true);
   }
 
@@ -323,9 +338,16 @@ export function JobInvoices({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create invoice");
-      toast(`Invoice ${data.invoice?.xero_invoice_number ?? "created"}`);
+      toast(`Draft invoice ${data.invoice?.xero_invoice_number ?? "created"} — set account codes and authorise`);
       setShowModal(false);
-      router.refresh();
+      // Drop the admin straight into the line-item editor on the new draft.
+      // That's where they'll set per-line account codes (200/201/204/...)
+      // and hit Authorise once the variance lines are right.
+      if (data.invoice?.id) {
+        router.push(`/invoices/${data.invoice.id}`);
+      } else {
+        router.refresh();
+      }
     } catch (err: unknown) {
       toast(err instanceof Error ? err.message : "Failed to create invoice", "error");
     }
@@ -412,17 +434,19 @@ export function JobInvoices({
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           Invoices
         </h2>
-        {customerId && !hasLinkedQuote && (
+        {customerId && (!hasLinkedQuote || isAdmin) && (
           <button
             onClick={openModal}
             className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
           >
-            Generate Invoice
+            {isVarianceMode ? "Variance Invoice" : "Generate Invoice"}
           </button>
         )}
       </div>
 
-      {/* When this job is tied to a quote, direct invoicing lives on the quote. */}
+      {/* When this job is tied to a quote, the primary invoicing path lives
+          on the quote (PP1/PP2/full). Admins get a "Variance Invoice" path
+          here for extras and variations done outside the quoted scope. */}
       {hasLinkedQuote && primaryQuote && (
         <div className="mb-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
           <p className="text-xs text-foreground">
@@ -434,7 +458,10 @@ export function JobInvoices({
             ) : (
               <>{linkedQuotes.length} quotes</>
             )}
-            . Generate invoices from {linkedQuotes.length === 1 ? "that quote" : "the quote"} — not here.
+            . Primary invoicing happens on {linkedQuotes.length === 1 ? "that quote" : "the quotes"}.
+            {isAdmin
+              ? ' Use "Variance Invoice" for extras done outside the quoted scope.'
+              : " Variance invoices for extras can only be raised by an admin."}
           </p>
         </div>
       )}
@@ -481,9 +508,14 @@ export function JobInvoices({
           <div className="relative w-full max-w-[760px] max-h-[90vh] overflow-hidden rounded-xl bg-background border border-border shadow-2xl flex flex-col">
             <div className="flex items-center justify-between border-b border-border px-5 py-3">
               <div>
-                <p className="text-sm font-semibold text-foreground">Generate Invoice</p>
+                <p className="text-sm font-semibold text-foreground">
+                  {isVarianceMode ? "Variance Invoice" : "Generate Invoice"}
+                </p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Job {jobNumber ?? ""} — ad-hoc invoice pushed to Xero as AUTHORISED
+                  Job {jobNumber ?? ""} —{" "}
+                  {isVarianceMode
+                    ? `extras on top of quote ${primaryQuote?.ref ?? ""}. Pushed to Xero as DRAFT — set account codes and authorise on the next screen.`
+                    : "pushed to Xero as DRAFT — set account codes and authorise on the next screen."}
                 </p>
               </div>
               <button onClick={closeModal} disabled={busy} className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">

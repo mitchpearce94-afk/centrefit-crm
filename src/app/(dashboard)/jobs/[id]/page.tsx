@@ -97,6 +97,20 @@ export default async function JobDetailPage({
   const isNbnJob = job.category_1?.name?.includes("NBN") ?? false;
   const hasOpenTimer = (timeResult.data ?? []).some((t: any) => !t.end_time);
 
+  // Resolve current viewer's role so admin-only actions (e.g. raising a
+  // variance invoice on top of an already-quoted job) can be gated on the
+  // server before the UI renders. Non-admins still see the tab content.
+  const { data: { user } } = await supabase.auth.getUser();
+  let isAdmin = false;
+  if (user) {
+    const { data: viewerStaff } = await supabase
+      .from("staff")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    isAdmin = viewerStaff?.role === "admin";
+  }
+
   // Look up sell_price for every product referenced in the work-log materials
   // so the invoice modal can auto-populate priced line items at the quoted rate.
   const productIds = new Set<string>();
@@ -171,6 +185,7 @@ export default async function JobDetailPage({
           suppliers={(suppliersResult.data ?? []) as any[]}
           productPrices={productPrices}
           billingSettings={billingSettings}
+          isAdmin={isAdmin}
         />
       </div>
     </div>

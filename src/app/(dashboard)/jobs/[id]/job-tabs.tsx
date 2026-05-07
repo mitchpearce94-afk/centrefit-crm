@@ -41,6 +41,7 @@ export function JobTabs({
   suppliers,
   productPrices,
   billingSettings,
+  isAdmin,
 }: {
   jobId: string;
   job: any;
@@ -62,6 +63,7 @@ export function JobTabs({
   suppliers: any[];
   productPrices: Record<string, { sell_price: number; cost_price: number }>;
   billingSettings: { labour_sell_rate: number; callout_fee_sell: number };
+  isAdmin: boolean;
 }) {
   const [activeTab, setActiveTab] = useState("job");
   const showNbn = isNbnJob || nbnSteps.length > 0;
@@ -165,6 +167,7 @@ export function JobTabs({
             workEntries={workEntries}
             productPrices={productPrices}
             billingSettings={billingSettings}
+            isAdmin={isAdmin}
           />
         )}
       </div>
