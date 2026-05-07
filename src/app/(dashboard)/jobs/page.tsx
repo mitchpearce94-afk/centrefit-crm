@@ -144,7 +144,79 @@ export default async function JobsPage({
         defaultView={isActiveView ? "active" : "all"}
       />
 
-      <div className="surface-card mt-4 overflow-x-auto">
+      {/* ── Mobile cards ── (techs flicking through their list on a phone) */}
+      <div className="md:hidden mt-4 space-y-2">
+        {filteredJobs?.length === 0 && (
+          <div className="rounded-lg border border-dashed border-border bg-card/40 px-4 py-10 text-center text-sm text-muted-foreground">
+            No jobs found.{" "}
+            <Link href="/jobs/new" className="text-primary hover:underline">
+              Create your first job
+            </Link>
+          </div>
+        )}
+        {filteredJobs?.map((job: any) => {
+          const entries = (job.schedule_entries ?? []) as any[];
+          const upcoming = entries
+            .filter((e: any) => e.schedule_date >= todayISO)
+            .sort((a: any, b: any) => a.schedule_date.localeCompare(b.schedule_date));
+          const next = upcoming[0];
+          const isToday = next?.schedule_date === todayISO;
+          const scheduleLabel = next
+            ? isToday
+              ? `Today${next.start_time ? ` ${next.start_time.slice(0, 5)}` : ""}`
+              : `${new Date(next.schedule_date + "T00:00:00").toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short" })}${next.start_time ? ` ${next.start_time.slice(0, 5)}` : ""}`
+            : null;
+          return (
+            <Link
+              key={job.id}
+              href={`/jobs/${job.id}`}
+              className="block rounded-lg border border-border bg-card p-4 active:bg-accent/40 transition-colors"
+            >
+              <div className="flex items-start justify-between gap-3 mb-1">
+                <span className="font-mono text-base font-semibold">{job.number}</span>
+                {job.status && (
+                  <span
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                    style={{ backgroundColor: `${job.status.colour}20`, color: job.status.colour }}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: job.status.colour }} />
+                    {job.status.name}
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-foreground truncate">{job.customer?.name ?? "—"}</p>
+              {job.site?.name && (
+                <p className="text-xs text-muted-foreground truncate">{job.site.name}</p>
+              )}
+              <div className="mt-2 flex items-center justify-between gap-2">
+                {scheduleLabel ? (
+                  <span className={`text-xs font-medium ${isToday ? "text-primary" : "text-muted-foreground"}`}>
+                    {isToday ? "🟢" : "📅"} {scheduleLabel}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground/70">Not scheduled</span>
+                )}
+                {job.job_staff && job.job_staff.length > 0 && (
+                  <div className="flex -space-x-1">
+                    {job.job_staff.slice(0, 3).map((js: any) => (
+                      <span
+                        key={js.staff?.id}
+                        className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-medium text-white ring-2 ring-card"
+                        style={{ backgroundColor: js.staff?.colour ?? "#3b82f6" }}
+                      >
+                        {js.staff?.initials}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+
+      {/* ── Desktop table ── (unchanged from before) */}
+      <div className="hidden md:block surface-card mt-4 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/40">
