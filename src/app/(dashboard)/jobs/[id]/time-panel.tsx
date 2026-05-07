@@ -80,23 +80,24 @@ export function TimePanel({
 
   return (
     <div className="max-w-2xl">
-      {/* Clock in/out button */}
-      <div className="mb-5 flex items-center gap-4">
+      {/* Clock in/out — full-width primary action on mobile, total moves
+          to its own line so the button doesn't get visually crowded. */}
+      <div className="mb-5 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
         {openEntry ? (
           <button
             onClick={() => clockOut(openEntry.id)}
             disabled={clockingIn}
-            className="rounded-md bg-destructive px-5 py-2.5 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 transition-colors"
+            className="w-full sm:w-auto rounded-md bg-destructive px-5 py-3 sm:py-2.5 text-sm font-semibold text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 transition-colors"
           >
-            {clockingIn ? "Stopping..." : "Clock Out"}
+            {clockingIn ? "Stopping..." : "🛑 Clock Out"}
           </button>
         ) : (
           <button
             onClick={clockIn}
             disabled={clockingIn}
-            className="rounded-md bg-success px-5 py-2.5 text-sm font-medium text-white hover:bg-success/90 disabled:opacity-50 transition-colors"
+            className="w-full sm:w-auto rounded-md bg-success px-5 py-3 sm:py-2.5 text-sm font-semibold text-white hover:bg-success/90 disabled:opacity-50 transition-colors"
           >
-            {clockingIn ? "Starting..." : "Clock In"}
+            {clockingIn ? "Starting..." : "▶ Clock In"}
           </button>
         )}
         <div className="text-sm text-muted-foreground">
@@ -104,8 +105,68 @@ export function TimePanel({
         </div>
       </div>
 
-      {/* Time entries */}
-      <div className="overflow-x-auto rounded-lg border border-border">
+      {/* ── Mobile cards ── */}
+      <div className="md:hidden space-y-2">
+        {timeEntries.length === 0 && (
+          <p className="rounded-lg border border-dashed border-border bg-card/40 px-4 py-8 text-center text-xs text-muted-foreground italic">
+            No time entries yet. Clock in to start tracking.
+          </p>
+        )}
+        {timeEntries.map((entry) => {
+          const start = new Date(entry.start_time);
+          const end = entry.end_time ? new Date(entry.end_time) : null;
+          const durationMins = end
+            ? Math.round((end.getTime() - start.getTime()) / 60000)
+            : null;
+          const durLabel = durationMins !== null
+            ? `${Math.floor(durationMins / 60)}h ${durationMins % 60}m`
+            : null;
+          return (
+            <div
+              key={entry.id}
+              className={`rounded-lg border ${end ? "border-border" : "border-success/40"} bg-card p-3.5`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  {entry.staff && (
+                    <span
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ring-1 ring-white/10"
+                      style={{ backgroundColor: entry.staff.colour ?? "#3b82f6" }}
+                    >
+                      {entry.staff.initials}
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{entry.staff?.display_name ?? "—"}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {start.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
+                    </p>
+                  </div>
+                </div>
+                {end ? (
+                  <span className="text-sm font-mono font-semibold tabular-nums">{durLabel}</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">
+                    <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+                    Active
+                  </span>
+                )}
+              </div>
+              <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                <span className="font-mono">
+                  {start.toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}
+                  {" → "}
+                  {end ? end.toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" }) : "now"}
+                </span>
+                <span>{entry.billable ? "Billable" : "Non-billable"}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Desktop table ── */}
+      <div className="hidden md:block overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/50">

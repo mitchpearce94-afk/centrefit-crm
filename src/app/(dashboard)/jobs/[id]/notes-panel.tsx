@@ -37,9 +37,10 @@ export function NotesPanel({
 
   return (
     <div>
-      {/* Header: search + new note */}
-      <div className="flex items-center gap-3 mb-5">
-        <div className="relative flex-1 max-w-sm">
+      {/* Header: stacks on mobile so search input gets full width and the
+          New Note button is a full-width primary CTA. */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-4 sm:mb-5">
+        <div className="relative flex-1 sm:max-w-sm">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <input
             value={search}
@@ -50,9 +51,9 @@ export function NotesPanel({
         </div>
         <button
           onClick={() => setShowForm(true)}
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors shrink-0"
+          className="w-full sm:w-auto rounded-md bg-primary px-4 py-2.5 sm:py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors shrink-0"
         >
-          New Note
+          + New Note
         </button>
       </div>
 
@@ -68,9 +69,79 @@ export function NotesPanel({
         />
       )}
 
-      {/* Notes table */}
+      {/* ── Mobile cards ── */}
+      {filtered.length > 0 && (
+        <div className="md:hidden space-y-2">
+          {filtered.map((note) => {
+            const attachments: Attachment[] = note.attachments ?? [];
+            if (attachments.length === 0 && note.image_url) {
+              attachments.push({ url: note.image_url, name: "Photo", type: "image" });
+            }
+            const isExpanded = expandedNote === note.id;
+            const displayTitle = note.title || note.content.split("\n")[0].slice(0, 60) || "Untitled";
+            const typeBadge = note.type !== "note" ? note.type : null;
+            return (
+              <button
+                key={note.id}
+                type="button"
+                onClick={() => setExpandedNote(isExpanded ? null : note.id)}
+                className="block w-full text-left rounded-lg border border-border bg-card p-4 active:bg-accent/40 transition-colors"
+              >
+                <div className="flex items-start justify-between gap-3 mb-1.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-foreground">{displayTitle}</span>
+                      {typeBadge && (
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase font-medium text-muted-foreground">
+                          {typeBadge}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {note.staff && (
+                    <span
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ring-1 ring-white/10"
+                      style={{ backgroundColor: note.staff.colour ?? "#6b7280" }}
+                    >
+                      {note.staff.initials}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                  <span className="truncate">{note.staff?.display_name ?? "System"}</span>
+                  <span className="shrink-0">
+                    {new Date(note.created_at).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
+                  </span>
+                </div>
+                {attachments.length > 0 && (
+                  <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                    {attachments.slice(0, 4).map((att, i) => (
+                      <div key={i} className="h-9 w-9 rounded border border-border bg-muted overflow-hidden shrink-0">
+                        {att.type?.startsWith("image") ? (
+                          <img src={att.url} alt={att.name} className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-[8px] font-medium text-muted-foreground uppercase">
+                            {att.name?.split(".").pop() ?? "file"}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {attachments.length > 4 && (
+                      <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        +{attachments.length - 4}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Desktop table ── (unchanged) */}
       {filtered.length > 0 ? (
-        <div className="rounded-lg border border-border bg-card overflow-x-auto">
+        <div className="hidden md:block rounded-lg border border-border bg-card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/50">
@@ -431,8 +502,10 @@ function NoteForm({
           </div>
         ))}
 
-      {/* Actions row */}
-      <div className="flex items-center gap-3 pt-1">
+      {/* Actions — stacked on mobile so the Save button is full-width and
+          never gets pushed off-screen. Type pills + Attach sit above; the
+          two main actions (Cancel / Save) take the bottom row. */}
+      <div className="flex flex-wrap items-center gap-2 pt-1">
         <div className="flex gap-1 rounded-md border border-border p-0.5">
           {(["note", "email", "call"] as const).map((t) => (
             <button
@@ -461,25 +534,24 @@ function NoteForm({
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
+          className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
         >
           <AttachIcon className="h-3.5 w-3.5" />
-          Attach Files
+          Attach
         </button>
-
-        <div className="flex-1" />
-
+      </div>
+      <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 pt-2 border-t border-border">
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md border border-border px-4 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors"
+          className="w-full sm:w-auto rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent transition-colors"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={saving || (!title.trim() && !content.trim() && selectedFiles.length === 0)}
-          className="rounded-md bg-primary px-5 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          className="w-full sm:w-auto rounded-md bg-primary px-5 py-2.5 sm:py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
         >
           {saving ? "Saving..." : "Save Note"}
         </button>
