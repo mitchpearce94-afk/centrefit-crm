@@ -620,25 +620,18 @@ export function generateScopeOfWorks(
     .filter((o) => o.included);
 
   // ── Summary ──────────────────────────────────────────────────────────────
-  const summaryRows: { name: string; qty: string }[] = [];
-  if (cameras > 0)         summaryRows.push({ name: 'Digital Surveillance', qty: `${cameras} ${plural(cameras, 'camera')}` });
-  if (motion > 0)          summaryRows.push({ name: 'Movement Sensors',     qty: `${motion} ${plural(motion, 'PIR')}` });
-  if (reeds > 0)           summaryRows.push({ name: 'Door Sensors',         qty: `${reeds} reed ${plural(reeds, 'switch', 'switches')}` });
-  if (doorStrikes > 0)     summaryRows.push({ name: 'Access Control',       qty: `${doorStrikes} ${plural(doorStrikes, 'door')}` });
-  if (buttons + pendants > 0) summaryRows.push({ name: 'Duress',            qty: [buttons > 0 ? `${buttons} button` : null, pendants > 0 ? `${pendants} pendants` : null].filter(Boolean).join(' · ') });
-  if (speakers > 0)        summaryRows.push({ name: 'Audio System',         qty: `${speakers} speakers · ${amplifiers > 0 ? `${amplifiers} amp` : '1 amp'}` });
-  if (totalTVs > 0)        summaryRows.push({ name: 'AV / Cardio',          qty: `${totalTVs} TVs${modulators > 0 ? ` · ${modulators} modulator` : ''}` });
-  if (waps > 0)            summaryRows.push({ name: 'Wireless',             qty: `${waps} access points` });
-  if (cabinets > 0)        summaryRows.push({ name: 'Server Cabinet',       qty: `${cabinets} ${plural(cabinets, 'rack')}` });
-  if (tailgates > 0)        summaryRows.push({ name: 'FelixGate Tailgating', qty: `${tailgates} system` });
-
+  // Headline-count rows ("7 cameras", "4 PIRs") were removed from the
+  // customer-facing quote 2026-05-08 — Mitchell prefers the qtys to live
+  // inside the per-item bullets only ("(7) IP cameras…"). Lead paragraph
+  // stays. Per-system countSummary is emptied at the return below for the
+  // same reason.
   const systemNames = systems.map((s) => s.name.toLowerCase()).join(', ');
   const autoLead = systems.length > 0
     ? `Centrefit Group will supply, install and commission the ${systemNames} systems for this site. All cabling, terminations, configuration and customer-staff training are included. Trade work outside our scope (electrical, antenna, door strikes) is called out as "By others" below.`
     : 'No items currently selected — add products to the BOM to populate this scope.';
   const summary: ScopeSummary = {
     lead: overrides?.summaryLead ?? autoLead,
-    rows: summaryRows,
+    rows: [],
   };
 
   // ── Hard exclusion ───────────────────────────────────────────────────────
@@ -675,7 +668,7 @@ export function generateScopeOfWorks(
 
   return {
     summary,
-    systems,
+    systems: systems.map((s) => ({ ...s, countSummary: '' })),
     byOthers,
     hardExclusion,
     ongoingCosts,
