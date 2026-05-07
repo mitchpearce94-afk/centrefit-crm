@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/toast";
 import {
   DEVICE_TYPES,
   DEFAULT_EXTRAS,
+  PRODUCT_CATEGORIES,
   generateBOM,
   calculateBOMTotals,
   calculateLabour,
@@ -1216,7 +1217,13 @@ export function QuoteWizard({
   }, []);
 
   const bomByCategory = useMemo(() => {
+    // Seed with the canonical category list first so every section is
+    // always visible — even when empty. Mitchell needs a way to add Data
+    // (or any other system) to a quote that started without it; without
+    // the seed an empty category never renders and there's no "+ Product"
+    // button to discover.
     const map = new Map<string, BOMItem[]>();
+    for (const cat of PRODUCT_CATEGORIES) map.set(cat, []);
     for (const item of bomItems) {
       const list = map.get(item.category) ?? [];
       list.push(item);
