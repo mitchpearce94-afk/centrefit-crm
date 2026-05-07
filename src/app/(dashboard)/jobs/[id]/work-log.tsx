@@ -91,23 +91,30 @@ export function WorkLog({
               key={entry.id}
               className="rounded-lg border border-border bg-card overflow-hidden"
             >
-              {/* Header */}
-              <div className="flex items-center justify-between bg-muted/50 px-4 py-2 border-b border-border">
-                <div className="flex items-center gap-2">
+              {/* Header — wraps on mobile so date + Edit don't squeeze. */}
+              <div className="flex items-center justify-between bg-muted/50 px-4 py-2.5 border-b border-border gap-2 flex-wrap">
+                <div className="flex items-center gap-2 min-w-0">
                   {entry.staff && (
                     <span
-                      className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-medium text-white"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ring-1 ring-white/10"
                       style={{ backgroundColor: entry.staff.colour ?? "#3b82f6" }}
                     >
                       {entry.staff.initials}
                     </span>
                   )}
-                  <span className="text-sm font-medium">
-                    {entry.staff?.display_name ?? "Unknown"}
-                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium leading-tight truncate">
+                      {entry.staff?.display_name ?? "Unknown"}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground leading-tight">
+                      {new Date(entry.work_date + "T00:00:00").toLocaleDateString(
+                        "en-AU",
+                        { weekday: "short", day: "numeric", month: "short" }
+                      )}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  {/* Billing badges */}
+                <div className="flex items-center gap-1.5 flex-wrap">
                   {entry.call_out && (
                     <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
                       Call Out
@@ -115,18 +122,12 @@ export function WorkLog({
                   )}
                   {entry.labour_hours != null && entry.labour_hours > 0 && (
                     <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">
-                      {entry.labour_hours}h labour
+                      {entry.labour_hours}h
                     </span>
                   )}
-                  <span className="text-xs font-medium text-muted-foreground">
-                    {new Date(entry.work_date + "T00:00:00").toLocaleDateString(
-                      "en-AU",
-                      { weekday: "short", day: "numeric", month: "short", year: "numeric" }
-                    )}
-                  </span>
                   <button
                     onClick={() => openEdit(entry)}
-                    className="text-xs text-muted-foreground hover:text-primary transition-colors"
+                    className="rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
                   >
                     Edit
                   </button>
@@ -484,15 +485,18 @@ function WorkEntryForm({
         </div>
       )}
 
-      {/* Actions */}
-      <div className="flex items-center gap-2 pt-1">
+      {/* Photos attach button — sits above the action row so the Save
+          button never gets pushed off-screen when the form is wide. */}
+      <div className="pt-1">
         <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileSelect} className="hidden" />
-        <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground transition-colors">
+        <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-foreground transition-colors">
           <CameraIcon className="h-3.5 w-3.5" /> Photos
         </button>
-        <div className="flex-1" />
-        <button type="button" onClick={onClose} className="rounded-md border border-border px-4 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors">Cancel</button>
-        <button type="submit" disabled={saving || !content.trim()} className="rounded-md bg-primary px-5 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
+      </div>
+      {/* Actions — Save full-width on mobile, side-by-side on desktop. */}
+      <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 pt-2 border-t border-border">
+        <button type="button" onClick={onClose} className="w-full sm:w-auto rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent transition-colors">Cancel</button>
+        <button type="submit" disabled={saving || !content.trim()} className="w-full sm:w-auto rounded-md bg-primary px-5 py-2.5 sm:py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
           {saving ? "Saving..." : isEditing ? "Save Changes" : "Save Entry"}
         </button>
       </div>
