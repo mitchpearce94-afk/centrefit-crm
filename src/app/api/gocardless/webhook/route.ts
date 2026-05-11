@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { verifyGoCardlessSignature } from "@/lib/gocardless/webhook-verify";
 import { getMandate, getBillingRequest } from "@/lib/gocardless/client";
-import { getAuthedClient } from "@/lib/xero/client";
-import { findOrCreateContact } from "@/lib/xero/contacts";
-import { createRepeatingInvoice, type PlanFrequency } from "@/lib/xero/repeating-invoices";
+import { activatePlan } from "@/lib/recurring/activate-plan";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
 
 /**
@@ -116,6 +114,22 @@ async function handleBillingRequestEvent(
       gc_mandate_id: mandateId,
     })
     .eq("id", plan.id);
+
+  // AU BECS quirk: GC doesn't submit the mandate to the bank until the first
+  // payment is created. So waiting for `mandate.active` to provision the Xero
+  // RepeatingInvoice creates a dead-end (no RI → no payment → mandate never
+  // activates). Fire activatePlan from BR.fulfilled instead — that's when we
+  // have the IDs we need, regardless of mandate-state lifecycle.
+  if (event.action === "fulfilled" && mandateId) {
+    try {
+      const result = await activatePlan(supabase, plan.id);
+      if (!result.ok) {
+        console.error(`[gc-webhook] activatePlan failed for plan ${plan.id}: ${result.reason}`);
+      }
+    } catch (err) {
+      console.error(`[gc-webhook] activatePlan threw for plan ${plan.id}:`, err);
+    }
+  }
 }
 
 async function handleMandateEvent(
@@ -195,144 +209,3 @@ async function handleMandateEvent(
   }
 }
 
-/**
- * Mandate is active. Create the Xero RepeatingInvoice template (if not
- * already created — idempotent on plan.xero_repeating_invoice_id) and
- * flip plan status to active.
- */
-async function activatePlan(
-  supabase: ReturnType<typeof createServiceRoleClient>,
-  planId: string,
-) {
-  const { data: plan } = await supabase
-    .from("recurring_plans")
-    .select(`
-      id, status, customer_id, site_id, gc_mandate_id, xero_repeating_invoice_id, first_invoice_date,
-      customers(id, name, abn, xero_contact_id, customer_contacts(name, email, phone, is_primary)),
-      customer_sites(name, address, suburb, state, postcode, xero_contact_id)
-    `)
-    .eq("id", planId)
-    .single();
-  if (!plan) return;
-
-  // Already activated — idempotent.
-  if (plan.status === "active" && plan.xero_repeating_invoice_id) return;
-
-  // Pull plan items.
-  const { data: items } = await supabase
-    .from("recurring_plan_items")
-    .select("service_code, service_name, description, price_inc_gst, frequency, account_code, quantity")
-    .eq("recurring_plan_id", planId);
-  if (!items || items.length === 0) return;
-
-  // Plans with mixed monthly/yearly need separate Xero RepeatingInvoices,
-  // one per cadence. Group items by frequency and create one template per
-  // group. We persist the monthly RI id on the plan (the primary one); the
-  // yearly id is stashed in a small JSON field if present.
-  const byFreq = new Map<PlanFrequency, typeof items>();
-  for (const it of items) {
-    const key = it.frequency as PlanFrequency;
-    if (!byFreq.has(key)) byFreq.set(key, []);
-    byFreq.get(key)!.push(it);
-  }
-
-  const customer = Array.isArray(plan.customers) ? plan.customers[0] : plan.customers;
-  if (!customer) throw new Error("Plan has no customer");
-  const site = Array.isArray(plan.customer_sites) ? plan.customer_sites[0] : plan.customer_sites;
-  const primary =
-    customer.customer_contacts?.find((c: { is_primary: boolean }) => c.is_primary) ??
-    customer.customer_contacts?.[0];
-
-  const { client: xero, conn } = await getAuthedClient(supabase);
-
-  // Resolve the Xero contact via the site-aware helper so the per-site
-  // mapping persists on customer_sites.xero_contact_id and the site address
-  // is attached for the invoice "Bill To" block. Helper handles dedupe
-  // against pre-existing Xero contacts (loose name match).
-  const xeroContactId = await findOrCreateContact(
-    supabase,
-    xero,
-    conn.tenant_id,
-    {
-      id: customer.id,
-      name: customer.name,
-      xero_contact_id: customer.xero_contact_id,
-      email: primary?.email ?? null,
-      phone: primary?.phone ?? null,
-      abn: customer.abn ?? null,
-    },
-    plan.site_id && site
-      ? {
-          id: plan.site_id,
-          name: site.name,
-          xero_contact_id: (site as { xero_contact_id?: string | null }).xero_contact_id ?? null,
-          address: site.address ?? null,
-          suburb: site.suburb ?? null,
-          state: site.state ?? null,
-          postcode: site.postcode ?? null,
-        }
-      : null,
-  );
-
-  // First invoice fires on the customer-chosen start date (workstream A) or
-  // today by default (legacy behaviour). Xero rejects past dates, so a stale
-  // pre-active first_invoice_date that's now in the past gets bumped to today.
-  const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
-  const startDate = plan.first_invoice_date && plan.first_invoice_date >= todayStr
-    ? plan.first_invoice_date
-    : todayStr;
-
-  let monthlyRiId: string | null = null;
-  let yearlyRiId: string | null = null;
-
-  for (const [frequency, group] of byFreq.entries()) {
-    const ri = await createRepeatingInvoice({
-      xero,
-      tenantId: conn.tenant_id,
-      xeroContactId,
-      reference: `Plan ${plan.id.slice(0, 8)}`,
-      frequency,
-      nextScheduledDate: startDate,
-      dueDays: 7,
-      childStatus: "AUTHORISED",
-      lineItems: group.map((it) => ({
-        description: it.description ?? it.service_name,
-        quantity: it.quantity,
-        unitAmount: Number(it.price_inc_gst),
-        accountCode: it.account_code,
-      })),
-    });
-    if (frequency === "monthly") monthlyRiId = ri.repeatingInvoiceID;
-    if (frequency === "yearly") yearlyRiId = ri.repeatingInvoiceID;
-  }
-
-  // Primary = monthly when both exist (most common cadence). Secondary holds
-  // the yearly RI ID so cancel can find both cleanly.
-  const primaryRiId = monthlyRiId ?? yearlyRiId;
-  const secondaryRiId = monthlyRiId && yearlyRiId ? yearlyRiId : null;
-
-  await supabase
-    .from("recurring_plans")
-    .update({
-      status: "active",
-      xero_contact_id: xeroContactId,
-      xero_repeating_invoice_id: primaryRiId,
-      xero_repeating_invoice_secondary_id: secondaryRiId,
-      next_invoice_date: startDate,
-    })
-    .eq("id", planId);
-
-  await enqueueNotification({
-    supabase,
-    typeCode: "mandate.active",
-    refType: "recurring_plan",
-    refId: planId,
-    audience: { allActive: true },
-    title: `${customer.name} mandate active`,
-    body: site?.name
-      ? `${site.name} — recurring billing live, first invoice ${startDate}.`
-      : `Recurring billing live, first invoice ${startDate}.`,
-    href: `/invoices/recurring/${planId}`,
-  });
-}
