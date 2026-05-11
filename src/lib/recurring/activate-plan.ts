@@ -132,9 +132,11 @@ export async function activatePlan(
       xeroContactId,
       reference: `Plan ${plan.id.slice(0, 8)}`,
       frequency,
-      nextScheduledDate: startDate,
+      startDate,
       dueDays: 7,
-      childStatus: "AUTHORISED",
+      // childStatus defaults to "DRAFT" — auto-generated children sit in
+      // Mitchell's Xero Draft folder for manual review before authorising
+      // and sending. Locked in after the 2026-05-11 auto-send incident.
       idempotencyKey,
       lineItems: group.map((it) => ({
         description: it.description ?? it.service_name,

@@ -34,14 +34,26 @@ export interface CreateRepeatingInvoiceInput {
   reference?: string;
   /** Frequency of generation. Yearly maps to MONTHLY × 12. */
   frequency: PlanFrequency;
-  /** ISO date (YYYY-MM-DD) for the first auto-generated invoice. */
-  nextScheduledDate: string;
+  /**
+   * ISO date (YYYY-MM-DD) for the FIRST auto-generated invoice. This maps
+   * to Xero's `Schedule.StartDate` field. `NextScheduledDate` is computed
+   * by Xero from this — sending only `NextScheduledDate` (which is what
+   * we did before 2026-05-11) caused Xero to ignore our future date and
+   * default StartDate to today, firing the first invoice immediately.
+   */
+  startDate: string;
   /** Optional ISO end date — defaults to open-ended. */
   endDate?: string;
   /** Days after invoice date for due. Centrefit default is 7. */
   dueDays?: number;
   lineItems: RepeatingInvoiceLineInput[];
-  /** "DRAFT" | "AUTHORISED" — auto-generated children inherit this status. */
+  /**
+   * Status the auto-generated children inherit.
+   * DEFAULT: "DRAFT". Hard rule from 2026-05-11 — never default to
+   * AUTHORISED here because Xero's org-level "auto-send when authorised"
+   * setting will email customers without further confirmation. AUTHORISED
+   * is opt-in only and must be paired with Mitchell's explicit sign-off.
+   */
   childStatus?: "DRAFT" | "AUTHORISED";
   /**
    * Idempotency key sent to Xero. When the SDK retries on 429, the retry
@@ -72,8 +84,8 @@ export async function createRepeatingInvoice(
   input: CreateRepeatingInvoiceInput,
 ): Promise<CreatedRepeatingInvoice> {
   const {
-    xero, tenantId, xeroContactId, frequency, nextScheduledDate,
-    endDate, lineItems, reference, dueDays = 7, childStatus = "AUTHORISED",
+    xero, tenantId, xeroContactId, frequency, startDate,
+    endDate, lineItems, reference, dueDays = 7, childStatus = "DRAFT",
     idempotencyKey = crypto.randomUUID(),
   } = input;
 
@@ -92,7 +104,11 @@ export async function createRepeatingInvoice(
       unit: "MONTHLY",
       dueDate: dueDays,
       dueDateType: "DAYSAFTERBILLDATE",
-      nextScheduledDate,
+      // StartDate is the writable "first invoice fires on" field.
+      // NextScheduledDate is normally Xero-computed; mirror it to startDate
+      // belt-and-braces so there's no ambiguity on creation.
+      startDate,
+      nextScheduledDate: startDate,
       ...(endDate ? { endDate } : {}),
     },
     lineAmountTypes: "Inclusive",

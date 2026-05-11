@@ -169,9 +169,10 @@ export async function POST(
           xeroContactId,
           reference: `Plan ${plan.id.slice(0, 8)}`,
           frequency: freq,
-          nextScheduledDate: today,
+          startDate: today,
           dueDays: 7,
-          childStatus: "AUTHORISED",
+          // childStatus defaults to "DRAFT" — see repeating-invoices.ts.
+          // After 2026-05-11 incident we never default AUTHORISED here.
           lineItems: newLines,
         });
         if (freq === "monthly") monthlyRiId = ri.repeatingInvoiceID; else yearlyRiId = ri.repeatingInvoiceID;
