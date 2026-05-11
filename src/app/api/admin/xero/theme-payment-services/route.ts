@@ -30,21 +30,33 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const svc = createServiceRoleClient();
-  const { client: xero, conn } = await getAuthedClient(svc);
-  const res = await xero.accountingApi.getBrandingThemePaymentServices(
-    conn.tenant_id,
-    themeId,
-  );
-  const services = res.body.paymentServices ?? [];
-  return NextResponse.json({
-    themeId,
-    count: services.length,
-    services: services.map((s) => ({
-      id: s.paymentServiceID,
-      name: s.paymentServiceName,
-      type: s.paymentServiceType,
-      url: s.paymentServiceUrl,
-    })),
-  });
+  try {
+    const svc = createServiceRoleClient();
+    const { client: xero, conn } = await getAuthedClient(svc);
+    const res = await xero.accountingApi.getBrandingThemePaymentServices(
+      conn.tenant_id,
+      themeId,
+    );
+    const services = res.body.paymentServices ?? [];
+    return NextResponse.json({
+      themeId,
+      count: services.length,
+      services: services.map((s) => ({
+        id: s.paymentServiceID,
+        name: s.paymentServiceName,
+        type: s.paymentServiceType,
+        url: s.paymentServiceUrl,
+      })),
+    });
+  } catch (err) {
+    // Surface the actual error so we can diagnose. xero-node throws plain
+    // objects with response/body — stringify to capture everything.
+    const errStr = err instanceof Error ? err.message : (() => {
+      try { return JSON.stringify(err); } catch { return String(err); }
+    })();
+    return NextResponse.json(
+      { error: "Xero call failed", detail: errStr.slice(0, 4000) },
+      { status: 500 },
+    );
+  }
 }
