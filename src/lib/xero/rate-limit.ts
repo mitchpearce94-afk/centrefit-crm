@@ -88,12 +88,22 @@ export async function captureXeroRateLimit(
   supabase: AnySupabaseClient,
   err: unknown,
 ): Promise<boolean> {
-  // xero-node throws an object shaped like { response: { statusCode, headers } }.
-  // Some paths wrap it in an Error whose .response is the same object.
-  const e = err as { response?: { statusCode?: number; headers?: Record<string, string | undefined> } };
-  const status = e?.response?.statusCode;
-  if (status !== 429) return false;
-  const headers = e.response?.headers ?? {};
+  // xero-node v15 throws Error instances where the structured response is
+  // JSON-stringified into err.message rather than left as err.response. Try
+  // the direct property first, then fall back to parsing err.message.
+  type ParsedResponse = { statusCode?: number; headers?: Record<string, string | undefined> };
+  let response: ParsedResponse | undefined =
+    (err as { response?: ParsedResponse })?.response;
+  if (!response?.statusCode && err instanceof Error && err.message?.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(err.message) as { response?: ParsedResponse };
+      response = parsed.response;
+    } catch {
+      // err.message wasn't structured JSON — not a xero-node error we recognise.
+    }
+  }
+  if (response?.statusCode !== 429) return false;
+  const headers = response.headers ?? {};
   const retryAfter = parseInt(String(headers["retry-after"] ?? "60"), 10);
   const problem = String(headers["x-rate-limit-problem"] ?? "rate_limit");
   if (Number.isFinite(retryAfter)) {

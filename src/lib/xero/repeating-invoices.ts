@@ -81,7 +81,7 @@ export async function createRepeatingInvoice(
       period,
       unit: "MONTHLY",
       dueDate: dueDays,
-      dueDateType: "DAYSAFTERINVOICEDATE",
+      dueDateType: "DAYSAFTERBILLDATE",
       nextScheduledDate,
       ...(endDate ? { endDate } : {}),
     },
