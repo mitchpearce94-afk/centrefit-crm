@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import crypto from "node:crypto";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { getAuthedClient } from "@/lib/xero/client";
@@ -82,41 +82,45 @@ export async function POST(req: NextRequest) {
     return new NextResponse(null, { status: 400 });
   }
 
-  // Acknowledge fast — Xero requires <5s response. Process events inline
-  // anyway because they're cheap (single-invoice refresh + maybe a status
-  // transition); push to background queue if this ever gets heavy.
-  const supabase = createServiceRoleClient();
+  // Xero requires <5s response. We do the work in `after` so the 200 is sent
+  // immediately — cold starts + multi-event batches + per-event Xero API
+  // calls used to push the inline path past the deadline and get the webhook
+  // auto-disabled. `after` on Vercel uses waitUntil to extend lambda lifetime
+  // past the response.
+  after(async () => {
+    const supabase = createServiceRoleClient();
 
-  // Short-circuit the whole batch when we're in a known rate-limit cooldown.
-  // Xero retries failed deliveries on backoff anyway — better to ack 200 and
-  // let Xero re-fire the event after the window expires than to sit in a
-  // 429 retry loop and burn outbound capacity.
-  const limited = await isXeroRateLimited(supabase);
-  if (limited) {
-    console.warn(
-      `[xero-webhook] skipping batch — rate-limited until ${limited.until.toISOString()} (${limited.reason})`,
-    );
-    return new NextResponse(null, { status: 200 });
-  }
-
-  for (const event of payload.events ?? []) {
-    if (event.eventCategory !== "INVOICE") continue;
-    if (event.eventType !== "UPDATE" && event.eventType !== "CREATE") continue;
-
-    try {
-      await processInvoiceEvent(supabase, event);
-    } catch (err) {
-      // 429 from Xero — capture the cooldown so subsequent events in this
-      // batch (and the next batch) short-circuit instead of retrying.
-      const wasRateLimit = await captureXeroRateLimit(supabase, err);
-      if (wasRateLimit) {
-        console.warn(`[xero-webhook] hit Xero rate limit on ${event.resourceId} — skipping rest of batch`);
-        break;
-      }
-      // Don't fail the whole batch if one event errors — log and move on.
-      console.error(`[xero-webhook] event ${event.resourceId} failed:`, err);
+    // Short-circuit the whole batch when we're in a known rate-limit cooldown.
+    // Xero retries failed deliveries on backoff anyway — better to ack 200 and
+    // let Xero re-fire the event after the window expires than to sit in a
+    // 429 retry loop and burn outbound capacity.
+    const limited = await isXeroRateLimited(supabase);
+    if (limited) {
+      console.warn(
+        `[xero-webhook] skipping batch — rate-limited until ${limited.until.toISOString()} (${limited.reason})`,
+      );
+      return;
     }
-  }
+
+    for (const event of payload.events ?? []) {
+      if (event.eventCategory !== "INVOICE") continue;
+      if (event.eventType !== "UPDATE" && event.eventType !== "CREATE") continue;
+
+      try {
+        await processInvoiceEvent(supabase, event);
+      } catch (err) {
+        // 429 from Xero — capture the cooldown so subsequent events in this
+        // batch (and the next batch) short-circuit instead of retrying.
+        const wasRateLimit = await captureXeroRateLimit(supabase, err);
+        if (wasRateLimit) {
+          console.warn(`[xero-webhook] hit Xero rate limit on ${event.resourceId} — skipping rest of batch`);
+          break;
+        }
+        // Don't fail the whole batch if one event errors — log and move on.
+        console.error(`[xero-webhook] event ${event.resourceId} failed:`, err);
+      }
+    }
+  });
 
   return new NextResponse(null, { status: 200 });
 }
