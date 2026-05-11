@@ -106,6 +106,12 @@ export async function createRepeatingInvoice(
     idempotencyKey = crypto.randomUUID(),
   } = input;
 
+  // Pre-approve auto-generated children for sending so once Mitchell flips
+  // the template from DRAFT → AUTHORISED (one click in the Xero UI), every
+  // child fires on schedule AND auto-emails the customer in the same shot.
+  // Locked in 2026-05-12 after Mitchell confirmed the desired flow:
+  // "approve once, runs forever".
+
   if (lineItems.length === 0) {
     throw new Error("Cannot create a RepeatingInvoice with zero line items");
   }
@@ -140,6 +146,7 @@ export async function createRepeatingInvoice(
   if (reference) payload.reference = reference.slice(0, 255);
   if (brandingThemeID) payload.brandingThemeID = brandingThemeID;
   payload.includePDF = includePDF;
+  payload.approvedForSending = true;
 
   const res = await xero.accountingApi.createRepeatingInvoices(
     tenantId,
