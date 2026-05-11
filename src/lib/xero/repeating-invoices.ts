@@ -65,6 +65,12 @@ export interface CreateRepeatingInvoiceInput {
    */
   brandingThemeID?: string;
   /**
+   * Attach the invoice PDF to the auto-send email. Default true so Mitchell's
+   * customers get the PDF in their inbox rather than only a "view online"
+   * link. Maps to the "Attach PDF" tickbox on each RI in the Xero UI.
+   */
+  includePDF?: boolean;
+  /**
    * Idempotency key sent to Xero. When the SDK retries on 429, the retry
    * reuses the same body — without this key, each retry creates a duplicate
    * RepeatingInvoice on Xero's side while only the LAST response is seen
@@ -96,6 +102,7 @@ export async function createRepeatingInvoice(
     xero, tenantId, xeroContactId, frequency, startDate,
     endDate, lineItems, reference, dueDays = 7, childStatus = "DRAFT",
     brandingThemeID,
+    includePDF = true,
     idempotencyKey = crypto.randomUUID(),
   } = input;
 
@@ -132,6 +139,7 @@ export async function createRepeatingInvoice(
   };
   if (reference) payload.reference = reference.slice(0, 255);
   if (brandingThemeID) payload.brandingThemeID = brandingThemeID;
+  payload.includePDF = includePDF;
 
   const res = await xero.accountingApi.createRepeatingInvoices(
     tenantId,
