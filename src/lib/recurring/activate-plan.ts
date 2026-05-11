@@ -47,6 +47,27 @@ export async function activatePlan(
     .single();
   if (!plan) return { ok: false, reason: "plan_not_found", planId };
 
+  // Branding-theme selection: NBN-derived plans get the Communications DD
+  // theme; everything else gets the Solutions DD theme. NBN-derivation is
+  // identified by an nbn_enquiries row pointing at this plan.
+  const { count: nbnLinkCount } = await supabase
+    .from("nbn_enquiries")
+    .select("id", { count: "exact", head: true })
+    .eq("recurring_plan_id", planId);
+  const isNbnPlan = (nbnLinkCount ?? 0) > 0;
+  const brandingThemeID = isNbnPlan
+    ? process.env.XERO_BRANDING_THEME_COMMUNICATIONS_DD_ID
+    : process.env.XERO_BRANDING_THEME_SOLUTIONS_DD_ID;
+  if (!brandingThemeID) {
+    return {
+      ok: false,
+      reason: isNbnPlan
+        ? "XERO_BRANDING_THEME_COMMUNICATIONS_DD_ID env var not set"
+        : "XERO_BRANDING_THEME_SOLUTIONS_DD_ID env var not set",
+      planId,
+    };
+  }
+
   // Already activated — idempotent.
   if (plan.status === "active" && plan.xero_repeating_invoice_id) {
     return { ok: true, skipped: "already_active", planId };
@@ -137,6 +158,7 @@ export async function activatePlan(
       // childStatus defaults to "DRAFT" — auto-generated children sit in
       // Mitchell's Xero Draft folder for manual review before authorising
       // and sending. Locked in after the 2026-05-11 auto-send incident.
+      brandingThemeID,
       idempotencyKey,
       lineItems: group.map((it) => ({
         description: it.description ?? it.service_name,

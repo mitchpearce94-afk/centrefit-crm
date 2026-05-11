@@ -56,6 +56,15 @@ export interface CreateRepeatingInvoiceInput {
    */
   childStatus?: "DRAFT" | "AUTHORISED";
   /**
+   * Xero Branding Theme GUID. Controls the PDF layout, logo, colours,
+   * payment block, and the default email body that gets sent with the
+   * invoice. Centrefit has two themes:
+   *   - "Centrefit Communications DD" (NBN-derived plans)
+   *   - "Centrefit Solutions DD" (everything else)
+   * Caller decides which one to pass based on plan provenance.
+   */
+  brandingThemeID?: string;
+  /**
    * Idempotency key sent to Xero. When the SDK retries on 429, the retry
    * reuses the same body — without this key, each retry creates a duplicate
    * RepeatingInvoice on Xero's side while only the LAST response is seen
@@ -86,6 +95,7 @@ export async function createRepeatingInvoice(
   const {
     xero, tenantId, xeroContactId, frequency, startDate,
     endDate, lineItems, reference, dueDays = 7, childStatus = "DRAFT",
+    brandingThemeID,
     idempotencyKey = crypto.randomUUID(),
   } = input;
 
@@ -121,6 +131,7 @@ export async function createRepeatingInvoice(
     })),
   };
   if (reference) payload.reference = reference.slice(0, 255);
+  if (brandingThemeID) payload.brandingThemeID = brandingThemeID;
 
   const res = await xero.accountingApi.createRepeatingInvoices(
     tenantId,
