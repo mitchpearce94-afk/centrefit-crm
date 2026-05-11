@@ -1,4 +1,5 @@
 import "server-only";
+import crypto from "node:crypto";
 import { XeroClient } from "xero-node";
 
 /**
@@ -42,6 +43,14 @@ export interface CreateRepeatingInvoiceInput {
   lineItems: RepeatingInvoiceLineInput[];
   /** "DRAFT" | "AUTHORISED" — auto-generated children inherit this status. */
   childStatus?: "DRAFT" | "AUTHORISED";
+  /**
+   * Idempotency key sent to Xero. When the SDK retries on 429, the retry
+   * reuses the same body — without this key, each retry creates a duplicate
+   * RepeatingInvoice on Xero's side while only the LAST response is seen
+   * here. We discovered this the hard way on 2026-05-11. Default: random
+   * UUID per call (so retries dedupe but new calls don't collide).
+   */
+  idempotencyKey?: string;
 }
 
 export interface CreatedRepeatingInvoice {
@@ -65,6 +74,7 @@ export async function createRepeatingInvoice(
   const {
     xero, tenantId, xeroContactId, frequency, nextScheduledDate,
     endDate, lineItems, reference, dueDays = 7, childStatus = "AUTHORISED",
+    idempotencyKey = crypto.randomUUID(),
   } = input;
 
   if (lineItems.length === 0) {
@@ -96,9 +106,12 @@ export async function createRepeatingInvoice(
   };
   if (reference) payload.reference = reference.slice(0, 255);
 
-  const res = await xero.accountingApi.createRepeatingInvoices(tenantId, {
-    repeatingInvoices: [payload as never],
-  });
+  const res = await xero.accountingApi.createRepeatingInvoices(
+    tenantId,
+    { repeatingInvoices: [payload as never] },
+    undefined,
+    idempotencyKey,
+  );
   const ri = res.body.repeatingInvoices?.[0];
   if (!ri?.repeatingInvoiceID) {
     throw new Error("Xero did not return a RepeatingInvoiceID");

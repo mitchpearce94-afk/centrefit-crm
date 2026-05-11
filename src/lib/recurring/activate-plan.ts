@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { getAuthedClient } from "@/lib/xero/client";
 import { findOrCreateContact } from "@/lib/xero/contacts";
@@ -120,6 +121,11 @@ export async function activatePlan(
   let yearlyRiId: string | null = null;
 
   for (const [frequency, group] of byFreq.entries()) {
+    // Stable per-call idempotency key. Same key on internal SDK retries
+    // dedupes server-side at Xero; fresh key per activatePlan invocation
+    // means a legitimate retry-after-cleanup doesn't collide with old
+    // deleted records.
+    const idempotencyKey = `crm-ri-${plan.id.slice(0, 8)}-${frequency}-${crypto.randomUUID().slice(0, 8)}`;
     const ri = await createRepeatingInvoice({
       xero,
       tenantId: conn.tenant_id,
@@ -129,6 +135,7 @@ export async function activatePlan(
       nextScheduledDate: startDate,
       dueDays: 7,
       childStatus: "AUTHORISED",
+      idempotencyKey,
       lineItems: group.map((it) => ({
         description: it.description ?? it.service_name,
         quantity: it.quantity,
