@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
     brandingThemeID,
     lineItems: [
       {
-        description: "Test invoice — Centrefit Solutions DD branding preview. Please void.",
+        description: "Test invoice — branding preview. Please void.",
         quantity: 1,
         unitAmount: 1.0,
         accountCode: "200",
