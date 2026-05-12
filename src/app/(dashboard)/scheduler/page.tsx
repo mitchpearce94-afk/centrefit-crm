@@ -96,7 +96,7 @@ export default async function SchedulerPage({
   // whatever's left via flex-1 + min-h-0. No edge-to-edge bleed — page
   // padding from the layout wrapper is preserved for horizontal alignment.
   return (
-    <div className="flex flex-col h-[calc(100dvh-11rem)] lg:h-[calc(100dvh-5rem)]">
+    <div className="flex flex-col overflow-hidden h-[calc(100dvh-12rem)] lg:h-[calc(100dvh-6rem)]">
       <SchedulerView
         staff={staffResult.data ?? []}
         entries={entriesResult.data ?? []}

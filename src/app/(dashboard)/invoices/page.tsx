@@ -82,8 +82,8 @@ export default async function InvoicesPage() {
             <tr className="text-left">
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Invoice</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Type</th>
-              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Customer</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Site</th>
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Customer</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Status</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider text-right">Total</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider text-right">Due</th>
@@ -116,13 +116,15 @@ export default async function InvoicesPage() {
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-muted-foreground">{TYPE_LABEL[inv.invoice_type] ?? inv.invoice_type}</td>
-                  <td className="px-4 py-2.5 text-sm">{inv.customer?.name ?? "—"}</td>
-                  <td className="px-4 py-2.5 text-sm">
+                  <td className="px-4 py-2.5 text-sm font-medium">
                     {siteName ? (
                       <span className="text-foreground">{siteName}</span>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-foreground">{inv.customer?.name ?? "—"}</span>
                     )}
+                  </td>
+                  <td className="px-4 py-2.5 text-sm text-muted-foreground">
+                    {siteName ? (inv.customer?.name ?? "—") : "—"}
                   </td>
                   <td className="px-4 py-2.5">
                     <span

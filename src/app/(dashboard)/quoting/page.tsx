@@ -182,8 +182,8 @@ export default async function QuotingPage({
           <thead>
             <tr className="border-b border-border bg-muted/50">
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Ref</th>
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Client</th>
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden sm:table-cell">Site</th>
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Site</th>
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden sm:table-cell">Client</th>
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
               <th className="px-4 py-3 text-right font-medium text-muted-foreground hidden md:table-cell">Expires</th>
               <th className="px-4 py-3 text-right font-medium text-muted-foreground hidden md:table-cell">Created</th>
@@ -207,11 +207,11 @@ export default async function QuotingPage({
                       {quote.ref}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-foreground">
-                    {quote.customer?.name ?? quote.client_name ?? "\u2014"}
+                  <td className="px-4 py-3 font-medium text-foreground">
+                    {quote.site_name ?? quote.customer?.name ?? quote.client_name ?? "\u2014"}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">
-                    {quote.site_name ?? "\u2014"}
+                    {quote.site_name ? (quote.customer?.name ?? quote.client_name ?? "\u2014") : "\u2014"}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 flex-wrap">
