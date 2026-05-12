@@ -91,13 +91,12 @@ export default async function SchedulerPage({
     currentStaff?.role === "admin" ||
     currentStaff?.role === "project_manager";
 
-  // Cancel the layout's p-4 md:p-6 wrapper so the scheduler can fill the
-  // full main content area edge-to-edge, then take up exactly the visible
-  // height (no outer scroll, only the time grid scrolls internally).
+  // One solid-page layout: outer container takes the remaining viewport
+  // height (minus the dashboard chrome) and the time grid inside fills
+  // whatever's left via flex-1 + min-h-0. No edge-to-edge bleed — page
+  // padding from the layout wrapper is preserved for horizontal alignment.
   return (
-    <div
-      className="-m-4 md:-m-6 flex flex-col px-4 md:px-6 py-3 md:py-4 h-[calc(100dvh-8rem)] lg:h-[calc(100dvh-3rem)]"
-    >
+    <div className="flex flex-col h-[calc(100dvh-11rem)] lg:h-[calc(100dvh-5rem)]">
       <SchedulerView
         staff={staffResult.data ?? []}
         entries={entriesResult.data ?? []}

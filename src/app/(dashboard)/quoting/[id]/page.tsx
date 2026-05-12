@@ -381,25 +381,27 @@ export default async function QuoteDetailPage({
         </div>
       )}
 
-      {/* Supplier pricing */}
-      <SupplierPricing
-        quoteId={quote.id}
-        lineItems={lineItems.map((li: any) => ({
-          id: li.id,
-          product_name: li.product_name,
-          sku: li.sku,
-          quantity: li.quantity,
-          cost_price: Number(li.cost_price ?? 0),
-          markup: Number(li.markup ?? 0),
-          sell_price: Number(li.sell_price ?? 0),
-          rfq_sent_at: li.rfq_sent_at ?? null,
-          cost_confirmed_at: li.cost_confirmed_at ?? null,
-          supplier_id: li.quote_products?.supplier_id ?? null,
-          supplier_name: li.quote_products?.suppliers?.name ?? null,
-          supplier_email: li.quote_products?.suppliers?.email ?? null,
-          product_cost_updated_at: li.quote_products?.cost_updated_at ?? null,
-        }))}
-      />
+      {/* Supplier pricing — desktop only. Never managed from a phone. */}
+      <div className="hidden lg:block">
+        <SupplierPricing
+          quoteId={quote.id}
+          lineItems={lineItems.map((li: any) => ({
+            id: li.id,
+            product_name: li.product_name,
+            sku: li.sku,
+            quantity: li.quantity,
+            cost_price: Number(li.cost_price ?? 0),
+            markup: Number(li.markup ?? 0),
+            sell_price: Number(li.sell_price ?? 0),
+            rfq_sent_at: li.rfq_sent_at ?? null,
+            cost_confirmed_at: li.cost_confirmed_at ?? null,
+            supplier_id: li.quote_products?.supplier_id ?? null,
+            supplier_name: li.quote_products?.suppliers?.name ?? null,
+            supplier_email: li.quote_products?.suppliers?.email ?? null,
+            product_cost_updated_at: li.quote_products?.cost_updated_at ?? null,
+          }))}
+        />
+      </div>
 
       {/* Invoices */}
       <QuoteInvoices
