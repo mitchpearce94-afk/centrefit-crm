@@ -39,6 +39,8 @@ export default async function DashboardLayout({
               migrated to <PageHeader>. Once a page renders its own
               <PageHeader> it stacks below this, which is intentional during
               the rollout — pages get migrated one at a time. */}
+          {/* Mobile fallback top bar — visible on screens that haven't yet
+              migrated to <PageHeader>. */}
           <div
             className="lg:hidden sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-card/95 backdrop-blur px-4"
             style={{ paddingTop: "env(safe-area-inset-top)" }}
@@ -58,6 +60,10 @@ export default async function DashboardLayout({
             <div className="ml-auto">
               <NotificationsBell />
             </div>
+          </div>
+          {/* Desktop top bar — bell only, right-aligned. */}
+          <div className="hidden lg:flex sticky top-0 z-20 h-12 items-center justify-end gap-2 border-b border-border bg-card px-6">
+            <NotificationsBell />
           </div>
           <div className="p-4 md:p-6">{children}</div>
         </main>

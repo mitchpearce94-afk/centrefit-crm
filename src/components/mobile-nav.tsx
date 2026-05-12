@@ -73,7 +73,7 @@ export function MobileNav({ user, staff }: { user: User; staff: StaffSummary | n
   return (
     <>
       <nav
-        className="fixed bottom-0 inset-x-0 z-40 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85"
+        className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         aria-label="Primary"
       >
