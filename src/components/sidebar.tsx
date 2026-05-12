@@ -4,19 +4,16 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { useState } from "react";
 import type { User } from "@supabase/supabase-js";
 
-// `mobile: true` keeps the link visible on phone-sized screens; everything
-// else hides under sm: so techs see only Today / Jobs / Scheduler. Mitchell
-// said the mobile experience is primarily for techs filling jobs out on the
-// road — admin / financial / catalog screens are desktop-only territory.
-const navigation: { name: string; href: string; icon: (p: { className?: string }) => React.ReactElement; mobile?: boolean }[] = [
-  { name: "Today", href: "/", icon: LayoutIcon, mobile: true },
-  { name: "Jobs", href: "/jobs", icon: BriefcaseIcon, mobile: true },
+// Desktop sidebar nav — every route shows. Mobile uses MobileNav (bottom
+// tabs + More drawer) instead.
+const navigation: { name: string; href: string; icon: (p: { className?: string }) => React.ReactElement }[] = [
+  { name: "Today", href: "/", icon: LayoutIcon },
+  { name: "Jobs", href: "/jobs", icon: BriefcaseIcon },
   { name: "Customers", href: "/customers", icon: UsersIcon },
   { name: "Sites", href: "/sites", icon: MapPinIcon },
-  { name: "Scheduler", href: "/scheduler", icon: CalendarIcon, mobile: true },
+  { name: "Scheduler", href: "/scheduler", icon: CalendarIcon },
   { name: "NBN", href: "/nbn", icon: WifiIcon },
   // { name: "Pipeline", href: "/pipeline", icon: TrendingUpIcon },  // Hidden 2026-04-23 — not in use. Re-enable by uncommenting.
   { name: "Suppliers", href: "/suppliers", icon: PackageIcon },
@@ -56,7 +53,6 @@ const ROLE_LABELS: Record<string, string> = {
 export function Sidebar({ user, staff }: { user: User; staff: StaffSummary | null }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [mobileOpen, setMobileOpen] = useState(false);
 
   async function handleSignOut() {
     const supabase = createClient();
@@ -71,35 +67,11 @@ export function Sidebar({ user, staff }: { user: User; staff: StaffSummary | nul
   const avatarColor = staff?.colour ?? "#3b82f6";
 
   return (
-    <>
-      {/* Mobile hamburger — sits inside the mobile top bar from layout */}
-      <button
-        onClick={() => setMobileOpen(true)}
-        className="fixed top-2 left-2 z-50 inline-flex h-11 w-11 items-center justify-center rounded-md text-foreground hover:bg-accent active:bg-accent lg:hidden"
-        aria-label="Open menu"
+    <aside className="hidden lg:flex lg:static lg:w-56 inset-y-0 left-0 flex-col border-r border-border bg-card">
+      <Link
+        href="/"
+        className="flex h-16 items-center justify-center gap-2 border-b border-border px-3 transition-colors hover:bg-accent/40"
       >
-        <MenuIcon className="h-6 w-6" />
-      </button>
-
-      {/* Mobile overlay */}
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
-
-      {/* Sidebar */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-border bg-card transition-transform lg:static lg:w-56 lg:translate-x-0 ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <Link
-          href="/"
-          onClick={() => setMobileOpen(false)}
-          className="flex h-16 items-center justify-center gap-2 border-b border-border px-3 transition-colors hover:bg-accent/40"
-        >
           <Image
             src="/centrefit-logo.png"
             alt="Centrefit Group"
@@ -126,8 +98,7 @@ export function Sidebar({ user, staff }: { user: User; staff: StaffSummary | nul
                 <Link
                   key={item.name}
                   href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className={`relative ${item.mobile ? "flex" : "hidden lg:flex"} items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-all ${
+                  className={`relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-all ${
                     isActive
                       ? "bg-primary/10 text-primary font-medium"
                       : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
@@ -143,9 +114,8 @@ export function Sidebar({ user, staff }: { user: User; staff: StaffSummary | nul
             })}
           </div>
 
-          {/* Settings section — desktop only. Techs don't manage rules,
-              electricians, products, etc. from a phone. */}
-          <div className="hidden lg:block mt-5 pt-4 border-t border-border">
+          {/* Settings section */}
+          <div className="mt-5 pt-4 border-t border-border">
             <div className="flex items-center gap-2 px-3 py-1.5">
               <SettingsIcon className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Settings</span>
@@ -157,8 +127,7 @@ export function Sidebar({ user, staff }: { user: User; staff: StaffSummary | nul
                   <Link
                     key={item.name}
                     href={item.href}
-                    onClick={() => setMobileOpen(false)}
-                    className={`relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-all ${
+                      className={`relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-all ${
                       isActive
                         ? "bg-primary/10 text-primary font-medium"
                         : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
@@ -199,7 +168,6 @@ export function Sidebar({ user, staff }: { user: User; staff: StaffSummary | nul
           <div className="mt-2 flex gap-1.5">
             <Link
               href="/account"
-              onClick={() => setMobileOpen(false)}
               className="flex-1 rounded-md px-3 py-1.5 text-center text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               My account
@@ -212,8 +180,7 @@ export function Sidebar({ user, staff }: { user: User; staff: StaffSummary | nul
             </button>
           </div>
         </div>
-      </aside>
-    </>
+    </aside>
   );
 }
 
@@ -318,13 +285,6 @@ function ChecklistIcon({ className }: { className?: string }) {
   );
 }
 
-function MenuIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="18" x2="20" y2="18" />
-    </svg>
-  );
-}
 
 function SettingsIcon({ className }: { className?: string }) {
   return (

@@ -2,8 +2,9 @@ import { redirect } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/sidebar";
-import { ToastProvider } from "@/components/ui/toast";
+import { MobileNav } from "@/components/mobile-nav";
 import { NotificationsBell } from "@/components/notifications-bell";
+import { ToastProvider } from "@/components/ui/toast";
 
 export default async function DashboardLayout({
   children,
@@ -32,12 +33,16 @@ export default async function DashboardLayout({
   return (
     <ToastProvider>
       <div className="flex h-dvh overflow-hidden">
-        <Sidebar
-          user={user}
-          staff={staff ?? null}
-        />
-        <main className="flex-1 overflow-y-auto">
-          <div className="lg:hidden sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-card pl-16 pr-4">
+        <Sidebar user={user} staff={staff ?? null} />
+        <main className="flex-1 overflow-y-auto pb-mobile-nav lg:pb-0">
+          {/* Mobile fallback top bar — visible on screens that haven't yet
+              migrated to <PageHeader>. Once a page renders its own
+              <PageHeader> it stacks below this, which is intentional during
+              the rollout — pages get migrated one at a time. */}
+          <div
+            className="lg:hidden sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-card/95 backdrop-blur px-4"
+            style={{ paddingTop: "env(safe-area-inset-top)" }}
+          >
             <Image
               src="/centrefit-logo.png"
               alt="Centrefit Group"
@@ -54,11 +59,9 @@ export default async function DashboardLayout({
               <NotificationsBell />
             </div>
           </div>
-          <div className="hidden lg:flex sticky top-0 z-30 h-12 items-center justify-end gap-2 border-b border-border bg-card px-6">
-            <NotificationsBell />
-          </div>
           <div className="p-4 md:p-6">{children}</div>
         </main>
+        <MobileNav user={user} staff={staff ?? null} />
       </div>
     </ToastProvider>
   );
