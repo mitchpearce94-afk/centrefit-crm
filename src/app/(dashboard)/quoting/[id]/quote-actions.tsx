@@ -120,6 +120,20 @@ export function QuoteActions({
     setUpdating(false);
   }
 
+  async function handleSyncScopeToJob() {
+    setUpdating(true);
+    try {
+      const res = await fetch(`/api/quotes/${quoteId}/sync-scope-to-job`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Sync failed");
+      toast("Scope of works copied into the linked job's description");
+      router.refresh();
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : "Sync failed", "error");
+    }
+    setUpdating(false);
+  }
+
   async function revertToDraft() {
     setUpdating(true);
     const { error } = await supabase.from("quotes").update({
@@ -273,6 +287,7 @@ export function QuoteActions({
             {
               items: [
                 { label: linkedJob ? `Linked to ${linkedJob.number} — change…` : "Link to Job…", onClick: () => setShowLinkJobModal(true) },
+                { label: "Resync scope to job", onClick: handleSyncScopeToJob, hidden: !currentJobId },
               ],
             },
             {

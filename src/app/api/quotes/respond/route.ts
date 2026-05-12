@@ -5,6 +5,7 @@ import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.serv
 import { createInvoiceFromAcceptedQuote } from "@/lib/invoices/create-from-quote";
 import { logDocumentActivity } from "@/lib/activity/log";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
+import { syncQuoteScopeToJob } from "@/lib/quotes/sync-job-scope";
 
 export async function POST(req: NextRequest) {
   const { token, action } = await req.json();
@@ -90,10 +91,18 @@ export async function POST(req: NextRequest) {
     href: `/quoting/${quote.id}`,
   });
 
-  // Auto-transition linked job
+  // Auto-transition linked job + sync the scope-of-works into the job's
+  // description. On accept we backfill the SoW in case the quote was sent
+  // before the send-time sync existed; on decline we still update so the
+  // job description reflects the latest scope at the time of decision.
   if (quote.job_id) {
     const jobAction = action === "accept" ? "quote_accepted" : "quote_declined";
     await autoTransitionJobStatusServer(quote.job_id, jobAction, supabase);
+    try {
+      await syncQuoteScopeToJob(supabase, quote.id);
+    } catch {
+      // Best-effort — don't block the customer's response on a sync hiccup.
+    }
   }
 
   // Auto-create the Xero invoice on accept. This is a best-effort sidecar:
