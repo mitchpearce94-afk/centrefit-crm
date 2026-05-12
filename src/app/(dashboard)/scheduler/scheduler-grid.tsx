@@ -34,6 +34,59 @@ function getMondayOf(d: string): string { const x = new Date(d + "T00:00:00"); c
 function todayStr(): string { return localISO(new Date()); }
 function isToday(d: string): boolean { return d === todayStr(); }
 function timeMins(t: string): number { const [h, m] = t.split(":").map(Number); return h * 60 + m; }
+
+// ── Lane layout for overlapping entries ────────────────────────────────────
+// Given a set of timed entries in a single day column, assign each one a
+// "lane" (column index) so overlapping entries render side-by-side rather
+// than stacked. Returns each entry tagged with its lane and the total lane
+// count of the cluster it belongs to (so render can compute width%).
+//
+// Algorithm: sort by start; walk through tracking a "current cluster" of
+// entries whose extents still overlap. For each new entry, pick the lowest-
+// index lane that's free in the cluster. When an entry's start is past the
+// cluster's running max-end, flush the cluster (assign its lane count) and
+// start a fresh one.
+interface LaidOutEntry { entry: ScheduleEntry; lane: number; lanes: number; }
+function layoutTimedEntries(entries: ScheduleEntry[]): LaidOutEntry[] {
+  const sorted = [...entries]
+    .filter((e) => e.start_time && e.end_time)
+    .sort((a, b) => {
+      const as = timeMins(a.start_time!);
+      const bs = timeMins(b.start_time!);
+      if (as !== bs) return as - bs;
+      return timeMins(a.end_time!) - timeMins(b.end_time!);
+    });
+
+  const out: LaidOutEntry[] = [];
+  let cluster: { entry: ScheduleEntry; lane: number }[] = [];
+  let clusterEnd = -Infinity;
+
+  function flush() {
+    if (cluster.length === 0) return;
+    const lanes = Math.max(...cluster.map((c) => c.lane)) + 1;
+    for (const c of cluster) out.push({ entry: c.entry, lane: c.lane, lanes });
+    cluster = [];
+    clusterEnd = -Infinity;
+  }
+
+  for (const e of sorted) {
+    const start = timeMins(e.start_time!);
+    const end = timeMins(e.end_time!);
+    if (cluster.length > 0 && start >= clusterEnd) flush();
+    // Find the lowest free lane among entries in the cluster that are still active
+    const used = new Set(
+      cluster
+        .filter((c) => timeMins(c.entry.end_time!) > start)
+        .map((c) => c.lane),
+    );
+    let lane = 0;
+    while (used.has(lane)) lane++;
+    cluster.push({ entry: e, lane });
+    if (end > clusterEnd) clusterEnd = end;
+  }
+  flush();
+  return out;
+}
 function fmtHour(h: number): string { if (h < 12) return `${h} AM`; if (h === 12) return "12 PM"; return `${h - 12} PM`; }
 function fmtShort(d: string): string { return new Date(d + "T00:00:00").toLocaleDateString("en-AU", { day: "numeric", month: "short" }); }
 function fmtLong(d: string): string { return new Date(d + "T00:00:00").toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); }
@@ -308,8 +361,8 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
         />
       ))}
 
-      {/* Entry blocks — span full time range */}
-      {entries.map(entry => {
+      {/* Entry blocks — laid out into side-by-side lanes for overlapping times */}
+      {layoutTimedEntries(entries).map(({ entry, lane, lanes }) => {
         const startMin = timeMins(entry.start_time!) - START_HOUR * 60;
         const endMin = timeMins(entry.end_time!) - START_HOUR * 60;
         const top = Math.max(0, (startMin / 60) * HOUR_PX);
@@ -321,6 +374,18 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
         // the staff colour with a dashed border so they're visually distinct
         // from real work.
         const leftBorderColour = isJob ? (entry.job?.status?.colour ?? "#6b7280") : staffColour;
+        // Lane-based horizontal layout. When only one lane in the cluster
+        // we keep the original 4px gutters; once it splits we use percent
+        // widths and tighter gutters so initials + job # still fit.
+        const gutter = lanes > 1 ? 2 : 4;
+        const leftStyle =
+          lanes > 1
+            ? `calc(${(lane * 100) / lanes}% + ${gutter}px)`
+            : `${gutter}px`;
+        const widthStyle =
+          lanes > 1
+            ? `calc(${100 / lanes}% - ${gutter * 2}px)`
+            : `calc(100% - ${gutter * 2}px)`;
 
         return (
           <div
@@ -340,8 +405,10 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
             className={`rounded-md border overflow-hidden cursor-pointer hover:brightness-110 transition-all ${draggingId === entry.id ? "opacity-40" : ""} ${!isJob ? "border-dashed" : ""}`}
             style={{
               position: "absolute",
-              top, height,
-              left: 4, right: 4,
+              top,
+              height,
+              left: leftStyle,
+              width: widthStyle,
               zIndex: 10,
               backgroundColor: `${staffColour}18`,
               borderColor: `${staffColour}50`,
@@ -351,7 +418,7 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
             }}
             onClick={e => { e.stopPropagation(); onEntryClick(entry); }}
           >
-            <div className="px-2 py-1 h-full flex flex-col">
+            <div className={`px-2 py-1 h-full flex flex-col ${lanes > 2 ? "px-1" : ""}`}>
               <div className="flex items-center gap-1.5">
                 {s && (
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ backgroundColor: staffColour }}>
@@ -364,17 +431,17 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
                     : <>{entry.entry_type === "reminder" ? "⏰ " : ""}{entry.title}</>}
                 </span>
               </div>
-              {height > 44 && isJob && (
+              {height > 44 && isJob && lanes < 3 && (
                 <p className="text-[10px] text-muted-foreground truncate mt-0.5">
                   {entry.job?.customer?.name}{entry.job?.site ? ` · ${entry.job.site.name}` : ""}
                 </p>
               )}
-              {height > 64 && (
+              {height > 64 && lanes < 3 && (
                 <p className="text-[10px] text-muted-foreground mt-0.5">
                   {entry.start_time?.slice(0,5)} - {entry.end_time?.slice(0,5)}
                 </p>
               )}
-              {height > 100 && entry.notes && (
+              {height > 100 && entry.notes && lanes === 1 && (
                 <p className="text-[9px] text-muted-foreground mt-auto italic truncate">{entry.notes}</p>
               )}
             </div>
