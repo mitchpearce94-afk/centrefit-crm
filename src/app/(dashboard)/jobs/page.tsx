@@ -14,10 +14,16 @@ export default async function JobsPage({
   const { data: { user } } = await supabase.auth.getUser();
   const currentUserId = user?.id ?? "";
 
-  // Defaults: active view + my jobs (unless user has explicitly set filters)
-  const hasAnyFilter = params.q || params.phase || params.status || params.category || params.period || params.staff || params.view;
+  // Staff default: "my jobs" always, unless explicitly overridden.
+  //   no staff param        → default to the signed-in user
+  //   staff=all              → explicit "show everyone"
+  //   staff=<uuid>           → show that specific staff member
+  // This survives across quick-view changes (Today / This Week / Active / All)
+  // because we no longer treat "any filter present" as a signal to drop the
+  // staff default.
   const isActiveView = !params.view || params.view === "active";
-  const effectiveStaff = hasAnyFilter ? params.staff : currentUserId;
+  const effectiveStaff = params.staff ?? currentUserId;
+  const isAllStaff = effectiveStaff === "all";
 
   function localISO(d: Date): string {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -94,8 +100,9 @@ export default async function JobsPage({
     filteredJobs = filteredJobs.filter((j: any) => j.status?.phase === params.phase);
   }
 
-  // Staff filter (uses effectiveStaff which defaults to current user)
-  if (effectiveStaff) {
+  // Staff filter — "all" sentinel means "show everyone", any other value
+  // filters to that staff member.
+  if (effectiveStaff && !isAllStaff) {
     filteredJobs = filteredJobs.filter((j: any) =>
       j.job_staff?.some((js: any) => js.staff?.id === effectiveStaff)
     );
@@ -140,7 +147,7 @@ export default async function JobsPage({
         defaultStatus={params.status}
         defaultCategory={params.category}
         defaultPeriod={params.period}
-        defaultStaff={effectiveStaff}
+        defaultStaff={effectiveStaff ?? undefined}
         defaultView={isActiveView ? "active" : "all"}
       />
 

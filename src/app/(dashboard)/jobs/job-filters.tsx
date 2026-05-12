@@ -63,7 +63,9 @@ export function JobFilters({
           ? "active"
           : "all";
 
-  // Extra-filter count (anything in the menu that's not at default)
+  // Extra-filter count (anything in the menu that's not at default).
+  // Staff default is "my jobs" (= currentUserId) — any other staff
+  // selection (including "all") counts as a divergence from default.
   const extraCount =
     (defaultQuery ? 1 : 0) +
     (defaultPhase ? 1 : 0) +
@@ -242,14 +244,16 @@ export function JobFilters({
             {staff && staff.length > 0 && (
               <FilterSelect
                 label="Assigned"
-                value={defaultStaff ?? ""}
+                value={defaultStaff ?? (currentUserId || "all")}
                 onChange={(v) => updateParam("staff", v)}
                 options={[
-                  { value: "", label: "All Staff" },
                   ...(currentUserId
-                    ? [{ value: currentUserId, label: "My jobs" }]
+                    ? [{ value: currentUserId, label: "My jobs (default)" }]
                     : []),
-                  ...staff.map((s) => ({ value: s.id, label: s.display_name })),
+                  { value: "all", label: "All Staff" },
+                  ...staff
+                    .filter((s) => s.id !== currentUserId)
+                    .map((s) => ({ value: s.id, label: s.display_name })),
                 ]}
               />
             )}
