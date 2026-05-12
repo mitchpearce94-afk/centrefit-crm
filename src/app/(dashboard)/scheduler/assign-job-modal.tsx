@@ -190,27 +190,34 @@ export function AssignJobModal({
     };
 
     if (isEditing && entry) {
-      // Edit-mode: the original entry stays as the "primary" row. Its
-      // staff_id is set to the first selected staff. Any *additional*
-      // selected staff get NEW schedule_entries created with the same
-      // job/time. Deselected staff aren't auto-deleted (use the delete
-      // button on those rows individually).
-      const primaryStaff = selectedStaffIds[0];
+      // Edit-mode: the original entry's staff_id stays as-is (the chip
+      // for it is locked-on in the UI). The original entry just gets its
+      // non-staff fields updated. Any ADDITIONAL chips create new
+      // schedule_entries with the same job/time. Simpler model, less
+      // ambiguity around what "deselecting the original" means.
       const { error: err } = await supabase
         .from("schedule_entries")
-        .update({ ...basePayload, staff_id: primaryStaff })
+        .update({ ...basePayload, staff_id: entry.staff_id })
         .eq("id", entry.id);
       if (err) {
         setError(err.message);
         setSaving(false);
         return;
       }
-      const additionalStaff = selectedStaffIds.slice(1).filter((sid) => sid !== entry.staff_id);
+      const additionalStaff = selectedStaffIds.filter((sid) => sid !== entry.staff_id);
       if (additionalStaff.length > 0) {
         const rows = additionalStaff.map((sid) => ({ ...basePayload, staff_id: sid }));
-        const { error: insErr } = await supabase.from("schedule_entries").insert(rows);
+        const { error: insErr, data: insData } = await supabase
+          .from("schedule_entries")
+          .insert(rows)
+          .select("id");
         if (insErr) {
-          setError(insErr.message);
+          setError(`Saved primary entry but couldn't add ${additionalStaff.length} extra: ${insErr.message}`);
+          setSaving(false);
+          return;
+        }
+        if (!insData || insData.length !== additionalStaff.length) {
+          setError(`Expected ${additionalStaff.length} extra entries, got ${insData?.length ?? 0}. RLS or constraint may be blocking.`);
           setSaving(false);
           return;
         }
@@ -218,9 +225,17 @@ export function AssignJobModal({
     } else {
       // Create-mode: fan out one row per selected staff member.
       const rows = selectedStaffIds.map((sid) => ({ ...basePayload, staff_id: sid }));
-      const { error: err } = await supabase.from("schedule_entries").insert(rows);
+      const { error: err, data: insData } = await supabase
+        .from("schedule_entries")
+        .insert(rows)
+        .select("id");
       if (err) {
         setError(err.message);
+        setSaving(false);
+        return;
+      }
+      if (!insData || insData.length !== selectedStaffIds.length) {
+        setError(`Expected ${selectedStaffIds.length} entries, got ${insData?.length ?? 0}. RLS or constraint may be blocking.`);
         setSaving(false);
         return;
       }
@@ -335,11 +350,14 @@ export function AssignJobModal({
                 <div className="flex flex-wrap gap-1.5">
                   {staff.map((s) => {
                     const on = selectedStaffIds.includes(s.id);
+                    const locked = isEditing && entry?.staff_id === s.id;
                     return (
                       <button
                         key={s.id}
                         type="button"
+                        disabled={locked}
                         onClick={() => {
+                          if (locked) return;
                           setSelectedStaffIds((prev) =>
                             prev.includes(s.id)
                               ? prev.filter((x) => x !== s.id)
@@ -350,8 +368,9 @@ export function AssignJobModal({
                           on
                             ? "border-transparent text-white"
                             : "border-border bg-card text-muted-foreground hover:text-foreground hover:bg-accent"
-                        }`}
+                        } ${locked ? "cursor-default opacity-90" : ""}`}
                         style={on ? { backgroundColor: s.colour } : undefined}
+                        title={locked ? "This entry's primary staff — can't be removed here. Delete the entry to unassign." : undefined}
                       >
                         <span
                           className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-semibold text-white"
@@ -362,6 +381,7 @@ export function AssignJobModal({
                           {s.initials}
                         </span>
                         {s.display_name}
+                        {locked && <span className="text-[9px] opacity-70">· primary</span>}
                       </button>
                     );
                   })}
@@ -372,9 +392,10 @@ export function AssignJobModal({
                     selected staff member.
                   </p>
                 )}
-                {isEditing && selectedStaffIds.length > 1 && (
+                {isEditing && selectedStaffIds.filter((s) => s !== entry?.staff_id).length > 0 && (
                   <p className="mt-1 text-[10px] text-muted-foreground">
-                    The first chip stays on this entry; the others get new entries.
+                    Adds {selectedStaffIds.filter((s) => s !== entry?.staff_id).length} new entr
+                    {selectedStaffIds.filter((s) => s !== entry?.staff_id).length === 1 ? "y" : "ies"} for the additional staff.
                   </p>
                 )}
               </div>

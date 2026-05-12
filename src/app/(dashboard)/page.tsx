@@ -73,8 +73,12 @@ export default async function DashboardPage({
   const recentJobs = filteredJobs.slice(0, 5);
   const overdueJobs = filteredJobs.filter((j: any) => j.due_date && j.due_date < todayISO);
 
-  const staffResult = await supabase.from("staff").select("display_name").eq("id", user?.id ?? "").single();
+  const staffResult = await supabase.from("staff").select("display_name, role").eq("id", user?.id ?? "").single();
   const displayName = staffResult.data?.display_name ?? user?.email ?? "";
+  // Admin / PM users see every entry on Today + Coming-up — they're running
+  // ops, not filling out a job. Field staff are filtered to entries that
+  // are theirs (direct staff_id) or where they're on the job team.
+  const isAdminOrPM = staffResult.data?.role === "admin" || staffResult.data?.role === "project_manager";
 
   // Filter today's schedule by staff
   let filteredSchedule = todaySchedule ?? [];
@@ -91,13 +95,11 @@ export default async function DashboardPage({
   })();
 
   // ── Mobile "Today" view data ──
-  // Show entries either directly assigned to the current user OR for jobs
-  // the user is on the team of (job_staff). This is the "glue" Mitchell
-  // wants: if you're on the job, you see it on Today even if the actual
-  // schedule_entry was booked to another tech. Falls back to "all" when
-  // there's no staff link so the page isn't empty.
+  // Admin/PM see everything. Field staff see entries either directly
+  // assigned to them OR for jobs they're on the team of (job_staff).
   const myStaffId = user?.id ?? null;
   function isMine(e: any): boolean {
+    if (isAdminOrPM) return true;
     if (!myStaffId) return true;
     if (e.staff_id === myStaffId) return true;
     return Array.isArray(e.job?.job_staff) &&
