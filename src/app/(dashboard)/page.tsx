@@ -49,10 +49,13 @@ export default async function DashboardPage({
       .select("id, start_time, end_time, notes, staff_id, entry_type, title, staff:staff(id, display_name, initials, colour), job:jobs(id, number, customer:customers(name), site:customer_sites(name))")
       .eq("schedule_date", todayISO)
       .order("start_time"),
+    // Include multi-day entries that overlap the [tomorrow, weekEnd]
+    // window — same shape the scheduler page uses, so a job booked
+    // Mon-Fri still surfaces here on a Wednesday morning.
     supabase.from("schedule_entries")
-      .select("id, schedule_date, start_time, end_time, notes, staff_id, entry_type, title, staff:staff(id, display_name, initials, colour), job:jobs(id, number, customer:customers(name), site:customer_sites(name))")
-      .gte("schedule_date", tomorrowISO)
+      .select("id, schedule_date, end_date, start_time, end_time, notes, staff_id, entry_type, title, staff:staff(id, display_name, initials, colour), job:jobs(id, number, customer:customers(name), site:customer_sites(name))")
       .lte("schedule_date", weekEndISO)
+      .or(`end_date.gte.${tomorrowISO},and(end_date.is.null,schedule_date.gte.${tomorrowISO})`)
       .order("schedule_date")
       .order("start_time"),
   ]);
