@@ -45,15 +45,17 @@ export default async function DashboardPage({
     jobQuery,
     supabase.from("customers").select("id", { count: "exact", head: true }).eq("is_active", true),
     supabase.from("pipeline_deals").select("id, value, stage").not("stage", "in", "(won,lost,accepted)"),
+    // Today's entries — include multi-day overlaps so an install that
+    // started yesterday and runs through Friday still shows today.
     supabase.from("schedule_entries")
-      .select("id, start_time, end_time, notes, staff_id, entry_type, title, staff:staff(id, display_name, initials, colour), job:jobs(id, number, customer:customers(name), site:customer_sites(name))")
-      .eq("schedule_date", todayISO)
+      .select("id, schedule_date, end_date, start_time, end_time, notes, staff_id, entry_type, title, staff:staff(id, display_name, initials, colour), job:jobs(id, number, customer:customers(name), site:customer_sites(name), job_staff(staff_id))")
+      .lte("schedule_date", todayISO)
+      .or(`end_date.gte.${todayISO},and(end_date.is.null,schedule_date.eq.${todayISO})`)
       .order("start_time"),
-    // Include multi-day entries that overlap the [tomorrow, weekEnd]
-    // window — same shape the scheduler page uses, so a job booked
-    // Mon-Fri still surfaces here on a Wednesday morning.
+    // Upcoming entries — include multi-day overlaps for the
+    // [tomorrow, weekEnd] window, same shape the scheduler page uses.
     supabase.from("schedule_entries")
-      .select("id, schedule_date, end_date, start_time, end_time, notes, staff_id, entry_type, title, staff:staff(id, display_name, initials, colour), job:jobs(id, number, customer:customers(name), site:customer_sites(name))")
+      .select("id, schedule_date, end_date, start_time, end_time, notes, staff_id, entry_type, title, staff:staff(id, display_name, initials, colour), job:jobs(id, number, customer:customers(name), site:customer_sites(name), job_staff(staff_id))")
       .lte("schedule_date", weekEndISO)
       .or(`end_date.gte.${tomorrowISO},and(end_date.is.null,schedule_date.gte.${tomorrowISO})`)
       .order("schedule_date")
@@ -89,16 +91,20 @@ export default async function DashboardPage({
   })();
 
   // ── Mobile "Today" view data ──
-  // Mobile is tech-focused: only show entries assigned to the current user
-  // unless the user has no staff record (admin, ops). Falls back to "all"
-  // when there's no staff link so the page isn't empty.
+  // Show entries either directly assigned to the current user OR for jobs
+  // the user is on the team of (job_staff). This is the "glue" Mitchell
+  // wants: if you're on the job, you see it on Today even if the actual
+  // schedule_entry was booked to another tech. Falls back to "all" when
+  // there's no staff link so the page isn't empty.
   const myStaffId = user?.id ?? null;
-  const myToday = (todaySchedule ?? []).filter((e: any) =>
-    !myStaffId ? true : e.staff_id === myStaffId
-  );
-  const myUpcoming = (upcomingSchedule ?? []).filter((e: any) =>
-    !myStaffId ? true : e.staff_id === myStaffId
-  );
+  function isMine(e: any): boolean {
+    if (!myStaffId) return true;
+    if (e.staff_id === myStaffId) return true;
+    return Array.isArray(e.job?.job_staff) &&
+      e.job.job_staff.some((js: any) => js.staff_id === myStaffId);
+  }
+  const myToday = (todaySchedule ?? []).filter(isMine);
+  const myUpcoming = (upcomingSchedule ?? []).filter(isMine);
   // Active jobs where the current user is assigned but the job isn't already
   // on today's or tomorrow's schedule — surfaces in-progress / on-hold work
   // that hasn't been booked in yet, so techs see it without leaving Today.

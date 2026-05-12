@@ -82,10 +82,9 @@ export function AssignJobModal({
   const isEditing = !!entry;
 
   const [entryType, setEntryType] = useState<EntryType>(entry?.entry_type ?? "job");
-  const [selectedStaffId, setSelectedStaffId] = useState(entry?.staff_id ?? staffId);
-  // Multi-select on create: assigning the same job/event to multiple staff
-  // creates N schedule_entries (one per selected staff). On edit we still
-  // operate on the single underlying row, so this only matters for new ones.
+  // Multi-select staff. On create: fans out one schedule_entry per selected
+  // staff. On edit: the first chip stays on the existing entry; any extra
+  // chips create additional entries.
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>(
     entry?.staff_id ? [entry.staff_id] : [staffId],
   );
@@ -191,16 +190,30 @@ export function AssignJobModal({
     };
 
     if (isEditing && entry) {
-      // Edit-mode operates on the single existing row; staff change is
-      // limited to one target (the form swaps to a single select below).
+      // Edit-mode: the original entry stays as the "primary" row. Its
+      // staff_id is set to the first selected staff. Any *additional*
+      // selected staff get NEW schedule_entries created with the same
+      // job/time. Deselected staff aren't auto-deleted (use the delete
+      // button on those rows individually).
+      const primaryStaff = selectedStaffIds[0];
       const { error: err } = await supabase
         .from("schedule_entries")
-        .update({ ...basePayload, staff_id: selectedStaffId })
+        .update({ ...basePayload, staff_id: primaryStaff })
         .eq("id", entry.id);
       if (err) {
         setError(err.message);
         setSaving(false);
         return;
+      }
+      const additionalStaff = selectedStaffIds.slice(1).filter((sid) => sid !== entry.staff_id);
+      if (additionalStaff.length > 0) {
+        const rows = additionalStaff.map((sid) => ({ ...basePayload, staff_id: sid }));
+        const { error: insErr } = await supabase.from("schedule_entries").insert(rows);
+        if (insErr) {
+          setError(insErr.message);
+          setSaving(false);
+          return;
+        }
       }
     } else {
       // Create-mode: fan out one row per selected staff member.
@@ -314,60 +327,54 @@ export function AssignJobModal({
             {staff && staff.length > 0 && (
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">
-                  {isEditing ? "Assigned to" : `Assign to (${selectedStaffIds.length} selected)`}
+                  {isEditing ? "Assigned to" : "Assign to"}
+                  <span className="ml-1 text-muted-foreground/70">
+                    ({selectedStaffIds.length} selected)
+                  </span>
                 </label>
-                {isEditing ? (
-                  <select
-                    value={selectedStaffId}
-                    onChange={(e) => setSelectedStaffId(e.target.value)}
-                    className={inputClass}
-                  >
-                    {staff.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.display_name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {staff.map((s) => {
-                      const on = selectedStaffIds.includes(s.id);
-                      return (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedStaffIds((prev) =>
-                              prev.includes(s.id)
-                                ? prev.filter((x) => x !== s.id)
-                                : [...prev, s.id]
-                            );
+                <div className="flex flex-wrap gap-1.5">
+                  {staff.map((s) => {
+                    const on = selectedStaffIds.includes(s.id);
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedStaffIds((prev) =>
+                            prev.includes(s.id)
+                              ? prev.filter((x) => x !== s.id)
+                              : [...prev, s.id]
+                          );
+                        }}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                          on
+                            ? "border-transparent text-white"
+                            : "border-border bg-card text-muted-foreground hover:text-foreground hover:bg-accent"
+                        }`}
+                        style={on ? { backgroundColor: s.colour } : undefined}
+                      >
+                        <span
+                          className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-semibold text-white"
+                          style={{
+                            backgroundColor: on ? "rgba(255,255,255,0.25)" : s.colour,
                           }}
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
-                            on
-                              ? "border-transparent text-white"
-                              : "border-border bg-card text-muted-foreground hover:text-foreground hover:bg-accent"
-                          }`}
-                          style={on ? { backgroundColor: s.colour } : undefined}
                         >
-                          <span
-                            className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-semibold text-white"
-                            style={{
-                              backgroundColor: on ? "rgba(255,255,255,0.25)" : s.colour,
-                            }}
-                          >
-                            {s.initials}
-                          </span>
-                          {s.display_name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                          {s.initials}
+                        </span>
+                        {s.display_name}
+                      </button>
+                    );
+                  })}
+                </div>
                 {!isEditing && selectedStaffIds.length > 1 && (
                   <p className="mt-1 text-[10px] text-muted-foreground">
                     Creates {selectedStaffIds.length} schedule entries, one per
                     selected staff member.
+                  </p>
+                )}
+                {isEditing && selectedStaffIds.length > 1 && (
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    The first chip stays on this entry; the others get new entries.
                   </p>
                 )}
               </div>
