@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
@@ -35,6 +35,9 @@ const DEVICE_TYPES = [
   "Other",
 ] as const;
 
+const inputClass =
+  "rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
+
 export function SiteAssetsList({
   siteId,
   assets,
@@ -42,7 +45,6 @@ export function SiteAssetsList({
   siteId: string;
   assets: SiteAsset[];
 }) {
-  const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
 
@@ -56,38 +58,25 @@ export function SiteAssetsList({
           Site assets ({visible.length}
           {archivedCount > 0 ? ` · ${archivedCount} archived` : ""})
         </h2>
-        <div className="flex items-center gap-3">
-          {archivedCount > 0 && (
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={showArchived}
-                onChange={(e) => setShowArchived(e.target.checked)}
-                className="rounded border-border"
-              />
-              Show archived
-            </label>
-          )}
-          <button
-            onClick={() => {
-              setShowAdd(true);
-              setEditingId(null);
-            }}
-            className="text-sm text-primary hover:text-primary/80 transition-colors"
-          >
-            + Add asset
-          </button>
-        </div>
+        {archivedCount > 0 && (
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+              className="rounded border-border"
+            />
+            Show archived
+          </label>
+        )}
       </div>
 
-      {showAdd && !editingId && (
-        <SiteAssetForm siteId={siteId} onDone={() => setShowAdd(false)} />
-      )}
+      <QuickAddRow siteId={siteId} />
 
       <div className="mt-3 space-y-2">
         {visible.map((a) =>
           editingId === a.id ? (
-            <SiteAssetForm
+            <SiteAssetEditForm
               key={a.id}
               siteId={siteId}
               asset={a}
@@ -97,19 +86,16 @@ export function SiteAssetsList({
             <AssetRow
               key={a.id}
               asset={a}
-              onEdit={() => {
-                setEditingId(a.id);
-                setShowAdd(false);
-              }}
+              onEdit={() => setEditingId(a.id)}
             />
           )
         )}
-        {visible.length === 0 && !showAdd && (
+        {visible.length === 0 && (
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
             <p className="text-sm text-muted-foreground">
-              No assets recorded yet. Add cameras, switches, alarm panels, or any
-              gear installed at this site — useful when a tech needs to look up a
-              serial or check a warranty mid-call.
+              No assets recorded yet. Use the row above to start adding — set the
+              device type, then scan or type the serial and press Enter to save
+              and queue another.
             </p>
           </div>
         )}
@@ -118,12 +104,219 @@ export function SiteAssetsList({
   );
 }
 
+// ── Quick-add row ────────────────────────────────────────────────────────────
+// Always-visible single row at the top of the list. Designed for speed with
+// a USB barcode scanner (which acts as a keyboard + Enter): scan into Serial,
+// focus auto-advances to MAC; scan into MAC, focus auto-advances to IP; press
+// Enter in any of those last three (or click Save) to commit the asset and
+// clear only the per-device fields. Device Type / Manufacturer / Model
+// persist across saves so installing a batch of the same device just means
+// scanning serials.
+
+function QuickAddRow({ siteId }: { siteId: string }) {
+  const router = useRouter();
+  const supabase = createClient();
+  const { toast } = useToast();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // "Sticky" fields — persist across saves so a batch of the same device is fast
+  const [deviceType, setDeviceType] = useState("");
+  const [manufacturer, setManufacturer] = useState("");
+  const [model, setModel] = useState("");
+  const [locationNote, setLocationNote] = useState("");
+
+  // "Per-unit" fields — cleared after each save
+  const [deviceName, setDeviceName] = useState("");
+  const [serial, setSerial] = useState("");
+  const [macAddress, setMacAddress] = useState("");
+  const [ipAddress, setIpAddress] = useState("");
+
+  const serialRef = useRef<HTMLInputElement>(null);
+  const macRef = useRef<HTMLInputElement>(null);
+  const ipRef = useRef<HTMLInputElement>(null);
+
+  // Focus Serial on first render so a scanner can fire straight away
+  useEffect(() => {
+    serialRef.current?.focus();
+  }, []);
+
+  async function save() {
+    if (!deviceType && !serial && !macAddress && !ipAddress && !deviceName) {
+      // Nothing to save
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    const payload = {
+      site_id: siteId,
+      device_type: deviceType.trim() || null,
+      device_name: deviceName.trim() || null,
+      manufacturer: manufacturer.trim() || null,
+      model: model.trim() || null,
+      serial: serial.trim() || null,
+      mac_address: macAddress.trim() || null,
+      ip_address: ipAddress.trim() || null,
+      location_note: locationNote.trim() || null,
+    };
+    const { error: err } = await supabase.from("site_assets").insert(payload);
+    if (err) {
+      setError(err.message);
+      setSaving(false);
+      return;
+    }
+    toast(serial.trim() ? `Added · ${serial.trim()}` : "Asset added");
+    // Clear per-unit fields, keep sticky ones
+    setDeviceName("");
+    setSerial("");
+    setMacAddress("");
+    setIpAddress("");
+    setSaving(false);
+    router.refresh();
+    // Refocus Serial for the next scan
+    setTimeout(() => serialRef.current?.focus(), 0);
+  }
+
+  function handleSerialKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      // If the device has a MAC field worth filling, jump there; otherwise save
+      macRef.current?.focus();
+    }
+  }
+  function handleMacKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      ipRef.current?.focus();
+    }
+  }
+  function handleIpKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      save();
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-primary/30 bg-card p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-primary">
+          Quick add{" "}
+          <span className="font-normal text-muted-foreground normal-case tracking-normal">
+            — scan or type, press Enter to advance · last field saves the row
+          </span>
+        </div>
+        {(deviceType || manufacturer || model || locationNote) && (
+          <button
+            type="button"
+            onClick={() => {
+              setDeviceType("");
+              setManufacturer("");
+              setModel("");
+              setLocationNote("");
+            }}
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            Clear sticky defaults
+          </button>
+        )}
+      </div>
+
+      {error && <p className="text-xs text-destructive">{error}</p>}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <select
+          value={deviceType}
+          onChange={(e) => setDeviceType(e.target.value)}
+          className={inputClass}
+          aria-label="Device type"
+        >
+          <option value="">Device type…</option>
+          {DEVICE_TYPES.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+        <input
+          placeholder="Manufacturer (sticky)"
+          value={manufacturer}
+          onChange={(e) => setManufacturer(e.target.value)}
+          className={inputClass}
+        />
+        <input
+          placeholder="Model (sticky)"
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className={inputClass}
+        />
+        <input
+          placeholder="Location (sticky)"
+          value={locationNote}
+          onChange={(e) => setLocationNote(e.target.value)}
+          className={inputClass}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <input
+          placeholder="Friendly name (optional)"
+          value={deviceName}
+          onChange={(e) => setDeviceName(e.target.value)}
+          className={inputClass}
+        />
+        <input
+          ref={serialRef}
+          placeholder="Serial #  (scan → Enter)"
+          value={serial}
+          onChange={(e) => setSerial(e.target.value)}
+          onKeyDown={handleSerialKey}
+          className={inputClass + " font-mono"}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <input
+          ref={macRef}
+          placeholder="MAC  (scan → Enter)"
+          value={macAddress}
+          onChange={(e) => setMacAddress(e.target.value)}
+          onKeyDown={handleMacKey}
+          className={inputClass + " font-mono"}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <input
+          ref={ipRef}
+          placeholder="IP  (Enter to save)"
+          value={ipAddress}
+          onChange={(e) => setIpAddress(e.target.value)}
+          onKeyDown={handleIpKey}
+          className={inputClass + " font-mono"}
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </div>
+
+      <div className="flex gap-2 pt-1">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save & add next"}
+        </button>
+        <span className="ml-auto text-[11px] text-muted-foreground self-center">
+          Sticky: Device Type / Manufacturer / Model / Location stay between saves
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ── Existing-asset row (compact view + edit-in-place) ───────────────────────
+
 function AssetRow({ asset, onEdit }: { asset: SiteAsset; onEdit: () => void }) {
   const dim = !asset.is_active ? "opacity-60" : "";
-  const headlineParts = [
-    asset.device_name,
-    asset.device_type,
-  ].filter(Boolean);
+  const headlineParts = [asset.device_name, asset.device_type].filter(Boolean);
   const headline = headlineParts.length > 0 ? headlineParts.join(" — ") : "(unnamed asset)";
 
   return (
@@ -166,9 +359,7 @@ function AssetRow({ asset, onEdit }: { asset: SiteAsset; onEdit: () => void }) {
           {asset.location_note && <span>📍 {asset.location_note}</span>}
         </div>
         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-          {asset.install_date && (
-            <span>Installed {formatDate(asset.install_date)}</span>
-          )}
+          {asset.install_date && <span>Installed {formatDate(asset.install_date)}</span>}
           {asset.warranty_expiry && (
             <span className={warrantyClass(asset.warranty_expiry)}>
               Warranty {warrantyLabel(asset.warranty_expiry)}
@@ -176,9 +367,7 @@ function AssetRow({ asset, onEdit }: { asset: SiteAsset; onEdit: () => void }) {
           )}
         </div>
         {asset.notes && (
-          <p className="mt-1.5 text-xs text-muted-foreground italic line-clamp-2">
-            {asset.notes}
-          </p>
+          <p className="mt-1.5 text-xs text-muted-foreground italic line-clamp-2">{asset.notes}</p>
         )}
       </div>
       <button
@@ -198,7 +387,6 @@ function formatDate(d: string): string {
     day: "numeric",
   });
 }
-
 function warrantyLabel(d: string): string {
   const exp = new Date(d + "T00:00:00");
   const now = new Date();
@@ -208,7 +396,6 @@ function warrantyLabel(d: string): string {
   if (diffDays <= 60) return `expires ${formatDate(d)} (${diffDays}d)`;
   return `to ${formatDate(d)}`;
 }
-
 function warrantyClass(d: string): string {
   const exp = new Date(d + "T00:00:00").getTime();
   const now = Date.now();
@@ -218,13 +405,15 @@ function warrantyClass(d: string): string {
   return "text-muted-foreground";
 }
 
-function SiteAssetForm({
+// ── Edit form (existing assets) ─────────────────────────────────────────────
+
+function SiteAssetEditForm({
   siteId,
   asset,
   onDone,
 }: {
   siteId: string;
-  asset?: SiteAsset;
+  asset: SiteAsset;
   onDone: () => void;
 }) {
   const router = useRouter();
@@ -234,25 +423,24 @@ function SiteAssetForm({
   const [error, setError] = useState<string | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
 
-  const [deviceType, setDeviceType] = useState(asset?.device_type ?? "");
-  const [deviceName, setDeviceName] = useState(asset?.device_name ?? "");
-  const [manufacturer, setManufacturer] = useState(asset?.manufacturer ?? "");
-  const [model, setModel] = useState(asset?.model ?? "");
-  const [serial, setSerial] = useState(asset?.serial ?? "");
-  const [macAddress, setMacAddress] = useState(asset?.mac_address ?? "");
-  const [ipAddress, setIpAddress] = useState(asset?.ip_address ?? "");
-  const [locationNote, setLocationNote] = useState(asset?.location_note ?? "");
-  const [installDate, setInstallDate] = useState(asset?.install_date ?? "");
-  const [warrantyExpiry, setWarrantyExpiry] = useState(asset?.warranty_expiry ?? "");
-  const [notes, setNotes] = useState(asset?.notes ?? "");
+  const [deviceType, setDeviceType] = useState(asset.device_type ?? "");
+  const [deviceName, setDeviceName] = useState(asset.device_name ?? "");
+  const [manufacturer, setManufacturer] = useState(asset.manufacturer ?? "");
+  const [model, setModel] = useState(asset.model ?? "");
+  const [serial, setSerial] = useState(asset.serial ?? "");
+  const [macAddress, setMacAddress] = useState(asset.mac_address ?? "");
+  const [ipAddress, setIpAddress] = useState(asset.ip_address ?? "");
+  const [locationNote, setLocationNote] = useState(asset.location_note ?? "");
+  const [installDate, setInstallDate] = useState(asset.install_date ?? "");
+  const [warrantyExpiry, setWarrantyExpiry] = useState(asset.warranty_expiry ?? "");
+  const [notes, setNotes] = useState(asset.notes ?? "");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
-
+    void siteId;
     const payload = {
-      site_id: siteId,
       device_type: deviceType.trim() || null,
       device_name: deviceName.trim() || null,
       manufacturer: manufacturer.trim() || null,
@@ -265,15 +453,14 @@ function SiteAssetForm({
       warranty_expiry: warrantyExpiry || null,
       notes: notes.trim() || null,
     };
-
-    const result = asset
-      ? await supabase.from("site_assets").update(payload).eq("id", asset.id)
-      : await supabase.from("site_assets").insert(payload);
-
-    if (result.error) {
-      setError(result.error.message);
+    const { error: err } = await supabase
+      .from("site_assets")
+      .update(payload)
+      .eq("id", asset.id);
+    if (err) {
+      setError(err.message);
     } else {
-      toast(asset ? "Asset updated" : "Asset added");
+      toast("Asset updated");
       onDone();
       router.refresh();
     }
@@ -281,7 +468,6 @@ function SiteAssetForm({
   }
 
   async function handleArchiveToggle() {
-    if (!asset) return;
     const { error: err } = await supabase
       .from("site_assets")
       .update({ is_active: !asset.is_active })
@@ -294,9 +480,6 @@ function SiteAssetForm({
       router.refresh();
     }
   }
-
-  const inputClass =
-    "rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
 
   return (
     <form
@@ -317,7 +500,7 @@ function SiteAssetForm({
           ))}
         </select>
         <input
-          placeholder="Friendly name (e.g. 'Front entry cam')"
+          placeholder="Friendly name"
           value={deviceName}
           onChange={(e) => setDeviceName(e.target.value)}
           className={inputClass}
@@ -326,7 +509,7 @@ function SiteAssetForm({
 
       <div className="grid grid-cols-2 gap-2">
         <input
-          placeholder="Manufacturer (e.g. Dahua, Bosch)"
+          placeholder="Manufacturer"
           value={manufacturer}
           onChange={(e) => setManufacturer(e.target.value)}
           className={inputClass}
@@ -341,7 +524,7 @@ function SiteAssetForm({
 
       <div className="grid grid-cols-3 gap-2">
         <input
-          placeholder="Serial #"
+          placeholder="Serial"
           value={serial}
           onChange={(e) => setSerial(e.target.value)}
           className={inputClass + " font-mono"}
@@ -361,7 +544,7 @@ function SiteAssetForm({
       </div>
 
       <input
-        placeholder="Location note (e.g. 'Ceiling above front desk', 'Rack pos 3')"
+        placeholder="Location note"
         value={locationNote}
         onChange={(e) => setLocationNote(e.target.value)}
         className={inputClass + " w-full"}
@@ -393,7 +576,7 @@ function SiteAssetForm({
       </div>
 
       <textarea
-        placeholder="Notes (firmware version, replacement history, anything worth knowing)"
+        placeholder="Notes"
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
         rows={2}
@@ -406,7 +589,7 @@ function SiteAssetForm({
           disabled={saving}
           className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
-          {saving ? "Saving…" : asset ? "Update" : "Add asset"}
+          {saving ? "Saving…" : "Update"}
         </button>
         <button
           type="button"
@@ -415,7 +598,7 @@ function SiteAssetForm({
         >
           Cancel
         </button>
-        {asset && !confirmArchive && (
+        {!confirmArchive && (
           <button
             type="button"
             onClick={() => setConfirmArchive(true)}
@@ -424,7 +607,7 @@ function SiteAssetForm({
             {asset.is_active ? "Archive" : "Restore"}
           </button>
         )}
-        {asset && confirmArchive && (
+        {confirmArchive && (
           <div className="ml-auto flex gap-1">
             <button
               type="button"
