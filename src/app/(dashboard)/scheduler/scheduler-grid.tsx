@@ -154,34 +154,35 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   }
 
   return (
-    <div>
-      {/* Nav */}
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-        <div className="flex items-center gap-2">
+    <div className="flex flex-col h-full min-h-0">
+      {/* Heading + nav controls on a single row */}
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Scheduler</h1>
           <div className="flex rounded-md border border-border p-0.5">
             <button onClick={switchToWeek} className={`rounded px-3 py-1 text-xs font-medium transition-colors ${view === "week" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Week</button>
             <button onClick={switchToDayView} className={`rounded px-3 py-1 text-xs font-medium transition-colors ${view === "day" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Day</button>
           </div>
           {view === "week" ? (
-            <>
-              <a href={prevWeekHref} className="rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground transition-colors">
+            <div className="flex items-center gap-1">
+              <a href={prevWeekHref} className="rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground transition-colors" aria-label="Previous week">
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
               </a>
               <a href={todayWeekHref} className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">Today</a>
-              <a href={nextWeekHref} className="rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground transition-colors">
+              <a href={nextWeekHref} className="rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground transition-colors" aria-label="Next week">
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
               </a>
-            </>
+            </div>
           ) : (
-            <>
-              <button onClick={() => goDay("prev")} className="rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground transition-colors">
+            <div className="flex items-center gap-1">
+              <button onClick={() => goDay("prev")} className="rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground transition-colors" aria-label="Previous day">
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
               </button>
               <button onClick={() => goDay("today")} className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">Today</button>
-              <button onClick={() => goDay("next")} className="rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground transition-colors">
+              <button onClick={() => goDay("next")} className="rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground transition-colors" aria-label="Next day">
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
-            </>
+            </div>
           )}
         </div>
         <span className="text-sm font-medium">{view === "week" ? `${fmtShort(weekDates[0])} — ${fmtShort(weekDates[6])}` : fmtLong(selectedDay)}</span>
@@ -189,9 +190,9 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
 
       {/* WEEK VIEW */}
       {view === "week" && (
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <div className="min-w-[800px]">
+        <div className="rounded-lg border border-border bg-card overflow-hidden flex-1 min-h-0 flex flex-col">
+          <div className="overflow-x-auto flex-1 min-h-0 flex flex-col">
+            <div className="min-w-[800px] flex-1 min-h-0 flex flex-col">
               {/* Day headers */}
               <div className="flex border-b border-border">
                 <div className="w-16 shrink-0 border-r border-border bg-muted/50" />
@@ -214,7 +215,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
               </div>
 
               {/* Time grid */}
-              <div className="overflow-y-auto" style={{ maxHeight: "calc(100dvh - 300px)" }}>
+              <div className="overflow-y-auto flex-1 min-h-0">
                 <div className="flex">
                   {/* Hour labels */}
                   <div className="w-16 shrink-0 border-r border-border" style={{ height: GRID_HEIGHT }}>
@@ -238,7 +239,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
 
       {/* DAY VIEW */}
       {view === "day" && (
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="rounded-lg border border-border bg-card overflow-hidden flex-1 min-h-0 flex flex-col">
           {(allDayByDate.get(selectedDay) ?? []).length > 0 && (
             <div className="border-b border-border px-4 py-2 bg-muted/30">
               <span className="text-[10px] font-semibold text-muted-foreground uppercase">All Day</span>
@@ -251,7 +252,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
               </div>
             </div>
           )}
-          <div className="overflow-y-auto" style={{ maxHeight: "calc(100dvh - 320px)" }}>
+          <div className="overflow-y-auto flex-1 min-h-0">
             <div className="flex">
               <div className="w-16 shrink-0 border-r border-border" style={{ height: GRID_HEIGHT }}>
                 {hours.map(h => (

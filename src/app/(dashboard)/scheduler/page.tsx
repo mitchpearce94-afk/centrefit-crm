@@ -91,23 +91,21 @@ export default async function SchedulerPage({
     currentStaff?.role === "admin" ||
     currentStaff?.role === "project_manager";
 
+  // Cancel the layout's p-4 md:p-6 wrapper so the scheduler can fill the
+  // full main content area edge-to-edge, then take up exactly the visible
+  // height (no outer scroll, only the time grid scrolls internally).
   return (
-    <div>
-      <h1 className="text-2xl font-bold tracking-tight">Scheduler</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Dispatch jobs to staff for the week.
-      </p>
-
-      <div className="mt-5">
-        <SchedulerView
-          staff={staffResult.data ?? []}
-          entries={entriesResult.data ?? []}
-          jobs={(jobsResult.data ?? []) as any}
-          weekStart={mondayISO}
-          currentUserId={currentUserId}
-          isAdmin={isAdmin}
-        />
-      </div>
+    <div
+      className="-m-4 md:-m-6 flex flex-col px-4 md:px-6 py-3 md:py-4 h-[calc(100dvh-8rem)] lg:h-[calc(100dvh-3rem)]"
+    >
+      <SchedulerView
+        staff={staffResult.data ?? []}
+        entries={entriesResult.data ?? []}
+        jobs={(jobsResult.data ?? []) as any}
+        weekStart={mondayISO}
+        currentUserId={currentUserId}
+        isAdmin={isAdmin}
+      />
     </div>
   );
 }

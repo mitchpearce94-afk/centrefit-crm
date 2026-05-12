@@ -249,17 +249,11 @@ export function QuoteActions({
   return (
     <>
       <div className="flex flex-wrap items-center gap-2 justify-end">
-        <button
-          onClick={() => setShowPreview(true)}
-          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-        >
-          Preview Quote
-        </button>
-
         <KebabMenu
           sections={[
             {
               items: [
+                { label: "Preview Quote", onClick: () => setShowPreview(true) },
                 { label: "Edit Quote", onClick: () => router.push(`/quoting/${quoteId}/edit`), hidden: status !== "draft" },
                 { label: "Duplicate Quote", onClick: handleDuplicate },
                 { label: `Scope of Works${hasScopeOverrides ? " • Edited" : ""}`, onClick: () => setShowScopeEditor(true) },

@@ -87,14 +87,6 @@ export default async function QuoteDetailPage({
               <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: statusColour }} />
               {quote.status}
             </span>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isProgress ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
-              {isProgress ? "Progress Payments" : "Full Quote"}
-            </span>
-            {quote.template?.name && (
-              <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
-                Template: {quote.template.name}
-              </span>
-            )}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {quote.customer?.name || quote.client_name}
