@@ -9,7 +9,7 @@ export default async function NewPlanPage({ searchParams }: { searchParams: Prom
   // Fetch active jobs for the job selector
   const { data: jobs } = await supabase
     .from('jobs')
-    .select('id, number, reference, customer:customers(id, name)')
+    .select('id, number, reference, customer:customers(id, name), site:customer_sites(id, name, address, suburb, postcode, state)')
     .order('number', { ascending: false })
     .limit(200);
 

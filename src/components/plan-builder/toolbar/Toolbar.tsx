@@ -14,6 +14,29 @@ export interface JobOption {
   number: string;
   reference: string | null;
   customer: { id: string; name: string } | { id: string; name: string }[] | null;
+  site:
+    | { id: string; name: string | null; address: string | null; suburb: string | null; postcode: string | null; state: string | null }
+    | { id: string; name: string | null; address: string | null; suburb: string | null; postcode: string | null; state: string | null }[]
+    | null;
+}
+
+function unwrap<T>(rel: T | T[] | null | undefined): T | null {
+  if (!rel) return null;
+  return Array.isArray(rel) ? rel[0] ?? null : rel;
+}
+
+function formatWorksAddress(site: { address: string | null; suburb: string | null; postcode: string | null } | null): string {
+  if (!site) return '';
+  return [site.address, site.suburb, site.postcode].filter(Boolean).join(', ');
+}
+
+function jobLabel(j: JobOption): string {
+  const cust = unwrap(j.customer);
+  const site = unwrap(j.site);
+  const head = cust ? `${cust.name}${site?.name ? ` - ${site.name}` : ''}` : j.number;
+  const tail = cust ? ` (${j.number})` : '';
+  const ref = j.reference ? ` · ${j.reference}` : '';
+  return `${head}${tail}${ref}`;
 }
 
 export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
@@ -44,6 +67,7 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
     floors, activeFloorId, addFloor, switchFloor, removeFloor,
     bumpRevision,
     linkedJobId, setLinkedJob,
+    updateTitleBlock,
     selectedElementIds, deleteSelectedElements,
     setPdfSource, setPdfElements,
     deviceScale, setDeviceScale,
@@ -398,20 +422,27 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
           onChange={(e) => {
             const jobId = e.target.value || null;
             const job = jobs.find(j => j.id === jobId);
-            const cust = job?.customer ? (Array.isArray(job.customer) ? job.customer[0] : job.customer) : null;
-            setLinkedJob(jobId, job ? `${job.number}${cust ? ' — ' + cust.name : ''}` : null);
+            if (!job) {
+              setLinkedJob(null, null);
+              return;
+            }
+            const cust = unwrap(job.customer);
+            const site = unwrap(job.site);
+            const label = jobLabel(job);
+            setLinkedJob(jobId, label);
+            updateTitleBlock({
+              client: cust?.name ?? '',
+              projectName: site?.name ?? job.reference ?? '',
+              worksAddress: formatWorksAddress(site),
+              state: site?.state ?? '',
+            });
           }}
-          className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500 max-w-48 truncate"
+          className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500 max-w-64 truncate"
         >
           <option value="">No job linked</option>
-          {jobs.map(j => {
-            const cust = j.customer ? (Array.isArray(j.customer) ? j.customer[0] : j.customer) : null;
-            return (
-              <option key={j.id} value={j.id}>
-                {j.number}{cust ? ` — ${cust.name}` : ''}{j.reference ? ` (${j.reference})` : ''}
-              </option>
-            );
-          })}
+          {jobs.map(j => (
+            <option key={j.id} value={j.id}>{jobLabel(j)}</option>
+          ))}
         </select>
       </div>
 

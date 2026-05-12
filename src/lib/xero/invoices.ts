@@ -215,21 +215,39 @@ export async function fetchXeroInvoice(
 }
 
 /**
- * Render the merged Scope of Works as a line-item description. Sections are
- * headered ("ROUGH IN:" / "FIT OFF:"); clauses are bulleted. Notes are tacked
- * on under a "PLEASE NOTE" header. Matches how Mitchell reads the SoW in the
- * preview — keeps the invoice description aligned with what the customer saw
- * at quote time.
+ * Standing headline that prefixes every Centrefit invoice line. The detailed
+ * scope of works lives below it as the "description".
+ */
+export const INVOICE_LINE_HEADLINE = "Supply, install & commission as per Scope of Works";
+
+export interface ScopeDescriptionOptions {
+  /** "Site: Foo Gym — 123 Main St…" — already includes trailing newlines. */
+  siteHeader?: string;
+  /** Milestone label for progress invoices, e.g. "Progress Payment 1 — On Acceptance". */
+  milestoneHeader?: string;
+  roleDescriptions?: Record<string, string>;
+}
+
+/**
+ * Render the merged Scope of Works as a line-item description, headed by the
+ * standard "Supply, install & commission…" line so the description reads as:
+ *   <headline>
+ *   <site header>
+ *   <milestone (if any)>
+ *   <SoW body>
  */
 export function formatScopeDescription(
   bom: BOMLineForScope[],
   products: ProductForScope[],
   siteInfo: SiteInfo,
   overrides: ScopeOverrides | null | undefined,
-  prefix?: string,
-  roleDescriptions?: Record<string, string>,
+  opts: ScopeDescriptionOptions = {},
 ): string {
-  const scope = generateScopeOfWorks(bom, products, siteInfo, overrides ?? undefined, roleDescriptions);
+  const scope = generateScopeOfWorks(bom, products, siteInfo, overrides ?? undefined, opts.roleDescriptions);
   const body = renderScopeAsText(scope);
-  return prefix ? `${prefix}\n\n${body}` : body;
+  const parts: string[] = [INVOICE_LINE_HEADLINE];
+  if (opts.siteHeader) parts.push(opts.siteHeader.replace(/\n+$/, ''));
+  if (opts.milestoneHeader) parts.push(opts.milestoneHeader);
+  parts.push(body);
+  return parts.join('\n\n');
 }

@@ -1,13 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { Resend } from "resend";
-import { generateScopeOfWorks } from "@/lib/quote-engine";
+import { generateScopeOfWorks, renderScopeAsText, type ScopeDocument } from "@/lib/quote-engine";
 import { generateQuotePdfBuffer, type QuoteForPdf } from "@/lib/quote-pdf";
 import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.server";
 import { emailHeader, emailFooter, emailLayout } from "@/lib/emails/brand";
 import { FROM_QUOTES, REPLY_TO_SALES } from "@/lib/emails/from-addresses";
 import { logDocumentActivity } from "@/lib/activity/log";
 import crypto from "crypto";
+
+function formatAud(n: number): string {
+  return n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function buildJobScopeText(
+  scope: ScopeDocument,
+  pricing: { totalExGST: number; pp1?: { total: number }; pp2?: { total: number } },
+  isProgress: boolean,
+): string {
+  const scopeText = renderScopeAsText(scope);
+  const paymentLines: string[] = ["PAYMENT TERMS"];
+  if (isProgress && pricing.pp1 && pricing.pp2) {
+    paymentLines.push(`  • Progress Payment 1 (PP1) — On acceptance: $${formatAud(pricing.pp1.total)} ex GST`);
+    paymentLines.push(`  • Progress Payment 2 (PP2) — On completion: $${formatAud(pricing.pp2.total)} ex GST`);
+  } else {
+    paymentLines.push(`  • Full payment on completion: $${formatAud(pricing.totalExGST)} ex GST`);
+  }
+  return `${scopeText}\n\n${paymentLines.join("\n")}`;
+}
 
 function getResend() {
   return new Resend(process.env.RESEND_API_KEY);
@@ -57,10 +77,6 @@ export async function POST(req: NextRequest) {
     response_token: responseToken,
   }).eq("id", quoteId);
 
-  if (quote.job_id) {
-    await autoTransitionJobStatusServer(quote.job_id, "quote_sent", supabase);
-  }
-
   const clientName = quote.customer?.name || quote.client_name;
   const isProgress = quote.quote_type === "progress";
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${req.nextUrl.origin}`;
@@ -96,6 +112,15 @@ export async function POST(req: NextRequest) {
     if (r.description && r.description.trim().length > 0) roleDescriptions[r.slug] = r.description.trim();
   }
   const scope = generateScopeOfWorks(scopeBom, scopeProducts, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions);
+
+  // Mirror the scope-of-works + payment terms into the linked job's description.
+  // Quote is the source of truth for scope, so we overwrite on every send —
+  // subsequent re-sends keep the job description aligned with the latest quote.
+  if (quote.job_id) {
+    const jobScopeText = buildJobScopeText(scope, pricing as { totalExGST: number; pp1?: { total: number }; pp2?: { total: number } }, isProgress);
+    await supabase.from("jobs").update({ description: jobScopeText }).eq("id", quote.job_id);
+    await autoTransitionJobStatusServer(quote.job_id, "quote_sent", supabase);
+  }
 
   // Generate PDF attachment
   let pdfBuffer: Buffer;

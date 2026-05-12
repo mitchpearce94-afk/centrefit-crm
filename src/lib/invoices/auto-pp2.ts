@@ -119,16 +119,16 @@ export async function tryCreatePP2ForJob(
         if (data) siteRow = data;
       }
       const siteHeader = siteRow || quote.site_name || quote.site_address
-        ? `Site: ${[siteRow?.name ?? quote.site_name, siteRow ? [siteRow.address, siteRow.suburb, siteRow.state, siteRow.postcode].filter(Boolean).join(", ") : quote.site_address].filter(Boolean).join(" — ")}\n\n`
-        : "";
+        ? `Site: ${[siteRow?.name ?? quote.site_name, siteRow ? [siteRow.address, siteRow.suburb, siteRow.state, siteRow.postcode].filter(Boolean).join(", ") : quote.site_address].filter(Boolean).join(" — ")}`
+        : undefined;
 
       const header = `Progress Payment 2 — On Completion (Quote ${quote.ref})`;
-      const description = siteHeader + formatScopeDescription(
+      const description = formatScopeDescription(
         scopeBom,
         scopeProducts,
         siteInfo,
         quote.scope_overrides ?? null,
-        header,
+        { siteHeader, milestoneHeader: header },
       );
       const lineItems: XeroLineItemInput[] = [{ description, quantity: 1, unitAmount: amount }];
 

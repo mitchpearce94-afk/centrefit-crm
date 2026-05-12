@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   // For quote-linked paths we also stash freeform site label/address from
   // the quote so the description can lead with "Site: ..." even when the
   // quote pre-dates the customer_sites split (legacy text fields).
-  let siteHeader = "";
+  let siteHeader: string | undefined;
 
   if (body.type === "adhoc") {
     if (!body.customerId) {
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
     jobId = jobId ?? quote.job_id ?? null;
     reference = quote.ref;
     if (quote.site_name || quote.site_address) {
-      siteHeader = `Site: ${[quote.site_name, quote.site_address].filter(Boolean).join(" — ")}\n\n`;
+      siteHeader = `Site: ${[quote.site_name, quote.site_address].filter(Boolean).join(" — ")}`;
     }
 
     const pricing = quote.pricing_snapshot as { totalExGST?: number; pp1?: { total: number }; pp2?: { total: number } } | null;
@@ -144,12 +144,12 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
-      const description = siteHeader + formatScopeDescription(
+      const description = formatScopeDescription(
         scopeBom,
         scopeProducts,
         siteInfo,
         quote.scope_overrides ?? null,
-        `CentreFit Installation — Quote ${quote.ref}`,
+        { siteHeader, milestoneHeader: `CentreFit Installation — Quote ${quote.ref}` },
       );
       headerDescription = `Installation per quote ${quote.ref}`;
       lineItems = [{
@@ -192,12 +192,12 @@ export async function POST(req: NextRequest) {
       const header = isPP1
         ? `Progress Payment 1 — On Acceptance (Quote ${quote.ref})`
         : `Progress Payment 2 — On Completion (Quote ${quote.ref})`;
-      const description = siteHeader + formatScopeDescription(
+      const description = formatScopeDescription(
         scopeBom,
         scopeProducts,
         siteInfo,
         quote.scope_overrides ?? null,
-        header,
+        { siteHeader, milestoneHeader: header },
       );
       headerDescription = header;
       lineItems = [{

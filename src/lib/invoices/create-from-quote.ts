@@ -112,8 +112,8 @@ export async function createInvoiceFromAcceptedQuote(
     ? [site.address, site.suburb, site.state, site.postcode].filter(Boolean).join(", ")
     : (quote.site_address ?? null);
   const siteHeader = siteLabel || siteAddrText
-    ? `Site: ${[siteLabel, siteAddrText].filter(Boolean).join(" — ")}\n\n`
-    : "";
+    ? `Site: ${[siteLabel, siteAddrText].filter(Boolean).join(" — ")}`
+    : undefined;
 
   let headerDescription: string;
   let lineItems: XeroLineItemInput[];
@@ -122,33 +122,25 @@ export async function createInvoiceFromAcceptedQuote(
   if (type === "full") {
     const amount = Number(pricing.totalExGST ?? 0);
     if (amount <= 0) throw new Error("Quote has no billable total");
-    // Site header up top so the customer (and Mitchell, eyeballing the PDF)
-    // can immediately see WHICH site this invoice covers. Then the SoW.
-    // Quote linkage lives in the Xero Reference field (set below), so we
-    // don't repeat the quote ref in the description.
-    const description = siteHeader + formatScopeDescription(
+    const description = formatScopeDescription(
       scopeBom,
       scopeProducts,
       siteInfo,
       quote.scope_overrides ?? null,
+      { siteHeader },
     );
     headerDescription = `Installation per quote ${quote.ref}`;
     lineItems = [{ description, quantity: 1, unitAmount: amount }];
     subtotal = amount;
   } else {
-    // Progress payments keep a minimal "Progress Payment 1" header on the line
-    // item — the customer needs to know which milestone this invoice covers
-    // (PP1 vs PP2 with otherwise identical descriptions). Quote ref is
-    // redundant with the Xero Reference field, so it's dropped from the prefix.
     const amount = Number(pricing.pp1?.total ?? 0);
     if (amount <= 0) throw new Error("No PP1 amount in the quote pricing snapshot");
-    const header = `Progress Payment 1 — On Acceptance`;
-    const description = siteHeader + formatScopeDescription(
+    const description = formatScopeDescription(
       scopeBom,
       scopeProducts,
       siteInfo,
       quote.scope_overrides ?? null,
-      header,
+      { siteHeader, milestoneHeader: "Progress Payment 1 — On Acceptance" },
     );
     headerDescription = `Progress Payment 1 — Quote ${quote.ref}`;
     lineItems = [{ description, quantity: 1, unitAmount: amount }];
