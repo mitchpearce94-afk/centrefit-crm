@@ -107,17 +107,29 @@ export function QuickActions({
         </button>
       )}
 
-      {/* Navigate to Site */}
+      {/* Navigate to Site — opens the device's native map app:
+          iOS  → Apple Maps (via https://maps.apple.com/, Safari auto-routes)
+          Other → Google Maps (Android intent-routes the URL to the GMaps app;
+                  desktop opens the web map). */}
       {siteAddress && (
-        <a
-          href={`https://maps.google.com/?daddr=${encodeURIComponent(siteAddress)}`}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
+          onClick={() => {
+            const encoded = encodeURIComponent(siteAddress);
+            const ua = navigator.userAgent;
+            const isIOS =
+              /iPad|iPhone|iPod/.test(ua) ||
+              (ua.includes("Mac") && typeof document !== "undefined" && "ontouchend" in document);
+            const url = isIOS
+              ? `https://maps.apple.com/?daddr=${encoded}`
+              : `https://www.google.com/maps/dir/?api=1&destination=${encoded}`;
+            window.location.href = url;
+          }}
           className="flex items-center gap-2 rounded-lg border border-primary/30 bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-primary/10"
         >
           <NavigateIcon className="h-4 w-4 text-primary" />
           Navigate
-        </a>
+        </button>
       )}
     </div>
   );

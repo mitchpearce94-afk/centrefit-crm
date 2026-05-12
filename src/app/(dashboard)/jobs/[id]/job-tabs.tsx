@@ -84,42 +84,47 @@ export function JobTabs({
 
   return (
     <div>
-      {/* Mobile tab picker — native select beats horizontal scroll. */}
-      <div className="sm:hidden mb-3">
-        <select
-          value={activeTab}
-          onChange={(e) => setActiveTab(e.target.value)}
-          className="block w-full rounded-md border border-border bg-input px-3 py-2.5 text-base font-medium text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-        >
-          {tabs.map((tab) => (
-            <option key={tab.id} value={tab.id}>
-              {tab.label}
-              {tab.count !== undefined && tab.count > 0 ? ` (${tab.count})` : ""}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Desktop tab bar — unchanged. */}
-      <div className="hidden sm:flex gap-0 border-b border-border overflow-x-auto scrollbar-hide">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`shrink-0 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              activeTab === tab.id
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
-            }`}
-          >
-            {tab.label}
-            {tab.count !== undefined && tab.count > 0 && (
-              <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-xs">
-                {tab.count}
-              </span>
-            )}
-          </button>
-        ))}
+      {/* Tab strip — pill buttons, horizontal scroll. Same UI on both
+          mobile and desktop. Constrained to the page's content width via
+          the parent's padding + min-w-0; overflow-x-auto handles the
+          slide. Edge fades hint that there's more to scroll. */}
+      <div className="relative min-w-0">
+        <div className="flex gap-1.5 overflow-x-auto scrollbar-hide -mx-1 px-1 py-1">
+          {tabs.map((tab) => {
+            const active = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-medium transition-colors ${
+                  active
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-muted/50 text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
+              >
+                {tab.label}
+                {tab.count !== undefined && tab.count > 0 && (
+                  <span
+                    className={`rounded-full px-1.5 py-0 text-[10px] font-semibold ${
+                      active
+                        ? "bg-white/20 text-primary-foreground"
+                        : "bg-muted-foreground/15 text-muted-foreground"
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {/* Right-edge fade — visual cue that more tabs are scrollable */}
+        <div
+          className="pointer-events-none absolute inset-y-0 right-0 w-8"
+          style={{
+            background: "linear-gradient(to left, var(--background), transparent)",
+          }}
+        />
       </div>
 
       {/* Tab content */}
