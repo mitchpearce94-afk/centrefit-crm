@@ -72,26 +72,31 @@ export function QuickActions({
     setBusy(null);
   }
 
+  // All three actions live on a single row; each button takes equal width
+  // and shrinks (smaller padding / font) on phones so they never wrap.
+  const btnBase =
+    "flex-1 min-w-0 flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-xs font-medium transition-colors disabled:opacity-50 sm:gap-2 sm:px-4 sm:py-2.5 sm:text-sm";
+
   return (
-    <div className="mt-4 flex flex-wrap gap-2">
+    <div className="mt-4 flex flex-nowrap gap-2">
       {/* Clock In / Out */}
       {hasOpenTimer ? (
         <button
           onClick={clockOut}
           disabled={busy === "clock"}
-          className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/20 disabled:opacity-50"
+          className={`${btnBase} border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20`}
         >
-          <span className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
-          {busy === "clock" ? "Stopping..." : "Clock Out"}
+          <span className="h-2 w-2 rounded-full bg-destructive animate-pulse shrink-0" />
+          <span className="truncate">{busy === "clock" ? "Stopping…" : "Clock Out"}</span>
         </button>
       ) : (
         <button
           onClick={clockIn}
           disabled={busy === "clock" || isComplete}
-          className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-4 py-2.5 text-sm font-medium text-success transition-colors hover:bg-success/20 disabled:opacity-50"
+          className={`${btnBase} border-success/30 bg-success/10 text-success hover:bg-success/20`}
         >
-          <ClockIcon className="h-4 w-4" />
-          {busy === "clock" ? "Starting..." : "Clock In"}
+          <ClockIcon className="h-4 w-4 shrink-0" />
+          <span className="truncate">{busy === "clock" ? "Starting…" : "Clock In"}</span>
         </button>
       )}
 
@@ -100,17 +105,14 @@ export function QuickActions({
         <button
           onClick={markComplete}
           disabled={busy === "complete"}
-          className="flex items-center gap-2 rounded-lg border border-success/30 bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-success/10 disabled:opacity-50"
+          className={`${btnBase} border-success/30 bg-card text-foreground hover:bg-success/10`}
         >
-          <CheckIcon className="h-4 w-4 text-success" />
-          {busy === "complete" ? "Completing..." : "Complete Job"}
+          <CheckIcon className="h-4 w-4 text-success shrink-0" />
+          <span className="truncate">{busy === "complete" ? "Completing…" : "Complete"}</span>
         </button>
       )}
 
-      {/* Navigate to Site — opens the device's native map app:
-          iOS  → Apple Maps (via https://maps.apple.com/, Safari auto-routes)
-          Other → Google Maps (Android intent-routes the URL to the GMaps app;
-                  desktop opens the web map). */}
+      {/* Navigate to Site — native maps per device. */}
       {siteAddress && (
         <button
           type="button"
@@ -125,10 +127,10 @@ export function QuickActions({
               : `https://www.google.com/maps/dir/?api=1&destination=${encoded}`;
             window.location.href = url;
           }}
-          className="flex items-center gap-2 rounded-lg border border-primary/30 bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-primary/10"
+          className={`${btnBase} border-primary/30 bg-card text-foreground hover:bg-primary/10`}
         >
-          <NavigateIcon className="h-4 w-4 text-primary" />
-          Navigate
+          <NavigateIcon className="h-4 w-4 text-primary shrink-0" />
+          <span className="truncate">Navigate</span>
         </button>
       )}
     </div>
