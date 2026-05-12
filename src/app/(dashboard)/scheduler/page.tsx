@@ -91,20 +91,26 @@ export default async function SchedulerPage({
     currentStaff?.role === "admin" ||
     currentStaff?.role === "project_manager";
 
-  // One solid-page layout: outer container takes the remaining viewport
-  // height (minus the dashboard chrome) and the time grid inside fills
-  // whatever's left via flex-1 + min-h-0. No edge-to-edge bleed — page
-  // padding from the layout wrapper is preserved for horizontal alignment.
+  // One solid-page layout: lock <main>'s outer scroll on this route via an
+  // inline style (auto-removed when the user navigates away) so the page
+  // can't scroll past the time grid. The grid inside still scrolls
+  // internally via its own overflow-y-auto + flex-1 min-h-0.
   return (
-    <div className="flex flex-col overflow-hidden h-[calc(100dvh-12rem)] lg:h-[calc(100dvh-7rem)]">
-      <SchedulerView
-        staff={staffResult.data ?? []}
-        entries={entriesResult.data ?? []}
-        jobs={(jobsResult.data ?? []) as any}
-        weekStart={mondayISO}
-        currentUserId={currentUserId}
-        isAdmin={isAdmin}
-      />
-    </div>
+    <>
+      {/* Lock <main>'s outer scroll while the scheduler is mounted — when
+          the user navigates away the <style> unmounts and main returns to
+          its normal overflow-y-auto behaviour. */}
+      <style>{`main { overflow-y: hidden !important; }`}</style>
+      <div className="flex flex-col overflow-hidden h-[calc(100dvh-12rem)] lg:h-[calc(100dvh-6rem)]">
+        <SchedulerView
+          staff={staffResult.data ?? []}
+          entries={entriesResult.data ?? []}
+          jobs={(jobsResult.data ?? []) as any}
+          weekStart={mondayISO}
+          currentUserId={currentUserId}
+          isAdmin={isAdmin}
+        />
+      </div>
+    </>
   );
 }
