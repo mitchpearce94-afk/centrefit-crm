@@ -89,6 +89,26 @@ export interface CustomerSite {
   updated_at: string;
 }
 
+export interface SiteAsset {
+  id: string;
+  site_id: string;
+  job_id: string | null;
+  device_type: string | null;
+  device_name: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  serial: string | null;
+  mac_address: string | null;
+  ip_address: string | null;
+  location_note: string | null;
+  install_date: string | null;
+  warranty_expiry: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Job {
   id: string;
   number: string;

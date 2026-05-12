@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { SiteDetail } from "./site-detail";
-import type { CustomerSite, CustomerContact } from "@/lib/types";
+import type { CustomerSite, CustomerContact, SiteAsset } from "@/lib/types";
 
 export default async function SiteDetailPage({
   params,
@@ -12,7 +12,7 @@ export default async function SiteDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [siteResult, contactsResult, jobsResult] = await Promise.all([
+  const [siteResult, contactsResult, jobsResult, assetsResult] = await Promise.all([
     supabase
       .from("customer_sites")
       .select(
@@ -34,6 +34,13 @@ export default async function SiteDetailPage({
       .eq("site_id", id)
       .order("created_at", { ascending: false })
       .limit(50),
+    supabase
+      .from("site_assets")
+      .select("*")
+      .eq("site_id", id)
+      .order("is_active", { ascending: false })
+      .order("device_type", { ascending: true, nullsFirst: false })
+      .order("device_name", { ascending: true, nullsFirst: false }),
   ]);
 
   if (siteResult.error || !siteResult.data) {
@@ -51,6 +58,7 @@ export default async function SiteDetailPage({
   };
   const contacts = (contactsResult.data ?? []) as CustomerContact[];
   const jobs = jobsResult.data ?? [];
+  const assets = (assetsResult.data ?? []) as SiteAsset[];
 
   return (
     <div>
@@ -83,7 +91,7 @@ export default async function SiteDetailPage({
       </div>
 
       <div className="mt-6">
-        <SiteDetail site={site} contacts={contacts} jobs={jobs as any} />
+        <SiteDetail site={site} contacts={contacts} jobs={jobs as any} assets={assets} />
       </div>
     </div>
   );

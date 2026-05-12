@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { CustomerSite, CustomerContact } from "@/lib/types";
+import type { CustomerSite, CustomerContact, SiteAsset } from "@/lib/types";
 import { SiteEditForm } from "./site-edit-form";
 import { SiteContactsList } from "./site-contacts-list";
+import { SiteAssetsList } from "./site-assets-list";
 
 type Job = {
   id: string;
@@ -19,20 +20,23 @@ export function SiteDetail({
   site,
   contacts,
   jobs,
+  assets,
 }: {
   site: CustomerSite & { customer: { id: string; name: string } | null };
   contacts: CustomerContact[];
   jobs: Job[];
+  assets: SiteAsset[];
 }) {
   const [tab, setTab] = useState<"details" | "contacts" | "jobs" | "assets">(
     "details"
   );
 
+  const activeAssetCount = assets.filter((a) => a.is_active).length;
   const tabs: { key: typeof tab; label: string; count?: number }[] = [
     { key: "details", label: "Details" },
     { key: "contacts", label: "Contacts", count: contacts.length },
     { key: "jobs", label: "Jobs", count: jobs.length },
-    { key: "assets", label: "Assets" },
+    { key: "assets", label: "Assets", count: activeAssetCount },
   ];
 
   return (
@@ -137,14 +141,7 @@ export function SiteDetail({
           </div>
         )}
 
-        {tab === "assets" && (
-          <div className="rounded-lg border border-dashed border-border p-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              Asset register coming soon — device serials, install dates, warranty
-              tracking per site.
-            </p>
-          </div>
-        )}
+        {tab === "assets" && <SiteAssetsList siteId={site.id} assets={assets} />}
       </div>
     </div>
   );
