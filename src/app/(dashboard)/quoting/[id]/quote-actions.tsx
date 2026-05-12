@@ -244,15 +244,6 @@ export function QuoteActions({
     w.document.close();
   }
 
-  // Status-driven primary action — the one button we keep in the header
-  // alongside Preview, picked to match the next workflow step.
-  const primaryAction =
-    status === "draft"
-      ? { label: "Mark as Sent", onClick: () => updateStatus("sent", { sent_at: new Date().toISOString() }), tone: "blue" as const }
-      : status === "sent"
-      ? { label: "Mark Accepted", onClick: () => updateStatus("accepted", { accepted_at: new Date().toISOString() }), tone: "emerald" as const }
-      : null;
-
   const linkedJob = jobs.find((j) => j.id === currentJobId);
 
   return (
@@ -264,18 +255,6 @@ export function QuoteActions({
         >
           Preview Quote
         </button>
-
-        {primaryAction && (
-          <button
-            onClick={primaryAction.onClick}
-            disabled={updating}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50 transition-colors ${
-              primaryAction.tone === "blue" ? "bg-blue-600 hover:bg-blue-500" : "bg-emerald-600 hover:bg-emerald-500"
-            }`}
-          >
-            {primaryAction.label}
-          </button>
-        )}
 
         <KebabMenu
           sections={[
@@ -291,6 +270,8 @@ export function QuoteActions({
             {
               items: [
                 { label: "Send to Customer…", onClick: () => setShowSendModal(true), hidden: status !== "draft" && status !== "sent" },
+                { label: "Mark as Sent", onClick: () => updateStatus("sent", { sent_at: new Date().toISOString() }), hidden: status !== "draft" },
+                { label: "Mark Accepted", onClick: () => updateStatus("accepted", { accepted_at: new Date().toISOString() }), hidden: status !== "sent" },
                 { label: "Mark Declined", onClick: () => updateStatus("declined", { declined_at: new Date().toISOString() }), hidden: status !== "sent" },
                 { label: "Revert to Draft", onClick: revertToDraft, hidden: status === "draft" },
               ],

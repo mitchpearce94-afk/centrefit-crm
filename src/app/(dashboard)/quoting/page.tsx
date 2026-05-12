@@ -95,23 +95,25 @@ export default async function QuotingPage({
   return (
     <div>
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Quoting</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Quoting</h1>
+          <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
             <span className="font-medium text-foreground tabular-nums">{allQuotes.length}</span> total quotes
           </p>
         </div>
         <Link
           href="/quoting/new"
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 sm:px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
           New Quote
         </Link>
       </div>
 
-      {/* Stats bar */}
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+      {/* Stats bar — desktop/tablet only. On mobile the same numbers live as
+          badges on the tab strip below, so duplicating them on a phone just
+          eats vertical space. */}
+      <div className="mt-4 hidden sm:grid grid-cols-2 gap-3 sm:grid-cols-5">
         <div className="surface-card card-hover p-4">
           <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Total</p>
           <p className="num-display num-gradient mt-2 text-2xl font-semibold">{allQuotes.length}</p>
@@ -134,8 +136,8 @@ export default async function QuotingPage({
         </div>
       </div>
 
-      {/* Tab strip */}
-      <div className="mt-4 flex flex-wrap items-center gap-1 border-b border-border">
+      {/* Tab strip — single-row horizontal scroll on mobile, no wrap */}
+      <div className="mt-4 flex flex-nowrap items-center gap-1 border-b border-border overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
         {[
           { key: "active", label: "Active", count: activeCount },
           { key: "followup", label: "Follow-up", count: followupCount, accent: followupCount > 0 },
@@ -149,7 +151,7 @@ export default async function QuotingPage({
             <Link
               key={t.key}
               href={t.key === "active" ? "/quoting" : `/quoting?tab=${t.key}`}
-              className={`relative -mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
+              className={`relative shrink-0 -mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
                 active
                   ? "border-primary text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground"
