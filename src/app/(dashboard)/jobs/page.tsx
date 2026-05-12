@@ -191,9 +191,11 @@ export default async function JobsPage({
                   </span>
                 )}
               </div>
-              <p className="text-sm text-foreground truncate">{job.customer?.name ?? "—"}</p>
-              {job.site?.name && (
-                <p className="text-xs text-muted-foreground truncate">{job.site.name}</p>
+              <p className="text-sm font-medium text-foreground truncate">
+                {job.site?.name ?? job.customer?.name ?? "—"}
+              </p>
+              {job.site?.name && job.customer?.name && (
+                <p className="text-xs text-muted-foreground truncate">{job.customer.name}</p>
               )}
               <div className="mt-2 flex items-center justify-between gap-2">
                 {scheduleLabel ? (
@@ -231,7 +233,7 @@ export default async function JobsPage({
                 Job #
               </th>
               <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Customer
+                Site
               </th>
               <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hidden sm:table-cell">
                 Reference
@@ -265,15 +267,24 @@ export default async function JobsPage({
                   </Link>
                 </td>
                 <td className="px-4 py-3">
-                  <Link
-                    href={`/customers/${job.customer?.id}`}
-                    className="text-foreground hover:text-primary transition-colors"
-                  >
-                    {job.customer?.name ?? "—"}
-                  </Link>
-                  {job.site && (
-                    <span className="block text-xs text-muted-foreground">
+                  {job.site ? (
+                    <Link
+                      href={`/sites/${job.site.id}`}
+                      className="font-medium text-foreground hover:text-primary transition-colors"
+                    >
                       {job.site.name}
+                    </Link>
+                  ) : (
+                    <Link
+                      href={`/customers/${job.customer?.id}`}
+                      className="font-medium text-foreground hover:text-primary transition-colors"
+                    >
+                      {job.customer?.name ?? "—"}
+                    </Link>
+                  )}
+                  {job.site && job.customer?.name && (
+                    <span className="block text-xs text-muted-foreground">
+                      {job.customer.name}
                     </span>
                   )}
                 </td>

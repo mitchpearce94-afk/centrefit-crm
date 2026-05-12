@@ -272,18 +272,32 @@ function JobOverview({
 }) {
   return (
     <div className="space-y-6">
-      {/* ── Metadata row ── */}
+      {/* ── Metadata row — site is the primary entity for a job ── */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-        <Link
-          href={`/customers/${job.customer?.id}`}
-          className="font-medium text-foreground hover:text-primary transition-colors"
-        >
-          {job.customer?.name}
-        </Link>
-        {job.site && (
+        {job.site ? (
+          <Link
+            href={`/sites/${job.site.id}`}
+            className="font-medium text-foreground hover:text-primary transition-colors"
+          >
+            {job.site.name}
+          </Link>
+        ) : (
+          <Link
+            href={`/customers/${job.customer?.id}`}
+            className="font-medium text-foreground hover:text-primary transition-colors"
+          >
+            {job.customer?.name}
+          </Link>
+        )}
+        {job.site && job.customer?.name && (
           <>
             <span className="text-muted-foreground">·</span>
-            <span className="text-muted-foreground">{job.site.name}</span>
+            <Link
+              href={`/customers/${job.customer.id}`}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {job.customer.name}
+            </Link>
           </>
         )}
         {job.site?.address && (
