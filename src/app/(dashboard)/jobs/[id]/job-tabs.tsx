@@ -1,13 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-import { useToast } from "@/components/ui/toast";
-import { compressImage, mapWithConcurrency } from "@/lib/images/compress";
-import { useKeyboardOpen } from "@/lib/hooks/use-keyboard-open";
-import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 import { QuickActions } from "./quick-actions";
 import { JobChecklist } from "./job-checklist";
 import { WorkLog } from "./work-log";
@@ -73,8 +67,6 @@ export function JobTabs({
   isAdmin: boolean;
 }) {
   const [activeTab, setActiveTab] = useState("job");
-  const [notesOpenSignal, setNotesOpenSignal] = useState(0);
-  const [workOpenSignal, setWorkOpenSignal] = useState(0);
   const showNbn = isNbnJob || nbnSteps.length > 0;
 
   // Filter non-system notes for count
@@ -150,11 +142,10 @@ export function JobTabs({
             notes={notes}
             timeEntries={timeEntries}
             scheduleEntries={scheduleEntries ?? []}
-            workOpenSignal={workOpenSignal}
           />
         )}
         {activeTab === "notes" && (
-          <NotesPanel jobId={jobId} notes={userNotes} openSignal={notesOpenSignal} />
+          <NotesPanel jobId={jobId} notes={userNotes} />
         )}
         {activeTab === "time" && (
           <TimePanel jobId={jobId} timeEntries={timeEntries} />
@@ -201,243 +192,7 @@ export function JobTabs({
           />
         )}
       </div>
-
-      {/* Mobile thumb-reach action bar. Hidden on lg+ where the in-tab
-          buttons are already easy to reach. Wraps the whole page in a
-          pb-24 spacer (via JobTabs root) so content doesn't sit behind it. */}
-      <MobileActionBar
-        jobId={jobId}
-        hasOpenTimer={hasOpenTimer}
-        openTimerId={openTimerId}
-        onOpenNote={() => {
-          setNotesOpenSignal((n) => n + 1);
-          setActiveTab("notes");
-        }}
-        onOpenWork={() => {
-          setWorkOpenSignal((n) => n + 1);
-          setActiveTab("job");
-        }}
-      />
     </div>
-  );
-}
-
-/* ── Mobile bottom action bar ──
-   Thumb-reach buttons: + Photo · + Note · + Work · Timer. Photo path
-   compresses client-side, uploads, and creates a `job_notes` row with
-   the attachment — no description required. */
-function MobileActionBar({
-  jobId,
-  hasOpenTimer,
-  openTimerId,
-  onOpenNote,
-  onOpenWork,
-}: {
-  jobId: string;
-  hasOpenTimer: boolean;
-  openTimerId?: string;
-  onOpenNote: () => void;
-  onOpenWork: () => void;
-}) {
-  const supabase = createClient();
-  const router = useRouter();
-  const { toast } = useToast();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState<"clock" | "photo" | null>(null);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const keyboardOpen = useKeyboardOpen();
-
-  async function toggleClock() {
-    setBusy("clock");
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setBusy(null); return; }
-    if (hasOpenTimer && openTimerId) {
-      await supabase
-        .from("job_time")
-        .update({ end_time: new Date().toISOString() })
-        .eq("id", openTimerId);
-    } else {
-      await supabase.from("job_time").insert({
-        job_id: jobId,
-        staff_id: user.id,
-        start_time: new Date().toISOString(),
-        billable: true,
-      });
-      await autoTransitionJobStatus(jobId, "work_started", supabase);
-    }
-    router.refresh();
-    setBusy(null);
-  }
-
-  async function handlePhotos(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = "";
-    if (files.length === 0) return;
-    setBusy("photo");
-    setProgress({ done: 0, total: files.length });
-
-    const { data: { user } } = await supabase.auth.getUser();
-    let done = 0;
-    const uploaded = await mapWithConcurrency(files, 4, async (file) => {
-      const prepped = await compressImage(file);
-      const ext = prepped.name.split(".").pop();
-      const path = `${jobId}/notes/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-      const { data, error } = await supabase.storage
-        .from("job-attachments")
-        .upload(path, prepped);
-      done++;
-      setProgress({ done, total: files.length });
-      if (error || !data) return null;
-      const { data: urlData } = supabase.storage
-        .from("job-attachments")
-        .getPublicUrl(data.path);
-      return {
-        url: urlData.publicUrl,
-        name: file.name,
-        type: prepped.type,
-        size: prepped.size,
-      };
-    });
-    const attachments = uploaded.filter((a): a is NonNullable<typeof a> => !!a);
-
-    if (attachments.length > 0) {
-      const { error } = await supabase.from("job_notes").insert({
-        job_id: jobId,
-        staff_id: user?.id ?? null,
-        title: `${attachments.length} photo${attachments.length === 1 ? "" : "s"}`,
-        content: "",
-        type: "note",
-        attachments,
-        image_url: attachments[0].url,
-      });
-      if (error) {
-        toast(error.message, "error");
-      } else {
-        toast(`${attachments.length} photo${attachments.length === 1 ? "" : "s"} added`, "success");
-        router.refresh();
-      }
-    } else {
-      toast("Upload failed", "error");
-    }
-
-    setProgress(null);
-    setBusy(null);
-  }
-
-  const itemClass =
-    "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors disabled:opacity-50";
-
-  return (
-    <>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        capture="environment"
-        onChange={handlePhotos}
-        className="hidden"
-      />
-      {/* Spacer so the last content isn't hidden under the action bar +
-          the global MobileNav. Both are ~64px tall stacked = ~128px. */}
-      <div className="lg:hidden h-36" aria-hidden />
-      <div
-        className={`lg:hidden fixed inset-x-0 z-50 border-t border-border bg-background/95 backdrop-blur transition-transform duration-150 ${
-          keyboardOpen ? "translate-y-full pointer-events-none" : ""
-        }`}
-        style={{
-          // Sit directly above the global MobileNav (which is 64px tall +
-          // safe-area-inset-bottom). z-50 puts us above the nav (z-40) so
-          // the upload-progress strip is visible.
-          bottom: "calc(env(safe-area-inset-bottom) + 64px)",
-        }}
-      >
-        {progress && (
-          <div className="px-3 py-1.5 text-[11px] text-muted-foreground bg-primary/5 border-b border-border">
-            Uploading {progress.done}/{progress.total}…
-          </div>
-        )}
-        <div className="flex">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={busy === "photo"}
-            className={`${itemClass} text-foreground active:bg-accent`}
-          >
-            <CameraIcon className="h-5 w-5" />
-            <span>Photo</span>
-          </button>
-          <button
-            type="button"
-            onClick={onOpenNote}
-            className={`${itemClass} text-foreground active:bg-accent`}
-          >
-            <NoteIcon className="h-5 w-5" />
-            <span>Note</span>
-          </button>
-          <button
-            type="button"
-            onClick={onOpenWork}
-            className={`${itemClass} text-foreground active:bg-accent`}
-          >
-            <WrenchIcon className="h-5 w-5" />
-            <span>Work</span>
-          </button>
-          <button
-            type="button"
-            onClick={toggleClock}
-            disabled={busy === "clock"}
-            className={`${itemClass} active:bg-accent ${hasOpenTimer ? "text-destructive" : "text-success"}`}
-          >
-            {hasOpenTimer ? (
-              <span className="h-5 w-5 flex items-center justify-center">
-                <span className="h-2.5 w-2.5 rounded-full bg-destructive animate-pulse" />
-              </span>
-            ) : (
-              <ClockBarIcon className="h-5 w-5" />
-            )}
-            <span>{hasOpenTimer ? "Stop" : "Start"}</span>
-          </button>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function CameraIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-      <circle cx="12" cy="13" r="4" />
-    </svg>
-  );
-}
-
-function NoteIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="9" y1="13" x2="15" y2="13" />
-      <line x1="9" y1="17" x2="13" y2="17" />
-    </svg>
-  );
-}
-
-function WrenchIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-    </svg>
-  );
-}
-
-function ClockBarIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="12 6 12 12 16 14" />
-    </svg>
   );
 }
 
@@ -502,7 +257,6 @@ function JobOverview({
   notes,
   timeEntries,
   scheduleEntries,
-  workOpenSignal,
 }: {
   jobId: string;
   job: any;
@@ -515,7 +269,6 @@ function JobOverview({
   notes: any[];
   timeEntries: any[];
   scheduleEntries: any[];
-  workOpenSignal?: number;
 }) {
   return (
     <div className="space-y-6">
@@ -573,7 +326,7 @@ function JobOverview({
       />
 
       {/* ── Work Completed ── */}
-      <WorkLog jobId={jobId} entries={workEntries} openSignal={workOpenSignal} />
+      <WorkLog jobId={jobId} entries={workEntries} />
 
       {/* ── Scheduled Dates ── */}
       <div>

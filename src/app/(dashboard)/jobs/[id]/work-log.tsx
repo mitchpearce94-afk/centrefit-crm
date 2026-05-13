@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useMemo, useEffect } from "react";
+import { useState, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
@@ -27,12 +27,9 @@ const QUICK_LINES = [
 export function WorkLog({
   jobId,
   entries,
-  openSignal,
 }: {
   jobId: string;
   entries: any[];
-  /** Incrementing counter from parent — when it changes, auto-open the form. */
-  openSignal?: number;
 }) {
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<any>(null);
@@ -42,13 +39,6 @@ export function WorkLog({
     setEditingEntry(null);
     setShowForm(true);
   }
-
-  // Parent (e.g. mobile action bar) bumps openSignal to ask us to open the form.
-  useEffect(() => {
-    if (openSignal === undefined || openSignal === 0) return;
-    openNew();
-    document.getElementById("job-work-log")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [openSignal]);
 
   function openEdit(entry: any) {
     setEditingEntry(entry);

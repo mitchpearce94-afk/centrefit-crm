@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
@@ -16,23 +16,12 @@ interface Attachment {
 export function NotesPanel({
   jobId,
   notes,
-  defaultShowForm = false,
-  openSignal,
 }: {
   jobId: string;
   notes: any[];
-  defaultShowForm?: boolean;
-  /** Incrementing counter from parent — when it changes, auto-open the form. */
-  openSignal?: number;
 }) {
   const [search, setSearch] = useState("");
-  const [showForm, setShowForm] = useState(defaultShowForm);
-
-  // Parent (e.g. mobile action bar) bumps openSignal to ask us to open the form.
-  useEffect(() => {
-    if (openSignal === undefined || openSignal === 0) return;
-    setShowForm(true);
-  }, [openSignal]);
+  const [showForm, setShowForm] = useState(false);
   const [expandedNote, setExpandedNote] = useState<string | null>(null);
   const router = useRouter();
 
