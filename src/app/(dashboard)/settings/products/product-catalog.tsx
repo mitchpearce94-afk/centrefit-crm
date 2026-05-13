@@ -71,6 +71,9 @@ export function ProductCatalog({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [addingToCategory, setAddingToCategory] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
+  const [groupMode, setGroupMode] = useState<"category" | "supplier">("category");
+  const [sendingRfqSupplierId, setSendingRfqSupplierId] = useState<string | null>(null);
+  const [costEdits, setCostEdits] = useState<Record<string, string>>({});
 
   // Local copies of picker options so inline-create flows can extend them
   // immediately without waiting for a router.refresh round trip.
@@ -139,6 +142,80 @@ export function ProductCatalog({
     }
     return map;
   }, [filtered]);
+
+  const supplierGrouped = useMemo(() => {
+    type Group = { supplierId: string | null; supplierName: string; items: Product[] };
+    const map = new Map<string, Group>();
+    for (const p of filtered) {
+      const key = p.supplier_id ?? "__unassigned__";
+      const existing = map.get(key);
+      if (existing) {
+        existing.items.push(p);
+      } else {
+        map.set(key, {
+          supplierId: p.supplier_id,
+          supplierName: p.supplier?.trim() || "— Unassigned —",
+          items: [p],
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.supplierId === null) return 1;
+      if (b.supplierId === null) return -1;
+      return a.supplierName.localeCompare(b.supplierName);
+    });
+  }, [filtered]);
+
+  async function sendSupplierRfq(supplierId: string, supplierName: string) {
+    setSendingRfqSupplierId(supplierId);
+    try {
+      const res = await fetch(`/api/suppliers/${supplierId}/rfq`, { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast(json.error ?? "RFQ send failed", "error");
+        return;
+      }
+      toast(`RFQ sent to ${supplierName} (${json.lineCount} line${json.lineCount === 1 ? "" : "s"})`);
+    } finally {
+      setSendingRfqSupplierId(null);
+    }
+  }
+
+  async function saveCostInline(productId: string) {
+    const raw = costEdits[productId];
+    if (raw === undefined) return;
+    const parsed = Number(raw);
+    if (Number.isNaN(parsed) || parsed < 0) {
+      toast("Invalid cost", "error");
+      return;
+    }
+    const product = products.find((p) => p.id === productId);
+    if (!product) return;
+    if (parsed === Number(product.cost_price)) {
+      // No actual change — drop the edit and don't fire a request.
+      setCostEdits((prev) => {
+        const next = { ...prev };
+        delete next[productId];
+        return next;
+      });
+      return;
+    }
+    const newSell = Number((parsed * (1 + Number(product.markup ?? 0))).toFixed(2));
+    const { error } = await supabase
+      .from("quote_products")
+      .update({ cost_price: parsed, sell_price: newSell, cost_updated_at: new Date().toISOString() })
+      .eq("id", productId);
+    if (error) {
+      toast(error.message, "error");
+      return;
+    }
+    setCostEdits((prev) => {
+      const next = { ...prev };
+      delete next[productId];
+      return next;
+    });
+    router.refresh();
+  }
 
   async function updateProduct(id: string, updates: Partial<Product>) {
     const { error } = await supabase.from("quote_products").update(updates).eq("id", id);
@@ -267,6 +344,30 @@ export function ProductCatalog({
           </button>
           Show inactive
         </label>
+        <div className="flex items-center rounded-md border border-border p-0.5">
+          <button
+            type="button"
+            onClick={() => setGroupMode("category")}
+            className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+              groupMode === "category"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            By Infrastructure
+          </button>
+          <button
+            type="button"
+            onClick={() => setGroupMode("supplier")}
+            className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+              groupMode === "supplier"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            By Supplier
+          </button>
+        </div>
         <button
           onClick={seedSuppliersFromProducts}
           disabled={seedingSuppliers}
@@ -279,7 +380,7 @@ export function ProductCatalog({
       <p className="text-xs text-muted-foreground mb-4">{filtered.length} products{taggingFilter ? ` (filtered to untagged)` : ""}</p>
 
       {/* Category groups */}
-      {Array.from(grouped).map(([category, items]) => {
+      {groupMode === "category" && Array.from(grouped).map(([category, items]) => {
         if (!categoryFilter && items.length === 0) return null;
 
         return (
@@ -367,6 +468,107 @@ export function ProductCatalog({
           </div>
         );
       })}
+
+      {/* Supplier groups */}
+      {groupMode === "supplier" && (
+        <>
+          <div className="mb-3 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            Monthly RFQ workflow: hit <strong className="text-foreground">Send RFQ</strong> per supplier, then bulk-update cost prices inline as replies come in. Sell prices auto-recalc from each product&apos;s markup.
+          </div>
+          {supplierGrouped.map((group) => {
+            const groupKey = group.supplierId ?? "__unassigned__";
+            const sending = sendingRfqSupplierId === group.supplierId;
+            return (
+              <div key={groupKey} className="mb-6">
+                <div className="flex items-center justify-between mb-2 gap-3">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {group.supplierName} ({group.items.length})
+                  </h3>
+                  {group.supplierId && (
+                    <button
+                      type="button"
+                      onClick={() => sendSupplierRfq(group.supplierId!, group.supplierName)}
+                      disabled={sending}
+                      className="rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50 transition-colors"
+                      title="Email this supplier asking for refreshed pricing on every product we have from them"
+                    >
+                      {sending ? "Sending RFQ…" : "Send RFQ"}
+                    </button>
+                  )}
+                </div>
+                <div className="overflow-x-auto rounded-lg border border-border">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/50">
+                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">Product</th>
+                        <th className="px-3 py-2 text-left font-medium text-muted-foreground hidden md:table-cell">SKU</th>
+                        <th className="px-3 py-2 text-left font-medium text-muted-foreground hidden lg:table-cell">Category</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground w-32">Cost (ex-GST)</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Markup</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Sell</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground w-20"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.items.map((p) => {
+                        const editValue = costEdits[p.id];
+                        const dirty = editValue !== undefined && Number(editValue) !== Number(p.cost_price);
+                        return (
+                          <tr key={p.id} className={`border-b border-border last:border-0 ${!p.is_active ? "opacity-40" : ""}`}>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-2">
+                                {p.image_url ? (
+                                  <img src={p.image_url} alt="" className="h-8 w-8 rounded border border-border object-contain bg-card shrink-0" />
+                                ) : null}
+                                <span>{p.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground font-mono hidden md:table-cell">{p.sku || "—"}</td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">{p.category}</td>
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={editValue ?? p.cost_price.toFixed(2)}
+                                onChange={(e) =>
+                                  setCostEdits((prev) => ({ ...prev, [p.id]: e.target.value }))
+                                }
+                                onBlur={() => saveCostInline(p.id)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    (e.target as HTMLInputElement).blur();
+                                  }
+                                }}
+                                className={`w-24 rounded-md border bg-input px-2 py-1 text-right text-xs font-mono focus:outline-none focus:ring-1 ${
+                                  dirty
+                                    ? "border-amber-500/40 ring-amber-500/30"
+                                    : "border-border focus:border-primary focus:ring-primary"
+                                }`}
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right text-xs font-mono text-muted-foreground">{(p.markup * 100).toFixed(0)}%</td>
+                            <td className="px-3 py-2 text-right text-xs font-mono">${p.sell_price.toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                onClick={() => setEditingId(p.id)}
+                                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                              >
+                                Edit
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
 
       {/* Add modal */}
       {addingToCategory && (

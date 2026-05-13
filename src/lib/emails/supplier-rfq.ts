@@ -25,6 +25,12 @@ export interface SendSupplierRFQInput {
   siteName?: string | null;
   dueByDate?: Date | null; // optional "please reply by" hint
   lines: RFQLine[];
+  /**
+   * "quote" (default) phrases the email as a one-off pricing request for a
+   * specific customer quote. "catalog_refresh" phrases it as a monthly
+   * pricing review across all the supplier's products in our catalog.
+   */
+  purpose?: "quote" | "catalog_refresh";
 }
 
 /**
@@ -37,9 +43,12 @@ export interface SendSupplierRFQInput {
  * their own format — no structured form.
  */
 export async function sendSupplierRFQ(input: SendSupplierRFQInput) {
-  const subject = `Pricing request — CentreFit Quote ${input.quoteRef}${
-    input.siteName ? ` — ${input.siteName}` : ""
-  }`;
+  const isCatalog = input.purpose === "catalog_refresh";
+  const subject = isCatalog
+    ? `Monthly pricing review — CentreFit ${input.quoteRef}`
+    : `Pricing request — CentreFit Quote ${input.quoteRef}${
+        input.siteName ? ` — ${input.siteName}` : ""
+      }`;
 
   const rows = input.lines
     .map((l) => {
@@ -69,7 +78,11 @@ export async function sendSupplierRFQ(input: SendSupplierRFQInput) {
       </p>
       <p style="margin:0 0 14px;font-size:13px;line-height:1.55;color:#475569">Hi ${input.supplierName},</p>
       <p style="margin:0 0 14px;font-size:13px;line-height:1.6;color:#475569">
-        We're preparing a quote for our client and need your current pricing on the items below. Please reply to <a href="mailto:${REPLY_TO}" style="color:#2563eb;text-decoration:none"><strong>${REPLY_TO}</strong></a> with a quote of your current unit pricing with <strong>${reference}</strong> as the reference. If anything is discontinued or backordered, an alternative would be appreciated.
+        ${
+          isCatalog
+            ? `As part of our monthly catalog review, we'd like to confirm your current pricing on the items below. Please reply to <a href="mailto:${REPLY_TO}" style="color:#2563eb;text-decoration:none"><strong>${REPLY_TO}</strong></a> with your current unit pricing and quote <strong>${reference}</strong> as the reference. Flag anything discontinued or backordered.`
+            : `We're preparing a quote for our client and need your current pricing on the items below. Please reply to <a href="mailto:${REPLY_TO}" style="color:#2563eb;text-decoration:none"><strong>${REPLY_TO}</strong></a> with a quote of your current unit pricing with <strong>${reference}</strong> as the reference. If anything is discontinued or backordered, an alternative would be appreciated.`
+        }
       </p>
       <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;margin:8px 0 18px">
         <thead>

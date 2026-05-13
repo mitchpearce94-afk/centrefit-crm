@@ -89,7 +89,6 @@ export function SupplierPricing({
 }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [sendingRFQ, setSendingRFQ] = useState<string | null>(null);
   const [savingLine, setSavingLine] = useState<string | null>(null);
   const [edits, setEdits] = useState<Record<string, { cost?: string; markup?: string }>>({});
 
@@ -114,34 +113,6 @@ export function SupplierPricing({
     if (b.supplierId === null) return -1;
     return a.supplierName.localeCompare(b.supplierName);
   });
-
-  async function sendRFQ(supplierId: string) {
-    setSendingRFQ(supplierId);
-    try {
-      const res = await fetch(`/api/quotes/${quoteId}/request-supplier-pricing`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ supplierIds: [supplierId] }),
-      });
-      const json = await res.json();
-      if (!res.ok && (json.sent?.length ?? 0) === 0) {
-        toast(json.error ?? "RFQ send failed", "error");
-        return;
-      }
-      if (json.failures?.length > 0) {
-        toast(`RFQ failed: ${json.failures[0].message}`, "error");
-      } else if (json.sent?.length > 0) {
-        const skippedFreshCount = json.skippedFresh?.length ?? 0;
-        const freshSuffix = skippedFreshCount > 0 ? `, skipped ${skippedFreshCount} fresh line${skippedFreshCount === 1 ? "" : "s"}` : "";
-        toast(`RFQ sent to ${json.sent[0].supplierName} (${json.sent[0].lineCount} line${json.sent[0].lineCount === 1 ? "" : "s"}${freshSuffix})`);
-      } else if (json.skippedFresh?.length > 0) {
-        toast("All lines have fresh prices — nothing to send");
-      }
-      router.refresh();
-    } finally {
-      setSendingRFQ(null);
-    }
-  }
 
   async function saveLine(line: LineItem) {
     const edit = edits[line.id];
@@ -201,8 +172,8 @@ export function SupplierPricing({
         <div>
           <h2 className="text-sm font-semibold">Supplier pricing</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Confirm current prices from suppliers before sending the quote. Type prices as
-            suppliers reply — sell prices auto-recalc from your markup.
+            Adjust cost or markup for this quote only. Catalog-wide price refreshes
+            now live on the Products page — send monthly supplier RFQs from there.
           </p>
         </div>
         <div className="shrink-0 flex gap-2 text-[10px] uppercase tracking-wide">
@@ -215,15 +186,6 @@ export function SupplierPricing({
       <div className="space-y-4">
         {orderedGroups.map((group) => {
           const groupKey = group.supplierId ?? "__unassigned__";
-          const groupSending = sendingRFQ === group.supplierId;
-          const noEmail = !group.supplierEmail;
-          const nonFreshLines = group.lines.filter((l) => !isFresh(l));
-          const allFresh = group.lines.length > 0 && nonFreshLines.length === 0;
-          const canSendRFQ = group.supplierId !== null && !noEmail && !allFresh;
-
-          let rfqTooltip = "Send pricing request";
-          if (noEmail) rfqTooltip = "Supplier has no email set";
-          else if (allFresh) rfqTooltip = "All prices confirmed within the last 30 days — no RFQ needed";
 
           return (
             <div key={groupKey} className="rounded-md border border-border">
@@ -233,27 +195,7 @@ export function SupplierPricing({
                   {group.supplierEmail && (
                     <div className="text-[10px] text-muted-foreground">{group.supplierEmail}</div>
                   )}
-                  {group.supplierId && noEmail && (
-                    <div className="text-[10px] text-amber-400">No email on file — add one to send RFQs</div>
-                  )}
-                  {group.supplierId && allFresh && (
-                    <div className="text-[10px] text-emerald-400">All prices fresh (last 30 days)</div>
-                  )}
                 </div>
-                {group.supplierId && (
-                  <button
-                    onClick={() => sendRFQ(group.supplierId!)}
-                    disabled={!canSendRFQ || groupSending}
-                    className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs text-foreground hover:bg-accent disabled:opacity-50"
-                    title={rfqTooltip}
-                  >
-                    {groupSending
-                      ? "Sending…"
-                      : allFresh
-                        ? "No RFQ needed"
-                        : `Send RFQ${nonFreshLines.length < group.lines.length ? ` (${nonFreshLines.length})` : ""}`}
-                  </button>
-                )}
               </div>
 
               <table className="w-full text-xs">
