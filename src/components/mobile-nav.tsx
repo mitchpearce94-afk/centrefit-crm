@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { Sheet } from "@/components/sheet";
+import { useKeyboardOpen } from "@/lib/hooks/use-keyboard-open";
 
 interface StaffSummary {
   display_name: string;
@@ -47,6 +48,7 @@ export function MobileNav({ user, staff }: { user: User; staff: StaffSummary | n
   const pathname = usePathname();
   const router = useRouter();
   const [moreOpen, setMoreOpen] = useState(false);
+  const keyboardOpen = useKeyboardOpen();
 
   const isMore = !TABS.some((t) =>
     t.href === "/" ? pathname === "/" : pathname.startsWith(t.href),
@@ -63,7 +65,9 @@ export function MobileNav({ user, staff }: { user: User; staff: StaffSummary | n
   return (
     <>
       <nav
-        className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85"
+        className={`lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85 transition-transform duration-150 ${
+          keyboardOpen ? "translate-y-full pointer-events-none" : ""
+        }`}
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         aria-label="Primary"
       >

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
 import { compressImage, mapWithConcurrency } from "@/lib/images/compress";
+import { useKeyboardOpen } from "@/lib/hooks/use-keyboard-open";
 import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 import { QuickActions } from "./quick-actions";
 import { JobChecklist } from "./job-checklist";
@@ -92,12 +93,11 @@ export function JobTabs({
 
   return (
     <div>
-      {/* Tab strip — pill buttons, horizontal scroll. Same UI on both
-          mobile and desktop. Constrained to the page's content width via
-          the parent's padding + min-w-0; overflow-x-auto handles the
-          slide. Edge fades hint that there's more to scroll. */}
+      {/* Tab strip — pill buttons, horizontal scroll. Trailing pr-12
+          keeps the last tab from butting against the screen edge, and
+          the wider w-16 fade fully masks any peek-through. */}
       <div className="relative min-w-0">
-        <div className="flex gap-1.5 overflow-x-auto scrollbar-hide -mx-1 px-1 py-1">
+        <div className="flex gap-1.5 overflow-x-auto scrollbar-hide -mx-1 px-1 pr-12 py-1">
           {tabs.map((tab) => {
             const active = activeTab === tab.id;
             return (
@@ -126,11 +126,11 @@ export function JobTabs({
             );
           })}
         </div>
-        {/* Right-edge fade — visual cue that more tabs are scrollable */}
+        {/* Right-edge fade — wider so the next pill doesn't peek past it. */}
         <div
-          className="pointer-events-none absolute inset-y-0 right-0 w-8"
+          className="pointer-events-none absolute inset-y-0 right-0 w-16"
           style={{
-            background: "linear-gradient(to left, var(--background), transparent)",
+            background: "linear-gradient(to left, var(--background) 40%, transparent)",
           }}
         />
       </div>
@@ -245,6 +245,7 @@ function MobileActionBar({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<"clock" | "photo" | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const keyboardOpen = useKeyboardOpen();
 
   async function toggleClock() {
     setBusy("clock");
@@ -337,9 +338,20 @@ function MobileActionBar({
         onChange={handlePhotos}
         className="hidden"
       />
-      {/* Spacer so the last content isn't hidden under the bar. */}
-      <div className="lg:hidden h-20" aria-hidden />
-      <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur pb-[env(safe-area-inset-bottom)]">
+      {/* Spacer so the last content isn't hidden under the action bar +
+          the global MobileNav. Both are ~64px tall stacked = ~128px. */}
+      <div className="lg:hidden h-36" aria-hidden />
+      <div
+        className={`lg:hidden fixed inset-x-0 z-50 border-t border-border bg-background/95 backdrop-blur transition-transform duration-150 ${
+          keyboardOpen ? "translate-y-full pointer-events-none" : ""
+        }`}
+        style={{
+          // Sit directly above the global MobileNav (which is 64px tall +
+          // safe-area-inset-bottom). z-50 puts us above the nav (z-40) so
+          // the upload-progress strip is visible.
+          bottom: "calc(env(safe-area-inset-bottom) + 64px)",
+        }}
+      >
         {progress && (
           <div className="px-3 py-1.5 text-[11px] text-muted-foreground bg-primary/5 border-b border-border">
             Uploading {progress.done}/{progress.total}…
@@ -507,8 +519,10 @@ function JobOverview({
 }) {
   return (
     <div className="space-y-6">
-      {/* ── Metadata row — site is the primary entity for a job ── */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+      {/* ── Metadata — just site name + address. Everything else
+          (customer link, categories, staff avatars) is one tap away in
+          the dedicated tabs; this row exists to orient the tech. ── */}
+      <div className="text-sm">
         {job.site ? (
           <Link
             href={`/sites/${job.site.id}`}
@@ -524,53 +538,10 @@ function JobOverview({
             {job.customer?.name}
           </Link>
         )}
-        {job.site && job.customer?.name && (
-          <>
-            <span className="text-muted-foreground">·</span>
-            <Link
-              href={`/customers/${job.customer.id}`}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {job.customer.name}
-            </Link>
-          </>
-        )}
         {job.site?.address && (
-          <span className="text-xs text-muted-foreground">
-            ({[job.site.address, job.site.suburb, job.site.state].filter(Boolean).join(", ")})
-          </span>
-        )}
-        {/* Categories */}
-        {job.category_1 && (
-          <>
-            <span className="text-muted-foreground">·</span>
-            <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-              {job.category_1.name}
-            </span>
-          </>
-        )}
-        {job.category_2 && (
-          <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-            {job.category_2.name}
-          </span>
-        )}
-        {/* Staff avatars */}
-        {job.job_staff?.length > 0 && (
-          <>
-            <span className="text-muted-foreground">·</span>
-            <div className="flex -space-x-1">
-              {job.job_staff.map((js: any) => (
-                <span
-                  key={js.id}
-                  className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-medium text-white ring-2 ring-background"
-                  style={{ backgroundColor: js.staff?.colour ?? "#3b82f6" }}
-                  title={js.staff?.display_name}
-                >
-                  {js.staff?.initials}
-                </span>
-              ))}
-            </div>
-          </>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {[job.site.address, job.site.suburb, job.site.state, job.site.postcode].filter(Boolean).join(", ")}
+          </p>
         )}
       </div>
 

@@ -380,10 +380,16 @@ function WorkEntryForm({
 
   return (
     <form onSubmit={handleSubmit} className="mb-5 rounded-lg border border-primary/30 bg-card p-4 space-y-3">
-      {/* Date */}
-      <div>
+      {/* Date — iOS Safari date inputs have an intrinsic min-width that
+          can overflow the parent. min-w-0 + max-w-full clamps it. */}
+      <div className="min-w-0">
         <label className="block text-xs font-medium text-muted-foreground mb-1">Date</label>
-        <input type="date" value={workDate} onChange={(e) => setWorkDate(e.target.value)} className={inputClass} />
+        <input
+          type="date"
+          value={workDate}
+          onChange={(e) => setWorkDate(e.target.value)}
+          className={`${inputClass} min-w-0 max-w-full`}
+        />
       </div>
 
       {/* Work description */}
