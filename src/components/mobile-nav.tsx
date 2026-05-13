@@ -40,17 +40,7 @@ const MORE_LINKS: { name: string; href: string; icon: (p: { className?: string }
   { name: "Plans", href: "/plans", icon: PlanIcon },
   { name: "Reports", href: "/reports", icon: BarChartIcon },
   { name: "Staff", href: "/staff", icon: StaffIcon },
-];
-
-const SETTINGS_LINKS: { name: string; href: string }[] = [
-  { name: "Billing", href: "/settings/billing" },
-  { name: "Checklists", href: "/settings/checklists" },
-  { name: "Electricians", href: "/settings/electricians" },
-  { name: "Products", href: "/settings/products" },
-  { name: "Recurring Services", href: "/settings/recurring-services" },
-  { name: "Rules", href: "/settings/rules" },
-  { name: "Scope Roles", href: "/settings/scope-roles" },
-  { name: "Integrations", href: "/settings/integrations" },
+  { name: "Settings", href: "/settings", icon: SettingsIcon },
 ];
 
 export function MobileNav({ user, staff }: { user: User; staff: StaffSummary | null }) {
@@ -131,32 +121,6 @@ export function MobileNav({ user, staff }: { user: User; staff: StaffSummary | n
                   >
                     <item.icon className="h-4 w-4 shrink-0" />
                     {item.name}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-              Settings
-            </div>
-            <div className="rounded-lg border border-border bg-card divide-y divide-border overflow-hidden">
-              {SETTINGS_LINKS.map((item) => {
-                const active = pathname.startsWith(item.href);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMoreOpen(false)}
-                    className={`flex items-center justify-between px-4 py-3 text-sm ${
-                      active ? "text-primary" : "text-foreground hover:bg-accent"
-                    }`}
-                  >
-                    <span>{item.name}</span>
-                    <svg className="h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="9 18 15 12 9 6" />
-                    </svg>
                   </Link>
                 );
               })}
@@ -338,6 +302,14 @@ function StaffIcon({ className }: { className?: string }) {
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
       <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
+}
+function SettingsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   );
 }

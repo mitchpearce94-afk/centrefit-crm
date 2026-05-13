@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
@@ -23,6 +23,14 @@ export function QuickActions({
   const router = useRouter();
   const supabase = createClient();
   const [busy, setBusy] = useState<string | null>(null);
+  const [confirmingComplete, setConfirmingComplete] = useState(false);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    };
+  }, []);
 
   const isComplete = currentStatusName === "Complete" || currentStatusName === "Cancelled";
 
@@ -52,6 +60,18 @@ export function QuickActions({
       .eq("id", openTimerId);
     router.refresh();
     setBusy(null);
+  }
+
+  function handleCompleteClick() {
+    if (!confirmingComplete) {
+      setConfirmingComplete(true);
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+      confirmTimer.current = setTimeout(() => setConfirmingComplete(false), 4000);
+      return;
+    }
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    setConfirmingComplete(false);
+    void markComplete();
   }
 
   async function markComplete() {
@@ -100,15 +120,25 @@ export function QuickActions({
         </button>
       )}
 
-      {/* Complete Job */}
+      {/* Complete Job — two-tap confirm to prevent accidental press */}
       {!isComplete && (
         <button
-          onClick={markComplete}
+          onClick={handleCompleteClick}
           disabled={busy === "complete"}
-          className={`${btnBase} border-success/30 bg-card text-foreground hover:bg-success/10`}
+          className={`${btnBase} ${
+            confirmingComplete
+              ? "border-warning/40 bg-warning/10 text-warning hover:bg-warning/20"
+              : "border-success/30 bg-card text-foreground hover:bg-success/10"
+          }`}
         >
-          <CheckIcon className="h-4 w-4 text-success shrink-0" />
-          <span className="truncate">{busy === "complete" ? "Completing…" : "Complete"}</span>
+          <CheckIcon className={`h-4 w-4 shrink-0 ${confirmingComplete ? "text-warning" : "text-success"}`} />
+          <span className="truncate">
+            {busy === "complete"
+              ? "Completing…"
+              : confirmingComplete
+                ? "Tap to confirm"
+                : "Complete"}
+          </span>
         </button>
       )}
 

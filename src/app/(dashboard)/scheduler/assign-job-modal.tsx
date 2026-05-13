@@ -241,9 +241,32 @@ export function AssignJobModal({
       }
     }
 
-    // Job-only side effect: nudge the linked job into "Scheduled" if it's
-    // still in a pre-work phase. Events/reminders never touch job status.
+    // Job-only side effect: ensure each scheduled staff is also on the
+    // job's assigned team. Without this, the schedule_entry shows up on
+    // the scheduler grid but the job never appears under "assigned to
+    // <staff>" — the jobs list and Today view both key off job_staff.
     if (entryType === "job" && jobId) {
+      const targetStaffIds = isEditing && entry
+        ? Array.from(new Set([entry.staff_id, ...selectedStaffIds]))
+        : selectedStaffIds;
+      const { data: existing } = await supabase
+        .from("job_staff")
+        .select("staff_id")
+        .eq("job_id", jobId);
+      const have = new Set((existing ?? []).map((r: any) => r.staff_id));
+      const missing = targetStaffIds.filter((sid) => !have.has(sid));
+      if (missing.length > 0) {
+        const { error: jsErr } = await supabase
+          .from("job_staff")
+          .insert(missing.map((sid) => ({ job_id: jobId, staff_id: sid })));
+        if (jsErr) {
+          setError(`Schedule saved but couldn't add to job team: ${jsErr.message}`);
+          setSaving(false);
+          return;
+        }
+      }
+      // Nudge the linked job into "Scheduled" if it's still in a
+      // pre-work phase. Events/reminders never touch job status.
       await autoTransitionJobStatus(jobId, "job_scheduled", supabase);
     }
 

@@ -10,9 +10,9 @@ import type { User } from "@supabase/supabase-js";
 // tabs + More drawer) instead.
 const navigation: { name: string; href: string; icon: (p: { className?: string }) => React.ReactElement }[] = [
   { name: "Today", href: "/", icon: LayoutIcon },
-  { name: "Jobs", href: "/jobs", icon: BriefcaseIcon },
   { name: "Customers", href: "/customers", icon: UsersIcon },
   { name: "Sites", href: "/sites", icon: MapPinIcon },
+  { name: "Jobs", href: "/jobs", icon: BriefcaseIcon },
   { name: "Scheduler", href: "/scheduler", icon: CalendarIcon },
   { name: "NBN", href: "/nbn", icon: WifiIcon },
   // { name: "Pipeline", href: "/pipeline", icon: TrendingUpIcon },  // Hidden 2026-04-23 — not in use. Re-enable by uncommenting.
@@ -23,17 +23,7 @@ const navigation: { name: string; href: string; icon: (p: { className?: string }
   { name: "Plans", href: "/plans", icon: PlanIcon },
   { name: "Reports", href: "/reports", icon: BarChartIcon },
   { name: "Staff", href: "/staff", icon: StaffIcon },
-];
-
-const settingsNav = [
-  { name: "Billing", href: "/settings/billing", icon: BillingIcon },
-  { name: "Checklists", href: "/settings/checklists", icon: ChecklistIcon },
-  { name: "Electricians", href: "/settings/electricians", icon: PlugIcon },
-  { name: "Products", href: "/settings/products", icon: PackageIcon },
-  { name: "Recurring Services", href: "/settings/recurring-services", icon: RepeatIcon },
-  { name: "Rules", href: "/settings/rules", icon: RulesIcon },
-  { name: "Scope Roles", href: "/settings/scope-roles", icon: FileTextIcon },
-  { name: "Integrations", href: "/settings/integrations", icon: PlugIcon },
+  { name: "Settings", href: "/settings", icon: SettingsIcon },
 ];
 
 interface StaffSummary {
@@ -112,36 +102,6 @@ export function Sidebar({ user, staff }: { user: User; staff: StaffSummary | nul
                 </Link>
               );
             })}
-          </div>
-
-          {/* Settings section */}
-          <div className="mt-5 pt-4 border-t border-border">
-            <div className="flex items-center gap-2 px-3 py-1.5">
-              <SettingsIcon className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Settings</span>
-            </div>
-            <div className="space-y-0.5 mt-0.5">
-              {settingsNav.map((item) => {
-                const isActive = pathname.startsWith(item.href);
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                      className={`relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-all ${
-                      isActive
-                        ? "bg-primary/10 text-primary font-medium"
-                        : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                    }`}
-                  >
-                    {isActive && (
-                      <span className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary" />
-                    )}
-                    <item.icon className="h-4 w-4 shrink-0" />
-                    {item.name}
-                  </Link>
-                );
-              })}
-            </div>
           </div>
         </nav>
 

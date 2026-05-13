@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/sidebar";
 import { MobileNav } from "@/components/mobile-nav";
 import { NotificationsBell } from "@/components/notifications-bell";
+import { SuggestionButton } from "@/components/suggestion-button";
 import { ToastProvider } from "@/components/ui/toast";
 
 export default async function DashboardLayout({
@@ -57,12 +58,14 @@ export default async function DashboardLayout({
             <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
               CRM
             </span>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-1.5">
+              <SuggestionButton />
               <NotificationsBell />
             </div>
           </div>
-          {/* Desktop top bar — bell only, right-aligned. */}
+          {/* Desktop top bar — suggestion + bell, right-aligned. */}
           <div className="hidden lg:flex sticky top-0 z-20 h-12 items-center justify-end gap-2 border-b border-border bg-card px-6">
+            <SuggestionButton />
             <NotificationsBell />
           </div>
           <div className="p-4 md:p-6">{children}</div>

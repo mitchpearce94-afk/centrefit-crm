@@ -26,11 +26,14 @@ export default async function JobDetailPage({
         .from("staff")
         .select("id, display_name, initials, colour")
         .eq("is_active", true),
+      // Oldest-first so the on-screen list mirrors the invoice narrative
+      // (which is already sorted oldest → newest in buildNarrative).
       supabase
         .from("job_work_entries")
         .select("*, staff:staff(display_name, initials, colour)")
         .eq("job_id", id)
-        .order("work_date", { ascending: false }),
+        .order("work_date", { ascending: true })
+        .order("created_at", { ascending: true }),
       supabase
         .from("job_notes")
         .select("*, staff:staff(display_name, initials, colour)")

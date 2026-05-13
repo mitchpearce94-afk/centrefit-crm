@@ -266,6 +266,13 @@ export function NotesPanel({
         <NoteDetail
           note={filtered.find((n) => n.id === expandedNote)}
           onClose={() => setExpandedNote(null)}
+          onMutated={() => {
+            router.refresh();
+          }}
+          onDeleted={() => {
+            setExpandedNote(null);
+            router.refresh();
+          }}
         />
       )}
 
@@ -277,20 +284,141 @@ export function NotesPanel({
 }
 
 /* ── Note Detail (expanded view) ── */
-function NoteDetail({ note, onClose }: { note: any; onClose: () => void }) {
+function NoteDetail({
+  note,
+  onClose,
+  onMutated,
+  onDeleted,
+}: {
+  note: any;
+  onClose: () => void;
+  onMutated: () => void;
+  onDeleted: () => void;
+}) {
+  const supabase = createClient();
+  const { toast } = useToast();
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState<string>(note?.title ?? "");
+  const [content, setContent] = useState<string>(note?.content ?? "");
+  const [noteType, setNoteType] = useState<"note" | "email" | "call">(
+    (note?.type as "note" | "email" | "call") ?? "note",
+  );
+  const [saving, setSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingAtt, setConfirmingAtt] = useState<number | null>(null);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const attTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   if (!note) return null;
 
-  const attachments: Attachment[] = note.attachments ?? [];
+  const attachments: Attachment[] = Array.isArray(note.attachments) ? [...note.attachments] : [];
   if (attachments.length === 0 && note.image_url) {
     attachments.push({ url: note.image_url, name: "Photo", type: "image" });
   }
 
+  function bucketPathFromUrl(url: string): string | null {
+    // Public URL format: <project>/storage/v1/object/public/job-attachments/<path>
+    const marker = "/storage/v1/object/public/job-attachments/";
+    const idx = url.indexOf(marker);
+    if (idx === -1) return null;
+    return decodeURIComponent(url.slice(idx + marker.length));
+  }
+
+  async function saveEdit() {
+    setSaving(true);
+    const { error } = await supabase
+      .from("job_notes")
+      .update({
+        title: title.trim() || null,
+        content: content.trim(),
+        type: noteType,
+      })
+      .eq("id", note.id);
+    setSaving(false);
+    if (error) {
+      toast(error.message, "error");
+      return;
+    }
+    setEditing(false);
+    onMutated();
+  }
+
+  function handleDeleteClick() {
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+      confirmTimer.current = setTimeout(() => setConfirmingDelete(false), 4000);
+      return;
+    }
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    setConfirmingDelete(false);
+    void deleteNote();
+  }
+
+  async function deleteNote() {
+    setSaving(true);
+    // Best-effort: delete the stored objects, then the row. Ignore storage errors;
+    // the row delete is what the user sees.
+    const paths = attachments
+      .map((a) => bucketPathFromUrl(a.url))
+      .filter((p): p is string => !!p);
+    if (paths.length > 0) {
+      await supabase.storage.from("job-attachments").remove(paths);
+    }
+    const { error } = await supabase.from("job_notes").delete().eq("id", note.id);
+    setSaving(false);
+    if (error) {
+      toast(error.message, "error");
+      return;
+    }
+    onDeleted();
+  }
+
+  function handleAttachmentDeleteClick(idx: number) {
+    if (confirmingAtt !== idx) {
+      setConfirmingAtt(idx);
+      if (attTimer.current) clearTimeout(attTimer.current);
+      attTimer.current = setTimeout(() => setConfirmingAtt(null), 4000);
+      return;
+    }
+    if (attTimer.current) clearTimeout(attTimer.current);
+    setConfirmingAtt(null);
+    void deleteAttachment(idx);
+  }
+
+  async function deleteAttachment(idx: number) {
+    const target = attachments[idx];
+    if (!target) return;
+    const remaining = attachments.filter((_, i) => i !== idx);
+    const path = bucketPathFromUrl(target.url);
+    if (path) {
+      await supabase.storage.from("job-attachments").remove([path]);
+    }
+    const remainingImage = remaining.find((a) => a.type?.startsWith("image"))?.url ?? null;
+    const stillReferencedByImageUrl = note.image_url && remaining.some((a) => a.url === note.image_url);
+    const { error } = await supabase
+      .from("job_notes")
+      .update({
+        attachments: remaining,
+        image_url: stillReferencedByImageUrl ? note.image_url : remainingImage,
+      })
+      .eq("id", note.id);
+    if (error) {
+      toast(error.message, "error");
+      return;
+    }
+    onMutated();
+  }
+
+  const inputClass =
+    "block w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
+
   return (
     <div className="mt-4 rounded-lg border border-primary/30 bg-card overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between bg-muted/50 px-4 py-3 border-b border-border">
-        <div>
-          <h3 className="text-sm font-medium">
+      <div className="flex items-center justify-between bg-muted/50 px-4 py-3 border-b border-border gap-2">
+        <div className="min-w-0">
+          <h3 className="text-sm font-medium truncate">
             {note.title || note.content.split("\n")[0].slice(0, 60) || "Untitled"}
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -305,20 +433,107 @@ function NoteDetail({ note, onClose }: { note: any; onClose: () => void }) {
             })}
           </p>
         </div>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-          className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
-        >
-          Close
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {!editing && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditing(true);
+                }}
+                className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
+              >
+                Edit
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteClick();
+                }}
+                disabled={saving}
+                className={`rounded-md px-2 py-1 text-xs transition-colors ${
+                  confirmingDelete
+                    ? "border border-destructive bg-destructive/10 text-destructive"
+                    : "border border-border text-muted-foreground hover:text-destructive hover:border-destructive"
+                }`}
+              >
+                {saving ? "Deleting…" : confirmingDelete ? "Tap to confirm" : "Delete"}
+              </button>
+            </>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
+          >
+            Close
+          </button>
+        </div>
       </div>
 
       {/* Content */}
       <div className="px-4 py-4">
-        <p className="text-sm whitespace-pre-wrap">{note.content}</p>
+        {editing ? (
+          <div className="space-y-3">
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Note title"
+              className={inputClass}
+            />
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              rows={5}
+              placeholder="Details..."
+              className={`${inputClass} resize-none`}
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex gap-1 rounded-md border border-border p-0.5">
+                {(["note", "email", "call"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setNoteType(t)}
+                    className={`rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors ${
+                      noteType === t
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 pt-2 border-t border-border">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing(false);
+                  setTitle(note?.title ?? "");
+                  setContent(note?.content ?? "");
+                  setNoteType((note?.type as "note" | "email" | "call") ?? "note");
+                }}
+                className="w-full sm:w-auto rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveEdit}
+                disabled={saving || !content.trim()}
+                className="w-full sm:w-auto rounded-md bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              >
+                {saving ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm whitespace-pre-wrap">{note.content}</p>
+        )}
       </div>
 
       {/* Attachments */}
@@ -328,32 +543,47 @@ function NoteDetail({ note, onClose }: { note: any; onClose: () => void }) {
             Attachments ({attachments.length})
           </p>
           <div className="flex flex-wrap gap-2">
-            {attachments.map((att, i) => (
-              <a
-                key={i}
-                href={att.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group"
-              >
-                {att.type?.startsWith("image") ? (
-                  <img
-                    src={att.url}
-                    alt={att.name}
-                    className="h-24 w-auto rounded-md border border-border object-cover group-hover:opacity-90 transition-opacity"
-                  />
-                ) : (
-                  <div className="flex h-24 w-24 items-center justify-center rounded-md border border-border bg-muted group-hover:bg-accent transition-colors">
-                    <div className="text-center">
-                      <FileIcon className="h-6 w-6 text-muted-foreground mx-auto" />
-                      <p className="mt-1 text-[10px] text-muted-foreground truncate max-w-[80px]">
-                        {att.name}
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </a>
-            ))}
+            {attachments.map((att, i) => {
+              const confirming = confirmingAtt === i;
+              return (
+                <div key={i} className="relative group">
+                  <a href={att.url} target="_blank" rel="noopener noreferrer" className="block">
+                    {att.type?.startsWith("image") ? (
+                      <img
+                        src={att.url}
+                        alt={att.name}
+                        className="h-24 w-auto rounded-md border border-border object-cover group-hover:opacity-90 transition-opacity"
+                      />
+                    ) : (
+                      <div className="flex h-24 w-24 items-center justify-center rounded-md border border-border bg-muted group-hover:bg-accent transition-colors">
+                        <div className="text-center">
+                          <FileIcon className="h-6 w-6 text-muted-foreground mx-auto" />
+                          <p className="mt-1 text-[10px] text-muted-foreground truncate max-w-[80px]">
+                            {att.name}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleAttachmentDeleteClick(i);
+                    }}
+                    title={confirming ? "Tap to confirm delete" : "Delete attachment"}
+                    className={`absolute -top-1.5 -right-1.5 flex items-center justify-center rounded-full text-white shadow ring-1 ring-white/10 transition-all ${
+                      confirming
+                        ? "h-6 px-2 text-[10px] font-semibold bg-destructive"
+                        : "h-5 w-5 text-xs bg-destructive/90 hover:bg-destructive"
+                    }`}
+                  >
+                    {confirming ? "Tap to confirm" : "×"}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

@@ -49,23 +49,16 @@ export async function POST(
   // Fetch job + site details for the PO delivery address / reference
   const { data: job, error: jobErr } = await supabase
     .from("jobs")
-    .select(`
-      id, number,
-      customer_sites ( name, address, suburb, state, postcode )
-    `)
+    .select(`id, number`)
     .eq("id", jobId)
     .maybeSingle();
   if (jobErr) return NextResponse.json({ error: jobErr.message }, { status: 500 });
   if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
 
-  const siteRow = job.customer_sites as
-    | { name?: string; address?: string; suburb?: string; state?: string; postcode?: string }
-    | null;
-  const deliveryAddress = siteRow
-    ? [siteRow.address, siteRow.suburb, siteRow.state, siteRow.postcode]
-        .filter(Boolean)
-        .join(", ")
-    : undefined;
+  // PO delivery address is the Centrefit warehouse, NOT the job's site.
+  // Stock arrives at HQ for staging/QA then gets dispatched to site with
+  // a Centrefit van — so the supplier's drop point is always the same.
+  const deliveryAddress = "1/25 Paisley Drive, Lawnton, QLD, 4501";
 
   // Pull all items ready to order
   const { data: items, error: itemsErr } = await supabase
