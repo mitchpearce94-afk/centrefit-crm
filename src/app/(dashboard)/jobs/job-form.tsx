@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
@@ -101,6 +101,14 @@ export function JobForm({
   const selectedCustomer = customers.find((c) => c.id === customerId);
   const selectedSite = selectedCustomer?.customer_sites.find((s) => s.id === siteId);
   const sites = selectedCustomer?.customer_sites ?? [];
+
+  // Auto-pick the site when the customer has exactly one. Most CRM customers
+  // do; making admin tap a dropdown that has one option is just friction.
+  useEffect(() => {
+    if (customerId && !siteId && sites.length === 1) {
+      setSiteId(sites[0].id);
+    }
+  }, [customerId, siteId, sites]);
 
   // Group statuses by phase
   const statusesByPhase = useMemo(() => {
@@ -326,7 +334,7 @@ export function JobForm({
       </div>
 
       {/* Categories & Status */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium">Job Type</label>
           <select

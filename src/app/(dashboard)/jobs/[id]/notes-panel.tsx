@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
+import { compressImage, mapWithConcurrency } from "@/lib/images/compress";
 
 interface Attachment {
   url: string;
@@ -15,12 +16,23 @@ interface Attachment {
 export function NotesPanel({
   jobId,
   notes,
+  defaultShowForm = false,
+  openSignal,
 }: {
   jobId: string;
   notes: any[];
+  defaultShowForm?: boolean;
+  /** Incrementing counter from parent — when it changes, auto-open the form. */
+  openSignal?: number;
 }) {
   const [search, setSearch] = useState("");
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(defaultShowForm);
+
+  // Parent (e.g. mobile action bar) bumps openSignal to ask us to open the form.
+  useEffect(() => {
+    if (openSignal === undefined || openSignal === 0) return;
+    setShowForm(true);
+  }, [openSignal]);
   const [expandedNote, setExpandedNote] = useState<string | null>(null);
   const router = useRouter();
 
@@ -118,7 +130,7 @@ export function NotesPanel({
                     {attachments.slice(0, 4).map((att, i) => (
                       <div key={i} className="h-9 w-9 rounded border border-border bg-muted overflow-hidden shrink-0">
                         {att.type?.startsWith("image") ? (
-                          <img src={att.url} alt={att.name} className="h-full w-full object-cover" />
+                          <img src={att.url} alt={att.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center text-[8px] font-medium text-muted-foreground uppercase">
                             {att.name?.split(".").pop() ?? "file"}
@@ -200,6 +212,8 @@ export function NotesPanel({
                                 <img
                                   src={att.url}
                                   alt={att.name}
+                                  loading="lazy"
+                                  decoding="async"
                                   className="h-full w-full object-cover"
                                 />
                               ) : (
@@ -552,6 +566,8 @@ function NoteDetail({
                       <img
                         src={att.url}
                         alt={att.name}
+                        loading="lazy"
+                        decoding="async"
                         className="h-24 w-auto rounded-md border border-border object-cover group-hover:opacity-90 transition-opacity"
                       />
                     ) : (
@@ -605,6 +621,7 @@ function NoteForm({
   const [content, setContent] = useState("");
   const [noteType, setNoteType] = useState<"note" | "email" | "call">("note");
   const [saving, setSaving] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -634,26 +651,34 @@ function NoteForm({
       data: { user },
     } = await supabase.auth.getUser();
 
-    // Upload files
-    const attachments: Attachment[] = [];
-    for (const file of selectedFiles) {
-      const ext = file.name.split(".").pop();
+    // Compress images client-side (resize to 1920px JPEG) then upload 4-in-parallel.
+    // Sequential await in a for-loop kills throughput when techs drop 50-100 photos.
+    let done = 0;
+    if (selectedFiles.length > 0) {
+      setUploadProgress({ done: 0, total: selectedFiles.length });
+    }
+    const uploaded = await mapWithConcurrency<File, Attachment | null>(selectedFiles, 4, async (file) => {
+      const prepped = await compressImage(file);
+      const ext = prepped.name.split(".").pop();
       const path = `${jobId}/notes/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
       const { data, error } = await supabase.storage
         .from("job-attachments")
-        .upload(path, file);
-      if (!error && data) {
-        const { data: urlData } = supabase.storage
-          .from("job-attachments")
-          .getPublicUrl(data.path);
-        attachments.push({
-          url: urlData.publicUrl,
-          name: file.name,
-          type: file.type,
-          size: file.size,
-        });
-      }
-    }
+        .upload(path, prepped);
+      done++;
+      setUploadProgress({ done, total: selectedFiles.length });
+      if (error || !data) return null;
+      const { data: urlData } = supabase.storage
+        .from("job-attachments")
+        .getPublicUrl(data.path);
+      return {
+        url: urlData.publicUrl,
+        name: file.name,
+        type: prepped.type,
+        size: prepped.size,
+      };
+    });
+    const attachments: Attachment[] = uploaded.filter((a): a is Attachment => a !== null);
+    setUploadProgress(null);
 
     const { error } = await supabase.from("job_notes").insert({
       job_id: jobId,
@@ -709,6 +734,8 @@ function NoteForm({
               <img
                 src={url}
                 alt=""
+                loading="lazy"
+                decoding="async"
                 className="h-20 w-20 rounded-md border border-border object-cover"
               />
               <button
@@ -783,7 +810,11 @@ function NoteForm({
           disabled={saving || (!title.trim() && !content.trim() && selectedFiles.length === 0)}
           className="w-full sm:w-auto rounded-md bg-primary px-5 py-2.5 sm:py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
         >
-          {saving ? "Saving..." : "Save Note"}
+          {uploadProgress
+            ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
+            : saving
+              ? "Saving..."
+              : "Save Note"}
         </button>
       </div>
     </form>

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
+import { compressImage, mapWithConcurrency } from "@/lib/images/compress";
 
 const QUICK_LINES = [
   "Left KGSQ at __:__ and travelled to site",
@@ -26,9 +27,12 @@ const QUICK_LINES = [
 export function WorkLog({
   jobId,
   entries,
+  openSignal,
 }: {
   jobId: string;
   entries: any[];
+  /** Incrementing counter from parent — when it changes, auto-open the form. */
+  openSignal?: number;
 }) {
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<any>(null);
@@ -38,6 +42,13 @@ export function WorkLog({
     setEditingEntry(null);
     setShowForm(true);
   }
+
+  // Parent (e.g. mobile action bar) bumps openSignal to ask us to open the form.
+  useEffect(() => {
+    if (openSignal === undefined || openSignal === 0) return;
+    openNew();
+    document.getElementById("job-work-log")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [openSignal]);
 
   function openEdit(entry: any) {
     setEditingEntry(entry);
@@ -50,7 +61,7 @@ export function WorkLog({
   }
 
   return (
-    <div>
+    <div id="job-work-log">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Work Completed
@@ -166,7 +177,7 @@ export function WorkLog({
                 <div className="px-4 pb-3 flex flex-wrap gap-2">
                   {images.map((url: string, i: number) => (
                     <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                      <img src={url} alt="" className="h-20 w-auto rounded-md border border-border object-cover hover:opacity-90 transition-opacity" />
+                      <img src={url} alt="" loading="lazy" decoding="async" className="h-20 w-auto rounded-md border border-border object-cover hover:opacity-90 transition-opacity" />
                     </a>
                   ))}
                 </div>
@@ -218,10 +229,9 @@ function WorkEntryForm({
   const [previews, setPreviews] = useState<string[]>([]);
   const [showQuickLines, setShowQuickLines] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
 
   // Material management — product catalog selector
-  const [newMaterialQty, setNewMaterialQty] = useState("1");
-  const [selectedProductId, setSelectedProductId] = useState("");
   const [productCatalog, setProductCatalog] = useState<{ id: string; name: string; sku: string; category: string }[]>([]);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [productSearch, setProductSearch] = useState("");
@@ -238,7 +248,7 @@ function WorkEntryForm({
   }
 
   const filteredCatalog = useMemo(() => {
-    if (!productSearch || productSearch.length < 2) return productCatalog;
+    if (!productSearch || productSearch.length < 1) return [];
     const q = productSearch.toLowerCase();
     return productCatalog.filter(p =>
       p.name.toLowerCase().includes(q) ||
@@ -247,30 +257,34 @@ function WorkEntryForm({
     );
   }, [productCatalog, productSearch]);
 
-  // Group by category for display
-  const catalogByCategory = useMemo(() => {
-    const map = new Map<string, typeof productCatalog>();
-    for (const p of filteredCatalog) {
-      const list = map.get(p.category) ?? [];
-      list.push(p);
-      map.set(p.category, list);
-    }
-    return map;
-  }, [filteredCatalog]);
-
-  function addMaterial() {
-    if (!selectedProductId) return;
-    const product = productCatalog.find(p => p.id === selectedProductId);
+  // One-tap chip add: same product tapped twice just bumps qty.
+  function addOrBumpMaterial(productId: string) {
+    const product = productCatalog.find(p => p.id === productId);
     if (!product) return;
-    setMaterials([...materials, {
-      product_id: product.id,
-      name: product.name,
-      sku: product.sku || undefined,
-      qty: parseInt(newMaterialQty) || 1,
-    }]);
-    setSelectedProductId("");
-    setNewMaterialQty("1");
-    setProductSearch("");
+    setMaterials((prev) => {
+      const existing = prev.findIndex(m => m.product_id === productId);
+      if (existing >= 0) {
+        const next = [...prev];
+        next[existing] = { ...next[existing], qty: next[existing].qty + 1 };
+        return next;
+      }
+      return [...prev, {
+        product_id: product.id,
+        name: product.name,
+        sku: product.sku || undefined,
+        qty: 1,
+      }];
+    });
+  }
+
+  function bumpMaterial(index: number, delta: number) {
+    setMaterials((prev) => {
+      const next = [...prev];
+      const newQty = (next[index]?.qty ?? 0) + delta;
+      if (newQty <= 0) return prev.filter((_, i) => i !== index);
+      next[index] = { ...next[index], qty: newQty };
+      return next;
+    });
   }
 
   function removeMaterial(index: number) {
@@ -290,7 +304,12 @@ function WorkEntryForm({
   }
 
   function insertQuickLine(line: string) {
-    const newContent = content ? content.trimEnd() + "\n" + line : line;
+    // Substitute __:__ placeholders with the current local time (HH:MM).
+    // Tech taps a line like "Arrived on site at __:__" and gets it pre-filled.
+    const now = new Date();
+    const hhmm = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+    const filled = line.replace(/__:__/g, hhmm);
+    const newContent = content ? content.trimEnd() + "\n" + filled : filled;
     setContent(newContent);
     setShowQuickLines(false);
     setTimeout(() => {
@@ -309,17 +328,24 @@ function WorkEntryForm({
 
     const { data: { user } } = await supabase.auth.getUser();
 
-    // Upload new photos
-    const newImageUrls: string[] = [];
-    for (const file of selectedFiles) {
-      const ext = file.name.split(".").pop();
-      const path = `${jobId}/work/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-      const { data, error } = await supabase.storage.from("job-attachments").upload(path, file);
-      if (!error && data) {
-        const { data: urlData } = supabase.storage.from("job-attachments").getPublicUrl(data.path);
-        newImageUrls.push(urlData.publicUrl);
-      }
+    // Compress + upload 4-in-parallel. See lib/images/compress.ts.
+    let done = 0;
+    if (selectedFiles.length > 0) {
+      setUploadProgress({ done: 0, total: selectedFiles.length });
     }
+    const uploaded = await mapWithConcurrency(selectedFiles, 4, async (file) => {
+      const prepped = await compressImage(file);
+      const ext = prepped.name.split(".").pop();
+      const path = `${jobId}/work/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { data, error } = await supabase.storage.from("job-attachments").upload(path, prepped);
+      done++;
+      setUploadProgress({ done, total: selectedFiles.length });
+      if (error || !data) return null;
+      const { data: urlData } = supabase.storage.from("job-attachments").getPublicUrl(data.path);
+      return urlData.publicUrl;
+    });
+    const newImageUrls: string[] = uploaded.filter((u): u is string => !!u);
+    setUploadProgress(null);
 
     const payload = {
       content: content.trim(),
@@ -387,72 +413,78 @@ function WorkEntryForm({
         )}
       </div>
 
-      {/* Materials */}
+      {/* Materials — chip-picker: tap to add, tap again to bump qty. */}
       <div>
-        <label className="block text-xs font-medium text-muted-foreground mb-1">Materials Used</label>
+        <label className="block text-xs font-medium text-muted-foreground mb-1.5">Materials Used</label>
         {materials.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-2">
             {materials.map((m, i) => (
-              <span key={i} className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs ${m.product_id ? "bg-primary/10 text-primary" : "bg-muted"}`}>
-                {m.qty}x {m.name}
-                {m.sku && <span className="font-mono text-[10px] opacity-70">{m.sku}</span>}
-                {m.product_id && <span className="text-[9px] opacity-60">linked</span>}
-                <button type="button" onClick={() => removeMaterial(i)} className="text-muted-foreground hover:text-destructive ml-1">×</button>
+              <span key={i} className={`inline-flex items-center gap-0.5 rounded-md text-xs ${m.product_id ? "bg-primary/10 text-primary" : "bg-muted"}`}>
+                <button
+                  type="button"
+                  onClick={() => bumpMaterial(i, -1)}
+                  className="px-1.5 py-1 text-muted-foreground hover:text-foreground"
+                  aria-label="Decrease quantity"
+                >
+                  −
+                </button>
+                <span className="px-1 font-medium">{m.qty}×</span>
+                <span className="pr-1">{m.name}</span>
+                {m.sku && <span className="font-mono text-[10px] opacity-60 pr-1">{m.sku}</span>}
+                <button
+                  type="button"
+                  onClick={() => bumpMaterial(i, 1)}
+                  className="px-1.5 py-1 text-muted-foreground hover:text-foreground"
+                  aria-label="Increase quantity"
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeMaterial(i)}
+                  className="px-1.5 py-1 text-muted-foreground hover:text-destructive"
+                  aria-label="Remove"
+                >
+                  ×
+                </button>
               </span>
             ))}
           </div>
         )}
-        <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-          <div className="flex-1 min-w-0">
-            <input
-              type="text"
-              value={productSearch}
-              onChange={(e) => setProductSearch(e.target.value)}
-              placeholder="Filter products..."
-              className={`${inputClass} mb-1.5 text-base sm:text-sm`}
-            />
-            <select
-              value={selectedProductId}
-              onChange={(e) => setSelectedProductId(e.target.value)}
-              className={`${inputClass} text-base sm:text-sm`}
-              size={6}
-            >
-              <option value="">— Select a product —</option>
-              {Array.from(catalogByCategory).map(([category, items]) => (
-                <optgroup key={category} label={category}>
-                  {items.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}{p.sku ? ` (${p.sku})` : ""}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+        <input
+          type="text"
+          value={productSearch}
+          onChange={(e) => setProductSearch(e.target.value)}
+          placeholder="Search products to add…"
+          className={`${inputClass} text-base sm:text-sm`}
+        />
+        {productSearch.length >= 1 && (
+          <div className="mt-1.5 max-h-48 overflow-y-auto rounded-md border border-border bg-card/50">
+            {filteredCatalog.slice(0, 30).map((p) => {
+              const inCart = materials.find((m) => m.product_id === p.id);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => addOrBumpMaterial(p.id)}
+                  className="flex w-full items-center justify-between gap-2 border-b border-border px-3 py-2 text-left text-sm last:border-0 hover:bg-accent transition-colors"
+                >
+                  <span className="min-w-0 truncate">
+                    <span className="font-medium">{p.name}</span>
+                    {p.sku && <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">{p.sku}</span>}
+                    <span className="ml-1.5 text-[10px] text-muted-foreground">{p.category}</span>
+                  </span>
+                  <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                    {inCart ? `${inCart.qty}× — tap +1` : "+ Add"}
+                  </span>
+                </button>
+              );
+            })}
+            {filteredCatalog.length === 0 && (
+              <div className="px-3 py-3 text-xs text-muted-foreground">No matches.</div>
+            )}
           </div>
-          {/* On mobile: qty + Add stack horizontally below the picker, both
-              spread to full width so they're thumb-reachable. Desktop keeps
-              the existing column-on-the-right layout. */}
-          <div className="flex flex-row sm:flex-col items-end sm:items-stretch gap-2 sm:gap-1.5 sm:shrink-0">
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-medium text-muted-foreground">Qty</label>
-              <input
-                type="number"
-                value={newMaterialQty}
-                onChange={(e) => setNewMaterialQty(e.target.value)}
-                min="1"
-                className={`${inputClass} w-20 sm:w-16 text-center text-base sm:text-sm`}
-              />
-            </div>
-            <button
-              type="button"
-              onClick={addMaterial}
-              disabled={!selectedProductId}
-              className="flex-1 sm:flex-none rounded-md bg-primary px-4 py-3 sm:py-2 text-sm sm:text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors"
-            >
-              Add
-            </button>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Labour + Call Out */}
@@ -478,7 +510,7 @@ function WorkEntryForm({
         <div className="flex flex-wrap gap-2">
           {previews.map((url, i) => (
             <div key={i} className="relative">
-              <img src={url} alt="" className="h-20 w-20 rounded-md border border-border object-cover" />
+              <img src={url} alt="" loading="lazy" decoding="async" className="h-20 w-20 rounded-md border border-border object-cover" />
               <button type="button" onClick={() => removeFile(i)} className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[9px] text-white">×</button>
             </div>
           ))}
@@ -497,7 +529,13 @@ function WorkEntryForm({
       <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 pt-2 border-t border-border">
         <button type="button" onClick={onClose} className="w-full sm:w-auto rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent transition-colors">Cancel</button>
         <button type="submit" disabled={saving || !content.trim()} className="w-full sm:w-auto rounded-md bg-primary px-5 py-2.5 sm:py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
-          {saving ? "Saving..." : isEditing ? "Save Changes" : "Save Entry"}
+          {uploadProgress
+            ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
+            : saving
+              ? "Saving..."
+              : isEditing
+                ? "Save Changes"
+                : "Save Entry"}
         </button>
       </div>
     </form>

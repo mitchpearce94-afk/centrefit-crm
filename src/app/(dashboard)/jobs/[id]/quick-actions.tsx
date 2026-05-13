@@ -136,7 +136,9 @@ export function QuickActions({
             {busy === "complete"
               ? "Completing…"
               : confirmingComplete
-                ? "Tap to confirm"
+                ? hasOpenTimer
+                  ? `Confirm — clock out ${new Date().toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}`
+                  : "Tap to confirm"
                 : "Complete"}
           </span>
         </button>
