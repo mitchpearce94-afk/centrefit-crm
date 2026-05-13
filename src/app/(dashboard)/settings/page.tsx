@@ -12,6 +12,11 @@ const SECTIONS: { name: string; href: string; description: string }[] = [
     description: "Field checklists and task templates.",
   },
   {
+    name: "Asset Types",
+    href: "/settings/asset-types",
+    description: "Templates for what can be added to a site's asset list.",
+  },
+  {
     name: "Electricians",
     href: "/settings/electricians",
     description: "Electrician contacts and routing.",

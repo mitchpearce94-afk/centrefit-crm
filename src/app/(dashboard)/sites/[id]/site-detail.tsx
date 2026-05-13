@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { CustomerSite, CustomerContact, SiteAsset } from "@/lib/types";
+import type { CustomerSite, CustomerContact, SiteAsset, AssetType } from "@/lib/types";
 import { SiteEditForm } from "./site-edit-form";
 import { SiteContactsList } from "./site-contacts-list";
 import { SiteAssetsList } from "./site-assets-list";
+import { KeyInfoPanel, type KeyInfoPhoto } from "./key-info-panel";
 
 type Job = {
   id: string;
@@ -21,13 +22,17 @@ export function SiteDetail({
   contacts,
   jobs,
   assets,
+  assetTypes,
+  keyInfoPhotos,
 }: {
   site: CustomerSite & { customer: { id: string; name: string } | null };
   contacts: CustomerContact[];
   jobs: Job[];
   assets: SiteAsset[];
+  assetTypes: AssetType[];
+  keyInfoPhotos: KeyInfoPhoto[];
 }) {
-  const [tab, setTab] = useState<"details" | "contacts" | "jobs" | "assets">(
+  const [tab, setTab] = useState<"details" | "contacts" | "jobs" | "assets" | "key-info">(
     "details"
   );
 
@@ -37,6 +42,7 @@ export function SiteDetail({
     { key: "contacts", label: "Contacts", count: contacts.length },
     { key: "jobs", label: "Jobs", count: jobs.length },
     { key: "assets", label: "Assets", count: activeAssetCount },
+    { key: "key-info", label: "Key Information" },
   ];
 
   return (
@@ -141,7 +147,18 @@ export function SiteDetail({
           </div>
         )}
 
-        {tab === "assets" && <SiteAssetsList siteId={site.id} assets={assets} />}
+        {tab === "assets" && (
+          <SiteAssetsList siteId={site.id} assets={assets} assetTypes={assetTypes} />
+        )}
+
+        {tab === "key-info" && (
+          <KeyInfoPanel
+            siteId={site.id}
+            assets={assets}
+            assetTypes={assetTypes}
+            photos={keyInfoPhotos}
+          />
+        )}
       </div>
     </div>
   );

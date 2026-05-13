@@ -93,6 +93,7 @@ export interface SiteAsset {
   id: string;
   site_id: string;
   job_id: string | null;
+  asset_type_id: string | null;
   device_type: string | null;
   device_name: string | null;
   manufacturer: string | null;
@@ -100,6 +101,14 @@ export interface SiteAsset {
   serial: string | null;
   mac_address: string | null;
   ip_address: string | null;
+  subnet: string | null;
+  admin_user: string | null;
+  admin_password: string | null;
+  staff_user: string | null;
+  staff_password: string | null;
+  firmware: string | null;
+  vlans: { name?: string; id?: string; notes?: string }[];
+  wifi_ssids: { ssid?: string; password?: string; notes?: string }[];
   location_note: string | null;
   install_date: string | null;
   warranty_expiry: string | null;
@@ -107,6 +116,25 @@ export interface SiteAsset {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface AssetType {
+  id: string;
+  slug: string;
+  name: string;
+  category: string | null;
+  default_manufacturer: string | null;
+  has_serial: boolean;
+  has_mac: boolean;
+  has_ip: boolean;
+  has_network_credentials: boolean;
+  has_staff_credentials: boolean;
+  has_firmware: boolean;
+  has_vlans: boolean;
+  has_wifi: boolean;
+  is_key_info: boolean;
+  is_active: boolean;
+  sort_order: number;
 }
 
 export interface Job {

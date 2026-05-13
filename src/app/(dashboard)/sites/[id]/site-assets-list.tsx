@@ -1,39 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
-import type { SiteAsset } from "@/lib/types";
-
-const DEVICE_TYPES = [
-  "Camera",
-  "NVR",
-  "Network Switch",
-  "Router / Gateway",
-  "Wi-Fi Access Point",
-  "Comms Rack / Cabinet",
-  "Alarm Panel",
-  "Motion Sensor",
-  "Reed Switch",
-  "Duress Button",
-  "Duress Pendant / Receiver",
-  "Light & Siren",
-  "Access Controller",
-  "Card Reader",
-  "Standalone Keypad",
-  "Door Strike / Mag Lock",
-  "REX Button",
-  "Speaker",
-  "Amplifier",
-  "Modulator",
-  "TV / Display",
-  "TV Mount",
-  "Cardio Distribution",
-  "Tailgate System",
-  "Nightlife Component",
-  "Other",
-] as const;
+import type { AssetType, SiteAsset } from "@/lib/types";
 
 const inputClass =
   "rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
@@ -41,9 +12,11 @@ const inputClass =
 export function SiteAssetsList({
   siteId,
   assets,
+  assetTypes,
 }: {
   siteId: string;
   assets: SiteAsset[];
+  assetTypes: AssetType[];
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -71,7 +44,7 @@ export function SiteAssetsList({
         )}
       </div>
 
-      <QuickAddRow siteId={siteId} />
+      <QuickAddRow siteId={siteId} assetTypes={assetTypes} />
 
       <div className="mt-3 space-y-2">
         {visible.map((a) =>
@@ -80,6 +53,7 @@ export function SiteAssetsList({
               key={a.id}
               siteId={siteId}
               asset={a}
+              assetTypes={assetTypes}
               onDone={() => setEditingId(null)}
             />
           ) : (
@@ -113,7 +87,7 @@ export function SiteAssetsList({
 // persist across saves so installing a batch of the same device just means
 // scanning serials.
 
-function QuickAddRow({ siteId }: { siteId: string }) {
+function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: AssetType[] }) {
   const router = useRouter();
   const supabase = createClient();
   const { toast } = useToast();
@@ -121,10 +95,24 @@ function QuickAddRow({ siteId }: { siteId: string }) {
   const [error, setError] = useState<string | null>(null);
 
   // "Sticky" fields — persist across saves so a batch of the same device is fast
-  const [deviceType, setDeviceType] = useState("");
+  const [assetTypeId, setAssetTypeId] = useState("");
   const [manufacturer, setManufacturer] = useState("");
   const [model, setModel] = useState("");
   const [locationNote, setLocationNote] = useState("");
+
+  const selectedType = useMemo(
+    () => assetTypes.find((t) => t.id === assetTypeId) ?? null,
+    [assetTypes, assetTypeId],
+  );
+
+  // When picking a type, auto-fill manufacturer if it has a default and the
+  // user hasn't typed one yet. Doesn't override user input.
+  useEffect(() => {
+    if (selectedType?.default_manufacturer && !manufacturer) {
+      setManufacturer(selectedType.default_manufacturer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedType]);
 
   // "Per-unit" fields — cleared after each save
   const [deviceName, setDeviceName] = useState("");
@@ -142,7 +130,7 @@ function QuickAddRow({ siteId }: { siteId: string }) {
   }, []);
 
   async function save() {
-    if (!deviceType && !serial && !macAddress && !ipAddress && !deviceName) {
+    if (!assetTypeId && !serial && !macAddress && !ipAddress && !deviceName) {
       // Nothing to save
       return;
     }
@@ -150,7 +138,8 @@ function QuickAddRow({ siteId }: { siteId: string }) {
     setError(null);
     const payload = {
       site_id: siteId,
-      device_type: deviceType.trim() || null,
+      asset_type_id: assetTypeId || null,
+      device_type: selectedType?.name ?? null,
       device_name: deviceName.trim() || null,
       manufacturer: manufacturer.trim() || null,
       model: model.trim() || null,
@@ -206,11 +195,11 @@ function QuickAddRow({ siteId }: { siteId: string }) {
             — scan or type, press Enter to advance · last field saves the row
           </span>
         </div>
-        {(deviceType || manufacturer || model || locationNote) && (
+        {(assetTypeId || manufacturer || model || locationNote) && (
           <button
             type="button"
             onClick={() => {
-              setDeviceType("");
+              setAssetTypeId("");
               setManufacturer("");
               setModel("");
               setLocationNote("");
@@ -226,14 +215,14 @@ function QuickAddRow({ siteId }: { siteId: string }) {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <select
-          value={deviceType}
-          onChange={(e) => setDeviceType(e.target.value)}
+          value={assetTypeId}
+          onChange={(e) => setAssetTypeId(e.target.value)}
           className={inputClass}
           aria-label="Device type"
         >
           <option value="">Device type…</option>
-          {DEVICE_TYPES.map((t) => (
-            <option key={t} value={t}>{t}</option>
+          {assetTypes.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
           ))}
         </select>
         <input
@@ -410,10 +399,12 @@ function warrantyClass(d: string): string {
 function SiteAssetEditForm({
   siteId,
   asset,
+  assetTypes,
   onDone,
 }: {
   siteId: string;
   asset: SiteAsset;
+  assetTypes: AssetType[];
   onDone: () => void;
 }) {
   const router = useRouter();
@@ -423,17 +414,34 @@ function SiteAssetEditForm({
   const [error, setError] = useState<string | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
 
-  const [deviceType, setDeviceType] = useState(asset.device_type ?? "");
+  const [assetTypeId, setAssetTypeId] = useState(asset.asset_type_id ?? "");
   const [deviceName, setDeviceName] = useState(asset.device_name ?? "");
   const [manufacturer, setManufacturer] = useState(asset.manufacturer ?? "");
   const [model, setModel] = useState(asset.model ?? "");
   const [serial, setSerial] = useState(asset.serial ?? "");
   const [macAddress, setMacAddress] = useState(asset.mac_address ?? "");
   const [ipAddress, setIpAddress] = useState(asset.ip_address ?? "");
+  const [subnet, setSubnet] = useState(asset.subnet ?? "");
+  const [adminUser, setAdminUser] = useState(asset.admin_user ?? "");
+  const [adminPassword, setAdminPassword] = useState(asset.admin_password ?? "");
+  const [staffUser, setStaffUser] = useState(asset.staff_user ?? "");
+  const [staffPassword, setStaffPassword] = useState(asset.staff_password ?? "");
+  const [firmware, setFirmware] = useState(asset.firmware ?? "");
+  const [vlans, setVlans] = useState<{ name?: string; id?: string; notes?: string }[]>(
+    Array.isArray(asset.vlans) ? asset.vlans : [],
+  );
+  const [wifiSsids, setWifiSsids] = useState<{ ssid?: string; password?: string; notes?: string }[]>(
+    Array.isArray(asset.wifi_ssids) ? asset.wifi_ssids : [],
+  );
   const [locationNote, setLocationNote] = useState(asset.location_note ?? "");
   const [installDate, setInstallDate] = useState(asset.install_date ?? "");
   const [warrantyExpiry, setWarrantyExpiry] = useState(asset.warranty_expiry ?? "");
   const [notes, setNotes] = useState(asset.notes ?? "");
+
+  const selectedType = useMemo(
+    () => assetTypes.find((t) => t.id === assetTypeId) ?? null,
+    [assetTypes, assetTypeId],
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -441,13 +449,22 @@ function SiteAssetEditForm({
     setError(null);
     void siteId;
     const payload = {
-      device_type: deviceType.trim() || null,
+      asset_type_id: assetTypeId || null,
+      device_type: selectedType?.name ?? asset.device_type ?? null,
       device_name: deviceName.trim() || null,
       manufacturer: manufacturer.trim() || null,
       model: model.trim() || null,
       serial: serial.trim() || null,
       mac_address: macAddress.trim() || null,
       ip_address: ipAddress.trim() || null,
+      subnet: subnet.trim() || null,
+      admin_user: adminUser.trim() || null,
+      admin_password: adminPassword.trim() || null,
+      staff_user: staffUser.trim() || null,
+      staff_password: staffPassword.trim() || null,
+      firmware: firmware.trim() || null,
+      vlans,
+      wifi_ssids: wifiSsids,
       location_note: locationNote.trim() || null,
       install_date: installDate || null,
       warranty_expiry: warrantyExpiry || null,
@@ -490,13 +507,13 @@ function SiteAssetEditForm({
 
       <div className="grid grid-cols-2 gap-2">
         <select
-          value={deviceType}
-          onChange={(e) => setDeviceType(e.target.value)}
+          value={assetTypeId}
+          onChange={(e) => setAssetTypeId(e.target.value)}
           className={inputClass}
         >
           <option value="">Device type…</option>
-          {DEVICE_TYPES.map((t) => (
-            <option key={t} value={t}>{t}</option>
+          {assetTypes.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
           ))}
         </select>
         <input
@@ -542,6 +559,96 @@ function SiteAssetEditForm({
           className={inputClass + " font-mono"}
         />
       </div>
+
+      {(selectedType?.has_network_credentials || selectedType?.has_firmware) && (
+        <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Network &amp; credentials
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              placeholder="Subnet (e.g. 192.168.1.0/24)"
+              value={subnet}
+              onChange={(e) => setSubnet(e.target.value)}
+              className={inputClass + " font-mono"}
+            />
+            <input
+              placeholder="Firmware"
+              value={firmware}
+              onChange={(e) => setFirmware(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+          {selectedType?.has_network_credentials && (
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                placeholder="Admin user"
+                value={adminUser}
+                onChange={(e) => setAdminUser(e.target.value)}
+                className={inputClass}
+              />
+              <input
+                placeholder="Admin password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                className={inputClass + " font-mono"}
+              />
+            </div>
+          )}
+          {selectedType?.has_staff_credentials && (
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                placeholder="Staff user"
+                value={staffUser}
+                onChange={(e) => setStaffUser(e.target.value)}
+                className={inputClass}
+              />
+              <input
+                placeholder="Staff password"
+                value={staffPassword}
+                onChange={(e) => setStaffPassword(e.target.value)}
+                className={inputClass + " font-mono"}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {selectedType?.has_vlans && (
+        <RepeatList
+          title="VLANs"
+          rows={vlans.map((v) => ({
+            id: v.id ?? "",
+            name: v.name ?? "",
+            notes: v.notes ?? "",
+          }))}
+          fields={[
+            { key: "id", placeholder: "VLAN ID" },
+            { key: "name", placeholder: "Name" },
+            { key: "notes", placeholder: "Notes" },
+          ]}
+          onChange={(rows) => setVlans(rows as { id: string; name: string; notes: string }[])}
+        />
+      )}
+
+      {selectedType?.has_wifi && (
+        <RepeatList
+          title="Wi-Fi SSIDs"
+          rows={wifiSsids.map((w) => ({
+            ssid: w.ssid ?? "",
+            password: w.password ?? "",
+            notes: w.notes ?? "",
+          }))}
+          fields={[
+            { key: "ssid", placeholder: "SSID" },
+            { key: "password", placeholder: "Password" },
+            { key: "notes", placeholder: "Notes" },
+          ]}
+          onChange={(rows) =>
+            setWifiSsids(rows as { ssid: string; password: string; notes: string }[])
+          }
+        />
+      )}
 
       <input
         placeholder="Location note"
@@ -627,5 +734,73 @@ function SiteAssetEditForm({
         )}
       </div>
     </form>
+  );
+}
+
+// ── Generic repeating-list editor used for VLANs / Wi-Fi SSIDs ──────────────
+
+function RepeatList({
+  title,
+  rows,
+  fields,
+  onChange,
+}: {
+  title: string;
+  rows: Record<string, string>[];
+  fields: { key: string; placeholder: string }[];
+  onChange: (rows: Record<string, string>[]) => void;
+}) {
+  function update(idx: number, key: string, value: string) {
+    const next = rows.map((r, i) => (i === idx ? { ...r, [key]: value } : r));
+    onChange(next);
+  }
+  function add() {
+    onChange([...rows, fields.reduce((acc, f) => ({ ...acc, [f.key]: "" }), {})]);
+  }
+  function remove(idx: number) {
+    onChange(rows.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {title}
+        </p>
+        <button
+          type="button"
+          onClick={add}
+          className="text-[11px] font-medium text-primary hover:text-primary/80"
+        >
+          + Add
+        </button>
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground italic">None — tap + Add to start.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {rows.map((row, idx) => (
+            <div key={idx} className="flex items-center gap-1.5">
+              {fields.map((f) => (
+                <input
+                  key={f.key}
+                  placeholder={f.placeholder}
+                  value={row[f.key] ?? ""}
+                  onChange={(e) => update(idx, f.key, e.target.value)}
+                  className={inputClass + " flex-1 font-mono"}
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => remove(idx)}
+                className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-destructive hover:border-destructive"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

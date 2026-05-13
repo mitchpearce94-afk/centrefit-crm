@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { SiteDetail } from "./site-detail";
-import type { CustomerSite, CustomerContact, SiteAsset } from "@/lib/types";
+import type { CustomerSite, CustomerContact, SiteAsset, AssetType } from "@/lib/types";
 
 export default async function SiteDetailPage({
   params,
@@ -12,7 +12,7 @@ export default async function SiteDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [siteResult, contactsResult, jobsResult, assetsResult] = await Promise.all([
+  const [siteResult, contactsResult, jobsResult, assetsResult, assetTypesResult, keyInfoPhotosResult] = await Promise.all([
     supabase
       .from("customer_sites")
       .select(
@@ -41,6 +41,17 @@ export default async function SiteDetailPage({
       .order("is_active", { ascending: false })
       .order("device_type", { ascending: true, nullsFirst: false })
       .order("device_name", { ascending: true, nullsFirst: false }),
+    supabase
+      .from("asset_types")
+      .select("*")
+      .eq("is_active", true)
+      .order("sort_order")
+      .order("name"),
+    supabase
+      .from("site_key_info_photos")
+      .select("*")
+      .eq("site_id", id)
+      .order("created_at", { ascending: false }),
   ]);
 
   if (siteResult.error || !siteResult.data) {
@@ -59,6 +70,16 @@ export default async function SiteDetailPage({
   const contacts = (contactsResult.data ?? []) as CustomerContact[];
   const jobs = jobsResult.data ?? [];
   const assets = (assetsResult.data ?? []) as SiteAsset[];
+  const assetTypes = (assetTypesResult.data ?? []) as AssetType[];
+  const keyInfoPhotos = (keyInfoPhotosResult.data ?? []) as Array<{
+    id: string;
+    site_id: string;
+    url: string;
+    caption: string | null;
+    storage_path: string | null;
+    uploaded_by: string | null;
+    created_at: string;
+  }>;
 
   return (
     <div>
@@ -91,7 +112,14 @@ export default async function SiteDetailPage({
       </div>
 
       <div className="mt-6">
-        <SiteDetail site={site} contacts={contacts} jobs={jobs as any} assets={assets} />
+        <SiteDetail
+          site={site}
+          contacts={contacts}
+          jobs={jobs as any}
+          assets={assets}
+          assetTypes={assetTypes}
+          keyInfoPhotos={keyInfoPhotos}
+        />
       </div>
     </div>
   );
