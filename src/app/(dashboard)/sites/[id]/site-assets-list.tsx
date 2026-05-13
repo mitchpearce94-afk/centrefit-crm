@@ -119,6 +119,14 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
   const [serial, setSerial] = useState("");
   const [macAddress, setMacAddress] = useState("");
   const [ipAddress, setIpAddress] = useState("");
+  const [subnet, setSubnet] = useState("");
+  const [adminUser, setAdminUser] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [staffUser, setStaffUser] = useState("");
+  const [staffPassword, setStaffPassword] = useState("");
+  const [firmware, setFirmware] = useState("");
+  const [vlans, setVlans] = useState<{ id?: string; name?: string; notes?: string }[]>([]);
+  const [wifiSsids, setWifiSsids] = useState<{ ssid?: string; password?: string; notes?: string }[]>([]);
 
   const serialRef = useRef<HTMLInputElement>(null);
   const macRef = useRef<HTMLInputElement>(null);
@@ -146,6 +154,14 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
       serial: serial.trim() || null,
       mac_address: macAddress.trim() || null,
       ip_address: ipAddress.trim() || null,
+      subnet: subnet.trim() || null,
+      admin_user: adminUser.trim() || null,
+      admin_password: adminPassword.trim() || null,
+      staff_user: staffUser.trim() || null,
+      staff_password: staffPassword.trim() || null,
+      firmware: firmware.trim() || null,
+      vlans,
+      wifi_ssids: wifiSsids,
       location_note: locationNote.trim() || null,
     };
     const { error: err } = await supabase.from("site_assets").insert(payload);
@@ -160,6 +176,14 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
     setSerial("");
     setMacAddress("");
     setIpAddress("");
+    setSubnet("");
+    setAdminUser("");
+    setAdminPassword("");
+    setStaffUser("");
+    setStaffPassword("");
+    setFirmware("");
+    setVlans([]);
+    setWifiSsids([]);
     setSaving(false);
     router.refresh();
     // Refocus Serial for the next scan
@@ -283,6 +307,88 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
           spellCheck={false}
         />
       </div>
+
+      {(selectedType?.has_network_credentials || selectedType?.has_firmware) && (
+        <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Network &amp; credentials
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              placeholder="Subnet (e.g. 192.168.1.0/24)"
+              value={subnet}
+              onChange={(e) => setSubnet(e.target.value)}
+              className={inputClass + " font-mono"}
+            />
+            <input
+              placeholder="Firmware"
+              value={firmware}
+              onChange={(e) => setFirmware(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+          {selectedType?.has_network_credentials && (
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                placeholder="Admin user"
+                value={adminUser}
+                onChange={(e) => setAdminUser(e.target.value)}
+                className={inputClass}
+              />
+              <input
+                placeholder="Admin password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                className={inputClass + " font-mono"}
+              />
+            </div>
+          )}
+          {selectedType?.has_staff_credentials && (
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                placeholder="Staff user"
+                value={staffUser}
+                onChange={(e) => setStaffUser(e.target.value)}
+                className={inputClass}
+              />
+              <input
+                placeholder="Staff password"
+                value={staffPassword}
+                onChange={(e) => setStaffPassword(e.target.value)}
+                className={inputClass + " font-mono"}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {selectedType?.has_vlans && (
+        <RepeatList
+          title="VLANs"
+          rows={vlans.map((v) => ({ id: v.id ?? "", name: v.name ?? "", notes: v.notes ?? "" }))}
+          fields={[
+            { key: "id", placeholder: "VLAN ID" },
+            { key: "name", placeholder: "Name" },
+            { key: "notes", placeholder: "Notes" },
+          ]}
+          onChange={(rows) => setVlans(rows as { id: string; name: string; notes: string }[])}
+        />
+      )}
+
+      {selectedType?.has_wifi && (
+        <RepeatList
+          title="Wi-Fi SSIDs"
+          rows={wifiSsids.map((w) => ({ ssid: w.ssid ?? "", password: w.password ?? "", notes: w.notes ?? "" }))}
+          fields={[
+            { key: "ssid", placeholder: "SSID" },
+            { key: "password", placeholder: "Password" },
+            { key: "notes", placeholder: "Notes" },
+          ]}
+          onChange={(rows) =>
+            setWifiSsids(rows as { ssid: string; password: string; notes: string }[])
+          }
+        />
+      )}
 
       <div className="flex gap-2 pt-1">
         <button
@@ -414,7 +520,18 @@ function SiteAssetEditForm({
   const [error, setError] = useState<string | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
 
-  const [assetTypeId, setAssetTypeId] = useState(asset.asset_type_id ?? "");
+  // Legacy assets (pre-2026-05-13) have asset_type_id=null but a free-text
+  // device_type. Map that to the new asset_types row so the extended fields
+  // surface automatically — otherwise the form looks identical to the old one.
+  const initialAssetTypeId = useMemo(() => {
+    if (asset.asset_type_id) return asset.asset_type_id;
+    if (!asset.device_type) return "";
+    const match = assetTypes.find(
+      (t) => t.name.toLowerCase() === asset.device_type!.toLowerCase(),
+    );
+    return match?.id ?? "";
+  }, [asset.asset_type_id, asset.device_type, assetTypes]);
+  const [assetTypeId, setAssetTypeId] = useState(initialAssetTypeId);
   const [deviceName, setDeviceName] = useState(asset.device_name ?? "");
   const [manufacturer, setManufacturer] = useState(asset.manufacturer ?? "");
   const [model, setModel] = useState(asset.model ?? "");
