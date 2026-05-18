@@ -6,24 +6,33 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
-// Desktop sidebar nav — every route shows. Mobile uses MobileNav (bottom
-// tabs + More drawer) instead.
-const navigation: { name: string; href: string; icon: (p: { className?: string }) => React.ReactElement }[] = [
-  { name: "Today", href: "/", icon: LayoutIcon },
-  { name: "Customers", href: "/customers", icon: UsersIcon },
-  { name: "Sites", href: "/sites", icon: MapPinIcon },
-  { name: "Jobs", href: "/jobs", icon: BriefcaseIcon },
-  { name: "Scheduler", href: "/scheduler", icon: CalendarIcon },
-  { name: "NBN", href: "/nbn", icon: WifiIcon },
+// Desktop sidebar nav. Each entry declares which permission flag is needed
+// for it to appear. `null` = always visible. Filtering happens in render
+// against `allowedFlags` passed by the dashboard layout.
+const navigation: {
+  name: string;
+  href: string;
+  icon: (p: { className?: string }) => React.ReactElement;
+  flag: string | null;
+  // anyOf: appears if the staff has ANY of these flags (used for /reports)
+  anyOf?: string[];
+}[] = [
+  { name: "Today", href: "/", icon: LayoutIcon, flag: null },
+  { name: "Customers", href: "/customers", icon: UsersIcon, flag: "customers.view" },
+  { name: "Sites", href: "/sites", icon: MapPinIcon, flag: "sites.view" },
+  { name: "Jobs", href: "/jobs", icon: BriefcaseIcon, flag: "jobs.view" },
+  { name: "Scheduler", href: "/scheduler", icon: CalendarIcon, flag: null },
+  { name: "NBN", href: "/nbn", icon: WifiIcon, flag: "nbn.view" },
   // { name: "Pipeline", href: "/pipeline", icon: TrendingUpIcon },  // Hidden 2026-04-23 — not in use. Re-enable by uncommenting.
-  { name: "Suppliers", href: "/suppliers", icon: PackageIcon },
-  { name: "Quoting", href: "/quoting", icon: FileTextIcon },
-  { name: "Invoices", href: "/invoices", icon: InvoiceIcon },
-  { name: "Procurement", href: "/procurement", icon: TruckIcon },
-  { name: "Plans", href: "/plans", icon: PlanIcon },
-  { name: "Reports", href: "/reports", icon: BarChartIcon },
-  { name: "Staff", href: "/staff", icon: StaffIcon },
-  { name: "Settings", href: "/settings", icon: SettingsIcon },
+  { name: "Suppliers", href: "/suppliers", icon: PackageIcon, flag: "suppliers.view" },
+  { name: "Quoting", href: "/quoting", icon: FileTextIcon, flag: "quoting.view" },
+  { name: "Invoices", href: "/invoices", icon: InvoiceIcon, flag: "invoices.view" },
+  { name: "Procurement", href: "/procurement", icon: TruckIcon, flag: "procurement.view" },
+  { name: "Plans", href: "/plans", icon: PlanIcon, flag: "plans.view" },
+  { name: "Reports", href: "/reports", icon: BarChartIcon, flag: null, anyOf: ["reports.view_operational", "reports.view_financial"] },
+  { name: "Vault", href: "/vault", icon: VaultIcon, flag: "vault.access" },
+  { name: "Staff", href: "/staff", icon: StaffIcon, flag: null },
+  { name: "Settings", href: "/settings", icon: SettingsIcon, flag: null },
 ];
 
 interface StaffSummary {
@@ -40,9 +49,23 @@ const ROLE_LABELS: Record<string, string> = {
   field_staff: "Field",
 };
 
-export function Sidebar({ user, staff }: { user: User; staff: StaffSummary | null }) {
+export function Sidebar({
+  user,
+  staff,
+  allowedFlags,
+}: {
+  user: User;
+  staff: StaffSummary | null;
+  allowedFlags: string[];
+}) {
   const pathname = usePathname();
   const router = useRouter();
+  const allowed = new Set(allowedFlags);
+  const visibleNav = navigation.filter((item) => {
+    if (item.anyOf) return item.anyOf.some((f) => allowed.has(f));
+    if (item.flag === null) return true;
+    return allowed.has(item.flag);
+  });
 
   async function handleSignOut() {
     const supabase = createClient();
@@ -78,7 +101,7 @@ export function Sidebar({ user, staff }: { user: User; staff: StaffSummary | nul
 
         <nav className="flex-1 overflow-y-auto px-2 py-3">
           <div className="space-y-0.5">
-            {navigation.map((item) => {
+            {visibleNav.map((item) => {
               const isActive =
                 item.href === "/"
                   ? pathname === "/"
@@ -225,6 +248,14 @@ function BarChartIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /><line x1="6" y1="20" x2="6" y2="16" />
+    </svg>
+  );
+}
+
+function VaultIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </svg>
   );
 }

@@ -220,13 +220,21 @@ Total: ~3 weeks of focused work.
   support, slower) or Curve25519 via WebCrypto subtle / sodium polyfill
   (faster, smaller, less universal)? Default: **RSA-OAEP 4096** unless
   Mitchell wants to add a WASM dependency.
+
+yes RSA-OAEP 4096
+
 - **OQ2 (Phase 3).** TOTP secret storage — stored encrypted inside the
   entry blob (true zero-knowledge) or with a server-side KEK like Mark's
   vault (server can re-issue codes but theoretically reads them)?
-  Recommendation: **inside the entry blob** for consistency with D1.
+  Recommendation: **inside the entry blob** for consistency with D1. 
+
+stored encrypted inside the entry blob
+
 - **OQ3 (Phase 5).** MFA on vault unlock — WebAuthn / passkey support, or
   TOTP, or none? Recommendation: defer to Phase 6+ unless a specific
   staff threat warrants it.
+
+defer. 
 
 ---
 

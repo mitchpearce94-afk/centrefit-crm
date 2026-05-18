@@ -22,35 +22,64 @@ const ROLE_LABELS: Record<string, string> = {
   field_staff: "Field",
 };
 
-// Bottom-tab destinations — 4 pinned + More.
-const TABS: { name: string; href: string; icon: (p: { className?: string }) => React.ReactElement }[] = [
-  { name: "Today", href: "/", icon: HomeIcon },
-  { name: "Jobs", href: "/jobs", icon: BriefcaseIcon },
-  { name: "Schedule", href: "/scheduler", icon: CalendarIcon },
-  { name: "Quotes", href: "/quoting", icon: QuoteIcon },
+// Bottom-tab destinations — 4 pinned + More. Tabs are filtered by permission;
+// field staff without quoting.view get Quotes hidden, etc.
+interface NavItem {
+  name: string;
+  href: string;
+  icon: (p: { className?: string }) => React.ReactElement;
+  flag: string | null;
+  anyOf?: string[];
+}
+
+const TABS: NavItem[] = [
+  { name: "Today", href: "/", icon: HomeIcon, flag: null },
+  { name: "Jobs", href: "/jobs", icon: BriefcaseIcon, flag: "jobs.view" },
+  { name: "Schedule", href: "/scheduler", icon: CalendarIcon, flag: null },
+  { name: "Quotes", href: "/quoting", icon: QuoteIcon, flag: "quoting.view" },
 ];
 
-// Routes that live in the More drawer (everything that's not on the bottom bar).
-const MORE_LINKS: { name: string; href: string; icon: (p: { className?: string }) => React.ReactElement }[] = [
-  { name: "Customers", href: "/customers", icon: UsersIcon },
-  { name: "Sites", href: "/sites", icon: MapPinIcon },
-  { name: "NBN", href: "/nbn", icon: WifiIcon },
-  { name: "Suppliers", href: "/suppliers", icon: PackageIcon },
-  { name: "Invoices", href: "/invoices", icon: InvoiceIcon },
-  { name: "Procurement", href: "/procurement", icon: TruckIcon },
-  { name: "Plans", href: "/plans", icon: PlanIcon },
-  { name: "Reports", href: "/reports", icon: BarChartIcon },
-  { name: "Staff", href: "/staff", icon: StaffIcon },
-  { name: "Settings", href: "/settings", icon: SettingsIcon },
+const MORE_LINKS: NavItem[] = [
+  { name: "Customers", href: "/customers", icon: UsersIcon, flag: "customers.view" },
+  { name: "Sites", href: "/sites", icon: MapPinIcon, flag: "sites.view" },
+  { name: "NBN", href: "/nbn", icon: WifiIcon, flag: "nbn.view" },
+  { name: "Suppliers", href: "/suppliers", icon: PackageIcon, flag: "suppliers.view" },
+  { name: "Invoices", href: "/invoices", icon: InvoiceIcon, flag: "invoices.view" },
+  { name: "Procurement", href: "/procurement", icon: TruckIcon, flag: "procurement.view" },
+  { name: "Plans", href: "/plans", icon: PlanIcon, flag: "plans.view" },
+  { name: "Reports", href: "/reports", icon: BarChartIcon, flag: null, anyOf: ["reports.view_operational", "reports.view_financial"] },
+  { name: "Vault", href: "/vault", icon: VaultIcon, flag: "vault.access" },
+  { name: "Staff", href: "/staff", icon: StaffIcon, flag: null },
+  { name: "Settings", href: "/settings", icon: SettingsIcon, flag: null },
 ];
 
-export function MobileNav({ user, staff }: { user: User; staff: StaffSummary | null }) {
+function filterByFlags(items: NavItem[], allowed: Set<string>): NavItem[] {
+  return items.filter((item) => {
+    if (item.anyOf) return item.anyOf.some((f) => allowed.has(f));
+    if (item.flag === null) return true;
+    return allowed.has(item.flag);
+  });
+}
+
+export function MobileNav({
+  user,
+  staff,
+  allowedFlags,
+}: {
+  user: User;
+  staff: StaffSummary | null;
+  allowedFlags: string[];
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [moreOpen, setMoreOpen] = useState(false);
   const keyboardOpen = useKeyboardOpen();
 
-  const isMore = !TABS.some((t) =>
+  const allowed = new Set(allowedFlags);
+  const visibleTabs = filterByFlags(TABS, allowed);
+  const visibleMoreLinks = filterByFlags(MORE_LINKS, allowed);
+
+  const isMore = !visibleTabs.some((t) =>
     t.href === "/" ? pathname === "/" : pathname.startsWith(t.href),
   );
 
@@ -71,8 +100,11 @@ export function MobileNav({ user, staff }: { user: User; staff: StaffSummary | n
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         aria-label="Primary"
       >
-        <div className="grid grid-cols-5">
-          {TABS.map((tab) => {
+        <div
+          className="grid"
+          style={{ gridTemplateColumns: `repeat(${visibleTabs.length + 1}, minmax(0, 1fr))` }}
+        >
+          {visibleTabs.map((tab) => {
             const active =
               tab.href === "/" ? pathname === "/" : pathname.startsWith(tab.href);
             return (
@@ -110,7 +142,7 @@ export function MobileNav({ user, staff }: { user: User; staff: StaffSummary | n
               Workspaces
             </div>
             <div className="grid grid-cols-2 gap-2">
-              {MORE_LINKS.map((item) => {
+              {visibleMoreLinks.map((item) => {
                 const active = pathname.startsWith(item.href);
                 return (
                   <Link
@@ -306,6 +338,14 @@ function StaffIcon({ className }: { className?: string }) {
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
       <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
+}
+function VaultIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </svg>
   );
 }
