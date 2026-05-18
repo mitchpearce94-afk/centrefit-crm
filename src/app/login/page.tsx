@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -11,15 +11,28 @@ const REASON_MESSAGES: Record<string, string> = {
   expired: "Signed out — your session reached the 12 hour maximum. Sign in again to continue.",
 };
 
+// useSearchParams() forces this client component into a Suspense boundary at
+// build time per Next.js 16. The reason banner is the only thing that reads
+// query params, so it lives in its own child component and we render `null`
+// during prerender fallback.
+function ReasonBanner() {
+  const searchParams = useSearchParams();
+  const reason = searchParams.get("reason");
+  const reasonMessage = reason ? REASON_MESSAGES[reason] ?? null : null;
+  if (!reasonMessage) return null;
+  return (
+    <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+      {reasonMessage}
+    </div>
+  );
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const reason = searchParams.get("reason");
-  const reasonMessage = reason ? REASON_MESSAGES[reason] ?? null : null;
   const supabase = createClient();
 
   async function handleLogin(e: React.FormEvent) {
@@ -70,10 +83,10 @@ export default function LoginPage() {
 
         <div className="surface-card-elevated p-6">
           <form onSubmit={handleLogin} className="space-y-4">
-            {reasonMessage && !error && (
-              <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-                {reasonMessage}
-              </div>
+            {!error && (
+              <Suspense fallback={null}>
+                <ReasonBanner />
+              </Suspense>
             )}
             {error && (
               <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
