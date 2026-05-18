@@ -253,6 +253,111 @@ export async function unwrapFolder(
   return unwrapFolderKey(wrappedB64, privateKey);
 }
 
+// ── Phase 2: folder creation + sharing ──────────────────────────────────
+
+/**
+ * Create a new shared (non-personal) folder. The creator becomes its owner
+ * with their wrapped folder key. Done in two writes (folder insert →
+ * member insert) — RLS allows both because the existing policies trust
+ * created_by = auth.uid() for folders and the owner-or-self check for
+ * members.
+ */
+export async function createFolder(
+  name: string,
+  publicKey: CryptoKey,
+): Promise<{ id: string; folderKey: CryptoKey; wrappedFolderKeyB64: string }> {
+  const supabase = createClient();
+  const folderKey = await generateFolderKey();
+  const wrappedFolderKeyB64 = await wrapFolderKeyForPublicKey(folderKey, publicKey);
+
+  const { data: folder, error } = await supabase
+    .from("vault_folders")
+    .insert({ name, is_personal: false, created_by: (await supabase.auth.getUser()).data.user!.id })
+    .select("id")
+    .single();
+  if (error) throw new Error(`createFolder: ${error.message}`);
+
+  const { error: memErr } = await supabase
+    .from("vault_folder_members")
+    .insert({
+      folder_id: folder.id,
+      staff_id: (await supabase.auth.getUser()).data.user!.id,
+      role: "owner",
+      wrapped_folder_key: wrappedFolderKeyB64,
+    });
+  if (memErr) throw new Error(`createFolder member: ${memErr.message}`);
+
+  await supabase.rpc("vault_log_event", {
+    p_action: "create_folder", p_folder_id: folder.id, p_entry_id: null, p_metadata: { name },
+  });
+
+  return { id: folder.id as string, folderKey, wrappedFolderKeyB64 };
+}
+
+export interface VaultStaffPublicKey {
+  staff_id: string;
+  display_name: string;
+  initials: string;
+  public_key: string | null;
+  has_vault: boolean;
+}
+
+/** List other staff with their public key (null if they haven't set up vault yet). */
+export async function listOtherStaffPublicKeys(): Promise<VaultStaffPublicKey[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("vault_list_public_keys");
+  if (error) throw new Error(`listOtherStaffPublicKeys: ${error.message}`);
+  return (data ?? []) as VaultStaffPublicKey[];
+}
+
+export interface FolderMember {
+  staff_id: string;
+  display_name: string;
+  initials: string;
+  role: "viewer" | "editor" | "owner";
+  added_at: string;
+}
+
+export async function listFolderMembers(folderId: string): Promise<FolderMember[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("vault_list_folder_members", { p_folder_id: folderId });
+  if (error) throw new Error(`listFolderMembers: ${error.message}`);
+  return (data ?? []) as FolderMember[];
+}
+
+/**
+ * Share a folder with another staff member. Caller MUST already have the
+ * unwrapped folder key (passed in — usually pulled from the
+ * useVaultSession.folderKeys cache).
+ */
+export async function shareFolder(params: {
+  folderId: string;
+  folderKey: CryptoKey;
+  recipientStaffId: string;
+  recipientPublicKeyB64: string;
+  role: "viewer" | "editor" | "owner";
+}): Promise<void> {
+  const supabase = createClient();
+  const recipientPub = await importPublicKeyB64(params.recipientPublicKeyB64);
+  const wrapped = await wrapFolderKeyForPublicKey(params.folderKey, recipientPub);
+
+  const { error } = await supabase.rpc("vault_share_folder", {
+    p_folder_id: params.folderId,
+    p_recipient_staff_id: params.recipientStaffId,
+    p_role: params.role,
+    p_wrapped_folder_key: wrapped,
+  });
+  if (error) throw new Error(`shareFolder: ${error.message}`);
+}
+
+export async function revokeMember(folderId: string, staffId: string): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase.rpc("vault_revoke_member", {
+    p_folder_id: folderId, p_staff_id: staffId,
+  });
+  if (error) throw new Error(`revokeMember: ${error.message}`);
+}
+
 /**
  * Self-test: runs a full crypto round-trip (setup → unlock → encrypt entry
  * → decrypt entry) in memory only, without touching the database. Useful as

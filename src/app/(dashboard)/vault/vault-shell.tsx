@@ -15,8 +15,15 @@ import {
   decryptEntryRow,
   unwrapFolder,
   runCryptoSelfTest,
+  createFolder,
+  listOtherStaffPublicKeys,
+  listFolderMembers,
+  shareFolder,
+  revokeMember,
   type FolderRow,
   type EntryRow,
+  type VaultStaffPublicKey,
+  type FolderMember,
 } from "@/lib/vault/api";
 import type { VaultEntryPayload } from "@/lib/vault/crypto";
 
@@ -228,6 +235,7 @@ function UnlockForm() {
 
 function UnlockedVault() {
   const privateKey = useVaultSession((s) => s.privateKey);
+  const publicKey = useVaultSession((s) => s.publicKey);
   const folderKeys = useVaultSession((s) => s.folderKeys);
   const setFolderKey = useVaultSession((s) => s.setFolderKey);
   const lock = useVaultSession((s) => s.lock);
@@ -237,21 +245,28 @@ function UnlockedVault() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [entries, setEntries] = useState<EntryRow[]>([]);
   const [loadingFolders, setLoadingFolders] = useState(true);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [folderSettingsId, setFolderSettingsId] = useState<string | null>(null);
+
+  async function refreshFolders() {
+    const list = await listFolders();
+    for (const f of list) {
+      if (!folderKeys.has(f.id)) {
+        const key = await unwrapFolder(f.wrapped_folder_key, privateKey!);
+        setFolderKey(f.id, key);
+      }
+    }
+    setFolders(list);
+    return list;
+  }
 
   // Load folders once, unwrap their keys with the private key, cache them.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const list = await listFolders();
-        for (const f of list) {
-          if (!folderKeys.has(f.id)) {
-            const key = await unwrapFolder(f.wrapped_folder_key, privateKey!);
-            setFolderKey(f.id, key);
-          }
-        }
+        const list = await refreshFolders();
         if (cancelled) return;
-        setFolders(list);
         if (list.length > 0) setSelectedFolderId(list[0].id);
       } catch (err) {
         toast(err instanceof Error ? err.message : "Failed to load folders", "error");
@@ -298,37 +313,79 @@ function UnlockedVault() {
 
       {loadingFolders ? (
         <p className="text-sm text-muted-foreground">Loading folders…</p>
-      ) : folders.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No folders yet. Setup should have created a Personal folder — try
-          locking and unlocking, then come back.
-        </p>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[200px_1fr]">
+        <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
           <aside className="space-y-1">
+            <button
+              onClick={() => setCreatingFolder(true)}
+              className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+            >
+              + New folder
+            </button>
             {folders.map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setSelectedFolderId(f.id)}
-                className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
-                  selectedFolderId === f.id
-                    ? "bg-primary/10 text-primary font-medium"
-                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                }`}
-              >
-                <FolderIcon className="h-4 w-4" />
-                <span className="truncate">{f.name}</span>
-                {f.is_personal && (
-                  <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[9px] uppercase">
-                    Personal
-                  </span>
+              <div key={f.id} className="flex items-center gap-1">
+                <button
+                  onClick={() => setSelectedFolderId(f.id)}
+                  className={`flex flex-1 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
+                    selectedFolderId === f.id
+                      ? "bg-primary/10 text-primary font-medium"
+                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                  }`}
+                >
+                  <FolderIcon className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{f.name}</span>
+                  {f.is_personal && (
+                    <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[9px] uppercase">
+                      Personal
+                    </span>
+                  )}
+                </button>
+                {!f.is_personal && (
+                  <button
+                    onClick={() => setFolderSettingsId(folderSettingsId === f.id ? null : f.id)}
+                    title="Folder members"
+                    className={`shrink-0 rounded-md px-1.5 py-2 text-xs transition-colors ${
+                      folderSettingsId === f.id
+                        ? "text-primary"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <SettingsCogIcon className="h-3.5 w-3.5" />
+                  </button>
                 )}
-              </button>
+              </div>
             ))}
           </aside>
 
           <section>
-            {selectedFolder && folderKey ? (
+            {creatingFolder && publicKey && (
+              <CreateFolderForm
+                publicKey={publicKey}
+                onCancel={() => setCreatingFolder(false)}
+                onCreated={async (newId) => {
+                  setCreatingFolder(false);
+                  await refreshFolders();
+                  setSelectedFolderId(newId);
+                  toast("Folder created. You are the owner — share with teammates from the gear icon.");
+                }}
+              />
+            )}
+
+            {folderSettingsId && selectedFolder && folderKey && folderSettingsId === selectedFolderId ? (
+              <FolderSettings
+                folderId={folderSettingsId}
+                folderName={folders.find((f) => f.id === folderSettingsId)?.name ?? ""}
+                folderKey={folderKey}
+                onClose={() => setFolderSettingsId(null)}
+              />
+            ) : folderSettingsId ? (
+              <FolderSettingsLoader
+                folderId={folderSettingsId}
+                folderName={folders.find((f) => f.id === folderSettingsId)?.name ?? ""}
+                onClose={() => setFolderSettingsId(null)}
+                onNeedsSelect={() => setSelectedFolderId(folderSettingsId)}
+              />
+            ) : selectedFolder && folderKey ? (
               <FolderEntries
                 folderId={selectedFolder.id}
                 folderKey={folderKey}
@@ -338,10 +395,269 @@ function UnlockedVault() {
                   setEntries(rows);
                 }}
               />
+            ) : folders.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No folders yet. Setup should have created a Personal folder
+                — try locking and unlocking, then come back.
+              </p>
             ) : (
               <p className="text-sm text-muted-foreground">Select a folder.</p>
             )}
           </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CreateFolderForm({
+  publicKey, onCancel, onCreated,
+}: {
+  publicKey: CryptoKey;
+  onCancel: () => void;
+  onCreated: (folderId: string) => Promise<void>;
+}) {
+  const { toast } = useToast();
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setBusy(true);
+    try {
+      const res = await createFolder(name.trim(), publicKey);
+      await onCreated(res.id);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Create folder failed", "error");
+    }
+    setBusy(false);
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-2 rounded-md border border-primary/30 bg-card p-3">
+      <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        New folder
+      </div>
+      <input
+        value={name} onChange={(e) => setName(e.target.value)}
+        autoFocus required
+        placeholder="Folder name (e.g. Snap Fitness Warner)"
+        className="block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm"
+      />
+      <p className="text-[11px] text-muted-foreground">
+        Folder key is generated in your browser and wrapped with your public
+        key. Add members from the gear icon once it&apos;s created.
+      </p>
+      <div className="flex gap-2 pt-1">
+        <button type="submit" disabled={busy}
+          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+          {busy ? "Creating..." : "Create folder"}
+        </button>
+        <button type="button" onClick={onCancel}
+          className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent">
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// Wrapper that prompts the user to first select the folder so its key
+// is unwrapped into the session before we render the settings panel.
+function FolderSettingsLoader({
+  folderId, folderName, onClose, onNeedsSelect,
+}: {
+  folderId: string; folderName: string; onClose: () => void; onNeedsSelect: () => void;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-card p-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Folder members — {folderName}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Open the folder first to load its key into your session, then
+            re-open these settings.
+          </p>
+        </div>
+        <button onClick={onClose} className="text-xs text-muted-foreground hover:text-foreground">Close</button>
+      </div>
+      <button
+        onClick={onNeedsSelect}
+        className="mt-3 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+      >
+        Open folder {folderName}
+      </button>
+    </div>
+  );
+}
+
+function FolderSettings({
+  folderId, folderName, folderKey, onClose,
+}: {
+  folderId: string;
+  folderName: string;
+  folderKey: CryptoKey;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const [members, setMembers] = useState<FolderMember[]>([]);
+  const [candidates, setCandidates] = useState<VaultStaffPublicKey[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [selectedStaff, setSelectedStaff] = useState<string>("");
+  const [role, setRole] = useState<"viewer" | "editor" | "owner">("editor");
+  const [busy, setBusy] = useState(false);
+
+  async function reload() {
+    setLoading(true);
+    try {
+      const [m, c] = await Promise.all([
+        listFolderMembers(folderId),
+        listOtherStaffPublicKeys(),
+      ]);
+      setMembers(m);
+      setCandidates(c);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Load failed", "error");
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { reload(); /* eslint-disable-next-line */ }, [folderId]);
+
+  const existingMemberIds = new Set(members.map((m) => m.staff_id));
+  const eligibleCandidates = candidates.filter(
+    (c) => c.has_vault && c.public_key && !existingMemberIds.has(c.staff_id),
+  );
+
+  async function addMember(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedStaff) return;
+    const cand = candidates.find((c) => c.staff_id === selectedStaff);
+    if (!cand?.public_key) {
+      toast("Recipient has no vault set up yet.", "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      await shareFolder({
+        folderId,
+        folderKey,
+        recipientStaffId: cand.staff_id,
+        recipientPublicKeyB64: cand.public_key,
+        role,
+      });
+      toast(`${cand.display_name} added as ${role}.`);
+      setAdding(false);
+      setSelectedStaff("");
+      await reload();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Share failed", "error");
+    }
+    setBusy(false);
+  }
+
+  async function revoke(staffId: string, name: string) {
+    if (!confirm(`Remove ${name} from this folder? They'll lose access immediately. Folder key rotation should follow (Phase 5).`)) return;
+    try {
+      await revokeMember(folderId, staffId);
+      toast(`${name} removed.`);
+      await reload();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Revoke failed", "error");
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-border bg-card p-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Folder members — {folderName}
+          </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Each member sees the folder key wrapped with their own public
+            RSA key. The server never sees the unwrapped key.
+          </p>
+        </div>
+        <button onClick={onClose} className="text-xs text-muted-foreground hover:text-foreground">Close</button>
+      </div>
+
+      {loading ? (
+        <p className="mt-3 text-xs text-muted-foreground">Loading…</p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          <div className="divide-y divide-border rounded-md border border-border">
+            {members.map((m) => (
+              <div key={m.staff_id} className="flex items-center justify-between gap-3 px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
+                    {m.initials}
+                  </span>
+                  <span className="text-sm truncate">{m.display_name}</span>
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase">{m.role}</span>
+                </div>
+                {m.role !== "owner" ? (
+                  <button
+                    onClick={() => revoke(m.staff_id, m.display_name)}
+                    className="text-xs text-destructive hover:underline"
+                  >
+                    Remove
+                  </button>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground italic">owner</span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {adding ? (
+            <form onSubmit={addMember} className="space-y-2 rounded-md border border-primary/30 bg-muted/20 p-3">
+              <div className="grid grid-cols-[1fr_auto_auto] gap-2">
+                <select
+                  value={selectedStaff} onChange={(e) => setSelectedStaff(e.target.value)} required
+                  className="rounded-md border border-border bg-input px-2.5 py-1.5 text-sm"
+                >
+                  <option value="">Pick teammate…</option>
+                  {eligibleCandidates.map((c) => (
+                    <option key={c.staff_id} value={c.staff_id}>{c.display_name}</option>
+                  ))}
+                </select>
+                <select
+                  value={role} onChange={(e) => setRole(e.target.value as typeof role)}
+                  className="rounded-md border border-border bg-input px-2.5 py-1.5 text-sm"
+                >
+                  <option value="viewer">Viewer</option>
+                  <option value="editor">Editor</option>
+                  <option value="owner">Owner</option>
+                </select>
+                <button type="submit" disabled={busy || !selectedStaff}
+                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                  {busy ? "Sharing..." : "Share"}
+                </button>
+              </div>
+              {eligibleCandidates.length === 0 && (
+                <p className="text-[11px] text-muted-foreground italic">
+                  No eligible teammates — they either already have access
+                  or haven&apos;t set up their vault yet.
+                </p>
+              )}
+              <button type="button" onClick={() => setAdding(false)}
+                className="text-xs text-muted-foreground hover:text-foreground">
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <button
+              onClick={() => setAdding(true)}
+              className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent"
+            >
+              + Add member
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -695,6 +1011,14 @@ function FolderIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+    </svg>
+  );
+}
+function SettingsCogIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   );
 }
