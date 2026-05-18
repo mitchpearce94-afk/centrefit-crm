@@ -43,6 +43,40 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+
+  /* Filter applied to the Centrefit logo PNG. Dark mode flips it to white;
+     light mode leaves the natural colour. Consumed inline by every Image
+     that renders /centrefit-logo.png. */
+  --logo-filter: brightness(0) invert(1);
+}
+
+/* Light mode — class is set by ThemeToggle / the no-FOUC inline script in
+   src/app/layout.tsx. Only the surface, border, and neutral chip variables
+   flip; semantic colours (primary blue, destructive red, success green,
+   warning amber) stay the same so brand identity stays consistent. */
+html.light {
+  --background: #f5f6fa;
+  --foreground: #0f111a;
+  --card: #ffffff;
+  --card-foreground: #0f111a;
+  --card-elevated: #ffffff;
+
+  --border: #e4e6ee;
+  --border-strong: #c9ccd9;
+  --input: #ffffff;
+
+  --secondary: #eef0f6;
+  --secondary-foreground: #3b3f4d;
+  --muted: #eef0f6;
+  --muted-foreground: #6b6f7d;
+  --accent: #eef0f6;
+  --accent-foreground: #0f111a;
+
+  --shadow-sm: 0 1px 2px rgba(15, 17, 26, 0.06);
+  --shadow-md: 0 4px 14px rgba(15, 17, 26, 0.08);
+  --shadow-lg: 0 12px 32px rgba(15, 17, 26, 0.12);
+
+  --logo-filter: none;
 }
 
 @theme inline {

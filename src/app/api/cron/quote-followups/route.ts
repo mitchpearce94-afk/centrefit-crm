@@ -8,7 +8,8 @@ import { enqueueNotification } from "@/lib/notifications/enqueue";
  * Daily cron — finds quotes that have been "sent" for 7+ days with no
  * acceptance / decline / prior follow-up, fires the auto follow-up
  * email from sales@, stamps quotes.followup_sent_at + followup_count,
- * and notifies subscribed staff (quote.followup_sent + quote.followup_due).
+ * and notifies subscribed staff (quote.followup_sent only — the chase has
+ * already happened so we don't also fire quote.followup_due).
  *
  * Auth: header X-Cf-Cron-Secret must match CRON_SECRET env. Vercel
  * Cron forwards X-Cf-Cron-Secret automatically when the path is in
@@ -118,16 +119,6 @@ export async function GET(req: NextRequest) {
       audience: { allActive: true },
       title: `Auto follow-up sent for ${quote.ref}`,
       body: `${customer?.name ?? quote.client_name ?? ""} — ${daysSinceSent} days after the original send`,
-      href: `/quoting/${quote.id}`,
-    });
-    await enqueueNotification({
-      supabase,
-      typeCode: "quote.followup_due",
-      refType: "quote",
-      refId: quote.id,
-      audience: { allActive: true },
-      title: `Quote ${quote.ref} needs a chase-up`,
-      body: `${customer?.name ?? quote.client_name ?? ""} — sent ${daysSinceSent} days ago, no response yet`,
       href: `/quoting/${quote.id}`,
     });
 

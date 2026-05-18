@@ -458,7 +458,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('OPTUS Mobile SIM', null), { id: ruleId(), trigger_code: 'duress_intercom', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'OPTUS SIM per duress intercom', preset, is_active: true })
 
   // === SECURITY CABLE ===
-  const totalSecurityCode = 'pir_360_roof + pir_wall + reed_switch + alarm_panel + door_lock + duress_button + duress_intercom + light_siren + rf_receiver'
+  const totalSecurityCode = 'pir_360_roof + pir_wall + reed_switch + alarm_panel + door_strike + mag_lock + duress_button + duress_intercom + light_siren + rf_receiver'
   const secCableTrigger = { trigger_code: totalSecurityCode, trigger_condition: 'greater_than', trigger_value: 0, preset, is_active: true }
 
   pushRule(rules, find('6 Core Security Cable', 'EC6C14020300B'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'ceil_formula', quantity_multiplier: 45, quantity_divisor: 300, description: '6-core security cable — CEIL(total_security_devices × 45m / 300m rolls)' })
@@ -485,9 +485,12 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('Cat6 UTP Cable 305m', 'ECC6UB305B'), { id: ruleId(), trigger_code: totalCameraCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 50, quantity_divisor: 305, description: 'Cat6 cable for cameras — CEIL(total_camera_devices × 50m / 305m boxes)', preset, is_active: true })
 
   // === ACCESS CONTROL ===
-  pushRule(rules, find('Door Loop', 'SECDWM300'), { id: ruleId(), trigger_code: 'door_lock', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Door loop with box ends per door strike', preset, is_active: true })
-  pushRule(rules, find('Striker', 'FSHFES20'), { id: ruleId(), trigger_code: 'door_lock', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'FES20 electric striker per door lock', preset, is_active: true })
-  pushRule(rules, find('REX', 'WEL1911'), { id: ruleId(), trigger_code: 'door_lock', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, description: 'REX button (1x) when door locks present', preset, is_active: true })
+  // Any access door (strike or mag) needs a loop and a REX. Only strikes get the FES20.
+  const anyDoorCode = 'door_strike + mag_lock'
+  pushRule(rules, find('Door Loop', 'SECDWM300'), { id: ruleId(), trigger_code: anyDoorCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Door loop with box ends per access door (strike or mag)', preset, is_active: true })
+  pushRule(rules, find('Striker', 'FSHFES20'), { id: ruleId(), trigger_code: 'door_strike', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'FES20 electric striker per door strike', preset, is_active: true })
+  pushRule(rules, find('Magnetic Lock', 'LOXCCW30F'), { id: ruleId(), trigger_code: 'mag_lock', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Magnetic lock per mag-lock door', preset, is_active: true })
+  pushRule(rules, find('REX', 'WEL1911'), { id: ruleId(), trigger_code: anyDoorCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, description: 'REX button (1x) when any access door present', preset, is_active: true })
 
   // === AUDIO ===
   const speakerTrigger = 'speaker_roof_black + speaker_roof_white + speaker_wall_black + speaker_wall_white'

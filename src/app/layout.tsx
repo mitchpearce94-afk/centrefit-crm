@@ -23,6 +23,19 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+// Inline script that runs before paint so the chosen theme class is on
+// <html> before any CSS evaluates — kills the dark/light flash on refresh.
+// Stays in sync with src/components/theme-toggle.tsx (same key, same values).
+const themeBootScript = `
+try {
+  var t = localStorage.getItem('cf-theme');
+  if (t !== 'light' && t !== 'dark') t = 'dark';
+  document.documentElement.classList.add(t);
+} catch (e) {
+  document.documentElement.classList.add('dark');
+}
+`.trim();
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -31,8 +44,12 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
+      suppressHydrationWarning
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+      </head>
       <body className="min-h-full bg-background text-foreground">
         {children}
       </body>

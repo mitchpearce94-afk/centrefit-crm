@@ -74,7 +74,7 @@ export function ChangePasswordForm({ forced = false, displayName }: Props) {
             height={60}
             priority
             className="mx-auto h-12 w-auto"
-            style={{ filter: "brightness(0) invert(1)" }}
+            style={{ filter: "var(--logo-filter)" }}
           />
           <p className="mt-4 text-sm text-muted-foreground">
             {forced

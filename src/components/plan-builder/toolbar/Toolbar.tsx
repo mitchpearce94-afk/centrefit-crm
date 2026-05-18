@@ -481,8 +481,8 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-gray-800 rounded-lg p-5 w-96 border border-gray-600">
             <h3 className="text-white font-bold text-sm mb-3">Bump Revision: {titleBlock.revision} → {String.fromCharCode((titleBlock.revision || 'A').charCodeAt(0) + 1)}</h3>
-            <textarea className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-xs focus:outline-none focus:border-blue-500 mb-3"
-              rows={3} placeholder="What changed in this revision?" value={revisionNotes} onChange={e => setRevisionNotes(e.target.value)} autoFocus />
+            <textarea className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-xs focus:outline-none focus:border-blue-500 mb-3 resize-none"
+              rows={4} maxLength={400} placeholder="What changed in this revision?" value={revisionNotes} onChange={e => setRevisionNotes(e.target.value)} autoFocus />
             <div className="flex gap-2 justify-end">
               <button className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded"
                 onClick={() => { setShowRevisionModal(false); setRevisionNotes(''); }}>Cancel</button>

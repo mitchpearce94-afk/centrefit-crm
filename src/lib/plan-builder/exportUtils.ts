@@ -137,11 +137,42 @@ async function loadAndInjectSvg(pageNum: number, titleBlock: TitleBlockInfo, cli
 
   injection += `<rect x="160" y="13150" width="5750" height="900" fill="white"/>\n`;
   if (revisions && revisions.length > 0) {
-    const revStartY = 13280, revLineH = 150, maxRevisions = 5;
+    const revStartY = 13280;
+    const revLineH = 150;
+    const maxRevisions = 5;
+    const revX = 200;
+    const revBoxRight = 5910; // 160 + 5750 (rect bounds)
+    const revFontSize = 112;
+    const revMaxLineWidth = revBoxRight - revX;
+    const revCharsPerLine = Math.floor(revMaxLineWidth / (revFontSize * 0.52));
+    const revMaxTotalLines = 6; // ~900 box height / 150 line-height
     const revsToShow = revisions.slice(-maxRevisions);
-    for (let ri = 0; ri < revsToShow.length; ri++) {
-      const rev = revsToShow[ri];
-      injection += `<text x="200" y="${revStartY + ri * revLineH}" font-family="Arial, sans-serif" font-size="112" fill="black">${escapeXml(`${rev.revision} - ${rev.notes}`)}</text>\n`;
+    let lineIdx = 0;
+    outer: for (const rev of revsToShow) {
+      const fullText = `${rev.revision} - ${rev.notes}`;
+      for (const rawLine of fullText.split('\n')) {
+        const wrapped: string[] = [];
+        if (rawLine.length <= revCharsPerLine) {
+          wrapped.push(rawLine);
+        } else {
+          const words = rawLine.split(' ');
+          let current = '';
+          for (const word of words) {
+            if ((current + ' ' + word).trim().length > revCharsPerLine) {
+              if (current) wrapped.push(current);
+              current = word;
+            } else {
+              current = current ? current + ' ' + word : word;
+            }
+          }
+          if (current) wrapped.push(current);
+        }
+        for (const line of wrapped) {
+          if (lineIdx >= revMaxTotalLines) break outer;
+          injection += `<text x="${revX}" y="${revStartY + lineIdx * revLineH}" font-family="Arial, sans-serif" font-size="${revFontSize}" fill="black">${escapeXml(line)}</text>\n`;
+          lineIdx++;
+        }
+      }
     }
   }
 

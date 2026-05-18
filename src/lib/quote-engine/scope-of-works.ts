@@ -311,17 +311,18 @@ export function generateScopeOfWorks(
 
   // ── System: Access Control ──────────────────────────────────────────────
   const accessSystem: ScopeSystemBlock | null = (() => {
-    const has = doorStrikes + rexButtons + accessControllers + cardReaders + keypads > 0;
+    const totalDoors = doorStrikes + magLocks;
+    const has = totalDoors + rexButtons + accessControllers + cardReaders + keypads > 0;
     if (!has) return null;
     const counts: string[] = [];
-    if (doorStrikes > 0)       counts.push(`${doorStrikes} ${plural(doorStrikes, 'door')}`);
+    if (totalDoors > 0)        counts.push(`${totalDoors} ${plural(totalDoors, 'door')}`);
     if (accessControllers > 0) counts.push(`${accessControllers} ${plural(accessControllers, 'controller')}`);
     if (cardReaders > 0)       counts.push(`${cardReaders} ${plural(cardReaders, 'reader')}`);
     if (keypads > 0)           counts.push(`${keypads} ${plural(keypads, 'keypad')}`);
     if (rexButtons > 0)        counts.push(`${rexButtons} REX`);
 
     const items: string[] = [];
-    items.push(`Cabling and termination for ${doorStrikes > 0 ? `${doorStrikes} ${plural(doorStrikes, 'door position')}` : 'each door position'}`);
+    items.push(`Cabling and termination for ${totalDoors > 0 ? `${totalDoors} ${plural(totalDoors, 'door position')}` : 'each door position'}`);
     if (accessControllers > 0) items.push(roleBullet(roleDescriptions, 'access_control_system', accessControllers, `<strong>(${accessControllers}) UniFi Access ${plural(accessControllers, 'controller')}</strong> — central management for doors, readers and keypads`));
     if (cardReaders > 0)       items.push(roleBullet(roleDescriptions, 'card_reader', cardReaders, `<strong>(${cardReaders}) card ${plural(cardReaders, 'reader')}</strong> — proximity / NFC, integrated with the access controller`));
     if (keypads > 0)           items.push(roleBullet(roleDescriptions, 'standalone_keypad', keypads, `<strong>(${keypads}) standalone PIN ${plural(keypads, 'keypad')}</strong> — code-based door entry`));

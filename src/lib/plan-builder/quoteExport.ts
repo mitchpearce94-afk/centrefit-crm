@@ -13,7 +13,10 @@ const PLAN_TO_QUOTE_MAP: Record<string, string> = {
   'pir-ceiling': 'pir_360_roof',
   'reed-switch': 'reed_switch',
   'rf-receiver': 'rf_receiver',
-  'door-lock': 'door_lock',
+  'door-strike': 'door_strike',
+  'mag-lock': 'mag_lock',
+  // Legacy: pre-split combined device — quotes as a strike.
+  'door-lock': 'door_strike',
   'duress-btn': 'duress_button',
   'duress-pendant': 'duress_pendant',
   'duress-intercom': 'duress_intercom',
@@ -105,7 +108,7 @@ export function generateQuoteExport(): QuoteExportData {
       if (!quoteCode) continue;
       globalCounts[quoteCode] = (globalCounts[quoteCode] || 0) + 1;
       floorCounts[quoteCode] = (floorCounts[quoteCode] || 0) + 1;
-      if (device.deviceId === 'door-lock' || device.deviceId === 'integration-cable') doorCount++;
+      if (device.deviceId === 'door-strike' || device.deviceId === 'mag-lock' || device.deviceId === 'door-lock' || device.deviceId === 'integration-cable') doorCount++;
       // Count concrete mounted cameras by colour
       if (device.concreteMounted) {
         if (device.deviceId === 'cam-black') concreteMountBlack++;

@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/sidebar";
 import { MobileNav } from "@/components/mobile-nav";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { SuggestionButton } from "@/components/suggestion-button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { ToastProvider } from "@/components/ui/toast";
 
 export default async function DashboardLayout({
@@ -53,18 +54,20 @@ export default async function DashboardLayout({
               height={60}
               priority
               className="h-7 w-auto"
-              style={{ filter: "brightness(0) invert(1)" }}
+              style={{ filter: "var(--logo-filter)" }}
             />
             <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
               CRM
             </span>
             <div className="ml-auto flex items-center gap-1.5">
+              <ThemeToggle />
               <SuggestionButton />
               <NotificationsBell />
             </div>
           </div>
-          {/* Desktop top bar — suggestion + bell, right-aligned. */}
+          {/* Desktop top bar — theme + suggestion + bell, right-aligned. */}
           <div className="hidden lg:flex sticky top-0 z-20 h-12 items-center justify-end gap-2 border-b border-border bg-card px-6">
+            <ThemeToggle />
             <SuggestionButton />
             <NotificationsBell />
           </div>

@@ -69,7 +69,7 @@ export function Sidebar({ user, staff }: { user: User; staff: StaffSummary | nul
             height={60}
             priority
             className="h-10 w-auto"
-            style={{ filter: "brightness(0) invert(1)" }}
+            style={{ filter: "var(--logo-filter)" }}
           />
           <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
             CRM

@@ -14,7 +14,11 @@ export const DEVICE_CATALOG: DeviceDefinition[] = [
   { id: 'pir-ceiling', name: 'PIR 360° Ceiling', category: 'security', cableType: 'sixcore', symbolType: 'open-circle', strokeColor: '#ff4444', symbolImage: '/plan-builder/symbols/pir-360.png' },
   { id: 'reed-switch', name: 'Reed Switch', category: 'security', cableType: 'sixcore', symbolType: 'gold-circle', fillColor: '#FFD700', strokeColor: '#b8860b', symbolImage: '/plan-builder/symbols/reed-switch.png' },
   { id: 'rf-receiver', name: 'RF Receiver', category: 'security', cableType: 'sixcore', symbolType: 'wifi', fillColor: '#ff8800', strokeColor: '#ff8800', symbolImage: '/plan-builder/symbols/rf-receiver.png' },
-  { id: 'door-lock', name: 'Door Lock - Striker/Mag', category: 'security', cableType: 'sixcore', symbolType: 'labeled-square', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'H', symbolImage: '/plan-builder/symbols/door-lock.png' },
+  { id: 'door-strike', name: 'Door Strike', category: 'security', cableType: 'sixcore', symbolType: 'labeled-square', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'DS', symbolImage: '/plan-builder/symbols/door-lock.png' },
+  // Mag lock: same shape, blue palette to distinguish from electric strikes.
+  // No symbolImage yet — drop /plan-builder/symbols/mag-lock.png to make it
+  // render as a coloured PNG; until then it falls back to a blue circle.
+  { id: 'mag-lock', name: 'Mag Lock', category: 'security', cableType: 'sixcore', symbolType: 'labeled-square', fillColor: '#1155cc', strokeColor: '#4499ff', label: 'ML' },
   { id: 'duress-btn', name: 'Duress Button (wall mount)', category: 'security', cableType: 'sixcore', symbolType: 'labeled-circle', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'D', symbolImage: '/plan-builder/symbols/duress-button.png' },
   { id: 'duress-pendant', name: 'Duress Pendant (wireless)', category: 'security', cableType: 'none', symbolType: 'labeled-circle', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'DP', symbolImage: '/plan-builder/symbols/duress-button.png' },
   { id: 'duress-intercom', name: 'Duress Intercom', category: 'security', cableType: 'sixcore', symbolType: 'duress-circle', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'D', symbolImage: '/plan-builder/symbols/duress-intercom.png' },
@@ -100,6 +104,9 @@ const LEGACY_DEVICE_ALIAS: Record<string, string> = {
   'speaker-roof-gear': 'speaker-roof-black',
   'speaker-wall': 'speaker-wall-white',
   'speaker-wall-filled': 'speaker-wall-black',
+  // Pre-split combined door device defaulted to strikes (FES20 was the standard).
+  // Old plans render and quote as Door Strike; staff can add Mag Locks fresh.
+  'door-lock': 'door-strike',
 };
 
 export function getDeviceById(id: string): DeviceDefinition | undefined {
