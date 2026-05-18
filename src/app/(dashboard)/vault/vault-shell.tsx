@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useVaultSession } from "@/lib/vault/session";
 import { useVaultIdleLock } from "@/lib/vault/use-vault-idle-lock";
 import { useToast } from "@/components/ui/toast";
+import { createClient } from "@/lib/supabase/client";
 import {
   setupVault,
   unlockVault,
@@ -20,20 +21,36 @@ import {
   listFolderMembers,
   shareFolder,
   revokeMember,
+  recoverVault,
+  resetMasterPassword,
+  listFolderLinks,
+  linkFolderToRef,
+  unlinkFolderFromRef,
+  listPendingRotations,
+  rotateFolderKey,
   type FolderRow,
   type EntryRow,
   type VaultStaffPublicKey,
   type FolderMember,
+  type VaultRefType,
 } from "@/lib/vault/api";
 import type { VaultEntryPayload } from "@/lib/vault/crypto";
+import { computeTotp, secondsRemainingInTotpStep } from "@/lib/vault/totp";
 
 export function VaultShell({ isSetup }: { isSetup: boolean }) {
   const isUnlocked = useVaultSession((s) => s.isUnlocked());
+  const [mode, setMode] = useState<"normal" | "recover">("normal");
   // Idle re-lock per D4 — 15 min, plus visibility-loss = lock. No-op while
   // already locked.
   useVaultIdleLock();
   if (!isSetup) return <SetupForm />;
-  if (!isUnlocked) return <UnlockForm />;
+  if (!isUnlocked) {
+    return mode === "recover" ? (
+      <RecoveryFlow onCancel={() => setMode("normal")} onDone={() => setMode("normal")} />
+    ) : (
+      <UnlockForm onForgot={() => setMode("recover")} />
+    );
+  }
   return <UnlockedVault />;
 }
 
@@ -176,7 +193,7 @@ function SetupForm() {
 
 // ── Unlock ──────────────────────────────────────────────────────────────
 
-function UnlockForm() {
+function UnlockForm({ onForgot }: { onForgot: () => void }) {
   const unlock = useVaultSession((s) => s.unlock);
   const { toast } = useToast();
   const [password, setPassword] = useState("");
@@ -220,14 +237,153 @@ function UnlockForm() {
           className="mt-1 block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
       </div>
-      <button
-        type="submit"
-        disabled={busy}
-        className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-      >
-        {busy ? "Unlocking..." : "Unlock"}
-      </button>
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {busy ? "Unlocking..." : "Unlock"}
+        </button>
+        <button
+          type="button"
+          onClick={onForgot}
+          className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+        >
+          Forgot master password?
+        </button>
+      </div>
     </form>
+  );
+}
+
+function RecoveryFlow({ onCancel, onDone }: { onCancel: () => void; onDone: () => void }) {
+  const { toast } = useToast();
+  const [step, setStep] = useState<"enter-code" | "set-new-password">("enter-code");
+  const [recoveryInput, setRecoveryInput] = useState("");
+  const [recoveryCodeRaw, setRecoveryCodeRaw] = useState<string | null>(null);
+  const [privateKey, setPrivateKey] = useState<CryptoKey | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function verifyRecovery(e: React.FormEvent) {
+    e.preventDefault();
+    if (!recoveryInput.trim()) return;
+    setBusy(true);
+    try {
+      const r = await recoverVault(recoveryInput);
+      setRecoveryCodeRaw(r.recoveryCodeRaw);
+      setPrivateKey(r.privateKey);
+      setStep("set-new-password");
+      toast("Recovery code accepted — now set a new master password.");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Recovery failed", "error");
+    }
+    setBusy(false);
+  }
+
+  async function applyReset(e: React.FormEvent) {
+    e.preventDefault();
+    if (newPassword.length < 10) {
+      toast("New master password must be at least 10 characters.", "error");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast("Passwords don't match.", "error");
+      return;
+    }
+    if (!recoveryCodeRaw || !privateKey) {
+      toast("Missing recovery state — start over.", "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      await resetMasterPassword({
+        recoveryCodeRaw,
+        newMasterPassword: newPassword,
+        privateKey,
+      });
+      toast("Master password reset. Sign in below with the new one.");
+      onDone();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Reset failed", "error");
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div className="max-w-md space-y-4 rounded-lg border border-amber-500/40 bg-amber-500/5 p-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-amber-500">
+          Recover vault
+        </h2>
+        <button onClick={onCancel} className="text-xs text-muted-foreground hover:text-foreground">
+          Cancel
+        </button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Recovery uses the one-time code you printed at setup. After
+        verification you&apos;ll be asked to set a new master password. The
+        same recovery code keeps working — you don&apos;t need to save a new
+        one.
+      </p>
+
+      {step === "enter-code" ? (
+        <form onSubmit={verifyRecovery} className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground">
+              Recovery code
+            </label>
+            <textarea
+              value={recoveryInput}
+              onChange={(e) => setRecoveryInput(e.target.value)}
+              required
+              autoFocus
+              rows={3}
+              placeholder="ABCD-EFGH-… (dashes/whitespace ok)"
+              className="mt-1 block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm font-mono tracking-widest focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {busy ? "Verifying..." : "Verify recovery code"}
+          </button>
+        </form>
+      ) : (
+        <form onSubmit={applyReset} className="space-y-3">
+          <p className="rounded-md bg-card border border-border p-2 text-xs">
+            ✓ Recovery code accepted. Set a new master password below.
+          </p>
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground">New master password</label>
+            <input
+              type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+              required minLength={10} autoFocus autoComplete="new-password"
+              className="mt-1 block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              placeholder="At least 10 characters"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground">Confirm</label>
+            <input
+              type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+              required autoComplete="new-password"
+              className="mt-1 block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <button
+            type="submit" disabled={busy}
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {busy ? "Resetting..." : "Set new master password"}
+          </button>
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -261,6 +417,8 @@ function UnlockedVault() {
   }
 
   // Load folders once, unwrap their keys with the private key, cache them.
+  // Then check for any folders awaiting key rotation (member was removed
+  // since the last unlock) and quietly perform the rotation.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -268,6 +426,22 @@ function UnlockedVault() {
         const list = await refreshFolders();
         if (cancelled) return;
         if (list.length > 0) setSelectedFolderId(list[0].id);
+
+        // Auto-rotate any pending. Runs after folders + keys are loaded
+        // so the old key is in the session for re-encryption.
+        const pending = await listPendingRotations();
+        for (const p of pending) {
+          const oldKey = useVaultSession.getState().folderKeys.get(p.folder_id);
+          if (!oldKey) continue; // shouldn't happen — owner has the key
+          try {
+            const { newFolderKey } = await rotateFolderKey({ pending: p, oldFolderKey: oldKey });
+            // Replace session-cached key with the new one.
+            setFolderKey(p.folder_id, newFolderKey);
+            toast(`Rotated folder key for "${p.folder_name}" — removed member can no longer decrypt new content.`);
+          } catch (e) {
+            toast(`Rotation failed for ${p.folder_name}: ${e instanceof Error ? e.message : "unknown"}`, "error");
+          }
+        }
       } catch (err) {
         toast(err instanceof Error ? err.message : "Failed to load folders", "error");
       }
@@ -614,6 +788,8 @@ function FolderSettings({
             ))}
           </div>
 
+          <FolderLinksSection folderId={folderId} />
+
           {adding ? (
             <form onSubmit={addMember} className="space-y-2 rounded-md border border-primary/30 bg-muted/20 p-3">
               <div className="grid grid-cols-[1fr_auto_auto] gap-2">
@@ -674,14 +850,62 @@ function FolderEntries({
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [search, setSearch] = useState("");
+  // Decrypt all entries up-front so search can match across fields.
+  // Small folders (<200 entries) — fine to do on load. Cached so flipping
+  // entries open doesn't re-decrypt.
+  const [decryptCache, setDecryptCache] = useState<Map<string, VaultEntryPayload>>(new Map());
+  const { toast } = useToast();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const next = new Map<string, VaultEntryPayload>();
+      for (const row of entries) {
+        try {
+          next.set(row.id, await decryptEntryRow(folderKey, row));
+        } catch {
+          // Skip — corrupted or wrong-key entry. Surface only if all fail.
+        }
+      }
+      if (!cancelled) setDecryptCache(next);
+    })();
+    return () => { cancelled = true; };
+  }, [entries, folderKey]);
+
+  const q = search.trim().toLowerCase();
+  const filtered = q === "" ? entries : entries.filter((row) => {
+    const p = decryptCache.get(row.id);
+    if (!p) {
+      // Fall back to server-stored title hint.
+      return (row.title_hint ?? "").toLowerCase().includes(q);
+    }
+    return (
+      p.title.toLowerCase().includes(q) ||
+      (p.url ?? "").toLowerCase().includes(q) ||
+      (p.username ?? "").toLowerCase().includes(q) ||
+      (p.notes ?? "").toLowerCase().includes(q) ||
+      (p.customFields ?? []).some((cf) =>
+        cf.label.toLowerCase().includes(q) || cf.value.toLowerCase().includes(q),
+      )
+    );
+  });
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">{entries.length} {entries.length === 1 ? "entry" : "entries"}</h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold shrink-0">
+          {filtered.length} of {entries.length} {entries.length === 1 ? "entry" : "entries"}
+        </h3>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search title, URL, username, notes…"
+          className="flex-1 max-w-md rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        />
         <button
           onClick={() => setCreating(true)}
-          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
         >
           + New entry
         </button>
@@ -695,16 +919,19 @@ function FolderEntries({
             await createEntry(folderId, folderKey, payload, storeTitleHint);
             setCreating(false);
             await onChange();
+            toast("Entry saved.");
           }}
         />
       )}
 
       <div className="divide-y divide-border rounded-md border border-border bg-card">
-        {entries.length === 0 ? (
+        {filtered.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No entries yet. Click "+ New entry" to add one.
+            {entries.length === 0
+              ? "No entries yet. Click \"+ New entry\" to add one."
+              : "No entries match your search."}
           </p>
-        ) : entries.map((row) => (
+        ) : filtered.map((row) => (
           <EntryRowView
             key={row.id}
             row={row}
@@ -713,6 +940,7 @@ function FolderEntries({
             isOpen={openId === row.id}
             onToggle={() => setOpenId(openId === row.id ? null : row.id)}
             onChange={onChange}
+            preDecrypted={decryptCache.get(row.id) ?? null}
           />
         ))}
       </div>
@@ -721,7 +949,7 @@ function FolderEntries({
 }
 
 function EntryRowView({
-  row, folderId, folderKey, isOpen, onToggle, onChange,
+  row, folderId, folderKey, isOpen, onToggle, onChange, preDecrypted,
 }: {
   row: EntryRow;
   folderId: string;
@@ -729,16 +957,23 @@ function EntryRowView({
   isOpen: boolean;
   onToggle: () => void;
   onChange: () => Promise<void>;
+  preDecrypted: VaultEntryPayload | null;
 }) {
   const { toast } = useToast();
-  const [decrypted, setDecrypted] = useState<VaultEntryPayload | null>(null);
+  const [decrypted, setDecrypted] = useState<VaultEntryPayload | null>(preDecrypted);
   const [editing, setEditing] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // If FolderEntries hands us the cached payload, use it; otherwise fall
+  // back to lazy decrypt on open.
   useEffect(() => {
+    if (preDecrypted) {
+      setDecrypted(preDecrypted);
+      return;
+    }
     if (!isOpen || decrypted) return;
     decryptEntryRow(folderKey, row).then(setDecrypted, (e) => toast(`Decrypt failed: ${e.message}`, "error"));
-  }, [isOpen, decrypted, folderKey, row, toast]);
+  }, [isOpen, decrypted, folderKey, row, toast, preDecrypted]);
 
   async function copy(label: string, value: string) {
     try {
@@ -809,6 +1044,9 @@ function EntryRowView({
                   }
                 />
               )}
+              {decrypted.totpSecret && (
+                <TotpField secret={decrypted.totpSecret} onCopy={(code) => copy("TOTP code", code)} />
+              )}
               {decrypted.notes && (
                 <div className="space-y-1">
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Notes</div>
@@ -845,6 +1083,59 @@ function EntryRowView({
   );
 }
 
+function TotpField({ secret, onCopy }: { secret: string; onCopy: (code: string) => void }) {
+  const [code, setCode] = useState<string>("------");
+  const [remaining, setRemaining] = useState<number>(30);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function tick() {
+      try {
+        const c = await computeTotp(secret);
+        if (!cancelled) {
+          setCode(c);
+          setRemaining(secondsRemainingInTotpStep());
+          setErr(null);
+        }
+      } catch (e) {
+        if (!cancelled) setErr(e instanceof Error ? e.message : "TOTP error");
+      }
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [secret]);
+
+  if (err) {
+    return (
+      <div className="rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+        TOTP: {err}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          TOTP code · refreshes every 30s
+        </div>
+        <div className="font-mono text-xl tabular-nums tracking-widest">
+          {code.slice(0, 3)} {code.slice(3)}
+        </div>
+        <div className="mt-1 h-1 w-32 rounded-full bg-muted overflow-hidden">
+          <div
+            className="h-full bg-primary transition-all"
+            style={{ width: `${(remaining / 30) * 100}%` }}
+          />
+        </div>
+      </div>
+      <button onClick={() => onCopy(code)} className="text-xs text-primary">Copy</button>
+    </div>
+  );
+}
+
 function Field({ label, value, action }: { label: string; value: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
@@ -870,6 +1161,7 @@ function EntryForm({
   const [username, setUsername] = useState(initial?.username ?? "");
   const [password, setPassword] = useState(initial?.password ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [totpSecret, setTotpSecret] = useState(initial?.totpSecret ?? "");
   const [storeHint, setStoreHint] = useState(!!initial?.title);
   const [busy, setBusy] = useState(false);
 
@@ -884,6 +1176,7 @@ function EntryForm({
         username: username.trim() || undefined,
         password: password || undefined,
         notes: notes.trim() || undefined,
+        totpSecret: totpSecret.trim() || undefined,
       }, storeHint);
     } catch (err) {
       // toast handled by caller
@@ -932,6 +1225,12 @@ function EntryForm({
           Generate
         </button>
       </div>
+      <input
+        value={totpSecret} onChange={(e) => setTotpSecret(e.target.value)}
+        placeholder="TOTP secret (base32 — optional)"
+        className="block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm font-mono"
+        autoComplete="off"
+      />
       <textarea
         value={notes} onChange={(e) => setNotes(e.target.value)}
         placeholder="Notes (multi-line OK)"
@@ -960,6 +1259,164 @@ function EntryForm({
         </button>
       </div>
     </form>
+  );
+}
+
+function FolderLinksSection({ folderId }: { folderId: string }) {
+  const { toast } = useToast();
+  const [links, setLinks] = useState<Array<{ ref_type: VaultRefType; ref_id: string; ref_label: string }>>([]);
+  const [sites, setSites] = useState<Array<{ id: string; name: string; customer_name?: string }>>([]);
+  const [customers, setCustomers] = useState<Array<{ id: string; name: string }>>([]);
+  const [adding, setAdding] = useState(false);
+  const [refType, setRefType] = useState<VaultRefType>("site");
+  const [refId, setRefId] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function reload() {
+    try {
+      setLinks(await listFolderLinks(folderId));
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Load links failed", "error");
+    }
+  }
+
+  useEffect(() => { reload(); /* eslint-disable-next-line */ }, [folderId]);
+
+  async function loadPickerData() {
+    const supabase = createClient();
+    const [s, c] = await Promise.all([
+      supabase.from("customer_sites")
+        .select("id, name, customer:customers!customer_id(name)")
+        .order("name"),
+      supabase.from("customers")
+        .select("id, name")
+        .eq("is_active", true)
+        .order("name"),
+    ]);
+    setSites((s.data ?? []).map((r: any) => ({
+      id: r.id, name: r.name,
+      customer_name: Array.isArray(r.customer) ? r.customer[0]?.name : r.customer?.name,
+    })));
+    setCustomers((c.data ?? []) as { id: string; name: string }[]);
+  }
+
+  async function startAdding() {
+    setAdding(true);
+    if (sites.length === 0 && customers.length === 0) {
+      await loadPickerData();
+    }
+  }
+
+  async function submitLink(e: React.FormEvent) {
+    e.preventDefault();
+    if (!refId) return;
+    // Already linked?
+    if (links.some((l) => l.ref_type === refType && l.ref_id === refId)) {
+      toast("Already linked to this record.", "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      await linkFolderToRef(folderId, refType, refId);
+      toast(`Folder linked to this ${refType}.`);
+      setAdding(false);
+      setRefId("");
+      await reload();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Link failed", "error");
+    }
+    setBusy(false);
+  }
+
+  async function removeLink(refType: VaultRefType, refId: string, label: string) {
+    if (!confirm(`Unlink folder from ${label}? Folder content + access stays the same — only the discoverability link is removed.`)) return;
+    try {
+      await unlinkFolderFromRef(folderId, refType, refId);
+      toast("Link removed.");
+      await reload();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Unlink failed", "error");
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Linked to (sites / customers)
+        </div>
+        {!adding && (
+          <button
+            onClick={startAdding}
+            className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
+          >
+            + Link record
+          </button>
+        )}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Surfaces this folder on the linked record&apos;s &quot;Vault&quot;
+        tab. Linking doesn&apos;t grant access — folder membership still
+        gates the actual content.
+      </p>
+      {links.length === 0 ? (
+        <p className="text-[11px] italic text-muted-foreground">No links yet.</p>
+      ) : (
+        <div className="divide-y divide-border rounded-md border border-border bg-card">
+          {links.map((l) => (
+            <div key={`${l.ref_type}-${l.ref_id}`} className="flex items-center justify-between px-3 py-2">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase">{l.ref_type}</span>
+                <span>{l.ref_label}</span>
+              </div>
+              <button
+                onClick={() => removeLink(l.ref_type, l.ref_id, l.ref_label)}
+                className="text-xs text-destructive hover:underline"
+              >
+                Unlink
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {adding && (
+        <form onSubmit={submitLink} className="space-y-2 rounded-md bg-muted/20 p-2">
+          <div className="grid grid-cols-[auto_1fr_auto] gap-2">
+            <select
+              value={refType} onChange={(e) => { setRefType(e.target.value as VaultRefType); setRefId(""); }}
+              className="rounded-md border border-border bg-input px-2.5 py-1.5 text-sm"
+            >
+              <option value="site">Site</option>
+              <option value="customer">Customer</option>
+            </select>
+            <select
+              value={refId} onChange={(e) => setRefId(e.target.value)} required
+              className="rounded-md border border-border bg-input px-2.5 py-1.5 text-sm"
+            >
+              <option value="">Pick a {refType}…</option>
+              {refType === "site"
+                ? sites.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}{s.customer_name ? ` — ${s.customer_name}` : ""}
+                    </option>
+                  ))
+                : customers.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+            </select>
+            <button type="submit" disabled={busy || !refId}
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+              {busy ? "Linking..." : "Link"}
+            </button>
+          </div>
+          <button type="button" onClick={() => setAdding(false)}
+            className="text-xs text-muted-foreground hover:text-foreground">
+            Cancel
+          </button>
+        </form>
+      )}
+    </div>
   );
 }
 

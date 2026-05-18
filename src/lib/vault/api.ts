@@ -54,12 +54,13 @@ export async function setupVault(masterPassword: string): Promise<SetupResult> {
   // 3. Wrap the private key with the master encryption key.
   const wrappedPk = await wrapPrivateKeyWithMasterKey(privateKey, masterEncKey);
 
-  // 4. Generate recovery code, derive a recovery key, wrap private key again.
+  // 4. Generate recovery code, derive recovery auth + encryption keys, wrap
+  //    private key again. The auth key goes to the server as a verifier
+  //    (bcrypted), the encryption key wraps the private key client-side.
   const recoveryCode = generateRecoveryCode();
   const recoverySaltB64 = newPbkdf2Salt();
-  const { encryptionKey: recoveryEncKey } = await deriveKeysFromMasterPassword(
-    recoveryCode, recoverySaltB64,
-  );
+  const { authKeyB64: recoveryAuthKeyB64, encryptionKey: recoveryEncKey } =
+    await deriveKeysFromMasterPassword(recoveryCode, recoverySaltB64);
   const recoveryWrappedPk = await wrapPrivateKeyWithMasterKey(privateKey, recoveryEncKey);
 
   // 5. Create the Personal folder symmetric key + wrap with user's public key.
@@ -73,6 +74,7 @@ export async function setupVault(masterPassword: string): Promise<SetupResult> {
     p_public_key: publicKeyB64,
     p_wrapped_private_key: wrappedPk.ciphertextB64,
     p_wrapped_pk_iv: wrappedPk.ivB64,
+    p_recovery_auth_key: recoveryAuthKeyB64,
     p_recovery_wrapped_pk: recoveryWrappedPk.ciphertextB64,
     p_recovery_wrapped_iv: recoveryWrappedPk.ivB64,
     p_recovery_salt: recoverySaltB64,
@@ -82,6 +84,102 @@ export async function setupVault(masterPassword: string): Promise<SetupResult> {
   if (error) throw new Error(`setup_vault failed: ${error.message}`);
 
   return { personalFolderId: data as string, recoveryCode };
+}
+
+// ── Recovery flow ───────────────────────────────────────────────────────
+
+export interface RecoveryResult {
+  privateKey: CryptoKey;
+  publicKey: CryptoKey;
+  recoveryCodeRaw: string;        // kept by client so the reset step can re-verify
+}
+
+/**
+ * Verify the recovery code and unwrap the private key with it. The client
+ * MUST then prompt for a new master password and call resetMasterPassword
+ * — the vault stays locked until that happens.
+ */
+export async function recoverVault(recoveryCodeInput: string): Promise<RecoveryResult> {
+  const supabase = createClient();
+  const code = normaliseRecoveryCodeFromUser(recoveryCodeInput);
+
+  // Fetch the recovery salt so we can derive recovery_auth_key.
+  // recover_vault returns it after verification — but we need salt first.
+  // Solution: fetch from vault_users row (SELECT is RLS-allowed for self).
+  const { data: rowData, error: rowErr } = await supabase
+    .from("vault_users")
+    .select("recovery_salt")
+    .single();
+  if (rowErr) throw new Error(`vault_users lookup: ${rowErr.message}`);
+  if (!rowData?.recovery_salt) throw new Error("This vault has no recovery info.");
+
+  const { authKeyB64: recoveryAuthKeyB64, encryptionKey: recoveryEncKey } =
+    await deriveKeysFromMasterPassword(code, rowData.recovery_salt as string);
+
+  const { data, error } = await supabase.rpc("recover_vault", {
+    p_recovery_auth_key: recoveryAuthKeyB64,
+  });
+  if (error) throw new Error(`recover_vault failed: ${error.message}`);
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.ok) throw new Error("Invalid recovery code.");
+
+  // Unwrap the recovery-wrapped private key.
+  const privateKey = await unwrapPrivateKeyWithMasterKey(
+    row.recovery_wrapped_pk as string,
+    row.recovery_wrapped_iv as string,
+    recoveryEncKey,
+  );
+  const publicKey = await importPublicKeyB64(row.public_key as string);
+
+  return { privateKey, publicKey, recoveryCodeRaw: code };
+}
+
+/**
+ * After successful recovery, prompt the user for a new master password and
+ * call this. Re-derives auth_key + encryption_key from the new master,
+ * re-wraps the private key, and atomically updates vault_users (server
+ * re-verifies the recovery code before accepting).
+ */
+export async function resetMasterPassword(params: {
+  recoveryCodeRaw: string;
+  newMasterPassword: string;
+  privateKey: CryptoKey;
+}): Promise<void> {
+  if (params.newMasterPassword.length < 10) {
+    throw new Error("New master password must be at least 10 characters.");
+  }
+  const supabase = createClient();
+
+  // Re-derive the recovery_auth_key for the server's re-verification step.
+  const { data: rowData, error: rowErr } = await supabase
+    .from("vault_users")
+    .select("recovery_salt")
+    .single();
+  if (rowErr) throw new Error(`vault_users lookup: ${rowErr.message}`);
+  const { authKeyB64: recoveryAuthKeyB64 } = await deriveKeysFromMasterPassword(
+    params.recoveryCodeRaw, rowData!.recovery_salt as string,
+  );
+
+  // Derive new master-side artifacts.
+  const newEncSaltB64 = newPbkdf2Salt();
+  const { authKeyB64: newAuthKeyB64, encryptionKey: newMasterEncKey } =
+    await deriveKeysFromMasterPassword(params.newMasterPassword, newEncSaltB64);
+  const newWrappedPk = await wrapPrivateKeyWithMasterKey(params.privateKey, newMasterEncKey);
+
+  const { error } = await supabase.rpc("reset_master_credentials", {
+    p_recovery_auth_key: recoveryAuthKeyB64,
+    p_new_auth_key: newAuthKeyB64,
+    p_new_enc_salt: newEncSaltB64,
+    p_new_wrapped_private_key: newWrappedPk.ciphertextB64,
+    p_new_wrapped_pk_iv: newWrappedPk.ivB64,
+  });
+  if (error) throw new Error(`reset_master_credentials failed: ${error.message}`);
+}
+
+function normaliseRecoveryCodeFromUser(input: string): string {
+  // Strip everything that isn't in the recovery alphabet (the display includes
+  // dashes for readability; the user might paste with extra whitespace).
+  return input.toUpperCase().replace(/[^A-Z2-9]/g, "");
 }
 
 export interface UnlockResult {
@@ -356,6 +454,159 @@ export async function revokeMember(folderId: string, staffId: string): Promise<v
     p_folder_id: folderId, p_staff_id: staffId,
   });
   if (error) throw new Error(`revokeMember: ${error.message}`);
+}
+
+// ── Phase 4: CRM links ──────────────────────────────────────────────────
+
+export type VaultRefType = "site" | "customer";
+
+export interface VaultLinkedFolder {
+  folder_id: string;
+  folder_name: string;
+  is_personal: boolean;
+  has_access: boolean;
+  entry_count: number;
+}
+
+/** List the folders linked to a site/customer; entry_count is 0 for non-members. */
+export async function listFoldersForRef(
+  refType: VaultRefType, refId: string,
+): Promise<VaultLinkedFolder[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("vault_folders_for_ref", {
+    p_ref_type: refType, p_ref_id: refId,
+  });
+  if (error) throw new Error(`listFoldersForRef: ${error.message}`);
+  return (data ?? []) as VaultLinkedFolder[];
+}
+
+/** Owner links a folder to a site/customer. Permits sites.view-only staff
+ *  to discover the folder exists, but membership still gates content. */
+export async function linkFolderToRef(
+  folderId: string, refType: VaultRefType, refId: string,
+): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase.from("vault_folder_links").insert({
+    folder_id: folderId, ref_type: refType, ref_id: refId,
+    linked_by: (await supabase.auth.getUser()).data.user!.id,
+  });
+  if (error) throw new Error(`linkFolderToRef: ${error.message}`);
+}
+
+export async function unlinkFolderFromRef(
+  folderId: string, refType: VaultRefType, refId: string,
+): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase.from("vault_folder_links").delete()
+    .eq("folder_id", folderId).eq("ref_type", refType).eq("ref_id", refId);
+  if (error) throw new Error(`unlinkFolderFromRef: ${error.message}`);
+}
+
+// ── Phase 5b: key rotation ──────────────────────────────────────────────
+
+export interface PendingRotation {
+  folder_id: string;
+  folder_name: string;
+  members: Array<{ staff_id: string; public_key: string }>;
+}
+
+/** Owner-only — list folders that need their key rotated (a member was
+ * removed). Returns the current member roster + public keys so the
+ * client can re-wrap in one pass. */
+export async function listPendingRotations(): Promise<PendingRotation[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("vault_list_pending_rotations");
+  if (error) throw new Error(`listPendingRotations: ${error.message}`);
+  return (data ?? []) as PendingRotation[];
+}
+
+/**
+ * Perform a key rotation for the given folder. Caller MUST be a current
+ * owner and the OLD folder key must be in their session (passed in as
+ * `oldFolderKey`).
+ *
+ * Steps:
+ *   1. Generate a new symmetric folder key.
+ *   2. Fetch all entries; decrypt each with the old key; re-encrypt with
+ *      the new key.
+ *   3. For each member in `pending.members`, import their public key and
+ *      wrap the new folder key.
+ *   4. Single RPC swap; server validates the member set hasn't drifted.
+ *
+ * Returns the new folder key so the caller can update useVaultSession.
+ */
+export async function rotateFolderKey(params: {
+  pending: PendingRotation;
+  oldFolderKey: CryptoKey;
+}): Promise<{ newFolderKey: CryptoKey }> {
+  const supabase = createClient();
+  const { pending, oldFolderKey } = params;
+
+  // 1. New key.
+  const newFolderKey = await generateFolderKey();
+
+  // 2. Re-encrypt all entries.
+  const entryRows = await listEntries(pending.folder_id);
+  const newEntries: Array<{ id: string; ciphertext: string; iv: string }> = [];
+  for (const row of entryRows) {
+    const payload = await decryptEntry(oldFolderKey, row.ciphertext, row.iv);
+    const enc = await encryptEntry(newFolderKey, payload);
+    newEntries.push({ id: row.id, ciphertext: enc.ciphertextB64, iv: enc.ivB64 });
+  }
+
+  // 3. Re-wrap for each remaining member.
+  const newMembers: Array<{ staff_id: string; wrapped_folder_key: string }> = [];
+  for (const m of pending.members) {
+    const pub = await importPublicKeyB64(m.public_key);
+    const wrapped = await wrapFolderKeyForPublicKey(newFolderKey, pub);
+    newMembers.push({ staff_id: m.staff_id, wrapped_folder_key: wrapped });
+  }
+
+  // 4. Atomic swap.
+  const { error } = await supabase.rpc("vault_complete_rotation", {
+    p_folder_id: pending.folder_id,
+    p_entries: newEntries,
+    p_members: newMembers,
+  });
+  if (error) throw new Error(`vault_complete_rotation: ${error.message}`);
+
+  return { newFolderKey };
+}
+
+/** List CURRENT links from a folder, used in the folder settings panel. */
+export async function listFolderLinks(folderId: string): Promise<
+  Array<{ ref_type: VaultRefType; ref_id: string; ref_label: string }>
+> {
+  const supabase = createClient();
+  // Pull links, then resolve labels via parallel lookups.
+  const { data: links, error } = await supabase
+    .from("vault_folder_links")
+    .select("ref_type, ref_id")
+    .eq("folder_id", folderId);
+  if (error) throw new Error(`listFolderLinks: ${error.message}`);
+  const rows = (links ?? []) as Array<{ ref_type: VaultRefType; ref_id: string }>;
+  if (rows.length === 0) return [];
+
+  const siteIds = rows.filter((r) => r.ref_type === "site").map((r) => r.ref_id);
+  const customerIds = rows.filter((r) => r.ref_type === "customer").map((r) => r.ref_id);
+  const [sitesRes, custRes] = await Promise.all([
+    siteIds.length > 0
+      ? supabase.from("customer_sites").select("id, name").in("id", siteIds)
+      : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+    customerIds.length > 0
+      ? supabase.from("customers").select("id, name").in("id", customerIds)
+      : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+  ]);
+  const siteMap = new Map((sitesRes.data ?? []).map((s) => [s.id, s.name]));
+  const custMap = new Map((custRes.data ?? []).map((c) => [c.id, c.name]));
+
+  return rows.map((r) => ({
+    ref_type: r.ref_type,
+    ref_id: r.ref_id,
+    ref_label: r.ref_type === "site"
+      ? (siteMap.get(r.ref_id) ?? "(unknown site)")
+      : (custMap.get(r.ref_id) ?? "(unknown customer)"),
+  }));
 }
 
 /**

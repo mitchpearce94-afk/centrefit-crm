@@ -3,6 +3,15 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { SiteDetail } from "./site-detail";
 import type { CustomerSite, CustomerContact, SiteAsset, AssetType } from "@/lib/types";
+import { currentUserHasPermission } from "@/lib/auth/permissions";
+
+interface VaultFolderForRefRow {
+  folder_id: string;
+  folder_name: string;
+  is_personal: boolean;
+  has_access: boolean;
+  entry_count: number;
+}
 
 export default async function SiteDetailPage({
   params,
@@ -12,7 +21,9 @@ export default async function SiteDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [siteResult, contactsResult, jobsResult, assetsResult, assetTypesResult, keyInfoPhotosResult] = await Promise.all([
+  const canVault = await currentUserHasPermission("vault.access");
+
+  const [siteResult, contactsResult, jobsResult, assetsResult, assetTypesResult, keyInfoPhotosResult, vaultFoldersResult] = await Promise.all([
     supabase
       .from("customer_sites")
       .select(
@@ -52,6 +63,9 @@ export default async function SiteDetailPage({
       .select("*")
       .eq("site_id", id)
       .order("created_at", { ascending: false }),
+    canVault
+      ? supabase.rpc("vault_folders_for_ref", { p_ref_type: "site", p_ref_id: id })
+      : Promise.resolve({ data: [] as VaultFolderForRefRow[] }),
   ]);
 
   if (siteResult.error || !siteResult.data) {
@@ -80,6 +94,7 @@ export default async function SiteDetailPage({
     uploaded_by: string | null;
     created_at: string;
   }>;
+  const vaultFolders = (vaultFoldersResult.data ?? []) as VaultFolderForRefRow[];
 
   return (
     <div>
@@ -119,6 +134,8 @@ export default async function SiteDetailPage({
           assets={assets}
           assetTypes={assetTypes}
           keyInfoPhotos={keyInfoPhotos}
+          canVault={canVault}
+          vaultFolders={vaultFolders}
         />
       </div>
     </div>

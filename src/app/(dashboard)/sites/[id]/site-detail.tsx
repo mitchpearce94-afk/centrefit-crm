@@ -7,6 +7,7 @@ import { SiteEditForm } from "./site-edit-form";
 import { SiteContactsList } from "./site-contacts-list";
 import { SiteAssetsList } from "./site-assets-list";
 import { KeyInfoPanel, type KeyInfoPhoto } from "./key-info-panel";
+import { SiteVaultPanel, type VaultFolderForRefRow } from "./site-vault-panel";
 
 type Job = {
   id: string;
@@ -24,6 +25,8 @@ export function SiteDetail({
   assets,
   assetTypes,
   keyInfoPhotos,
+  canVault,
+  vaultFolders,
 }: {
   site: CustomerSite & { customer: { id: string; name: string } | null };
   contacts: CustomerContact[];
@@ -31,18 +34,20 @@ export function SiteDetail({
   assets: SiteAsset[];
   assetTypes: AssetType[];
   keyInfoPhotos: KeyInfoPhoto[];
+  canVault: boolean;
+  vaultFolders: VaultFolderForRefRow[];
 }) {
-  const [tab, setTab] = useState<"details" | "contacts" | "jobs" | "assets" | "key-info">(
-    "details"
-  );
+  type TabKey = "details" | "contacts" | "jobs" | "assets" | "key-info" | "vault";
+  const [tab, setTab] = useState<TabKey>("details");
 
   const activeAssetCount = assets.filter((a) => a.is_active).length;
-  const tabs: { key: typeof tab; label: string; count?: number }[] = [
+  const tabs: { key: TabKey; label: string; count?: number }[] = [
     { key: "details", label: "Details" },
     { key: "contacts", label: "Contacts", count: contacts.length },
     { key: "jobs", label: "Jobs", count: jobs.length },
     { key: "assets", label: "Assets", count: activeAssetCount },
     { key: "key-info", label: "Key Information" },
+    ...(canVault ? [{ key: "vault" as TabKey, label: "Vault", count: vaultFolders.length }] : []),
   ];
 
   return (
@@ -158,6 +163,10 @@ export function SiteDetail({
             assetTypes={assetTypes}
             photos={keyInfoPhotos}
           />
+        )}
+
+        {tab === "vault" && canVault && (
+          <SiteVaultPanel siteId={site.id} initialFolders={vaultFolders} />
         )}
       </div>
     </div>
