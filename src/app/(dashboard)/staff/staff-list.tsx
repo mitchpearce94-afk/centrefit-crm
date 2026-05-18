@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 import type { Staff, StaffRole } from "@/lib/types";
 import { StaffNotificationEditor } from "./staff-notification-editor";
+import { StaffPermissionsEditor } from "./staff-permissions-editor";
 
 interface NotificationType {
   code: string;
@@ -22,6 +23,19 @@ interface PrefRow {
   type_code: string;
   enabled: boolean;
   email_enabled: boolean | null;
+}
+
+interface PermissionFlag {
+  flag: string;
+  area: string;
+  label: string;
+  description: string | null;
+  sort_order: number;
+}
+
+interface OverrideRow {
+  flag: string;
+  granted: boolean;
 }
 
 const roleLabels: Record<StaffRole, string> = {
@@ -49,15 +63,22 @@ export function StaffList({
   currentUserId,
   notificationTypes,
   prefsByStaff,
+  permissionFlags,
+  defaultsByRole,
+  overridesByStaff,
 }: {
   staff: Staff[];
   isAdmin: boolean;
   currentUserId: string;
   notificationTypes: NotificationType[];
   prefsByStaff: Record<string, PrefRow[]>;
+  permissionFlags: PermissionFlag[];
+  defaultsByRole: Record<string, string[]>;
+  overridesByStaff: Record<string, OverrideRow[]>;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [notifsOpenId, setNotifsOpenId] = useState<string | null>(null);
+  const [permsOpenId, setPermsOpenId] = useState<string | null>(null);
   const [showInvite, setShowInvite] = useState(false);
 
   return (
@@ -129,7 +150,19 @@ export function StaffList({
               {isAdmin && (
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setNotifsOpenId(notifsOpenId === member.id ? null : member.id)}
+                    onClick={() => {
+                      setPermsOpenId(permsOpenId === member.id ? null : member.id);
+                      if (notifsOpenId === member.id) setNotifsOpenId(null);
+                    }}
+                    className={`text-xs transition-colors ${permsOpenId === member.id ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    {permsOpenId === member.id ? "Close permissions" : "Permissions"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setNotifsOpenId(notifsOpenId === member.id ? null : member.id);
+                      if (permsOpenId === member.id) setPermsOpenId(null);
+                    }}
                     className={`text-xs transition-colors ${notifsOpenId === member.id ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
                   >
                     {notifsOpenId === member.id ? "Close notifications" : "Notifications"}
@@ -145,6 +178,18 @@ export function StaffList({
                   )}
                 </div>
               )}
+            </div>
+          )}
+          {isAdmin && permsOpenId === member.id && (
+            <div className="rounded-b-lg border border-t-0 border-border overflow-hidden -mt-1">
+              <StaffPermissionsEditor
+                staffId={member.id}
+                staffName={member.display_name}
+                staffRole={member.role}
+                flags={permissionFlags}
+                defaultsByRole={defaultsByRole}
+                initialOverrides={overridesByStaff[member.id] ?? []}
+              />
             </div>
           )}
           {isAdmin && notifsOpenId === member.id && (

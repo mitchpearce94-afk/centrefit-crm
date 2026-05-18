@@ -1,7 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { ReportsDashboard } from "./reports-dashboard";
+import { requireAnyPermissionOrNotFound } from "@/lib/auth/route-guards";
 
 export default async function ReportsPage() {
+  await requireAnyPermissionOrNotFound(["reports.view_operational", "reports.view_financial"]);
   const supabase = await createClient();
 
   const [jobsResult, timeResult, pipelineResult, staffResult, customersResult, quotesResult] =

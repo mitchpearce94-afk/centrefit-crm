@@ -4,7 +4,14 @@ import { StaffList } from "./staff-list";
 export default async function StaffPage() {
   const supabase = await createClient();
 
-  const [{ data: staff, error }, { data: types }, { data: prefs }] = await Promise.all([
+  const [
+    { data: staff, error },
+    { data: types },
+    { data: prefs },
+    { data: permFlags },
+    { data: roleDefaults },
+    { data: staffOverrides },
+  ] = await Promise.all([
     supabase.from("staff").select("*").order("display_name"),
     supabase
       .from("notification_types")
@@ -13,6 +20,12 @@ export default async function StaffPage() {
     supabase
       .from("staff_notification_preferences")
       .select("staff_id, type_code, enabled, email_enabled"),
+    supabase
+      .from("permission_flags")
+      .select("flag, area, label, description, sort_order")
+      .order("sort_order"),
+    supabase.from("role_default_permissions").select("role, flag"),
+    supabase.from("staff_permissions").select("staff_id, flag, granted"),
   ]);
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -43,6 +56,22 @@ export default async function StaffPage() {
   const prefsByStaffObj: Record<string, { type_code: string; enabled: boolean; email_enabled: boolean | null }[]> = {};
   for (const [k, v] of prefsByStaff) prefsByStaffObj[k] = v;
 
+  // Build role → flag-set map (defaults indexed by role).
+  const defaultsByRole: Record<string, string[]> = {};
+  for (const d of roleDefaults ?? []) {
+    const r = d.role as string;
+    if (!defaultsByRole[r]) defaultsByRole[r] = [];
+    defaultsByRole[r].push(d.flag as string);
+  }
+
+  // Bucket overrides by staff.
+  const overridesByStaff: Record<string, { flag: string; granted: boolean }[]> = {};
+  for (const o of staffOverrides ?? []) {
+    const sid = o.staff_id as string;
+    if (!overridesByStaff[sid]) overridesByStaff[sid] = [];
+    overridesByStaff[sid].push({ flag: o.flag as string, granted: o.granted as boolean });
+  }
+
   return (
     <div>
       <h1 className="text-2xl font-bold tracking-tight">Staff</h1>
@@ -56,6 +85,9 @@ export default async function StaffPage() {
           currentUserId={user?.id ?? ""}
           notificationTypes={types ?? []}
           prefsByStaff={prefsByStaffObj}
+          permissionFlags={permFlags ?? []}
+          defaultsByRole={defaultsByRole}
+          overridesByStaff={overridesByStaff}
         />
       </div>
     </div>

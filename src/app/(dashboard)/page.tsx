@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { DashboardFilters } from "./dashboard-filters";
+import { loadCurrentPermissions, hasPermission } from "@/lib/auth/permissions";
 
 export default async function DashboardPage({
   searchParams,
@@ -9,6 +10,19 @@ export default async function DashboardPage({
 }) {
   const params = await searchParams;
   const supabase = await createClient();
+  const perms = await loadCurrentPermissions();
+
+  // Per D9: each widget declares its permission requirement; render only the
+  // ones this staff has flags for. `can()` returns false when perms is null
+  // (unauthenticated layer above already redirects, but guard anyway).
+  const can = (flag: Parameters<typeof hasPermission>[1]) =>
+    perms ? hasPermission(perms, flag) : false;
+
+  const canSeeJobs = can("jobs.view");
+  const canSeeAllJobs = can("jobs.view_all");
+  const canSeeCustomers = can("customers.view");
+  const canSeePipelineDollars = can("quoting.view_amounts");
+  const canSeeFullSchedule = can("scheduler.view_all_team");
 
   const completionIds = await getCompletionStatusIds(supabase);
   const todayDate = new Date();
@@ -187,21 +201,29 @@ export default async function DashboardPage({
           currentCategory={params.category}
         />
 
-        {/* Stats */}
+        {/* Stats — rendered per permission (D9). */}
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Active Jobs" value={String(filteredJobs.length)} href="/jobs" />
-          <StatCard label="Customers" value={String(totalCustomers ?? 0)} href="/customers" />
-          <StatCard label="Overdue" value={String(overdueJobs.length)} warning={overdueJobs.length > 0} />
-          <StatCard
-            label="Pipeline Value"
-            value={`$${(pipelineDeals ?? []).reduce((sum: number, d: any) => sum + (d.value ?? 0), 0).toLocaleString("en-AU")}`}
-            href="/pipeline"
-          />
+          {canSeeJobs && (
+            <StatCard label="Active Jobs" value={String(filteredJobs.length)} href="/jobs" />
+          )}
+          {canSeeCustomers && (
+            <StatCard label="Customers" value={String(totalCustomers ?? 0)} href="/customers" />
+          )}
+          {canSeeAllJobs && (
+            <StatCard label="Overdue" value={String(overdueJobs.length)} warning={overdueJobs.length > 0} />
+          )}
+          {canSeePipelineDollars && (
+            <StatCard
+              label="Pipeline Value"
+              value={`$${(pipelineDeals ?? []).reduce((sum: number, d: any) => sum + (d.value ?? 0), 0).toLocaleString("en-AU")}`}
+              href="/pipeline"
+            />
+          )}
         </div>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-2">
           {/* Recent Jobs */}
-          <div>
+          {canSeeJobs && (<div>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-base font-semibold tracking-tight">Recent Jobs</h2>
               <Link href="/jobs" className="text-xs font-medium text-primary hover:text-primary/80 transition-colors">View all →</Link>
@@ -235,10 +257,10 @@ export default async function DashboardPage({
                 </div>
               )}
             </div>
-          </div>
+          </div>)}
 
           {/* Today's Schedule */}
-          <div>
+          {canSeeFullSchedule && (<div>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-base font-semibold tracking-tight">Today&apos;s Schedule</h2>
               <Link href="/scheduler" className="text-xs font-medium text-primary hover:text-primary/80 transition-colors">Full schedule →</Link>
@@ -276,7 +298,14 @@ export default async function DashboardPage({
                 <div className="px-4 py-10 text-center text-sm text-muted-foreground">Nothing on today.</div>
               )}
             </div>
-          </div>
+          </div>)}
+
+          {/* Graceful empty state when no widgets are visible. */}
+          {!canSeeJobs && !canSeeFullSchedule && (
+            <div className="lg:col-span-2 rounded-lg border border-dashed border-border bg-card/40 p-10 text-center text-sm text-muted-foreground">
+              No dashboard widgets are enabled for your role. Use the sidebar to navigate.
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -8,6 +8,7 @@ import { SuggestionButton } from "@/components/suggestion-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { IdleLogout } from "@/components/idle-logout";
 import { ToastProvider } from "@/components/ui/toast";
+import { loadPermissionsFor, hasPermission, PERMISSION_FLAGS } from "@/lib/auth/permissions";
 
 export default async function DashboardLayout({
   children,
@@ -33,11 +34,19 @@ export default async function DashboardLayout({
     redirect("/change-password");
   }
 
+  // Resolve effective permissions once for the whole nav. The nav components
+  // receive a string[] of allowed flags so they can filter their items
+  // client-side without a second DB round-trip.
+  const perms = await loadPermissionsFor(supabase, user.id);
+  const allowedFlags = perms
+    ? PERMISSION_FLAGS.filter((f) => hasPermission(perms, f))
+    : [];
+
   return (
     <ToastProvider>
       <IdleLogout />
       <div className="flex h-dvh overflow-hidden">
-        <Sidebar user={user} staff={staff ?? null} />
+        <Sidebar user={user} staff={staff ?? null} allowedFlags={allowedFlags} />
         <main className="flex-1 overflow-y-auto pb-mobile-nav lg:pb-0">
           {/* Mobile fallback top bar — visible on screens that haven't yet
               migrated to <PageHeader>. Once a page renders its own
@@ -75,7 +84,7 @@ export default async function DashboardLayout({
           </div>
           <div className="p-4 md:p-6">{children}</div>
         </main>
-        <MobileNav user={user} staff={staff ?? null} />
+        <MobileNav user={user} staff={staff ?? null} allowedFlags={allowedFlags} />
       </div>
     </ToastProvider>
   );
