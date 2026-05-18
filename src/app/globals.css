@@ -197,12 +197,21 @@ h1, h2, h3 {
   letter-spacing: -0.02em;
 }
 
-/* Subtle gradient text for headline numbers */
+/* Subtle gradient text for headline numbers. Dark-mode gradient is light text
+   on dark bg; in light mode the gradient stops below would render near-invisible
+   against the light surface, so drop the gradient entirely and use the solid
+   foreground colour. */
 .num-gradient {
   background: linear-gradient(180deg, #ffffff 0%, #c9c9d6 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+html.light .num-gradient {
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  color: var(--foreground);
 }
 
 /* iOS Safari auto-zooms on focus when an input's computed font-size is
