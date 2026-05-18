@@ -6,6 +6,7 @@ import { MobileNav } from "@/components/mobile-nav";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { SuggestionButton } from "@/components/suggestion-button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { IdleLogout } from "@/components/idle-logout";
 import { ToastProvider } from "@/components/ui/toast";
 
 export default async function DashboardLayout({
@@ -34,6 +35,7 @@ export default async function DashboardLayout({
 
   return (
     <ToastProvider>
+      <IdleLogout />
       <div className="flex h-dvh overflow-hidden">
         <Sidebar user={user} staff={staff ?? null} />
         <main className="flex-1 overflow-y-auto pb-mobile-nav lg:pb-0">
