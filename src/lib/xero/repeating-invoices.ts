@@ -166,6 +166,59 @@ export async function createRepeatingInvoice(
 }
 
 /**
+ * Read-only fetch of a RepeatingInvoice template. Used by the admin
+ * status-check endpoint to verify what Xero actually has on file for a
+ * plan (status, next-scheduled-date, branding theme, line count) without
+ * touching any customer-facing state.
+ */
+export interface RepeatingInvoiceState {
+  repeatingInvoiceID: string;
+  status: string;                    // DRAFT | AUTHORISED | DELETED
+  reference: string | null;
+  scheduleUnit: string | null;
+  schedulePeriod: number | null;
+  startDate: string | null;
+  nextScheduledDate: string | null;
+  endDate: string | null;
+  dueDays: number | null;
+  dueDateType: string | null;
+  brandingThemeID: string | null;
+  approvedForSending: boolean | null;
+  includePDF: boolean | null;
+  lineItemCount: number;
+  total: number | null;
+}
+
+export async function getRepeatingInvoice(
+  xero: XeroClient,
+  tenantId: string,
+  repeatingInvoiceId: string,
+): Promise<RepeatingInvoiceState> {
+  const res = await xero.accountingApi.getRepeatingInvoice(tenantId, repeatingInvoiceId);
+  const ri = res.body.repeatingInvoices?.[0];
+  if (!ri) throw new Error(`Xero returned no RepeatingInvoice for ${repeatingInvoiceId}`);
+  // SDK types use lowercase keys here.
+  const sched = (ri.schedule ?? {}) as Record<string, unknown>;
+  return {
+    repeatingInvoiceID: ri.repeatingInvoiceID ?? repeatingInvoiceId,
+    status: String(ri.status ?? "UNKNOWN"),
+    reference: (ri.reference ?? null) as string | null,
+    scheduleUnit: (sched.unit ?? null) as string | null,
+    schedulePeriod: (sched.period ?? null) as number | null,
+    startDate: (sched.startDate ?? null) as string | null,
+    nextScheduledDate: (sched.nextScheduledDate ?? null) as string | null,
+    endDate: (sched.endDate ?? null) as string | null,
+    dueDays: (sched.dueDate ?? null) as number | null,
+    dueDateType: (sched.dueDateType ?? null) as string | null,
+    brandingThemeID: (ri.brandingThemeID ?? null) as string | null,
+    approvedForSending: ((ri as unknown as { approvedForSending?: boolean }).approvedForSending ?? null),
+    includePDF: ((ri as unknown as { includePDF?: boolean }).includePDF ?? null),
+    lineItemCount: ri.lineItems?.length ?? 0,
+    total: (ri.total ?? null) as number | null,
+  };
+}
+
+/**
  * Cancel a RepeatingInvoice template by setting it to DELETED. Children
  * already generated keep their state in Xero.
  */
