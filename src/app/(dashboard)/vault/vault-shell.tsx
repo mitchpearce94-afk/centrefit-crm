@@ -616,7 +616,7 @@ function CreateFolderForm({
       <input
         value={name} onChange={(e) => setName(e.target.value)}
         autoFocus required
-        placeholder="Folder name (e.g. Snap Fitness Warner)"
+        placeholder="Folder name (e.g. Finance, Comms, Vendors)"
         className="block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm"
       />
       <p className="text-[11px] text-muted-foreground">
@@ -1198,7 +1198,7 @@ function EntryForm({
     <form onSubmit={submit} className="space-y-2 rounded-md border border-primary/30 bg-card p-3">
       <input
         value={title} onChange={(e) => setTitle(e.target.value)} required autoFocus
-        placeholder="Title (e.g. Snap Fitness Warner router)"
+        placeholder="Title (e.g. Xero, GoCardless, Stripe)"
         className="block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm"
       />
       <input
