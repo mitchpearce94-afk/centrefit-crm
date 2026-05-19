@@ -43,9 +43,45 @@ export async function POST(req: NextRequest) {
   const fromName = staff?.display_name ?? user.email ?? "Unknown staff";
   const fromEmail = user.email ?? "noreply@centrefit.com.au";
 
+  // Persist BEFORE sending so a Resend failure doesn't lose the suggestion.
+  // The email_sent + email_error fields get patched after the send attempt.
+  const { data: row, error: insertErr } = await supabase
+    .from("staff_suggestions")
+    .insert({
+      staff_id: user.id,
+      staff_name: fromName,
+      staff_email: fromEmail,
+      category,
+      body,
+    })
+    .select("id")
+    .single();
+  if (insertErr) {
+    // DB write failed — don't even try the email; surface the error so the
+    // user sees something rather than silently swallowing.
+    return NextResponse.json({ error: insertErr.message }, { status: 500 });
+  }
+
   const result = await sendSuggestionEmail({ fromName, fromEmail, category, body });
+
+  // Best-effort patch the email outcome onto the row — failure here is
+  // non-blocking (the row still exists, the email status just won't be
+  // reflected).
+  await supabase
+    .from("staff_suggestions")
+    .update({
+      email_sent: result.ok,
+      email_error: result.ok ? null : (result as { error: string }).error,
+    })
+    .eq("id", row.id);
+
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 502 });
+    // Suggestion is safe in the DB but Mitchell won't have got the email.
+    // Surface the error so the user knows to ping him directly.
+    return NextResponse.json(
+      { error: `Saved, but email failed: ${result.error}` },
+      { status: 502 },
+    );
   }
 
   return NextResponse.json({ ok: true });
