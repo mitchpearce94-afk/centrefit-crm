@@ -4,7 +4,10 @@ import Link from "next/link";
 import { CancelButton } from "./cancel-button";
 import { EditServicesButton } from "./edit-services-button";
 import { EditStartDateButton } from "./edit-start-date-button";
+import { AuthoriseXeroButton } from "./authorise-xero-button";
 import { accountCodeLabel } from "@/lib/xero/account-codes";
+import { getAuthedClient } from "@/lib/xero/client";
+import { getRepeatingInvoice, type RepeatingInvoiceState } from "@/lib/xero/repeating-invoices";
 
 const STATUS_LABEL: Record<string, string> = {
   pending_mandate: "Awaiting Mandate",
@@ -50,6 +53,31 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
   ]);
 
   if (!plan) notFound();
+
+  // Pull live Xero state for the template(s). Fetched sequentially to avoid
+  // tripping Xero's concurrent-request limiter, with a small per-template
+  // timeout — if Xero is unreachable we just hide the authorise UI rather
+  // than break the whole page.
+  const xeroIds = [
+    { id: plan.xero_repeating_invoice_id as string | null, label: "monthly" },
+    { id: (plan as { xero_repeating_invoice_secondary_id?: string | null }).xero_repeating_invoice_secondary_id ?? null, label: "yearly" },
+  ].filter((x): x is { id: string; label: string } => !!x.id);
+  const xeroStates: Array<{ id: string; label: string; state: RepeatingInvoiceState | null; error: string | null }> = [];
+  if (xeroIds.length > 0 && plan.status === "active") {
+    try {
+      const { client: xero, conn } = await getAuthedClient(supabase);
+      for (const x of xeroIds) {
+        try {
+          xeroStates.push({ id: x.id, label: x.label, state: await getRepeatingInvoice(xero, conn.tenant_id, x.id), error: null });
+        } catch (e) {
+          xeroStates.push({ id: x.id, label: x.label, state: null, error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+    } catch (e) {
+      // Xero auth failed entirely — skip the live check, page still renders.
+      console.error("Xero auth failed on plan detail page:", e);
+    }
+  }
 
   const items = plan.recurring_plan_items ?? [];
   const monthly = items.filter((i) => i.frequency === "monthly")
@@ -198,9 +226,83 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
           <dd>{plan.gc_mandate_id ?? "—"}</dd>
           <dt className="text-muted-foreground">Xero Contact ID</dt>
           <dd className="truncate">{plan.xero_contact_id ?? "—"}</dd>
-          <dt className="text-muted-foreground">Xero Repeating Invoice ID</dt>
-          <dd className="truncate">{plan.xero_repeating_invoice_id ?? "—"}</dd>
         </dl>
+
+        {/* Live Xero template state — only rendered for active plans. */}
+        {xeroStates.length > 0 && (
+          <div className="mt-4 space-y-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Xero RepeatingInvoice templates
+            </h3>
+            {xeroStates.map((x) => (
+              <XeroTemplateRow
+                key={x.id}
+                planId={plan.id}
+                customerName={customer?.name ?? "this customer"}
+                template={x}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function XeroTemplateRow({
+  planId,
+  customerName,
+  template,
+}: {
+  planId: string;
+  customerName: string;
+  template: { id: string; label: string; state: RepeatingInvoiceState | null; error: string | null };
+}) {
+  if (template.error) {
+    return (
+      <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-[11px] text-amber-300">
+        <span className="font-mono">{template.id.slice(0, 8)}…</span> ({template.label}) — Xero
+        lookup failed: {template.error.slice(0, 80)}{template.error.length > 80 ? "…" : ""}
+      </div>
+    );
+  }
+  const s = template.state!;
+  const isAuthorised = s.status === "AUTHORISED";
+  return (
+    <div className="rounded-md border border-border bg-card p-2.5">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2 text-xs">
+          <span className="font-mono text-muted-foreground">{template.id.slice(0, 8)}…</span>
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase">{template.label}</span>
+          <span
+            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+              isAuthorised
+                ? "bg-emerald-500/15 text-emerald-400"
+                : "bg-amber-500/15 text-amber-400"
+            }`}
+          >
+            {s.status}
+          </span>
+          {s.nextScheduledDate && (
+            <span className="text-[11px] text-muted-foreground">
+              next:{" "}
+              <span className="font-mono">
+                {new Date(s.nextScheduledDate).toLocaleDateString("en-AU")}
+              </span>
+            </span>
+          )}
+          {isAuthorised && s.approvedForSending && (
+            <span className="text-[11px] text-emerald-400">✓ auto-emails</span>
+          )}
+        </div>
+        {!isAuthorised && s.status === "DRAFT" && (
+          <AuthoriseXeroButton
+            planId={planId}
+            customerName={customerName}
+            templateLabel={template.label}
+            nextScheduledDate={s.nextScheduledDate}
+          />
+        )}
       </div>
     </div>
   );

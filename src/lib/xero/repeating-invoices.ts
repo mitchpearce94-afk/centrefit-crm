@@ -219,6 +219,28 @@ export async function getRepeatingInvoice(
 }
 
 /**
+ * Flip a RepeatingInvoice template's status from DRAFT → AUTHORISED.
+ * This is the action that makes Xero start generating children on the
+ * schedule. ⚠ CUSTOMER-FACING: combined with approvedForSending=true on
+ * the template (which our create flow sets by default) and the org-level
+ * "auto-send when authorised" setting, the next child invoice goes out
+ * by email automatically.
+ *
+ * Idempotent — calling on an already-AUTHORISED template just returns
+ * the current state.
+ */
+export async function authoriseRepeatingInvoice(
+  xero: XeroClient,
+  tenantId: string,
+  repeatingInvoiceId: string,
+): Promise<RepeatingInvoiceState> {
+  await xero.accountingApi.updateRepeatingInvoice(tenantId, repeatingInvoiceId, {
+    repeatingInvoices: [{ status: "AUTHORISED" } as never],
+  });
+  return getRepeatingInvoice(xero, tenantId, repeatingInvoiceId);
+}
+
+/**
  * Cancel a RepeatingInvoice template by setting it to DELETED. Children
  * already generated keep their state in Xero.
  */
