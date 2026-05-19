@@ -325,12 +325,16 @@ Total: ~5–6 focused days. Doesn't depend on vault build; can ship in parallel.
   a confusing "not found" message. Mitigation: 404 page shows a friendly
   "If you think you should see this, ask an admin" hint when the user IS
   authenticated.
-- **OQ3 (Vault overlap).** `site_assets.admin_password` is stored in
-  PLAINTEXT today. Once vault Phase 4 (CRM integration) ships, the right
-  move is to migrate site credentials into vault folders linked per
-  site. **Tracked separately as vault-CONTEXT D10.** Not blocking this
-  build — but worth noting that the field-staff `sites.manage_assets`
-  permission today grants access to plaintext router passwords.
+- **OQ3 (Vault overlap) — RESOLVED 2026-05-19, NO MIGRATION.**
+  `site_assets.admin_password` / `staff_password` / `wifi_ssids` stay in
+  plaintext on Key Info, gated by `sites.manage_assets`. Mitchell
+  explicitly decided not to migrate site creds into the vault: field
+  techs need them in-context at the rack, and anyone with
+  `sites.manage_assets` already has the right to see them, so bouncing
+  through a separate vault unlock adds friction without changing the
+  access-control surface. The vault is for **business-level** shared
+  creds (Xero, Outlook, GoCardless, Stripe, AusPost) where only a subset
+  of staff should have access. See vault-CONTEXT Goal section + D10.
 
 ---
 

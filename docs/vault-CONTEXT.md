@@ -4,21 +4,35 @@ Locked design decisions for the in-CRM password manager. Every task in the
 build plan must reference one of these decisions (per the GSD principle:
 CONTEXT.md before planning, no silent scope reduction during implementation).
 
-Last updated: 2026-05-18. Owner: Mitchell.
+Last updated: 2026-05-19. Owner: Mitchell.
 
 ---
 
 ## Goal
 
 A team password manager **built into the CRM** at `crm.centrefit.com.au/vault`
-that lets Centrefit staff store and share credentials (site logins, customer
-NBN admin accounts, Xero, GoCardless, internal tools) without ever sending
-plaintext passwords to the server. Folder-based ACL so staff only see what's
-relevant to their role. UX modelled on 1Password Teams.
+that lets Centrefit staff store and share **business-level** credentials —
+Xero, Outlook, GoCardless, Stripe, AusPost, vendor portals, internal tools —
+without ever sending plaintext passwords to the server. Folder-based ACL so
+each set of creds is visible only to the staff who actually need that access.
+UX modelled on 1Password Teams.
+
+**Scope clarification (2026-05-19):** The vault is **not** the home for
+per-site operational credentials. Router admin passwords, NVR staff
+passwords, alarm panel codes, WiFi SSIDs etc. stay on the **Key
+Information** tab of `/sites/[id]`, persisted on `site_assets`
+(`admin_password`, `staff_password`, `wifi_ssids`, …), gated by the
+`sites.manage_assets` permission flag. Field techs need those in-context
+while standing at the rack; bouncing through a separate vault unlock for
+every router password adds friction with no security gain (anyone with
+`sites.manage_assets` already has the right to those creds). The vault
+exists for the *narrower* category of sensitive shared secrets where only
+a subset of staff should have access — which the per-folder ACL handles.
 
 Replaces: ad-hoc password sharing via Slack/email/sticky notes.
 Does **not** replace: customer-facing self-service portals (those are out of
-scope for v1).
+scope for v1), and **does not replace** site Key Info credentials (those
+stay on the site detail page as per the scope clarification above).
 
 ---
 
@@ -153,14 +167,25 @@ vault_audit_log
   user can choose per-entry whether to opt in. If off, the list shows
   "Encrypted entry" until decrypted on hover/click.
 
-### D10. CRM integration
-- `Sites` detail page gets a "Site passwords" tab if the site is linked to
-  a vault folder. Showing folder name + count of entries; click goes to
-  vault filtered to that folder.
-- `Customers` detail page: same pattern.
-- Linking is manual in v1 (staff associates a folder with a site or
-  customer). Automatic creation of a folder when a new customer is created
-  is a Phase 5 nice-to-have.
+### D10. CRM integration (de-emphasised 2026-05-19)
+- `Sites` detail page has a "Vault" tab that lists folders linked to that
+  site (via `vault_folder_links`). The folder name + entry count render
+  for staff who are members; "Locked" badge shows for staff who can see
+  the link exists but aren't members.
+- `Customers` detail page would follow the same pattern (RPC + panel
+  primitives are already built; just not yet wired into the customer
+  page).
+- Linking is manual (folder owner picks the site/customer from the folder
+  settings panel).
+- **Original premise rejected:** earlier drafts proposed migrating
+  `site_assets.admin_password` / `staff_password` / `wifi_ssids` into
+  vault folders so site creds got the zero-knowledge treatment. Per the
+  Goal-section scope clarification, this is **not happening** — site
+  creds stay on Key Info. The CRM linkage feature remains useful for
+  *customer-specific* portal logins or per-site SaaS creds when those
+  genuinely exist as a separate set of credentials (rare in practice),
+  but it's not the primary value path. Don't over-invest in the linkage
+  UX.
 
 ### D11. Key rotation on staff offboarding
 - When a staff member is deactivated, any folder they had access to is
