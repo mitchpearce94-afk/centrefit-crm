@@ -210,7 +210,7 @@ export function JobFilters({
 
           <input
             type="text"
-            placeholder="Search by number, reference, or description…"
+            placeholder="Search by number, reference, description, customer or site…"
             defaultValue={defaultQuery}
             onChange={(e) => updateParam("q", e.target.value)}
             className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"

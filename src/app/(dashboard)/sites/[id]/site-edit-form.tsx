@@ -21,6 +21,7 @@ export function SiteEditForm({ site }: { site: CustomerSite }) {
   const [suburb, setSuburb] = useState(site.suburb ?? "");
   const [state, setState] = useState(site.state ?? "QLD");
   const [postcode, setPostcode] = useState(site.postcode ?? "");
+  const [phone, setPhone] = useState(site.phone ?? "");
   const [notes, setNotes] = useState(site.notes ?? "");
 
   async function handleSave(e: React.FormEvent) {
@@ -39,6 +40,7 @@ export function SiteEditForm({ site }: { site: CustomerSite }) {
         suburb: suburb.trim() || null,
         state: state.trim() || null,
         postcode: postcode.trim() || null,
+        phone: phone.trim() || null,
         notes: notes.trim() || null,
       })
       .eq("id", site.id);
@@ -131,6 +133,19 @@ export function SiteEditForm({ site }: { site: CustomerSite }) {
             className={inputClass + " mt-1"}
           />
         </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">
+          Phone (site reception / main contact)
+        </label>
+        <input
+          type="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          className={inputClass + " mt-1"}
+          placeholder="04XX XXX XXX or 07 XXXX XXXX"
+        />
       </div>
 
       <div>

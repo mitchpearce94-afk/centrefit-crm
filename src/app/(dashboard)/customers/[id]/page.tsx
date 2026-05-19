@@ -25,7 +25,7 @@ export default async function CustomerDetailPage({
       .single(),
     supabase
       .from("jobs")
-      .select("id, number, reference, description, status:statuses(name, colour, phase), created_at, updated_at")
+      .select("id, number, reference, description, site:customer_sites(id, name), status:statuses(name, colour, phase), created_at, updated_at")
       .eq("customer_id", id)
       .order("created_at", { ascending: false }),
     supabase

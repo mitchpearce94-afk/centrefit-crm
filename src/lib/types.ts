@@ -81,6 +81,7 @@ export interface CustomerSite {
   suburb: string | null;
   state: string | null;
   postcode: string | null;
+  phone: string | null;
   lat: number | null;
   lng: number | null;
   site_contact_id: string | null;

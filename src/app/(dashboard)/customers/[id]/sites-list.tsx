@@ -55,6 +55,11 @@ export function SitesList({
                         .join(", ")}
                     </p>
                   )}
+                  {site.phone && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      <a href={`tel:${site.phone}`} className="hover:text-primary">📞 {site.phone}</a>
+                    </p>
+                  )}
                   {site.notes && (
                     <p className="text-xs text-muted-foreground mt-1">
                       {site.notes}
@@ -100,6 +105,7 @@ function SiteForm({
   const [suburb, setSuburb] = useState(site?.suburb ?? "");
   const [state, setState] = useState(site?.state ?? "QLD");
   const [postcode, setPostcode] = useState(site?.postcode ?? "");
+  const [phone, setPhone] = useState(site?.phone ?? "");
   const [notes, setNotes] = useState(site?.notes ?? "");
 
   async function handleSubmit(e: React.FormEvent) {
@@ -118,6 +124,7 @@ function SiteForm({
       suburb: suburb.trim() || null,
       state: state.trim() || null,
       postcode: postcode.trim() || null,
+      phone: phone.trim() || null,
       notes: notes.trim() || null,
     };
 
@@ -205,6 +212,13 @@ function SiteForm({
           className="rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
       </div>
+      <input
+        placeholder="Phone (site reception / main contact)"
+        value={phone}
+        onChange={(e) => setPhone(e.target.value)}
+        type="tel"
+        className="w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+      />
       <textarea
         placeholder="Notes"
         value={notes}

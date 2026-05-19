@@ -11,6 +11,7 @@ interface JobRow {
   number: string;
   reference: string | null;
   description: string | null;
+  site: { id: string; name: string } | { id: string; name: string }[] | null;
   status: { name: string; colour: string; phase: string } | null;
   created_at: string;
   updated_at: string;
@@ -119,6 +120,9 @@ function JobsTab({ jobs }: { jobs: JobRow[] }) {
             <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">
               Job #
             </th>
+            <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">
+              Site
+            </th>
             <th className="px-4 py-2.5 text-left font-medium text-muted-foreground hidden sm:table-cell">
               Reference
             </th>
@@ -131,7 +135,9 @@ function JobsTab({ jobs }: { jobs: JobRow[] }) {
           </tr>
         </thead>
         <tbody>
-          {jobs.map((job) => (
+          {jobs.map((job) => {
+            const site = Array.isArray(job.site) ? job.site[0] : job.site;
+            return (
             <tr
               key={job.id}
               className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
@@ -143,6 +149,18 @@ function JobsTab({ jobs }: { jobs: JobRow[] }) {
                 >
                   {job.number}
                 </Link>
+              </td>
+              <td className="px-4 py-2.5">
+                {site ? (
+                  <Link
+                    href={`/sites/${site.id}`}
+                    className="text-foreground hover:text-primary transition-colors"
+                  >
+                    {site.name}
+                  </Link>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
               </td>
               <td className="px-4 py-2.5 text-muted-foreground hidden sm:table-cell">
                 {job.reference || job.description?.slice(0, 50) || "—"}
@@ -168,7 +186,8 @@ function JobsTab({ jobs }: { jobs: JobRow[] }) {
                 {new Date(job.created_at).toLocaleDateString("en-AU")}
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>

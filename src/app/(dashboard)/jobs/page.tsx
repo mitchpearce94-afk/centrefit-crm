@@ -53,6 +53,21 @@ export default async function JobsPage({
       : Promise.resolve({ data: null }),
   ]);
 
+  // Search expansion (Sue 2026-05-19): PostgREST .or() can't OR across a
+  // joined relation cleanly, so resolve customer/site name matches to ID
+  // lists first, then include them in the jobs OR.
+  let matchedCustomerIds: string[] = [];
+  let matchedSiteIds: string[] = [];
+  if (params.q) {
+    const q = params.q;
+    const [{ data: matchedCustomers }, { data: matchedSites }] = await Promise.all([
+      supabase.from("customers").select("id").ilike("name", `%${q}%`),
+      supabase.from("customer_sites").select("id").ilike("name", `%${q}%`),
+    ]);
+    matchedCustomerIds = (matchedCustomers ?? []).map((r) => r.id as string);
+    matchedSiteIds = (matchedSites ?? []).map((r) => r.id as string);
+  }
+
   let query = supabase
     .from("jobs")
     .select(
@@ -62,9 +77,19 @@ export default async function JobsPage({
     .limit(100);
 
   if (params.q) {
-    query = query.or(
-      `number.ilike.%${params.q}%,reference.ilike.%${params.q}%,description.ilike.%${params.q}%`
-    );
+    const q = params.q;
+    const orClauses = [
+      `number.ilike.%${q}%`,
+      `reference.ilike.%${q}%`,
+      `description.ilike.%${q}%`,
+    ];
+    if (matchedCustomerIds.length > 0) {
+      orClauses.push(`customer_id.in.(${matchedCustomerIds.join(",")})`);
+    }
+    if (matchedSiteIds.length > 0) {
+      orClauses.push(`site_id.in.(${matchedSiteIds.join(",")})`);
+    }
+    query = query.or(orClauses.join(","));
   }
   if (params.status) {
     query = query.eq("status_id", params.status);
@@ -85,12 +110,17 @@ export default async function JobsPage({
     );
   }
 
-  // Client-side filters: phase, period, assigned staff, active view
+  // Client-side filters: phase, period, assigned staff, active view.
+  // Search bypass: when a search query is present, drop the implicit
+  // "My Jobs" + "Active" defaults. If you're searching you almost always
+  // want global scope including completed jobs (e.g. looking up an old
+  // job by reference). Explicit staff/phase/status filters still apply.
   const HIDDEN_STATUSES = ["Complete", "Cancelled", "Invoice Sent"];
   let filteredJobs = jobs ?? [];
+  const isSearching = !!params.q;
 
-  // Active view: hide completed/cancelled/invoice sent
-  if (isActiveView) {
+  // Active view: hide completed/cancelled/invoice sent (only when not searching).
+  if (isActiveView && !isSearching) {
     filteredJobs = filteredJobs.filter(
       (j: any) => !HIDDEN_STATUSES.includes(j.status?.name)
     );
@@ -101,8 +131,9 @@ export default async function JobsPage({
   }
 
   // Staff filter — "all" sentinel means "show everyone", any other value
-  // filters to that staff member.
-  if (effectiveStaff && !isAllStaff) {
+  // filters to that staff member. Skipped while searching unless the user
+  // explicitly picked a staff member (params.staff present means deliberate).
+  if (effectiveStaff && !isAllStaff && (!isSearching || params.staff)) {
     filteredJobs = filteredJobs.filter((j: any) =>
       j.job_staff?.some((js: any) => js.staff?.id === effectiveStaff)
     );
