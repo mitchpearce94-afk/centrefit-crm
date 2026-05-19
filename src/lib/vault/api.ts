@@ -338,6 +338,44 @@ export async function deleteEntry(entryId: string, folderId: string): Promise<vo
   });
 }
 
+/**
+ * Move an entry to a different folder. Decrypts the existing payload
+ * with the OLD folder key, re-encrypts under the NEW folder key, then
+ * updates folder_id + ciphertext + iv in a single update. Both folder
+ * keys must already be in the caller's unlocked session.
+ */
+export async function moveEntry(params: {
+  entryId: string;
+  fromFolderId: string;
+  toFolderId: string;
+  fromFolderKey: CryptoKey;
+  toFolderKey: CryptoKey;
+  currentCiphertext: string;
+  currentIv: string;
+  storeTitleHint?: boolean;
+}): Promise<void> {
+  const supabase = createClient();
+  const payload = await decryptEntry(params.fromFolderKey, params.currentCiphertext, params.currentIv);
+  const enc = await encryptEntry(params.toFolderKey, payload);
+  const { error } = await supabase
+    .from("vault_entries")
+    .update({
+      folder_id: params.toFolderId,
+      ciphertext: enc.ciphertextB64,
+      iv: enc.ivB64,
+      title_hint: params.storeTitleHint ? payload.title.slice(0, 32) : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", params.entryId);
+  if (error) throw new Error(`moveEntry: ${error.message}`);
+  await supabase.rpc("vault_log_event", {
+    p_action: "edit_entry",
+    p_folder_id: params.toFolderId,
+    p_entry_id: params.entryId,
+    p_metadata: { moved_from: params.fromFolderId },
+  });
+}
+
 /** Decrypt an entry payload using the cached folder key. */
 export async function decryptEntryRow(folderKey: CryptoKey, row: EntryRow): Promise<VaultEntryPayload> {
   return decryptEntry(folderKey, row.ciphertext, row.iv);

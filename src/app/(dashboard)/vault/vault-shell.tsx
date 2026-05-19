@@ -28,12 +28,14 @@ import {
   unlinkFolderFromRef,
   listPendingRotations,
   rotateFolderKey,
+  moveEntry,
   type FolderRow,
   type EntryRow,
   type VaultStaffPublicKey,
   type FolderMember,
   type VaultRefType,
 } from "@/lib/vault/api";
+import { parseCsv, normaliseRow, type NormalisedRow } from "@/lib/vault/csv-import";
 import type { VaultEntryPayload } from "@/lib/vault/crypto";
 import { computeTotp, secondsRemainingInTotpStep } from "@/lib/vault/totp";
 
@@ -850,12 +852,25 @@ function FolderEntries({
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [moving, setMoving] = useState(false);
   // Decrypt all entries up-front so search can match across fields.
   // Small folders (<200 entries) — fine to do on load. Cached so flipping
   // entries open doesn't re-decrypt.
   const [decryptCache, setDecryptCache] = useState<Map<string, VaultEntryPayload>>(new Map());
   const { toast } = useToast();
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function clearSelection() { setSelectedIds(new Set()); }
 
   useEffect(() => {
     let cancelled = false;
@@ -893,7 +908,7 @@ function FolderEntries({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h3 className="text-sm font-semibold shrink-0">
           {filtered.length} of {entries.length} {entries.length === 1 ? "entry" : "entries"}
         </h3>
@@ -901,15 +916,47 @@ function FolderEntries({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search title, URL, username, notes…"
-          className="flex-1 max-w-md rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          className="flex-1 min-w-[200px] max-w-md rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
-        <button
-          onClick={() => setCreating(true)}
-          className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          + New entry
-        </button>
+        <div className="flex gap-1.5 shrink-0">
+          <button
+            onClick={() => setImporting(true)}
+            className="rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
+            title="Bulk import from a CSV (Norton, 1Password, Bitwarden, LastPass)"
+          >
+            Import CSV
+          </button>
+          <button
+            onClick={() => setCreating(true)}
+            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            + New entry
+          </button>
+        </div>
       </div>
+
+      {/* Bulk action bar — appears when entries are selected */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between rounded-md border border-primary/40 bg-primary/10 px-3 py-2">
+          <span className="text-xs font-medium text-primary">
+            {selectedIds.size} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setMoving(true)}
+              className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Move to folder…
+            </button>
+            <button
+              onClick={clearSelection}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
 
       {creating && (
         <EntryForm
@@ -924,11 +971,41 @@ function FolderEntries({
         />
       )}
 
+      {importing && (
+        <ImportCsvModal
+          folderId={folderId}
+          folderKey={folderKey}
+          onCancel={() => setImporting(false)}
+          onDone={async (count) => {
+            setImporting(false);
+            await onChange();
+            toast(`Imported ${count} ${count === 1 ? "entry" : "entries"}.`);
+          }}
+        />
+      )}
+
+      {moving && (
+        <MoveEntriesModal
+          fromFolderId={folderId}
+          fromFolderKey={folderKey}
+          entryIds={Array.from(selectedIds)}
+          entries={entries}
+          decryptCache={decryptCache}
+          onCancel={() => setMoving(false)}
+          onDone={async (count) => {
+            setMoving(false);
+            clearSelection();
+            await onChange();
+            toast(`Moved ${count} ${count === 1 ? "entry" : "entries"}.`);
+          }}
+        />
+      )}
+
       <div className="divide-y divide-border rounded-md border border-border bg-card">
         {filtered.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-muted-foreground">
             {entries.length === 0
-              ? "No entries yet. Click \"+ New entry\" to add one."
+              ? "No entries yet. Click \"+ New entry\" or \"Import CSV\" to populate."
               : "No entries match your search."}
           </p>
         ) : filtered.map((row) => (
@@ -941,6 +1018,8 @@ function FolderEntries({
             onToggle={() => setOpenId(openId === row.id ? null : row.id)}
             onChange={onChange}
             preDecrypted={decryptCache.get(row.id) ?? null}
+            selected={selectedIds.has(row.id)}
+            onToggleSelect={() => toggleSelect(row.id)}
           />
         ))}
       </div>
@@ -950,6 +1029,7 @@ function FolderEntries({
 
 function EntryRowView({
   row, folderId, folderKey, isOpen, onToggle, onChange, preDecrypted,
+  selected, onToggleSelect,
 }: {
   row: EntryRow;
   folderId: string;
@@ -958,6 +1038,8 @@ function EntryRowView({
   onToggle: () => void;
   onChange: () => Promise<void>;
   preDecrypted: VaultEntryPayload | null;
+  selected: boolean;
+  onToggleSelect: () => void;
 }) {
   const { toast } = useToast();
   const [decrypted, setDecrypted] = useState<VaultEntryPayload | null>(preDecrypted);
@@ -987,17 +1069,27 @@ function EntryRowView({
 
   return (
     <div className="p-3">
-      <button
-        onClick={onToggle}
-        className="flex w-full items-center justify-between text-left"
-      >
-        <span className="text-sm font-medium">
-          {row.title_hint ?? (decrypted?.title ?? "Encrypted entry")}
-        </span>
-        <span className="text-[10px] text-muted-foreground tabular-nums">
-          {new Date(row.updated_at).toLocaleString("en-AU")}
-        </span>
-      </button>
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggleSelect}
+          onClick={(e) => e.stopPropagation()}
+          className="shrink-0 rounded border-border accent-primary"
+          title="Select for bulk action (move to folder)"
+        />
+        <button
+          onClick={onToggle}
+          className="flex flex-1 items-center justify-between text-left min-w-0"
+        >
+          <span className="text-sm font-medium truncate">
+            {row.title_hint ?? (decrypted?.title ?? "Encrypted entry")}
+          </span>
+          <span className="text-[10px] text-muted-foreground tabular-nums shrink-0 ml-2">
+            {new Date(row.updated_at).toLocaleString("en-AU")}
+          </span>
+        </button>
+      </div>
       {isOpen && (
         <div className="mt-3 space-y-2 rounded-md bg-muted/30 p-3 text-sm">
           {!decrypted ? (
@@ -1416,6 +1508,355 @@ function FolderLinksSection({ folderId }: { folderId: string }) {
           </button>
         </form>
       )}
+    </div>
+  );
+}
+
+function ImportCsvModal({
+  folderId, folderKey, onCancel, onDone,
+}: {
+  folderId: string;
+  folderKey: CryptoKey;
+  onCancel: () => void;
+  onDone: (count: number) => Promise<void>;
+}) {
+  const { toast } = useToast();
+  const [csvText, setCsvText] = useState("");
+  const [parsed, setParsed] = useState<NormalisedRow[] | null>(null);
+  const [skipped, setSkipped] = useState(0);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const text = await f.text();
+    setCsvText(text);
+    doParse(text);
+  }
+
+  function doParse(text: string) {
+    try {
+      const rows = parseCsv(text);
+      const normalised: NormalisedRow[] = [];
+      let skip = 0;
+      for (const r of rows) {
+        const n = normaliseRow(r);
+        if (n) normalised.push(n);
+        else skip++;
+      }
+      setParsed(normalised);
+      setSkipped(skip);
+      // Default: all selected.
+      setSelected(new Set(normalised.map((_, i) => i)));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "CSV parse failed", "error");
+    }
+  }
+
+  async function doImport() {
+    if (!parsed) return;
+    const rowsToImport = parsed.filter((_, i) => selected.has(i));
+    if (rowsToImport.length === 0) {
+      toast("Nothing selected to import", "error");
+      return;
+    }
+    setBusy(true);
+    setProgress({ done: 0, total: rowsToImport.length });
+    let count = 0;
+    for (const row of rowsToImport) {
+      try {
+        await createEntry(folderId, folderKey, {
+          title: row.title,
+          url: row.url,
+          username: row.username,
+          password: row.password,
+          notes: row.notes,
+          totpSecret: row.totpSecret,
+        }, /* storeTitleHint */ false);
+        count++;
+        setProgress({ done: count, total: rowsToImport.length });
+      } catch (e) {
+        toast(`Row "${row.title}" failed: ${e instanceof Error ? e.message : "unknown"}`, "error");
+      }
+    }
+    setBusy(false);
+    await onDone(count);
+  }
+
+  function toggleRow(i: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60" onClick={busy ? undefined : onCancel} />
+      <div className="relative w-full max-w-3xl max-h-[90dvh] overflow-y-auto rounded-lg border border-border bg-card p-5 space-y-3 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold">Import CSV</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Paste or upload a CSV exported from Norton, 1Password, Bitwarden, or LastPass.
+              Common column names are auto-detected. Encryption happens in your browser
+              — the server only ever sees ciphertext.
+            </p>
+          </div>
+          <button onClick={onCancel} disabled={busy} className="text-xs text-muted-foreground hover:text-foreground">Close</button>
+        </div>
+
+        {!parsed ? (
+          <>
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              onChange={onFile}
+              className="block w-full text-xs file:mr-3 file:rounded-md file:border file:border-border file:bg-card file:px-3 file:py-1.5 file:text-xs file:font-medium hover:file:bg-accent"
+            />
+            <p className="text-[11px] text-muted-foreground text-center">— or paste CSV text below —</p>
+            <textarea
+              value={csvText}
+              onChange={(e) => setCsvText(e.target.value)}
+              rows={10}
+              placeholder='title,url,username,password,notes&#10;"Xero","https://login.xero.com","admin@centrefit.com.au","example","mfa enabled"'
+              className="block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-xs font-mono"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => doParse(csvText)}
+                disabled={!csvText.trim()}
+                className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                Parse preview
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">
+                {parsed.length} entries detected
+                {skipped > 0 && <span className="text-amber-500"> · {skipped} skipped (no title)</span>}
+                {" · "}
+                <button
+                  onClick={() => setSelected(new Set(parsed.map((_, i) => i)))}
+                  className="text-primary hover:underline"
+                >
+                  Select all
+                </button>
+                {" · "}
+                <button
+                  onClick={() => setSelected(new Set())}
+                  className="text-primary hover:underline"
+                >
+                  None
+                </button>
+              </span>
+              <span className="font-medium">{selected.size} to import</span>
+            </div>
+            <div className="overflow-x-auto rounded-md border border-border max-h-96 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-muted/80 backdrop-blur">
+                  <tr className="border-b border-border">
+                    <th className="px-2 py-1.5"></th>
+                    <th className="px-2 py-1.5 text-left font-semibold">Title</th>
+                    <th className="px-2 py-1.5 text-left font-semibold">URL</th>
+                    <th className="px-2 py-1.5 text-left font-semibold">Username</th>
+                    <th className="px-2 py-1.5 text-left font-semibold">Pwd</th>
+                    <th className="px-2 py-1.5 text-left font-semibold">Notes</th>
+                    <th className="px-2 py-1.5 text-left font-semibold">Source folder</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {parsed.map((r, i) => (
+                    <tr key={i} className={`border-b border-border last:border-0 ${selected.has(i) ? "" : "opacity-40"}`}>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(i)}
+                          onChange={() => toggleRow(i)}
+                          className="rounded border-border accent-primary"
+                        />
+                      </td>
+                      <td className="px-2 py-1.5 font-medium truncate max-w-[150px]">{r.title}</td>
+                      <td className="px-2 py-1.5 text-muted-foreground truncate max-w-[150px]">{r.url ?? "—"}</td>
+                      <td className="px-2 py-1.5 text-muted-foreground truncate max-w-[120px]">{r.username ?? "—"}</td>
+                      <td className="px-2 py-1.5 text-muted-foreground">{r.password ? "•••" : "—"}</td>
+                      <td className="px-2 py-1.5 text-muted-foreground truncate max-w-[150px]">{r.notes ? r.notes.slice(0, 30) : "—"}</td>
+                      <td className="px-2 py-1.5 text-muted-foreground truncate max-w-[100px]">{r.folder ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Source folder column is just a hint from the export — all entries
+              go into the currently-open vault folder. Move them later with the
+              bulk-select checkboxes.
+            </p>
+            {progress && (
+              <div className="text-xs text-primary">
+                Importing… {progress.done} / {progress.total}
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                onClick={() => { setParsed(null); setSelected(new Set()); setSkipped(0); }}
+                disabled={busy}
+                className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent"
+              >
+                Back
+              </button>
+              <button
+                onClick={doImport}
+                disabled={busy || selected.size === 0}
+                className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {busy ? `Importing ${progress?.done ?? 0} / ${progress?.total ?? 0}…` : `Import ${selected.size} entries`}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MoveEntriesModal({
+  fromFolderId, fromFolderKey, entryIds, entries, decryptCache, onCancel, onDone,
+}: {
+  fromFolderId: string;
+  fromFolderKey: CryptoKey;
+  entryIds: string[];
+  entries: EntryRow[];
+  decryptCache: Map<string, VaultEntryPayload>;
+  onCancel: () => void;
+  onDone: (count: number) => Promise<void>;
+}) {
+  const { toast } = useToast();
+  const folders = useVaultSession((s) => {
+    // Pull the folder keys map; we use it to surface "which folders is the
+    // caller already a member of" — only those are valid destinations.
+    return Array.from(s.folderKeys.keys());
+  });
+  const folderKeys = useVaultSession((s) => s.folderKeys);
+  const [destinationId, setDestinationId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+
+  // We don't have folder NAMES in this component — pull them from a quick
+  // listFolders fetch (cheap, small).
+  const [folderNames, setFolderNames] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    listFolders().then((list) => {
+      if (cancelled) return;
+      const m = new Map<string, string>();
+      for (const f of list) m.set(f.id, f.name + (f.is_personal ? " (Personal)" : ""));
+      setFolderNames(m);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function doMove() {
+    if (!destinationId) {
+      toast("Pick a destination folder", "error");
+      return;
+    }
+    if (destinationId === fromFolderId) {
+      toast("Destination is the same as the source", "error");
+      return;
+    }
+    const toKey = folderKeys.get(destinationId);
+    if (!toKey) {
+      toast("Destination folder key not in session — open that folder first", "error");
+      return;
+    }
+    setBusy(true);
+    setProgress({ done: 0, total: entryIds.length });
+    let moved = 0;
+    for (const id of entryIds) {
+      const row = entries.find((e) => e.id === id);
+      if (!row) continue;
+      try {
+        await moveEntry({
+          entryId: id,
+          fromFolderId,
+          toFolderId: destinationId,
+          fromFolderKey,
+          toFolderKey: toKey,
+          currentCiphertext: row.ciphertext,
+          currentIv: row.iv,
+        });
+        moved++;
+        setProgress({ done: moved, total: entryIds.length });
+      } catch (e) {
+        toast(`Move failed for one entry: ${e instanceof Error ? e.message : "unknown"}`, "error");
+      }
+    }
+    setBusy(false);
+    await onDone(moved);
+  }
+
+  const eligibleFolders = folders.filter((id) => id !== fromFolderId);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60" onClick={busy ? undefined : onCancel} />
+      <div className="relative w-full max-w-md rounded-lg border border-border bg-card p-5 space-y-3 shadow-2xl">
+        <div>
+          <h2 className="text-base font-semibold">Move {entryIds.length} {entryIds.length === 1 ? "entry" : "entries"}</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Re-encrypts each entry with the destination folder&apos;s key in your
+            browser, then updates the folder assignment.
+          </p>
+        </div>
+
+        <label className="block">
+          <span className="text-xs font-medium text-muted-foreground">Destination folder</span>
+          <select
+            value={destinationId}
+            onChange={(e) => setDestinationId(e.target.value)}
+            disabled={busy}
+            className="mt-1 block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm"
+          >
+            <option value="">Pick a folder…</option>
+            {eligibleFolders.map((id) => (
+              <option key={id} value={id}>{folderNames.get(id) ?? id.slice(0, 8)}</option>
+            ))}
+          </select>
+        </label>
+        <p className="text-[11px] text-muted-foreground">
+          Only folders whose keys are unwrapped in your current session appear here.
+          If you don&apos;t see the destination, lock + unlock so all folders load.
+        </p>
+
+        {progress && (
+          <div className="text-xs text-primary">Moving… {progress.done} / {progress.total}</div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={doMove}
+            disabled={busy || !destinationId}
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {busy ? "Moving…" : `Move ${entryIds.length}`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
