@@ -73,6 +73,9 @@ export function ProductCatalog({
   const [showInactive, setShowInactive] = useState(false);
   const [groupMode, setGroupMode] = useState<"category" | "supplier">("category");
   const [sendingRfqSupplierId, setSendingRfqSupplierId] = useState<string | null>(null);
+  // Per-supplier RFQ selection. Empty set = "send all active" (legacy behaviour).
+  // Map: supplier_id → Set of selected product ids.
+  const [rfqSelections, setRfqSelections] = useState<Map<string, Set<string>>>(new Map());
   const [costEdits, setCostEdits] = useState<Record<string, string>>({});
 
   // Local copies of picker options so inline-create flows can extend them
@@ -167,18 +170,51 @@ export function ProductCatalog({
   }, [filtered]);
 
   async function sendSupplierRfq(supplierId: string, supplierName: string) {
+    const selected = rfqSelections.get(supplierId);
+    const productIds = selected && selected.size > 0 ? Array.from(selected) : undefined;
     setSendingRfqSupplierId(supplierId);
     try {
-      const res = await fetch(`/api/suppliers/${supplierId}/rfq`, { method: "POST" });
+      const res = await fetch(`/api/suppliers/${supplierId}/rfq`, {
+        method: "POST",
+        headers: productIds ? { "Content-Type": "application/json" } : undefined,
+        body: productIds ? JSON.stringify({ productIds }) : undefined,
+      });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         toast(json.error ?? "RFQ send failed", "error");
         return;
       }
       toast(`RFQ sent to ${supplierName} (${json.lineCount} line${json.lineCount === 1 ? "" : "s"})`);
+      // Clear the selection for that supplier after a successful send.
+      setRfqSelections((prev) => {
+        const next = new Map(prev);
+        next.delete(supplierId);
+        return next;
+      });
     } finally {
       setSendingRfqSupplierId(null);
     }
+  }
+
+  function toggleRfqSelection(supplierId: string, productId: string) {
+    setRfqSelections((prev) => {
+      const next = new Map(prev);
+      const set = new Set(next.get(supplierId) ?? []);
+      if (set.has(productId)) set.delete(productId);
+      else set.add(productId);
+      if (set.size === 0) next.delete(supplierId);
+      else next.set(supplierId, set);
+      return next;
+    });
+  }
+
+  function setRfqSelectAll(supplierId: string, productIds: string[], on: boolean) {
+    setRfqSelections((prev) => {
+      const next = new Map(prev);
+      if (on) next.set(supplierId, new Set(productIds));
+      else next.delete(supplierId);
+      return next;
+    });
   }
 
   async function saveCostInline(productId: string) {
@@ -473,33 +509,65 @@ export function ProductCatalog({
       {groupMode === "supplier" && (
         <>
           <div className="mb-3 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-            Monthly RFQ workflow: hit <strong className="text-foreground">Send RFQ</strong> per supplier, then bulk-update cost prices inline as replies come in. Sell prices auto-recalc from each product&apos;s markup.
+            Monthly RFQ workflow: hit <strong className="text-foreground">Send RFQ</strong> per supplier to email every active product. Tick rows to send a hand-picked subset instead — the button label updates with the count. Bulk-update cost prices inline as replies come in; sell prices auto-recalc from each product&apos;s markup.
           </div>
           {supplierGrouped.map((group) => {
             const groupKey = group.supplierId ?? "__unassigned__";
             const sending = sendingRfqSupplierId === group.supplierId;
+            const supplierId = group.supplierId;
+            const activeProductIds = group.items.filter((p) => p.is_active).map((p) => p.id);
+            const selectedSet = (supplierId && rfqSelections.get(supplierId)) || new Set<string>();
+            const selectedCount = selectedSet.size;
+            const allSelected = selectedCount > 0 && selectedCount === activeProductIds.length;
+            const sendLabel = selectedCount > 0
+              ? `Send RFQ (${selectedCount} selected)`
+              : `Send RFQ (all ${activeProductIds.length})`;
             return (
               <div key={groupKey} className="mb-6">
                 <div className="flex items-center justify-between mb-2 gap-3">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {group.supplierName} ({group.items.length})
                   </h3>
-                  {group.supplierId && (
-                    <button
-                      type="button"
-                      onClick={() => sendSupplierRfq(group.supplierId!, group.supplierName)}
-                      disabled={sending}
-                      className="rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50 transition-colors"
-                      title="Email this supplier asking for refreshed pricing on every product we have from them"
-                    >
-                      {sending ? "Sending RFQ…" : "Send RFQ"}
-                    </button>
+                  {supplierId && (
+                    <div className="flex items-center gap-2">
+                      {selectedCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setRfqSelectAll(supplierId, activeProductIds, false)}
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Clear
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => sendSupplierRfq(supplierId, group.supplierName)}
+                        disabled={sending || activeProductIds.length === 0}
+                        className="rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50 transition-colors"
+                        title={selectedCount > 0
+                          ? `Email ${group.supplierName} asking for refreshed pricing on the ${selectedCount} selected product${selectedCount === 1 ? "" : "s"}`
+                          : `Email ${group.supplierName} asking for refreshed pricing on every active product we have from them`}
+                      >
+                        {sending ? "Sending RFQ…" : sendLabel}
+                      </button>
+                    </div>
                   )}
                 </div>
                 <div className="overflow-x-auto rounded-lg border border-border">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border bg-muted/50">
+                        {supplierId && (
+                          <th className="px-2 py-2 w-8 text-center">
+                            <input
+                              type="checkbox"
+                              checked={allSelected}
+                              onChange={(e) => setRfqSelectAll(supplierId, activeProductIds, e.target.checked)}
+                              className="rounded border-border accent-primary"
+                              title="Select all active products in this supplier group"
+                            />
+                          </th>
+                        )}
                         <th className="px-3 py-2 text-left font-medium text-muted-foreground">Product</th>
                         <th className="px-3 py-2 text-left font-medium text-muted-foreground hidden md:table-cell">SKU</th>
                         <th className="px-3 py-2 text-left font-medium text-muted-foreground hidden lg:table-cell">Category</th>
@@ -513,8 +581,21 @@ export function ProductCatalog({
                       {group.items.map((p) => {
                         const editValue = costEdits[p.id];
                         const dirty = editValue !== undefined && Number(editValue) !== Number(p.cost_price);
+                        const isChecked = supplierId ? selectedSet.has(p.id) : false;
                         return (
                           <tr key={p.id} className={`border-b border-border last:border-0 ${!p.is_active ? "opacity-40" : ""}`}>
+                            {supplierId && (
+                              <td className="px-2 py-2 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  disabled={!p.is_active}
+                                  onChange={() => toggleRfqSelection(supplierId, p.id)}
+                                  className="rounded border-border accent-primary"
+                                  title={p.is_active ? "Include in RFQ send" : "Inactive product — activate to include"}
+                                />
+                              </td>
+                            )}
                             <td className="px-3 py-2">
                               <div className="flex items-center gap-2">
                                 {p.image_url ? (

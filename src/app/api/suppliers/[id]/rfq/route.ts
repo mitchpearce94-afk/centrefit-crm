@@ -3,10 +3,11 @@ import { createClient } from "@/lib/supabase/server";
 import { sendSupplierRFQ, type RFQLine } from "@/lib/emails/supplier-rfq";
 
 /**
- * Monthly per-supplier RFQ — emails the supplier with every active product
- * we have in our catalog from them, asking for refreshed prices. The
- * intended cadence is monthly; reply pricing is then bulk-updated against
- * the catalog on the Products page.
+ * Per-supplier RFQ — emails the supplier asking for refreshed pricing on
+ * a set of products. By default (no body, or empty productIds) sends EVERY
+ * active product we have from them — the monthly catalogue-refresh
+ * workflow. Optionally accepts `{ productIds: [...] }` to scope the
+ * request to a hand-picked subset.
  *
  * Replaces the per-quote RFQ that used to fire from the quote detail page.
  */
@@ -21,6 +22,18 @@ export async function POST(
   } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  // Optional body for selected-only sends. Tolerate missing body / non-JSON
+  // — the legacy callers fire POST with no body.
+  let productIds: string[] | undefined;
+  try {
+    const body = await req.json();
+    if (Array.isArray(body?.productIds) && body.productIds.length > 0) {
+      productIds = body.productIds.filter((x: unknown): x is string => typeof x === "string");
+    }
+  } catch {
+    // No JSON body — treat as "send all", legacy behaviour.
   }
 
   const { data: supplier, error: supErr } = await supabase
@@ -40,16 +53,25 @@ export async function POST(
     return NextResponse.json({ error: "Supplier is inactive" }, { status: 400 });
   }
 
-  const { data: products, error: prodErr } = await supabase
+  let prodQuery = supabase
     .from("quote_products")
     .select("id, name, sku, cost_price")
     .eq("supplier_id", supplierId)
     .eq("is_active", true)
     .order("name");
+  if (productIds && productIds.length > 0) {
+    prodQuery = prodQuery.in("id", productIds);
+  }
+
+  const { data: products, error: prodErr } = await prodQuery;
   if (prodErr) return NextResponse.json({ error: prodErr.message }, { status: 500 });
   if (!products || products.length === 0) {
     return NextResponse.json(
-      { error: "No active products from this supplier to send" },
+      {
+        error: productIds
+          ? "None of the selected products belong to this supplier (or all are inactive)"
+          : "No active products from this supplier to send",
+      },
       { status: 400 },
     );
   }
