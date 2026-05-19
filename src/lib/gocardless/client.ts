@@ -214,6 +214,45 @@ export async function getMandate(mandateId: string): Promise<GcMandate> {
 }
 
 /**
+ * List mandates, optionally filtered to a customer. Used by the "attach
+ * existing mandate" path in the new-plan wizard so staff can pick from
+ * the customer's already-signed mandates instead of asking them to sign
+ * again.
+ */
+export async function listMandates(params: {
+  customerId?: string;
+  status?: GcMandate["status"][];
+  limit?: number;
+} = {}): Promise<GcMandate[]> {
+  const qs = new URLSearchParams();
+  if (params.customerId) qs.set("customer", params.customerId);
+  if (params.status && params.status.length > 0) qs.set("status", params.status.join(","));
+  qs.set("limit", String(params.limit ?? 50));
+  const res = await gcFetch<{ mandates: GcMandate[] }>(`/mandates?${qs.toString()}`);
+  return res.mandates;
+}
+
+/**
+ * Fetch a customer bank account so we can show the last 4 digits + bank
+ * name next to a mandate ID — staff need that to feel confident they're
+ * picking the right mandate.
+ */
+export interface GcCustomerBankAccount {
+  id: string;
+  account_holder_name: string;
+  account_number_ending: string;
+  bank_name: string;
+  currency: string;
+  enabled: boolean;
+}
+export async function getCustomerBankAccount(id: string): Promise<GcCustomerBankAccount> {
+  const res = await gcFetch<{ customer_bank_accounts: GcCustomerBankAccount }>(
+    `/customer_bank_accounts/${id}`,
+  );
+  return res.customer_bank_accounts;
+}
+
+/**
  * Cancel a GoCardless mandate. After cancellation the mandate can no longer
  * be used to take payments. Idempotent — calling on an already-cancelled
  * mandate returns success without changing state.

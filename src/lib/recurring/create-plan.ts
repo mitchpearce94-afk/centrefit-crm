@@ -4,9 +4,12 @@ import {
   createBillingRequest,
   createBillingRequestFlow,
   collectCustomerDetails,
+  getMandate,
 } from "@/lib/gocardless/client";
 import { aliasEmail } from "@/lib/recurring/alias";
 import { sendMandateSignupEmail, type MandateLink } from "@/lib/emails/recurring-mandate-signup";
+import { activatePlan } from "@/lib/recurring/activate-plan";
+import { createServiceRoleClient } from "@/lib/supabase/service";
 
 /**
  * Site input for orchestration. siteId is null when the customer doesn't
@@ -57,6 +60,19 @@ export interface CreateRecurringPlansInput {
   appUrl: string;
   /** Send the consolidated mandate-signup email. Public flow may opt to skip. */
   sendEmail?: boolean;
+  /**
+   * Attach an existing GoCardless mandate instead of going through the
+   * billing-request → customer-signs → webhook cycle. When set:
+   *   - No billing request is created.
+   *   - No signup email is sent.
+   *   - The plan is inserted with gc_mandate_id set directly.
+   *   - activatePlan() runs immediately so the Xero RepeatingInvoice is
+   *     created in the same request.
+   * Applies to ALL sites in the input (one mandate per plan is the contract).
+   * Per-site mandate selection would need a different shape; we currently
+   * don't have a use case for that.
+   */
+  existingMandateId?: string;
 }
 
 export interface CreatedPlan {
@@ -86,7 +102,20 @@ export async function createRecurringPlansForSites(
   const {
     supabase, customer, customerSitesById, primary, servicesById,
     sites, firstInvoiceDate, createdByStaffId, appUrl, sendEmail = true,
+    existingMandateId,
   } = input;
+
+  // If staff picked an existing mandate, verify it exists + is usable BEFORE
+  // we insert any plans. We don't want half-inserted plans pointing at a
+  // mandate ID that GoCardless 404s.
+  let verifiedMandateGcCustomerId: string | null = null;
+  if (existingMandateId) {
+    const m = await getMandate(existingMandateId);
+    if (m.status === "cancelled" || m.status === "failed" || m.status === "expired" || m.status === "blocked") {
+      throw new Error(`Cannot attach mandate ${existingMandateId}: status is ${m.status}`);
+    }
+    verifiedMandateGcCustomerId = m.links.customer;
+  }
 
   const mandateLinks: MandateLink[] = [];
   const created: CreatedPlan[] = [];
@@ -129,6 +158,38 @@ export async function createRecurringPlansForSites(
     });
     const { error: itemsErr } = await supabase.from("recurring_plan_items").insert(itemRows);
     if (itemsErr) throw new Error(`Plan items insert failed: ${itemsErr.message}`);
+
+    // ── Existing-mandate branch ──
+    // Skip the billing-request → signup → webhook cycle and go straight to
+    // activatePlan. The plan starts active in the same request.
+    if (existingMandateId) {
+      await supabase
+        .from("recurring_plans")
+        .update({
+          gc_mandate_id: existingMandateId,
+          gc_customer_id: verifiedMandateGcCustomerId,
+          // Empty signup linkage — there was no signup.
+          alias_email: null,
+          signup_link_url: null,
+        })
+        .eq("id", plan.id);
+
+      // activatePlan requires a service-role client (it writes the Xero RI
+      // back to the plan + enqueues notifications). Build one inline.
+      const sr = createServiceRoleClient();
+      const actResult = await activatePlan(sr, plan.id);
+      if (!actResult.ok) {
+        // Roll back to a clearly-broken state so it's obvious in the UI.
+        await supabase
+          .from("recurring_plans")
+          .update({ status: "failed", notes: `Activation failed: ${actResult.reason}` })
+          .eq("id", plan.id);
+        throw new Error(`Failed to activate plan for ${siteLabel}: ${actResult.reason}`);
+      }
+
+      created.push({ planId: plan.id, siteLabel, signupUrl: "", alias: "" });
+      continue;
+    }
 
     // Build GC alias + Billing Request + flow.
     const alias = aliasEmail(primary.email, siteLabel, plan.id.slice(0, 6));
@@ -225,7 +286,9 @@ export async function createRecurringPlansForSites(
   }
 
   let emailedTo: string | null = null;
-  if (sendEmail && mandateLinks.length > 0) {
+  // Existing-mandate path produces zero mandateLinks (no signup needed), so
+  // the email is naturally skipped — but be explicit for the reader.
+  if (sendEmail && mandateLinks.length > 0 && !existingMandateId) {
     await sendMandateSignupEmail({
       to: primary.email,
       customerName: primary.name ?? customer.name,

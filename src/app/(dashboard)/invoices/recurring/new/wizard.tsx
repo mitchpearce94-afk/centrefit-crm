@@ -63,6 +63,12 @@ export function NewRecurringPlanWizard({
   });
   const [firstInvoiceDate, setFirstInvoiceDate] = useState<string>("");
 
+  // Mandate attachment mode. Default = send signup link to the customer
+  // (existing flow). Alternative = attach an existing GC mandate the
+  // customer has already signed.
+  const [mandateMode, setMandateMode] = useState<"signup" | "existing">("signup");
+  const [existingMandateId, setExistingMandateId] = useState<string>("");
+
   const customer = useMemo(
     () => customers.find((c) => c.id === customerId) ?? null,
     [customers, customerId],
@@ -144,8 +150,12 @@ export function NewRecurringPlanWizard({
       toast("Each site needs at least one service", "error");
       return;
     }
-    if (!primary?.email) {
+    if (mandateMode === "signup" && !primary?.email) {
       toast("Customer has no primary contact email — set one before creating a plan", "error");
+      return;
+    }
+    if (mandateMode === "existing" && !existingMandateId.trim()) {
+      toast("Pick or paste a mandate ID before submitting", "error");
       return;
     }
 
@@ -163,6 +173,7 @@ export function NewRecurringPlanWizard({
               serviceId, quantity,
             })),
           })),
+          existingMandateId: mandateMode === "existing" ? existingMandateId.trim() : null,
         }),
       });
       const json = await res.json();
@@ -182,7 +193,12 @@ export function NewRecurringPlanWizard({
           });
         } catch { /* non-blocking */ }
       }
-      toast(`Created ${json.planIds.length} plan${json.planIds.length === 1 ? "" : "s"} — mandate email sent to ${primary.email}`);
+      const planWord = `plan${json.planIds.length === 1 ? "" : "s"}`;
+      toast(
+        json.attachedExistingMandate
+          ? `Created ${json.planIds.length} ${planWord} — attached to mandate ${existingMandateId.trim()} and activated.`
+          : `Created ${json.planIds.length} ${planWord} — mandate email sent to ${primary?.email}`,
+      );
       router.push("/invoices/recurring");
       router.refresh();
     } catch (err) {
@@ -255,11 +271,28 @@ export function NewRecurringPlanWizard({
         </section>
       )}
 
-      {/* Step 3: Review + submit */}
+      {/* Step 2.5: Mandate source */}
       {customer && sites.length > 0 && (
         <section className="surface-card p-5 space-y-3">
           <div className="flex items-center gap-2">
             <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">3</span>
+            <h2 className="text-base font-semibold">Mandate</h2>
+          </div>
+          <MandateSourcePicker
+            customerId={customer.id}
+            mode={mandateMode}
+            onModeChange={setMandateMode}
+            mandateId={existingMandateId}
+            onMandateIdChange={setExistingMandateId}
+          />
+        </section>
+      )}
+
+      {/* Step 4: Review + submit */}
+      {customer && sites.length > 0 && (
+        <section className="surface-card p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">4</span>
             <h2 className="text-base font-semibold">Review &amp; send</h2>
           </div>
           <div className="rounded-md border border-border bg-muted/10 p-3">
@@ -297,16 +330,27 @@ export function NewRecurringPlanWizard({
               </span>
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Submitting will create {sites.length} GoCardless customer{sites.length === 1 ? "" : "s"} (with `+sitename` email aliases), generate {sites.length} mandate signup link{sites.length === 1 ? "" : "s"}, and email everything in one consolidated message to <span className="font-mono">{primary?.email}</span>.
-            Each site's Xero RepeatingInvoice fires automatically once that site's mandate is active.
-          </p>
+          {mandateMode === "signup" ? (
+            <p className="text-xs text-muted-foreground">
+              Submitting will create {sites.length} GoCardless customer{sites.length === 1 ? "" : "s"} (with `+sitename` email aliases), generate {sites.length} mandate signup link{sites.length === 1 ? "" : "s"}, and email everything in one consolidated message to <span className="font-mono">{primary?.email}</span>.
+              Each site&apos;s Xero RepeatingInvoice fires automatically once that site&apos;s mandate is active.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Submitting will attach {sites.length} plan{sites.length === 1 ? "" : "s"} to existing mandate{" "}
+              <span className="font-mono">{existingMandateId || "(none picked)"}</span> and create the Xero RepeatingInvoice{sites.length === 1 ? "" : "s"} immediately. No signup email is sent — the customer has already authorised the direct debit.
+            </p>
+          )}
           <button
             onClick={submit}
             disabled={submitting}
             className="rounded-md bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
-            {submitting ? "Creating..." : "Create plan & send mandate links"}
+            {submitting
+              ? "Creating..."
+              : mandateMode === "signup"
+                ? "Create plan & send mandate links"
+                : "Create plan & attach mandate"}
           </button>
         </section>
       )}
@@ -500,5 +544,222 @@ function SiteEditor({
         })}
       </div>
     </div>
+  );
+}
+
+interface MandateOption {
+  mandate_id: string;
+  gc_customer_id: string;
+  scheme: string;
+  status: string;
+  reference: string | null;
+  created_at: string;
+  bank_name: string | null;
+  account_last4: string | null;
+}
+
+/**
+ * Lets staff pick between (a) emailing the customer a new mandate signup
+ * link (default — current flow), or (b) attaching an existing GoCardless
+ * mandate the customer has already signed (for the "we already collected
+ * this person's bank details for another plan" case).
+ *
+ * In existing mode, fetches /api/gc/mandates for the customer to populate
+ * a dropdown. Manual-paste fallback handles the case where the mandate
+ * lives on a different GC customer record than the ones we have linked.
+ */
+function MandateSourcePicker({
+  customerId,
+  mode,
+  onModeChange,
+  mandateId,
+  onMandateIdChange,
+}: {
+  customerId: string;
+  mode: "signup" | "existing";
+  onModeChange: (m: "signup" | "existing") => void;
+  mandateId: string;
+  onMandateIdChange: (id: string) => void;
+}) {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [mandates, setMandates] = useState<MandateOption[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [showPaste, setShowPaste] = useState(false);
+  const [pasteInput, setPasteInput] = useState("");
+  const [pasteBusy, setPasteBusy] = useState(false);
+
+  useEffect(() => {
+    if (mode !== "existing" || loaded) return;
+    setLoading(true);
+    fetch(`/api/gc/mandates?customer_id=${encodeURIComponent(customerId)}`)
+      .then((r) => r.json().then((j) => ({ ok: r.ok, json: j })))
+      .then(({ ok, json }) => {
+        if (!ok) {
+          toast(json.error ?? "Failed to load GC mandates", "error");
+          return;
+        }
+        setMandates(json.mandates as MandateOption[]);
+        setLoaded(true);
+      })
+      .catch((e) => toast(e instanceof Error ? e.message : "Network error", "error"))
+      .finally(() => setLoading(false));
+  }, [mode, loaded, customerId, toast]);
+
+  // Reset mandate selection if mode flips back to signup.
+  useEffect(() => {
+    if (mode === "signup") {
+      onMandateIdChange("");
+      setShowPaste(false);
+    }
+  }, [mode, onMandateIdChange]);
+
+  async function verifyPasted() {
+    if (!pasteInput.trim()) return;
+    setPasteBusy(true);
+    try {
+      const res = await fetch("/api/gc/mandates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mandateId: pasteInput.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast(json.error ?? "Mandate lookup failed", "error");
+        return;
+      }
+      // Add to the list (deduplicated) + auto-select it.
+      const opt = json.mandate as MandateOption;
+      setMandates((prev) =>
+        prev.some((m) => m.mandate_id === opt.mandate_id) ? prev : [opt, ...prev],
+      );
+      onMandateIdChange(opt.mandate_id);
+      setShowPaste(false);
+      setPasteInput("");
+      toast(`Verified mandate ${opt.mandate_id} (${opt.bank_name ?? "bank info unavailable"})`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Network error", "error");
+    } finally {
+      setPasteBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        <ModeButton
+          active={mode === "signup"}
+          title="Send signup link"
+          subtitle="Customer signs a new mandate via GoCardless. Email goes out automatically."
+          onClick={() => onModeChange("signup")}
+        />
+        <ModeButton
+          active={mode === "existing"}
+          title="Use existing mandate"
+          subtitle="Attach to a mandate the customer has already signed. Plan goes live immediately."
+          onClick={() => onModeChange("existing")}
+        />
+      </div>
+
+      {mode === "existing" && (
+        <div className="space-y-2 rounded-md border border-border bg-muted/10 p-3">
+          {loading ? (
+            <p className="text-xs text-muted-foreground italic">Fetching mandates from GoCardless…</p>
+          ) : mandates.length === 0 && loaded ? (
+            <p className="text-xs text-muted-foreground">
+              No active mandates found for this customer in GoCardless.
+              {" "}
+              <button
+                onClick={() => setShowPaste(true)}
+                className="text-primary hover:underline"
+              >
+                Paste a mandate ID
+              </button>{" "}
+              if you know one (e.g. mandate is on a different GC customer record).
+            </p>
+          ) : (
+            <>
+              <label className="block">
+                <span className="text-xs font-medium text-muted-foreground">Pick mandate</span>
+                <select
+                  value={mandateId}
+                  onChange={(e) => onMandateIdChange(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm font-mono"
+                >
+                  <option value="">Pick…</option>
+                  {mandates.map((m) => (
+                    <option key={m.mandate_id} value={m.mandate_id}>
+                      {m.mandate_id}
+                      {" — "}
+                      {m.bank_name ?? "Bank unknown"}
+                      {m.account_last4 ? ` ••${m.account_last4}` : ""}
+                      {" · "}
+                      {m.status}
+                      {m.scheme ? ` (${m.scheme})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {!showPaste && (
+                <button
+                  onClick={() => setShowPaste(true)}
+                  className="text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                >
+                  …or paste a mandate ID manually
+                </button>
+              )}
+            </>
+          )}
+
+          {showPaste && (
+            <div className="rounded-md border border-primary/30 bg-card p-2 space-y-2">
+              <label className="block">
+                <span className="text-xs font-medium text-muted-foreground">Mandate ID</span>
+                <input
+                  value={pasteInput}
+                  onChange={(e) => setPasteInput(e.target.value)}
+                  placeholder="MD000ABC123…"
+                  className="mt-1 w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm font-mono"
+                />
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={verifyPasted}
+                  disabled={pasteBusy || !pasteInput.trim()}
+                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {pasteBusy ? "Verifying..." : "Verify & use"}
+                </button>
+                <button
+                  onClick={() => { setShowPaste(false); setPasteInput(""); }}
+                  className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModeButton({
+  active, title, subtitle, onClick,
+}: { active: boolean; title: string; subtitle: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-md border p-3 text-left transition-colors ${
+        active
+          ? "border-primary bg-primary/5"
+          : "border-border bg-card hover:bg-accent/40"
+      }`}
+    >
+      <div className={`text-sm font-semibold ${active ? "text-primary" : "text-foreground"}`}>{title}</div>
+      <div className="mt-0.5 text-[11px] text-muted-foreground">{subtitle}</div>
+    </button>
   );
 }

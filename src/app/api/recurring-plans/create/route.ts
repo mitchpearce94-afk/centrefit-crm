@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
     customerId?: string;
     firstInvoiceDate?: string | null;
     sites?: Array<{ siteId?: string | null; items?: Array<{ serviceId: string; quantity?: number }> }>;
+    existingMandateId?: string | null;
   };
   try {
     body = await req.json();
@@ -30,6 +31,9 @@ export async function POST(req: NextRequest) {
 
   if (!body.customerId || !Array.isArray(body.sites) || body.sites.length === 0) {
     return NextResponse.json({ error: "customerId and at least one site required" }, { status: 400 });
+  }
+  if (body.existingMandateId && !/^MD[A-Z0-9]+$/i.test(body.existingMandateId)) {
+    return NextResponse.json({ error: "existingMandateId must look like 'MD000123…'" }, { status: 400 });
   }
   for (const s of body.sites) {
     if (!s.items || s.items.length === 0) {
@@ -117,21 +121,27 @@ export async function POST(req: NextRequest) {
       firstInvoiceDate,
       createdByStaffId: staff?.id ?? null,
       appUrl,
-      sendEmail: true,
+      sendEmail: !body.existingMandateId,
+      existingMandateId: body.existingMandateId ?? undefined,
     });
 
-    // Notify the staffer who initiated the wizard (workstream F). Quiet by
-    // default since this is the same person who just clicked the button —
-    // notification_types.default_enabled=false for recurring_plan.signup_link_sent.
+    // Notify the staffer who initiated the wizard. Different message
+    // depending on whether the plan went straight to active (existing
+    // mandate) or is waiting on signup.
     if (staff?.id && result.plans.length > 0) {
+      const isExisting = !!body.existingMandateId;
       await enqueueNotification({
         supabase,
-        typeCode: "recurring_plan.signup_link_sent",
+        typeCode: isExisting ? "mandate.active" : "recurring_plan.signup_link_sent",
         refType: "recurring_plan",
         refId: result.plans[0].planId,
         audience: { staffId: staff.id },
-        title: "Mandate link sent",
-        body: `Mandate signup link${result.plans.length > 1 ? "s" : ""} emailed to ${primary.email}.`,
+        title: isExisting
+          ? `${customer.name} recurring billing activated`
+          : "Mandate link sent",
+        body: isExisting
+          ? `${result.plans.length} plan${result.plans.length > 1 ? "s" : ""} attached to existing mandate ${body.existingMandateId}.`
+          : `Mandate signup link${result.plans.length > 1 ? "s" : ""} emailed to ${primary.email}.`,
         href: `/invoices/recurring/${result.plans[0].planId}`,
       });
     }
@@ -139,6 +149,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       planIds: result.plans.map((p) => p.planId),
       mandateLinks: result.plans.length,
+      attachedExistingMandate: !!body.existingMandateId,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
