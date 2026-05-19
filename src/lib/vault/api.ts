@@ -355,10 +355,16 @@ export async function unwrapFolder(
 
 /**
  * Create a new shared (non-personal) folder. The creator becomes its owner
- * with their wrapped folder key. Done in two writes (folder insert →
- * member insert) — RLS allows both because the existing policies trust
- * created_by = auth.uid() for folders and the owner-or-self check for
- * members.
+ * with their wrapped folder key. Goes through the vault_create_folder RPC
+ * (SECURITY DEFINER) so both inserts (folder + owner-member row) happen
+ * atomically.
+ *
+ * History: previously this was two client-side inserts. The first one
+ * used .insert(...).select() which hit a PostgreSQL behaviour where the
+ * SELECT policy is evaluated on RETURNING rows — and the SELECT policy
+ * requires a vault_folder_members row that doesn't exist yet. Postgres
+ * surfaces that as the generic "new row violates row-level security
+ * policy" error. The RPC sidesteps the whole thing.
  */
 export async function createFolder(
   name: string,
@@ -368,28 +374,13 @@ export async function createFolder(
   const folderKey = await generateFolderKey();
   const wrappedFolderKeyB64 = await wrapFolderKeyForPublicKey(folderKey, publicKey);
 
-  const { data: folder, error } = await supabase
-    .from("vault_folders")
-    .insert({ name, is_personal: false, created_by: (await supabase.auth.getUser()).data.user!.id })
-    .select("id")
-    .single();
+  const { data, error } = await supabase.rpc("vault_create_folder", {
+    p_name: name,
+    p_wrapped_folder_key: wrappedFolderKeyB64,
+  });
   if (error) throw new Error(`createFolder: ${error.message}`);
 
-  const { error: memErr } = await supabase
-    .from("vault_folder_members")
-    .insert({
-      folder_id: folder.id,
-      staff_id: (await supabase.auth.getUser()).data.user!.id,
-      role: "owner",
-      wrapped_folder_key: wrappedFolderKeyB64,
-    });
-  if (memErr) throw new Error(`createFolder member: ${memErr.message}`);
-
-  await supabase.rpc("vault_log_event", {
-    p_action: "create_folder", p_folder_id: folder.id, p_entry_id: null, p_metadata: { name },
-  });
-
-  return { id: folder.id as string, folderKey, wrappedFolderKeyB64 };
+  return { id: data as string, folderKey, wrappedFolderKeyB64 };
 }
 
 export interface VaultStaffPublicKey {
