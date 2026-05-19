@@ -11,7 +11,7 @@ export default function PropertiesPanel() {
     titleBlock, updateTitleBlock,
     clientLogo, setClientLogo,
     rotateDevice, deleteDevice, setCommsRack,
-    setSpeakerZone, setConcreteMounted, setProvisional, setCabled,
+    setSpeakerZone, setDataCount, setConcreteMounted, setProvisional, setCabled,
   } = usePlanStore();
 
   const selectedDevice = selectedDeviceId ? devices.find(d => d.instanceId === selectedDeviceId) : null;
@@ -19,6 +19,7 @@ export default function PropertiesPanel() {
   const isCommsRack = selectedDevice?.instanceId === commsRackId;
   const isSpeaker = selectedDef?.cableType === 'speaker';
   const isReedSwitch = selectedDevice?.deviceId === 'reed-switch';
+  const isDataOutlet = selectedDevice?.deviceId === 'cat6-data' || selectedDevice?.deviceId === 'rg6-coax';
 
   return (
     <div className="flex flex-col h-full overflow-y-auto text-xs">
@@ -40,6 +41,24 @@ export default function PropertiesPanel() {
                   className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500">
                   {[1, 2, 3, 4, 5, 6].map(z => <option key={z} value={z}>Zone {z}{z === 1 ? ' (A)' : ` (${String.fromCharCode(64 + z)})`}</option>)}
                 </select>
+              </div>
+            )}
+            {isDataOutlet && (
+              <div className="bg-gray-800 rounded p-2">
+                <div className="text-gray-400 mb-1">Data points at this marker</div>
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  value={selectedDevice?.dataCount ?? 1}
+                  onChange={e => setDataCount(selectedDevice!.instanceId, parseInt(e.target.value) || 1)}
+                  className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500"
+                />
+                <div className="text-[10px] text-gray-500 mt-1">
+                  Shown as ×N badge on the plan. Numbering follows placement
+                  order, not left-to-right, so cable labels match install
+                  sequence.
+                </div>
               </div>
             )}
             {!isCommsRack && (

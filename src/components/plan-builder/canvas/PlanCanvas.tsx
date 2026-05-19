@@ -370,6 +370,7 @@ export default function PlanCanvas() {
                 labelNum={activePlan === 'master' || isCommsRack || device.labelNum === 0 ? undefined : device.labelNum}
                 concreteMounted={device.concreteMounted}
                 provisional={device.provisional}
+                dataCount={device.dataCount}
                 size={14 * deviceScale}
                 draggable={activeTool === 'select'}
                 onDragEnd={(x, y) => {

@@ -54,6 +54,12 @@ export interface PlacedDevice {
   concreteMounted?: boolean;
   provisional?: boolean;
   cabled?: boolean;
+  /**
+   * For data outlets (Cat6 / RG6): how many physical points at this
+   * marker. Rendered as a small ×N badge so the electrician knows how
+   * many drops to terminate. Undefined or 1 = no badge.
+   */
+  dataCount?: number;
 }
 
 export interface CableRun {
@@ -91,12 +97,17 @@ export interface PdfElement {
   bbox: { x: number; y: number; width: number; height: number };
 }
 
-export type NumberedDeviceGroup = 'cameras' | 'pir' | 'speakers';
+export type NumberedDeviceGroup = 'cameras' | 'pir' | 'speakers' | 'data';
 
 export const NUMBERED_GROUPS: Record<NumberedDeviceGroup, string[]> = {
   cameras: ['cam-black', 'cam-white'],
   pir: ['pir-wall', 'pir-ceiling'],
   speakers: ['speaker-roof', 'speaker-roof-gear', 'speaker-wall', 'speaker-wall-filled'],
+  // Data outlets are numbered in PLACEMENT order (not left-to-right) so
+  // cable labels match the installation sequence the electrician
+  // physically runs them in. Wi-Fi APs are excluded — they're devices,
+  // not data drops.
+  data: ['cat6-data', 'rg6-coax'],
 };
 
 export interface WhitewashRect {

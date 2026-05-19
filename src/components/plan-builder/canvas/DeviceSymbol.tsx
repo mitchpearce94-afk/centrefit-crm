@@ -13,6 +13,8 @@ interface Props {
   labelNum?: number;
   concreteMounted?: boolean;
   provisional?: boolean;
+  /** When > 1, shows a small "×N" badge — used for stacked data outlets. */
+  dataCount?: number;
   size?: number;
   draggable?: boolean;
   onDragEnd?: (x: number, y: number) => void;
@@ -45,7 +47,7 @@ function useSymbolImage(src: string | undefined): HTMLImageElement | null {
   return image;
 }
 
-export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelNum, concreteMounted, provisional, size = SZ, draggable, onDragEnd, onClick }: Props) {
+export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelNum, concreteMounted, provisional, dataCount, size = SZ, draggable, onDragEnd, onClick }: Props) {
   const img = useSymbolImage(def.symbolImage);
   const fill = def.fillColor || '#888888';
   const stroke = def.strokeColor || '#ffffff';
@@ -98,6 +100,34 @@ export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelN
           <Circle x={s * -1.4} y={s * 1.4} radius={s * 0.6} fill="#f59e0b" stroke="#ffffff" strokeWidth={0.8} listening={false} />
           <Text text="P" fontSize={s * 0.7} fill="#ffffff" fontStyle="bold" align="center" verticalAlign="middle"
             x={s * -1.4 - s * 0.5} y={s * 1.4 - s * 0.35} width={s} height={s * 0.7} listening={false} />
+        </Group>
+      )}
+      {dataCount !== undefined && dataCount > 1 && (
+        // Top-right ×N badge — small high-contrast pill so the electrician
+        // can see at a glance how many drops to terminate at this marker.
+        <Group x={0} y={0} rotation={-rotation} listening={false}>
+          <Rect
+            x={s * 1.0}
+            y={-s * 1.8}
+            width={s * (1.2 + 0.35 * String(dataCount).length)}
+            height={s * 0.95}
+            cornerRadius={s * 0.45}
+            fill="#0066cc"
+            stroke="#ffffff"
+            strokeWidth={1}
+          />
+          <Text
+            text={`×${dataCount}`}
+            fontSize={s * 0.75}
+            fontStyle="bold"
+            fill="#ffffff"
+            align="center"
+            verticalAlign="middle"
+            x={s * 1.0}
+            y={-s * 1.8}
+            width={s * (1.2 + 0.35 * String(dataCount).length)}
+            height={s * 0.95}
+          />
         </Group>
       )}
     </Group>
