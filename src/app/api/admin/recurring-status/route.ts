@@ -63,42 +63,63 @@ export async function GET() {
     }, { status: 502 });
   }
 
-  const results = await Promise.all(
-    (plans ?? []).map(async (p) => {
-      const customer = Array.isArray(p.customer) ? p.customer[0] : p.customer;
-      const site = Array.isArray(p.site) ? p.site[0] : p.site;
-      const xeroIds = [p.xero_repeating_invoice_id, p.xero_repeating_invoice_secondary_id]
-        .filter((id): id is string => !!id);
-      const xeroStates = await Promise.all(
-        xeroIds.map(async (id) => {
-          try {
-            const state = await getRepeatingInvoice(xero!, tenantId!, id);
-            return {
-              ...state,
-              brandingThemeLabel: themes[state.brandingThemeID ?? ""] ?? "unknown",
-              willFireAutomatically: state.status === "AUTHORISED",
-              willAutoEmail: state.status === "AUTHORISED" && !!state.approvedForSending,
-            };
-          } catch (e) {
-            return {
-              repeatingInvoiceID: id,
-              error: e instanceof Error ? e.message : String(e),
-            };
-          }
-        }),
-      );
-      return {
-        planId: p.id,
-        planStatus: p.status,
-        customer: customer?.name ?? null,
-        site: site?.name ?? null,
-        firstInvoiceDate: p.first_invoice_date,
-        nextInvoiceDate: p.next_invoice_date,
-        gcMandateId: p.gc_mandate_id,
-        xero: xeroStates,
-      };
-    }),
-  );
+  // Xero rate-limits concurrent requests aggressively (saw 429 with
+  // x-rate-limit-problem=concurrent when firing all checks in parallel).
+  // Sequentialise, with a small delay between calls + one retry on 429.
+  function sanitizeXeroError(e: unknown): string {
+    const raw = e instanceof Error ? e.message : String(e);
+    // The SDK dumps request headers into the error message including the
+    // Bearer token — strip anything that looks like one before returning.
+    return raw
+      .replace(/"authorization":\s*"Bearer [^"]+"/gi, '"authorization":"[redacted]"')
+      .replace(/Bearer ey[A-Za-z0-9._-]+/g, "Bearer [redacted]");
+  }
+  async function fetchWithRetry(id: string) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const state = await getRepeatingInvoice(xero!, tenantId!, id);
+        return {
+          ...state,
+          brandingThemeLabel: themes[state.brandingThemeID ?? ""] ?? "unknown",
+          willFireAutomatically: state.status === "AUTHORISED",
+          willAutoEmail: state.status === "AUTHORISED" && !!state.approvedForSending,
+        };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        const is429 = msg.includes('"statusCode":429');
+        if (is429 && attempt === 0) {
+          await new Promise((r) => setTimeout(r, 1100)); // honour 1s window
+          continue;
+        }
+        return { repeatingInvoiceID: id, error: sanitizeXeroError(e) };
+      }
+    }
+    return { repeatingInvoiceID: id, error: "exhausted retries" };
+  }
+
+  const results: Array<Record<string, unknown>> = [];
+  for (const p of plans ?? []) {
+    const customer = Array.isArray(p.customer) ? p.customer[0] : p.customer;
+    const site = Array.isArray(p.site) ? p.site[0] : p.site;
+    const xeroIds = [p.xero_repeating_invoice_id, p.xero_repeating_invoice_secondary_id]
+      .filter((id): id is string => !!id);
+    const xeroStates: Array<Record<string, unknown>> = [];
+    for (const id of xeroIds) {
+      xeroStates.push(await fetchWithRetry(id));
+      // Small pacing gap between calls within the same plan too.
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    results.push({
+      planId: p.id,
+      planStatus: p.status,
+      customer: customer?.name ?? null,
+      site: site?.name ?? null,
+      firstInvoiceDate: p.first_invoice_date,
+      nextInvoiceDate: p.next_invoice_date,
+      gcMandateId: p.gc_mandate_id,
+      xero: xeroStates,
+    });
+  }
 
   return NextResponse.json({
     checkedAt: new Date().toISOString(),
