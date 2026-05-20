@@ -4,6 +4,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Text, Circle, Line, Group } from 'react-konva';
 import { usePlanStore } from '@/store/planStore';
 import { getDeviceById } from '@/lib/plan-builder/devices';
+import { NUMBERED_GROUPS } from '@/types/plan-builder';
 import DeviceSymbol from './DeviceSymbol';
 import CableLines from './CableLines';
 import PdfElementOverlay, { hitTestElements } from './PdfElementOverlay';
@@ -28,23 +29,49 @@ export default function PlanCanvas() {
     floors, activeFloorId,
   } = usePlanStore();
 
-  // Cross-floor data-label offset. The active floor's data labels need
-  // to continue from where prior floors left off so the editor matches
-  // the PDF export (which already does this via runningGroupCounts).
-  // Other groups still restart per-floor in the editor — leaving that
-  // existing convention untouched.
-  const dataLabelOffset = React.useMemo(() => {
-    let offset = 0;
+  // Cross-floor label offsets. Every numbered group (cameras, PIRs, APs,
+  // data, speakers) continues from where prior floors left off so the
+  // editor matches the PDF export. Speakers are special — they're
+  // numbered PER ZONE so the offset is also per-zone. Data outlets
+  // advance by sum-of-dataCounts; everything else by marker count.
+  const { groupOffsets, speakerZoneOffsets } = React.useMemo(() => {
+    const groupOffsets: Record<string, number> = {};
+    const speakerZoneOffsets = new Map<number, number>();
+    for (const groupName of Object.keys(NUMBERED_GROUPS)) groupOffsets[groupName] = 0;
     for (const f of floors) {
       if (f.id === activeFloorId) break;
-      for (const d of f.devices) {
-        if (d.deviceId === 'cat6-data' || d.deviceId === 'rg6-coax') {
-          offset += Math.max(1, d.dataCount ?? 1);
+      for (const [groupName, groupIds] of Object.entries(NUMBERED_GROUPS)) {
+        if (groupName === 'speakers') {
+          for (const d of f.devices) {
+            if (!groupIds.includes(d.deviceId)) continue;
+            const zone = d.speakerZone || 1;
+            speakerZoneOffsets.set(zone, (speakerZoneOffsets.get(zone) || 0) + 1);
+          }
+        } else if (groupName === 'data') {
+          for (const d of f.devices) {
+            if (!groupIds.includes(d.deviceId)) continue;
+            groupOffsets[groupName] += Math.max(1, d.dataCount ?? 1);
+          }
+        } else {
+          for (const d of f.devices) {
+            if (groupIds.includes(d.deviceId)) groupOffsets[groupName] += 1;
+          }
         }
       }
     }
-    return offset;
+    return { groupOffsets, speakerZoneOffsets };
   }, [floors, activeFloorId]);
+
+  function offsetFor(device: { deviceId: string; speakerZone?: number }): number {
+    for (const [groupName, groupIds] of Object.entries(NUMBERED_GROUPS)) {
+      if (!groupIds.includes(device.deviceId)) continue;
+      if (groupName === 'speakers') {
+        return speakerZoneOffsets.get(device.speakerZone || 1) || 0;
+      }
+      return groupOffsets[groupName] || 0;
+    }
+    return 0;
+  }
 
   const [eraseStart, setEraseStart] = useState<{ x: number; y: number } | null>(null);
   const [erasePreview, setErasePreview] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -391,12 +418,10 @@ export default function PlanCanvas() {
             // hidden on master".
             const labelHidden = isCommsRack || device.labelNum === 0
               || (activePlan === 'master' && !isDataOutlet);
-            // For data outlets, add the cross-floor offset so the editor
-            // matches the PDF (D5 on the first data point of floor 2 if
-            // floor 1 had 4 data labels' worth).
-            const effectiveLabelNum = isDataOutlet
-              ? device.labelNum + dataLabelOffset
-              : device.labelNum;
+            // Cross-floor numbering for every group, matching the PDF.
+            // Speakers offset per zone; data by sum of dataCounts;
+            // cameras / PIRs / APs by marker count.
+            const effectiveLabelNum = device.labelNum + offsetFor(device);
             return (
               <DeviceSymbol key={device.instanceId} def={def} x={device.x} y={device.y} rotation={device.rotation}
                 selected={device.instanceId === selectedDeviceId}
