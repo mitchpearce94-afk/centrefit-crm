@@ -15,6 +15,13 @@ interface Props {
   provisional?: boolean;
   /** When > 1, shows a small "×N" badge — used for stacked data outlets. */
   dataCount?: number;
+  /**
+   * When set, the label renders as plain text "{prefix}{N}" (no pill
+   * background) instead of the standard numbered circle. Used for data
+   * outlets which need cable labels like "D1-D2" visible on every plan
+   * page rather than the pill-style camera/PIR labels.
+   */
+  labelPrefix?: string;
   size?: number;
   draggable?: boolean;
   onDragEnd?: (x: number, y: number) => void;
@@ -47,7 +54,7 @@ function useSymbolImage(src: string | undefined): HTMLImageElement | null {
   return image;
 }
 
-export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelNum, concreteMounted, provisional, dataCount, size = SZ, draggable, onDragEnd, onClick }: Props) {
+export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelNum, concreteMounted, provisional, dataCount, labelPrefix, size = SZ, draggable, onDragEnd, onClick }: Props) {
   const img = useSymbolImage(def.symbolImage);
   const fill = def.fillColor || '#888888';
   const stroke = def.strokeColor || '#ffffff';
@@ -82,14 +89,45 @@ export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelN
         <Rect x={-s * 1.8} y={-s * 1.8} width={s * 3.6} height={s * 3.6} stroke="#00ffff" strokeWidth={1.5} dash={[4, 4]} fill="transparent" listening={false} />
       )}
       {labelNum !== undefined && (() => {
-        // Multi-drop data outlets display a range ("5-6", "12-15") instead
-        // of the single start number, so the electrician knows the
-        // marker covers multiple labelled cables.
+        // Multi-drop data outlets display a range ("D1-D2", "D1-D4")
+        // so the electrician knows the marker covers multiple labelled
+        // cables, each individually identifiable.
         const isRange = dataCount !== undefined && dataCount > 1;
-        const labelText = isRange
-          ? `${labelNum}-${labelNum + dataCount - 1}`
-          : String(labelNum);
-        // Pill widens with text length so 3+ chars don't get clipped.
+        const start = labelNum;
+        const end = isRange ? labelNum + dataCount - 1 : labelNum;
+        // Plain-text style (no pill) when a prefix is given — used for
+        // data outlets which need "D1-D2" sat along the bottom of the
+        // triangle rather than inside the camera/PIR-style numbered
+        // circle. Otherwise fall back to the legacy pill.
+        if (labelPrefix) {
+          const text = isRange
+            ? `${labelPrefix}${start}-${labelPrefix}${end}`
+            : `${labelPrefix}${start}`;
+          // Position just below the symbol; counter-rotated so the text
+          // stays upright when the symbol is rotated.
+          return (
+            <Group x={0} y={0} rotation={-rotation} listening={false}>
+              <Text
+                text={text}
+                fontSize={s * 0.9}
+                fontStyle="bold"
+                fill="#000000"
+                align="center"
+                verticalAlign="top"
+                x={-s * 4}
+                y={s * 1.0}
+                width={s * 8}
+                height={s * 1.2}
+                shadowColor="#ffffff"
+                shadowBlur={2}
+                shadowOpacity={1}
+                shadowOffset={{ x: 0, y: 0 }}
+              />
+            </Group>
+          );
+        }
+        // Default pill style — cameras, PIRs, APs, speakers.
+        const labelText = String(start);
         const pillWidth = Math.max(s * 1.5, s * (0.5 + 0.45 * labelText.length));
         return (
           <Group x={0} y={0} rotation={-rotation}>

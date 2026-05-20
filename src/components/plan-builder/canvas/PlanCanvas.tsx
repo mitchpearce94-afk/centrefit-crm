@@ -364,10 +364,19 @@ export default function PlanCanvas() {
             const def = getDeviceById(device.deviceId);
             if (!def) return null;
             const isCommsRack = device.instanceId === commsRackId;
+            const isDataOutlet = device.deviceId === 'cat6-data' || device.deviceId === 'rg6-coax';
+            // Data outlets get a "D" prefix label that shows on EVERY page
+            // (including the all-inclusive/master view) — the electrician
+            // needs the cable labels regardless of which cable-plan tab
+            // is open. Other devices keep the existing rule of "labels
+            // hidden on master".
+            const labelHidden = isCommsRack || device.labelNum === 0
+              || (activePlan === 'master' && !isDataOutlet);
             return (
               <DeviceSymbol key={device.instanceId} def={def} x={device.x} y={device.y} rotation={device.rotation}
                 selected={device.instanceId === selectedDeviceId}
-                labelNum={activePlan === 'master' || isCommsRack || device.labelNum === 0 ? undefined : device.labelNum}
+                labelNum={labelHidden ? undefined : device.labelNum}
+                labelPrefix={isDataOutlet ? 'D' : undefined}
                 concreteMounted={device.concreteMounted}
                 provisional={device.provisional}
                 dataCount={device.dataCount}
