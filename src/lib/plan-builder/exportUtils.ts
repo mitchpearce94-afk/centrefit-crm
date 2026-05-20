@@ -335,6 +335,50 @@ function drawDynamicLegend(
       y -= rowHeight;
     }
   }
+
+  // ── Cable run totals ──
+  // Sum cables per cable type across the visible device set. Data outlets
+  // (×N markers) count as N cables; everything else 1 per marker. Comms
+  // rack is excluded as it's the destination, not a runner.
+  const cableTotals: Record<string, number> = { cat6: 0, sixcore: 0, speaker: 0 };
+  for (const d of visible) {
+    if (d.instanceId === commsRackId) continue;
+    const def = getDeviceById(d.deviceId);
+    if (!def || !def.cableType || def.cableType === 'none') continue;
+    const isDataOutlet = d.deviceId === 'cat6-data' || d.deviceId === 'rg6-coax';
+    const inc = isDataOutlet ? Math.max(1, d.dataCount ?? 1) : 1;
+    cableTotals[def.cableType] = (cableTotals[def.cableType] || 0) + inc;
+  }
+  const totalParts: Array<{ label: string; n: number; colour: [number, number, number] }> = [
+    { label: 'Cat6',    n: cableTotals.cat6,    colour: [0.2, 0.6, 1] as [number, number, number] },
+    { label: 'Sixcore', n: cableTotals.sixcore, colour: [1, 0.27, 0.27] as [number, number, number] },
+    { label: 'Speaker', n: cableTotals.speaker, colour: [0.27, 0.8, 0.27] as [number, number, number] },
+  ].filter((t) => t.n > 0);
+  if (totalParts.length > 0 && y - rowHeight * 2 >= minY) {
+    y -= rowHeight * 0.4; // small gap
+    // Heading
+    page.drawText('CABLE RUNS', {
+      x: iconX, y: y - fontSize / 3,
+      size: fontSize * 0.85, font: fontBold, color: rgb(0.3, 0.3, 0.3),
+    });
+    y -= rowHeight * 0.8;
+    for (const t of totalParts) {
+      if (y - rowHeight < minY) break;
+      const rowCenterY = y - rowHeight / 2;
+      // Coloured swatch matching the cable line colour on the plan
+      page.drawRectangle({
+        x: iconX, y: rowCenterY - iconSize / 2,
+        width: iconSize, height: iconSize * 0.35,
+        color: rgb(t.colour[0], t.colour[1], t.colour[2]),
+        borderColor: rgb(0, 0, 0), borderWidth: 0.4,
+      });
+      page.drawText(`${t.label}: ${t.n}`, {
+        x: textX, y: rowCenterY - fontSize / 3,
+        size: fontSize, font: fontBold, color: rgb(0, 0, 0),
+      });
+      y -= rowHeight;
+    }
+  }
 }
 
 export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Blob | null> {
@@ -613,6 +657,32 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
             const labelW = fontBold.widthOfTextAtSize(labelText, labelSize);
             page.drawText(labelText, { x: bubbleX - labelW / 2, y: bubbleY - labelSize * 0.35, size: labelSize, font: fontBold, color: rgb(0, 0, 0) });
           }
+        }
+
+        // ×N count badge for stacked data outlets — small blue pill in
+        // the top-right of the symbol. Matches the editor render so the
+        // installer can see at a glance "this marker = 2 drops" without
+        // having to read the D-range below.
+        if (isDataOutlet && (device.dataCount ?? 1) > 1) {
+          const cnt = device.dataCount!;
+          const badgeText = `×${cnt}`;
+          const badgeSize = mapper.toSize(18 * dScale);
+          const badgeW = fontBold.widthOfTextAtSize(badgeText, badgeSize) + badgeSize * 0.7;
+          const badgeH = badgeSize * 1.4;
+          const badgeX = px + sz / 2 - badgeW * 0.2;
+          const badgeY = py + sz / 2 - badgeH * 0.2;
+          page.drawRectangle({
+            x: badgeX, y: badgeY,
+            width: badgeW, height: badgeH,
+            color: rgb(0, 0.4, 0.8),
+            borderColor: rgb(1, 1, 1),
+            borderWidth: 1,
+          });
+          page.drawText(badgeText, {
+            x: badgeX + (badgeW - fontBold.widthOfTextAtSize(badgeText, badgeSize)) / 2,
+            y: badgeY + badgeH / 2 - badgeSize * 0.35,
+            size: badgeSize, font: fontBold, color: rgb(1, 1, 1),
+          });
         }
 
         // Concrete mounted badge
