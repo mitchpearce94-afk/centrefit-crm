@@ -64,7 +64,7 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
     saveProject, loadProject,
     undo, redo,
     setBackground, pdfFileName,
-    floors, activeFloorId, addFloor, switchFloor, removeFloor,
+    floors, activeFloorId, addFloor, switchFloor, removeFloor, moveFloor,
     bumpRevision,
     linkedJobId, setLinkedJob,
     updateTitleBlock,
@@ -456,17 +456,39 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
 
       <div className="ml-auto flex items-center gap-2 text-xs">
         <div className="flex items-center gap-1 pr-2 border-r border-gray-700">
-          {floors.map(f => (
-            <div key={f.id} className="flex items-center">
-              <button className={`px-2 py-1 rounded-l transition-colors ${f.id === activeFloorId ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'} ${floors.length <= 1 ? 'rounded-r' : ''}`}
-                onClick={() => switchFloor(f.id)}>{f.name}</button>
-              {floors.length > 1 && f.id === activeFloorId && (
-                <button className="px-1 py-1 bg-red-800 hover:bg-red-700 text-red-300 rounded-r text-xs"
-                  onClick={() => { if (confirm(`Delete "${f.name}"? All devices on this floor will be lost.`)) removeFloor(f.id); }}
-                  title={`Delete ${f.name}`}>x</button>
-              )}
-            </div>
-          ))}
+          {floors.map((f, idx) => {
+            const isActive = f.id === activeFloorId;
+            const canMoveLeft = isActive && idx > 0;
+            const canMoveRight = isActive && idx < floors.length - 1;
+            return (
+              <div key={f.id} className="flex items-center">
+                {canMoveLeft && (
+                  <button
+                    className="px-1 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-l text-xs"
+                    onClick={() => moveFloor(f.id, -1)}
+                    title="Move floor left (earlier in numbering order)"
+                  >◀</button>
+                )}
+                <button
+                  className={`px-2 py-1 transition-colors ${isActive ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'} ${canMoveLeft ? '' : 'rounded-l'} ${canMoveRight || (isActive && floors.length > 1) ? '' : 'rounded-r'}`}
+                  onClick={() => switchFloor(f.id)}
+                  title={isActive ? `Numbering position ${idx + 1} of ${floors.length}` : `Switch to ${f.name}`}
+                >{f.name}</button>
+                {canMoveRight && (
+                  <button
+                    className="px-1 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs"
+                    onClick={() => moveFloor(f.id, 1)}
+                    title="Move floor right (later in numbering order)"
+                  >▶</button>
+                )}
+                {floors.length > 1 && isActive && (
+                  <button className="px-1 py-1 bg-red-800 hover:bg-red-700 text-red-300 rounded-r text-xs"
+                    onClick={() => { if (confirm(`Delete "${f.name}"? All devices on this floor will be lost.`)) removeFloor(f.id); }}
+                    title={`Delete ${f.name}`}>x</button>
+                )}
+              </div>
+            );
+          })}
           <button className="px-1.5 py-1 bg-gray-700 hover:bg-gray-600 text-gray-400 rounded"
             onClick={() => { setNewFloorName(`Level ${floors.length}`); setShowFloorModal(true); }} title="Add floor">+</button>
         </div>

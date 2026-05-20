@@ -100,6 +100,7 @@ interface PlanState {
   removeWhitewashRect: (id: string) => void;
   addFloor: (name: string) => void;
   switchFloor: (floorId: string) => void;
+  moveFloor: (floorId: string, delta: number) => void;
   renameFloor: (floorId: string, name: string) => void;
   removeFloor: (floorId: string) => void;
   bumpRevision: (notes: string) => void;
@@ -573,6 +574,19 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   renameFloor: (floorId, name) => {
     const state = get();
     set({ floors: state.floors.map(f => f.id === floorId ? { ...f, name } : f) });
+  },
+
+  moveFloor: (floorId, delta) => {
+    // Reorder the floors array — drives cross-floor numbering origin
+    // (cameras / data / etc. continue in this order).
+    const state = get();
+    const idx = state.floors.findIndex(f => f.id === floorId);
+    if (idx < 0) return;
+    const targetIdx = idx + delta;
+    if (targetIdx < 0 || targetIdx >= state.floors.length) return;
+    const reordered = [...state.floors];
+    [reordered[idx], reordered[targetIdx]] = [reordered[targetIdx], reordered[idx]];
+    set({ floors: reordered, isDirty: true });
   },
 
   removeFloor: (floorId) => {
