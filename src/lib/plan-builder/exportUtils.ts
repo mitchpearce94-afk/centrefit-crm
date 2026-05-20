@@ -269,6 +269,7 @@ const LEGEND_CATEGORY_NAMES: Record<string, string> = {
 function drawDynamicLegend(
   page: PDFPage, allDevices: PlacedDevice[], view: PlanView, commsRackId: string | null,
   symbolCache: Map<string, PDFImage>, fontBold: PDFFont, fontRegular: PDFFont,
+  pageDevices?: PlacedDevice[],
 ) {
   const pageH = page.getHeight();
   // Coordinates matched to the template legend area (PDF coords, origin bottom-left)
@@ -337,11 +338,15 @@ function drawDynamicLegend(
   }
 
   // ── Data-point multi-count key ──
-  // Collect distinct dataCount values > 1 that actually appear on the
-  // visible devices, render a small ×N pill + explanation so the installer
-  // understands what the badge means.
+  // Collect distinct dataCount values > 1 that actually appear on THIS
+  // PAGE's devices (not the all-floors legend set), so the key matches
+  // what the reader can see in front of them. Falls back to allDevices
+  // for legacy callers.
+  const visibleForKey = pageDevices
+    ? getVisibleDevices(pageDevices, view, commsRackId)
+    : visible;
   const dataCounts = new Set<number>();
-  for (const d of visible) {
+  for (const d of visibleForKey) {
     if (d.deviceId !== 'cat6-data' && d.deviceId !== 'rg6-coax') continue;
     const c = d.dataCount ?? 1;
     if (c > 1) dataCounts.add(c);
@@ -715,8 +720,11 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
         page.drawText(headingText, { x: planCentreX - headingW / 2, y: headingY + 2, size: headingSize, font: fontBold, color: rgb(0, 0, 0) });
       }
 
-      // Dynamic legend — auto-populated from devices on the plan
-      drawDynamicLegend(page, allDevicesForLegend, pageDef.view, commsRackId, symbolCache, fontBold, fontRegular);
+      // Dynamic legend — device-type list still uses the all-floors set
+      // (legend is consistent across pages), but the ×N data-count key is
+      // scoped to THIS floor so it only shows badges actually visible
+      // on the page in front of the reader.
+      drawDynamicLegend(page, allDevicesForLegend, pageDef.view, commsRackId, symbolCache, fontBold, fontRegular, floor.devices);
     }
   }
 
