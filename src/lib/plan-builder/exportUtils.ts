@@ -336,45 +336,43 @@ function drawDynamicLegend(
     }
   }
 
-  // ── Cable run totals ──
-  // Sum cables per cable type across the visible device set. Data outlets
-  // (×N markers) count as N cables; everything else 1 per marker. Comms
-  // rack is excluded as it's the destination, not a runner.
-  const cableTotals: Record<string, number> = { cat6: 0, sixcore: 0, speaker: 0 };
+  // ── Data-point multi-count key ──
+  // Collect distinct dataCount values > 1 that actually appear on the
+  // visible devices, render a small ×N pill + explanation so the installer
+  // understands what the badge means.
+  const dataCounts = new Set<number>();
   for (const d of visible) {
-    if (d.instanceId === commsRackId) continue;
-    const def = getDeviceById(d.deviceId);
-    if (!def || !def.cableType || def.cableType === 'none') continue;
-    const isDataOutlet = d.deviceId === 'cat6-data' || d.deviceId === 'rg6-coax';
-    const inc = isDataOutlet ? Math.max(1, d.dataCount ?? 1) : 1;
-    cableTotals[def.cableType] = (cableTotals[def.cableType] || 0) + inc;
+    if (d.deviceId !== 'cat6-data' && d.deviceId !== 'rg6-coax') continue;
+    const c = d.dataCount ?? 1;
+    if (c > 1) dataCounts.add(c);
   }
-  const totalParts: Array<{ label: string; n: number; colour: [number, number, number] }> = [
-    { label: 'Cat6',    n: cableTotals.cat6,    colour: [0.2, 0.6, 1] as [number, number, number] },
-    { label: 'Sixcore', n: cableTotals.sixcore, colour: [1, 0.27, 0.27] as [number, number, number] },
-    { label: 'Speaker', n: cableTotals.speaker, colour: [0.27, 0.8, 0.27] as [number, number, number] },
-  ].filter((t) => t.n > 0);
-  if (totalParts.length > 0 && y - rowHeight * 2 >= minY) {
-    y -= rowHeight * 0.4; // small gap
-    // Heading
-    page.drawText('CABLE RUNS', {
-      x: iconX, y: y - fontSize / 3,
-      size: fontSize * 0.85, font: fontBold, color: rgb(0.3, 0.3, 0.3),
-    });
-    y -= rowHeight * 0.8;
-    for (const t of totalParts) {
+  if (dataCounts.size > 0 && y - rowHeight * (dataCounts.size + 1) >= minY) {
+    y -= rowHeight * 0.4; // small gap before the section
+    const sortedCounts = Array.from(dataCounts).sort((a, b) => a - b);
+    for (const cnt of sortedCounts) {
       if (y - rowHeight < minY) break;
       const rowCenterY = y - rowHeight / 2;
-      // Coloured swatch matching the cable line colour on the plan
+      // Small blue pill mimicking the on-plan ×N badge so it's clearly the same thing.
+      const pillText = `×${cnt}`;
+      const pillTextW = fontBold.widthOfTextAtSize(pillText, fontSize);
+      const pillW = pillTextW + fontSize * 0.8;
+      const pillH = fontSize * 1.5;
+      const pillX = iconX;
+      const pillY = rowCenterY - pillH / 2;
       page.drawRectangle({
-        x: iconX, y: rowCenterY - iconSize / 2,
-        width: iconSize, height: iconSize * 0.35,
-        color: rgb(t.colour[0], t.colour[1], t.colour[2]),
-        borderColor: rgb(0, 0, 0), borderWidth: 0.4,
+        x: pillX, y: pillY,
+        width: pillW, height: pillH,
+        color: rgb(0, 0.4, 0.8),
+        borderColor: rgb(1, 1, 1), borderWidth: 0.8,
       });
-      page.drawText(`${t.label}: ${t.n}`, {
-        x: textX, y: rowCenterY - fontSize / 3,
-        size: fontSize, font: fontBold, color: rgb(0, 0, 0),
+      page.drawText(pillText, {
+        x: pillX + (pillW - pillTextW) / 2,
+        y: pillY + pillH / 2 - fontSize * 0.35,
+        size: fontSize, font: fontBold, color: rgb(1, 1, 1),
+      });
+      page.drawText(`${cnt} data points at this marker`, {
+        x: pillX + pillW + 6, y: rowCenterY - fontSize / 3,
+        size: fontSize, font: fontRegular, color: rgb(0, 0, 0),
       });
       y -= rowHeight;
     }
