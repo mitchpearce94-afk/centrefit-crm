@@ -182,13 +182,15 @@ function renumberDevices(devices: PlacedDevice[], commsRackId?: string | null): 
       }
     } else if (groupName === 'data') {
       // Data outlets: number in PLACEMENT order (array insertion order)
-      // not by X position. The array is in the order Mitchell placed them,
-      // so iterating it preserves chronology. This matches the cable-run
-      // sequence the electrician will actually wire in.
+      // not by X position. The counter advances by the marker's dataCount
+      // so a ×2 outlet consumes two numbers (rendered as the range "5-6"
+      // in DeviceSymbol). The stored labelNum is the FIRST number of the
+      // marker's range.
       let n = 1;
       for (const d of devices) {
         if (groupIds.includes(d.deviceId)) {
-          labelMap.set(d.instanceId, n++);
+          labelMap.set(d.instanceId, n);
+          n += Math.max(1, d.dataCount ?? 1);
         }
       }
     } else {
@@ -501,12 +503,13 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   setDataCount: (instanceId, count) => {
     const state = get();
     const clamped = Math.max(1, Math.min(99, Math.round(count) || 1));
-    set({
-      devices: state.devices.map(d =>
-        d.instanceId === instanceId ? { ...d, dataCount: clamped } : d,
-      ),
-      isDirty: true,
-    });
+    const updated = state.devices.map(d =>
+      d.instanceId === instanceId ? { ...d, dataCount: clamped } : d,
+    );
+    // Re-number so downstream data-point labels shift to reflect the new
+    // count (e.g. bumping a marker from ×1 to ×2 pushes every later
+    // data marker up by one).
+    set({ devices: renumberDevices(updated, state.commsRackId), isDirty: true });
   },
 
   setConcreteMounted: (instanceId, value) => {

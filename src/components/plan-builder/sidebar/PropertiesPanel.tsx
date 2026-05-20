@@ -55,9 +55,10 @@ export default function PropertiesPanel() {
                   className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500"
                 />
                 <div className="text-[10px] text-gray-500 mt-1">
-                  Shown as ×N badge on the plan. Numbering follows placement
-                  order, not left-to-right, so cable labels match install
-                  sequence.
+                  Numbering follows placement order. Each marker consumes
+                  N labels from the sequence — a ×2 marker shows as a
+                  range (e.g. <span className="text-gray-300 font-mono">5-6</span>) so
+                  the electrician knows it&apos;s two distinct cables.
                 </div>
               </div>
             )}

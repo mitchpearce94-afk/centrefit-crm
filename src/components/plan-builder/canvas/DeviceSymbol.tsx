@@ -81,13 +81,30 @@ export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelN
       {selected && (
         <Rect x={-s * 1.8} y={-s * 1.8} width={s * 3.6} height={s * 3.6} stroke="#00ffff" strokeWidth={1.5} dash={[4, 4]} fill="transparent" listening={false} />
       )}
-      {labelNum !== undefined && (
-        <Group x={0} y={0} rotation={-rotation}>
-          <Circle x={0} y={s * 1.6} radius={s * 0.75} fill="#ffffff" stroke="#000000" strokeWidth={1.2} listening={false} />
-          <Text text={String(labelNum)} fontSize={s * 0.8} fill="#000000" fontStyle="bold" align="center" verticalAlign="middle"
-            x={-s} y={s * 1.6 - s * 0.4} width={s * 2} height={s * 0.8} listening={false} />
-        </Group>
-      )}
+      {labelNum !== undefined && (() => {
+        // Multi-drop data outlets display a range ("5-6", "12-15") instead
+        // of the single start number, so the electrician knows the
+        // marker covers multiple labelled cables.
+        const isRange = dataCount !== undefined && dataCount > 1;
+        const labelText = isRange
+          ? `${labelNum}-${labelNum + dataCount - 1}`
+          : String(labelNum);
+        // Pill widens with text length so 3+ chars don't get clipped.
+        const pillWidth = Math.max(s * 1.5, s * (0.5 + 0.45 * labelText.length));
+        return (
+          <Group x={0} y={0} rotation={-rotation}>
+            <Rect
+              x={-pillWidth / 2} y={s * 1.6 - s * 0.75}
+              width={pillWidth} height={s * 1.5}
+              cornerRadius={s * 0.75}
+              fill="#ffffff" stroke="#000000" strokeWidth={1.2}
+              listening={false}
+            />
+            <Text text={labelText} fontSize={s * 0.8} fill="#000000" fontStyle="bold" align="center" verticalAlign="middle"
+              x={-pillWidth / 2} y={s * 1.6 - s * 0.4} width={pillWidth} height={s * 0.8} listening={false} />
+          </Group>
+        );
+      })()}
       {concreteMounted && (
         <Group x={0} y={0} rotation={-rotation}>
           <Circle x={s * 1.4} y={s * 1.4} radius={s * 0.6} fill="#3399ff" stroke="#ffffff" strokeWidth={0.8} listening={false} />
