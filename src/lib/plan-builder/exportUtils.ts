@@ -413,6 +413,13 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
           const zone = d.speakerZone || 1;
           runningZoneCounts.set(zone, (runningZoneCounts.get(zone) || 0) + 1);
         }
+      } else if (groupName === 'data') {
+        // Data outlets: a ×N marker consumes N labels, so advance by
+        // sum of dataCounts not by marker count.
+        const count = floor.devices
+          .filter(d => groupIds.includes(d.deviceId))
+          .reduce((sum, d) => sum + Math.max(1, d.dataCount ?? 1), 0);
+        runningGroupCounts[groupName] = (runningGroupCounts[groupName] || 0) + count;
       } else {
         const count = floor.devices.filter(d => groupIds.includes(d.deviceId)).length;
         runningGroupCounts[groupName] = (runningGroupCounts[groupName] || 0) + count;
@@ -548,7 +555,16 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
           page.drawCircle({ x: px, y: py, size: sz / 2, color: hexToRgb(def.fillColor || '#888888'), borderColor: hexToRgb(def.strokeColor || '#ffffff'), borderWidth: 1 });
         }
 
-        if (pageDef.view !== 'master' && device.labelNum && device.labelNum > 0 && device.instanceId !== commsRackId) {
+        // Data outlets get their D-prefixed label on EVERY page (incl.
+        // master) — the electrician needs the cable label regardless of
+        // which cable-plan tab they're looking at. Other devices keep
+        // the old "hide labels on master" behaviour.
+        const isDataOutlet = device.deviceId === 'cat6-data' || device.deviceId === 'rg6-coax';
+        const showLabel = (pageDef.view !== 'master' || isDataOutlet)
+          && device.labelNum && device.labelNum > 0
+          && device.instanceId !== commsRackId;
+
+        if (showLabel) {
           let globalNum = device.labelNum;
           if (speakerGroupIds.includes(device.deviceId)) {
             // Speakers: offset by zone count from previous floors
@@ -560,20 +576,43 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
               if (groupIds.includes(device.deviceId)) { globalNum = device.labelNum + (labelOffsets[groupName] || 0); break; }
             }
           }
-          const labelText = String(globalNum);
-          const labelSize = mapper.toSize(40 * dScale);
-          const bubbleR = mapper.toSize(32 * dScale);
-          // Position label center on the edge of the coverage circle, in the device's facing direction
-          // Device PNGs face RIGHT at rotation 0. Konva rotation is CW in screen coords (Y-down).
-          // Rotating the "right" vector (1, 0) by θ: x' = cos(θ), y' = sin(θ)
-          const rotRad = ((device.rotation || 0) * Math.PI) / 180;
-          const canvasLabelX = device.x + COVERAGE_RADIUS * dScale * Math.cos(rotRad);
-          const canvasLabelY = device.y + COVERAGE_RADIUS * dScale * Math.sin(rotRad);
-          const bubbleX = mapper.toX(canvasLabelX);
-          const bubbleY = mapper.toY(canvasLabelY);
-          page.drawCircle({ x: bubbleX, y: bubbleY, size: bubbleR, color: rgb(1, 1, 1), borderColor: rgb(0, 0, 0), borderWidth: 2 });
-          const labelW = fontBold.widthOfTextAtSize(labelText, labelSize);
-          page.drawText(labelText, { x: bubbleX - labelW / 2, y: bubbleY - labelSize * 0.35, size: labelSize, font: fontBold, color: rgb(0, 0, 0) });
+
+          if (isDataOutlet) {
+            // "D1" or "D5-D6" — bold red text directly below the
+            // triangle, no pill/circle. Width sized to fit the text so
+            // we can centre it under the symbol.
+            const count = Math.max(1, device.dataCount ?? 1);
+            const start = globalNum;
+            const end = globalNum + count - 1;
+            const labelText = count > 1 ? `D${start}-D${end}` : `D${start}`;
+            const labelSize = mapper.toSize(26 * dScale);
+            const labelW = fontBold.widthOfTextAtSize(labelText, labelSize);
+            // Place just below the symbol so it sits clear of the triangle.
+            const labelX = px - labelW / 2;
+            const labelY = py - sz / 2 - labelSize - mapper.toSize(2 * dScale);
+            // White halo underneath via four offset draws — pdf-lib has
+            // no text-shadow, so simulate it with a 1px outline.
+            const haloOff = mapper.toSize(1.2 * dScale);
+            for (const [hx, hy] of [[-haloOff, 0], [haloOff, 0], [0, -haloOff], [0, haloOff]]) {
+              page.drawText(labelText, { x: labelX + hx, y: labelY + hy, size: labelSize, font: fontBold, color: rgb(1, 1, 1) });
+            }
+            page.drawText(labelText, { x: labelX, y: labelY, size: labelSize, font: fontBold, color: rgb(0.863, 0.149, 0.149) /* red-600 */ });
+          } else {
+            // Default pill style — cameras, PIRs, APs, etc. Position
+            // label centre on the edge of the coverage circle, in the
+            // device's facing direction.
+            const labelText = String(globalNum);
+            const labelSize = mapper.toSize(40 * dScale);
+            const bubbleR = mapper.toSize(32 * dScale);
+            const rotRad = ((device.rotation || 0) * Math.PI) / 180;
+            const canvasLabelX = device.x + COVERAGE_RADIUS * dScale * Math.cos(rotRad);
+            const canvasLabelY = device.y + COVERAGE_RADIUS * dScale * Math.sin(rotRad);
+            const bubbleX = mapper.toX(canvasLabelX);
+            const bubbleY = mapper.toY(canvasLabelY);
+            page.drawCircle({ x: bubbleX, y: bubbleY, size: bubbleR, color: rgb(1, 1, 1), borderColor: rgb(0, 0, 0), borderWidth: 2 });
+            const labelW = fontBold.widthOfTextAtSize(labelText, labelSize);
+            page.drawText(labelText, { x: bubbleX - labelW / 2, y: bubbleY - labelSize * 0.35, size: labelSize, font: fontBold, color: rgb(0, 0, 0) });
+          }
         }
 
         // Concrete mounted badge
