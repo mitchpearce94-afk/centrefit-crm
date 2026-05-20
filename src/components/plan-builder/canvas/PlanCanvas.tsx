@@ -25,7 +25,26 @@ export default function PlanCanvas() {
     whitewashRects, addWhitewashRect, removeWhitewashRect,
     setStageTransform, selectDevice, placeDevice, moveDevice, deleteDevice,
     setStageRef, cropBackground, setBackgroundOffset,
+    floors, activeFloorId,
   } = usePlanStore();
+
+  // Cross-floor data-label offset. The active floor's data labels need
+  // to continue from where prior floors left off so the editor matches
+  // the PDF export (which already does this via runningGroupCounts).
+  // Other groups still restart per-floor in the editor — leaving that
+  // existing convention untouched.
+  const dataLabelOffset = React.useMemo(() => {
+    let offset = 0;
+    for (const f of floors) {
+      if (f.id === activeFloorId) break;
+      for (const d of f.devices) {
+        if (d.deviceId === 'cat6-data' || d.deviceId === 'rg6-coax') {
+          offset += Math.max(1, d.dataCount ?? 1);
+        }
+      }
+    }
+    return offset;
+  }, [floors, activeFloorId]);
 
   const [eraseStart, setEraseStart] = useState<{ x: number; y: number } | null>(null);
   const [erasePreview, setErasePreview] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -372,10 +391,16 @@ export default function PlanCanvas() {
             // hidden on master".
             const labelHidden = isCommsRack || device.labelNum === 0
               || (activePlan === 'master' && !isDataOutlet);
+            // For data outlets, add the cross-floor offset so the editor
+            // matches the PDF (D5 on the first data point of floor 2 if
+            // floor 1 had 4 data labels' worth).
+            const effectiveLabelNum = isDataOutlet
+              ? device.labelNum + dataLabelOffset
+              : device.labelNum;
             return (
               <DeviceSymbol key={device.instanceId} def={def} x={device.x} y={device.y} rotation={device.rotation}
                 selected={device.instanceId === selectedDeviceId}
-                labelNum={labelHidden ? undefined : device.labelNum}
+                labelNum={labelHidden ? undefined : effectiveLabelNum}
                 labelPrefix={isDataOutlet ? 'D' : undefined}
                 concreteMounted={device.concreteMounted}
                 provisional={device.provisional}
