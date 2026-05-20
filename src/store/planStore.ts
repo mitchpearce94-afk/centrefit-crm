@@ -112,12 +112,20 @@ interface PlanState {
   clearProject: () => void;
 }
 
+function todayAsYyyyMmDd(): string {
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+}
+
 const DEFAULT_TITLE_BLOCK: TitleBlockInfo = {
   client: 'Snap Fitness',
   projectName: '',
   worksAddress: '',
   state: 'QLD',
-  drawingNumber: 'CF-001',
+  // Default drawing # = today reversed (YYYYMMDD). Saved plans carry their
+  // own drawingNumber from when they were last edited, so this only seeds
+  // brand-new plans.
+  drawingNumber: todayAsYyyyMmDd(),
   revision: 'A',
   date: new Date().toLocaleDateString('en-AU'),
   notes: '',

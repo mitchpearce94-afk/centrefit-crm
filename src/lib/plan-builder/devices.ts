@@ -16,9 +16,10 @@ export const DEVICE_CATALOG: DeviceDefinition[] = [
   { id: 'rf-receiver', name: 'RF Receiver', category: 'security', cableType: 'sixcore', symbolType: 'wifi', fillColor: '#ff8800', strokeColor: '#ff8800', symbolImage: '/plan-builder/symbols/rf-receiver.png' },
   { id: 'door-strike', name: 'Door Strike', category: 'security', cableType: 'sixcore', symbolType: 'labeled-square', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'DS', symbolImage: '/plan-builder/symbols/door-lock.png' },
   // Mag lock: same shape, blue palette to distinguish from electric strikes.
-  // No symbolImage yet — drop /plan-builder/symbols/mag-lock.png to make it
-  // render as a coloured PNG; until then it falls back to a blue circle.
-  { id: 'mag-lock', name: 'Mag Lock', category: 'security', cableType: 'sixcore', symbolType: 'labeled-square', fillColor: '#1155cc', strokeColor: '#4499ff', label: 'ML' },
+  // Mag-lock uses the same artwork as door-strike, tinted blue (Centrefit
+  // mag-lock convention). PNG generated from door-lock.png via luminance
+  // re-map to the same blue/white split (#1155cc → white).
+  { id: 'mag-lock', name: 'Mag Lock', category: 'security', cableType: 'sixcore', symbolType: 'labeled-square', fillColor: '#1155cc', strokeColor: '#4499ff', label: 'ML', symbolImage: '/plan-builder/symbols/mag-lock.png' },
   { id: 'duress-btn', name: 'Duress Button (wall mount)', category: 'security', cableType: 'sixcore', symbolType: 'labeled-circle', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'D', symbolImage: '/plan-builder/symbols/duress-button.png' },
   { id: 'duress-pendant', name: 'Duress Pendant (wireless)', category: 'security', cableType: 'none', symbolType: 'labeled-circle', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'DP', symbolImage: '/plan-builder/symbols/duress-button.png' },
   { id: 'duress-intercom', name: 'Duress Intercom', category: 'security', cableType: 'sixcore', symbolType: 'duress-circle', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'D', symbolImage: '/plan-builder/symbols/duress-intercom.png' },
