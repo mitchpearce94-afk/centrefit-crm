@@ -106,8 +106,13 @@ export function generateQuoteExport(): QuoteExportData {
       const quoteCode = PLAN_TO_QUOTE_MAP[device.deviceId];
       // Custom devices without a quote code are handled separately below
       if (!quoteCode) continue;
-      globalCounts[quoteCode] = (globalCounts[quoteCode] || 0) + 1;
-      floorCounts[quoteCode] = (floorCounts[quoteCode] || 0) + 1;
+      // Data outlets can be stacked (×N gang plates) — one marker on the
+      // plan represents N physical cables that need a cable + termination
+      // each. Other device types always count as 1 per marker.
+      const isDataOutlet = device.deviceId === 'cat6-data' || device.deviceId === 'rg6-coax';
+      const unitCount = isDataOutlet ? Math.max(1, device.dataCount ?? 1) : 1;
+      globalCounts[quoteCode] = (globalCounts[quoteCode] || 0) + unitCount;
+      floorCounts[quoteCode] = (floorCounts[quoteCode] || 0) + unitCount;
       if (device.deviceId === 'door-strike' || device.deviceId === 'mag-lock' || device.deviceId === 'door-lock' || device.deviceId === 'integration-cable') doorCount++;
       // Count concrete mounted cameras by colour
       if (device.concreteMounted) {
