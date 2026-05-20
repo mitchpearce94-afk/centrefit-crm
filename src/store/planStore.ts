@@ -180,17 +180,16 @@ function renumberDevices(devices: PlacedDevice[], commsRackId?: string | null): 
         const chain = [...vcChain, ...spkChain];
         chain.forEach((d, i) => labelMap.set(d.instanceId, i + 1));
       }
-    } else if (groupName === 'data') {
-      // Data outlets: number in PLACEMENT order (array insertion order)
-      // not by X position. The counter advances by the marker's dataCount
-      // so a ×2 outlet consumes two numbers (rendered as the range "5-6"
-      // in DeviceSymbol). The stored labelNum is the FIRST number of the
-      // marker's range.
+    } else if (groupName === 'data' || groupName === 'access_points') {
+      // Cable-labelled groups: number in PLACEMENT order (array insertion
+      // order) not by X position so cable labels match the installation
+      // sequence the electrician physically wires them in. The counter
+      // advances by dataCount (data outlets only — APs always count as 1).
       let n = 1;
       for (const d of devices) {
         if (groupIds.includes(d.deviceId)) {
           labelMap.set(d.instanceId, n);
-          n += Math.max(1, d.dataCount ?? 1);
+          n += groupName === 'data' ? Math.max(1, d.dataCount ?? 1) : 1;
         }
       }
     } else {

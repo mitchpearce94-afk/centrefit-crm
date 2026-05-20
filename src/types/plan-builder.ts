@@ -97,7 +97,7 @@ export interface PdfElement {
   bbox: { x: number; y: number; width: number; height: number };
 }
 
-export type NumberedDeviceGroup = 'cameras' | 'pir' | 'speakers' | 'data';
+export type NumberedDeviceGroup = 'cameras' | 'pir' | 'speakers' | 'data' | 'access_points';
 
 export const NUMBERED_GROUPS: Record<NumberedDeviceGroup, string[]> = {
   cameras: ['cam-black', 'cam-white'],
@@ -105,9 +105,12 @@ export const NUMBERED_GROUPS: Record<NumberedDeviceGroup, string[]> = {
   speakers: ['speaker-roof', 'speaker-roof-gear', 'speaker-wall', 'speaker-wall-filled'],
   // Data outlets are numbered in PLACEMENT order (not left-to-right) so
   // cable labels match the installation sequence the electrician
-  // physically runs them in. Wi-Fi APs are excluded — they're devices,
-  // not data drops.
+  // physically runs them in.
   data: ['cat6-data', 'rg6-coax'],
+  // WiFi APs get their own number space (AP1, AP2…) — also chronological,
+  // same rationale as data: they're Cat6 drops the electrician needs to
+  // label as they run them.
+  access_points: ['wifi-ap'],
 };
 
 export interface WhitewashRect {
