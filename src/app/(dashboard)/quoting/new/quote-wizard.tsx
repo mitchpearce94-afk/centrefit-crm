@@ -147,6 +147,47 @@ function rulesForTemplate(allRules: RuleRow[], templateId: string | null, produc
 
 const STEPS = ["Client", "Rules", "BOM", "Labour", "Extras", "Summary"];
 
+// Manual-mode step labels. Step 1 (Rules) is skipped entirely and step 4
+// (Extras) becomes "Scope" — a plain SoW textbox instead of the freight /
+// electrician extras editor. Indices line up with the canonical STEPS array
+// so the underlying step === N renders don't have to be re-indexed.
+const STEPS_MANUAL_DISPLAY: { idx: number; label: string }[] = [
+  { idx: 0, label: "Client" },
+  { idx: 2, label: "BOM" },
+  { idx: 3, label: "Labour" },
+  { idx: 4, label: "Scope" },
+  { idx: 5, label: "Summary" },
+];
+
+interface ManualLabourLine {
+  id: string;
+  description: string;
+  category: string; // "Labour" | "Shipping" | "Call-out" | custom
+  quantity: number;
+  unitAmount: number;
+}
+
+const MANUAL_LABOUR_CATEGORIES = ["Labour", "Shipping", "Call-out", "Other"] as const;
+
+// Seeded boilerplate for the manual-quote Scope of Works textbox. Keeps the
+// "no electrical works" exclusion + closing standards paragraph from the
+// auto-generated SoW; drops the assumptions block (Mitchell: "no assumptions
+// on that scope of works"). Users edit the middle to describe the actual job.
+const MANUAL_SCOPE_BOILERPLATE = `ANY AND ALL ELECTRICAL WORKS ARE NOT INCLUDED IN THIS QUOTE
+
+[Describe the scope of works for this job here.]
+
+Standards & codes of practice
+Installation complies with: AS/NZS 2201.1-2007 (Intruder alarm systems) · AS 4806 (CCTV — management & operation) · AS/NZS 62676.1.2:2020 (Video surveillance) · AS/NZS IEC 60839.11.1:2019 (Electronic access control) · AS/CA S009:2020 (Customer cabling — wiring rules)`;
+
+function defaultManualLabourLines(): ManualLabourLine[] {
+  return [
+    { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "Labour", category: "Labour", quantity: 0, unitAmount: 150 },
+    { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "Call-out", category: "Call-out", quantity: 0, unitAmount: 80 },
+    { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "Shipping", category: "Shipping", quantity: 1, unitAmount: 0 },
+  ];
+}
+
 const DRAFT_KEY = "centrefit-quote-draft";
 
 interface ManualBomItem {
@@ -192,6 +233,7 @@ interface ExistingQuote {
   quoteMode?: "plan" | "manual";
   isInterstate?: boolean;
   manualScope?: string;
+  manualLabourLines?: ManualLabourLine[];
 }
 
 export function QuoteWizard({
@@ -330,7 +372,15 @@ export function QuoteWizard({
 
   // Manual mode state — rehydrate from saved line items if this quote was
   // saved in manual mode.
-  const [manualScope, setManualScope] = useState(existingQuote?.manualScope ?? "");
+  const [manualScope, setManualScope] = useState(
+    existingQuote?.manualScope ??
+      (existingQuote?.quoteMode === "manual" ? "" : MANUAL_SCOPE_BOILERPLATE),
+  );
+  const [manualLabourLines, setManualLabourLines] = useState<ManualLabourLine[]>(
+    existingQuote?.manualLabourLines && existingQuote.manualLabourLines.length > 0
+      ? existingQuote.manualLabourLines
+      : defaultManualLabourLines(),
+  );
   const [manualBomItems, setManualBomItems] = useState<ManualBomItem[]>(
     existingQuote?.quoteMode === "manual"
       ? _savedAsBomItems.map((item) => ({
@@ -346,9 +396,12 @@ export function QuoteWizard({
         }))
       : []
   );
-  const [manualLabourHours, setManualLabourHours] = useState(0);
-  const [manualLabourAmount, setManualLabourAmount] = useState(0);
-  const [manualCalloutDays, setManualCalloutDays] = useState(0);
+  // Legacy manual labour state — superseded by manualLabourLines. Kept so
+  // old in-localStorage drafts (which still write these fields) don't fail
+  // type checks when rehydrating. Not rendered anywhere.
+  const [, setManualLabourHours] = useState(0);
+  const [, setManualLabourAmount] = useState(0);
+  const [, setManualCalloutDays] = useState(0);
   const [manualBomSearch, setManualBomSearch] = useState("");
 
   // Draft persistence
@@ -545,6 +598,7 @@ export function QuoteWizard({
       if (d.manualLabourHours != null) setManualLabourHours(d.manualLabourHours);
       if (d.manualLabourAmount != null) setManualLabourAmount(d.manualLabourAmount);
       if (d.manualCalloutDays != null) setManualCalloutDays(d.manualCalloutDays);
+      if (Array.isArray(d.manualLabourLines)) setManualLabourLines(d.manualLabourLines);
       if (d.electricianCost != null) setElectricianCost(d.electricianCost);
       if (d.elecDoingRoughIn != null) setElecDoingRoughIn(d.elecDoingRoughIn);
       if (d.elecDoingFitOff != null) setElecDoingFitOff(d.elecDoingFitOff);
@@ -565,8 +619,8 @@ export function QuoteWizard({
         localStorage.setItem(DRAFT_KEY, JSON.stringify({
           step, quoteMode, customerId, siteId, clientName, siteName, siteAddress, siteInfo,
           deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
-          linkedJobId, selectedPlanId, manualScope, manualBomItems,
-          manualLabourHours, manualLabourAmount, manualCalloutDays, electricianCost,
+          linkedJobId, selectedPlanId, manualScope, manualBomItems, manualLabourLines,
+          electricianCost,
           elecDoingRoughIn, elecDoingFitOff,
         }));
       } catch {}
@@ -574,8 +628,8 @@ export function QuoteWizard({
     return () => clearTimeout(timer);
   }, [step, quoteMode, customerId, siteId, clientName, siteName, siteAddress, siteInfo,
     deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
-    linkedJobId, selectedPlanId, manualScope, manualBomItems,
-    manualLabourHours, manualLabourAmount, manualCalloutDays, electricianCost,
+    linkedJobId, selectedPlanId, manualScope, manualBomItems, manualLabourLines,
+    electricianCost,
     elecDoingRoughIn, elecDoingFitOff]);
 
   // Warn on unload
@@ -823,13 +877,13 @@ export function QuoteWizard({
         regenerateLabour();
       }
     } else if (quoteMode === "manual") {
-      // Manual mode now uses the same labour engine — generate a starter
-      // breakdown from BOM × labour_code when entering the Labour step.
-      if (newStep === 3 && !labourData) {
-        regenerateLabour();
-      }
-      if (newStep === 5) {
-        regenerateLabour();
+      // Manual mode owns its own labour state (manualLabourLines). We never
+      // auto-generate plan-style labourData here — that flow is reserved for
+      // plan-based quotes.
+      // Skip the Rules step entirely going forward; clicking Back from BOM
+      // also lands on Client, not Rules.
+      if (newStep === 1) {
+        newStep = step < 1 ? 2 : 0;
       }
     }
     setStep(newStep);
@@ -863,31 +917,50 @@ export function QuoteWizard({
     return { totalCost, totalSell, totalProfit: totalSell - totalCost, itemCount: manualBomItems.reduce((s, i) => s + i.quantity, 0) };
   }, [manualBomItems]);
 
-  // Manual labour data builder
+  // Manual labour data builder. Manual quotes are now driven by an invoice-
+  // style line-item editor (description × qty × unit price). Cost == sell on
+  // manual quotes — the operator's already pricing each line for the customer
+  // and we don't carry a separate margin model the way plan-mode rules do.
   const costRate = billingSettings?.labour_cost_rate ?? 85;
   const sellRate = billingSettings?.labour_sell_rate ?? 150;
 
-  const calloutTotal = manualCalloutDays * 80;
-  const manualLabourData: LabourData = useMemo(() => ({
-    sections: [{
-      name: "Labour",
+  const manualLabourData: LabourData = useMemo(() => {
+    const sectionsByCategory = new Map<string, { name: string; total: number; lines: ManualLabourLine[] }>();
+    for (const line of manualLabourLines) {
+      const cat = line.category || "Labour";
+      const lineTotal = (Number(line.quantity) || 0) * (Number(line.unitAmount) || 0);
+      if (!sectionsByCategory.has(cat)) sectionsByCategory.set(cat, { name: cat, total: 0, lines: [] });
+      const section = sectionsByCategory.get(cat)!;
+      section.total += lineTotal;
+      section.lines.push(line);
+    }
+    const sections = Array.from(sectionsByCategory.values()).map((s) => ({
+      name: s.name,
       mandatory: false,
       warning: null,
-      items: [
-        { name: "Labour", formula: `${manualLabourHours} hrs × $${sellRate}`, defaultHours: manualLabourHours, hours: manualLabourHours },
-        { name: "Callout", formula: `${manualCalloutDays} days × $80`, defaultHours: manualCalloutDays, hours: manualCalloutDays, unitRate: 80, unitLabel: "days" },
-      ],
-      totalHours: manualLabourHours,
-      totalCost: manualLabourHours * costRate + calloutTotal,
-      totalSell: manualLabourHours * sellRate + calloutTotal,
-    }],
-    fixedCosts: [],
-    grandTotalHours: manualLabourHours,
-    grandTotalCost: manualLabourHours * costRate + manualLabourAmount + calloutTotal,
-    grandTotalSell: manualLabourHours * sellRate + manualLabourAmount + calloutTotal,
-    costRate,
-    sellRate,
-  }), [manualLabourHours, manualLabourAmount, manualCalloutDays, calloutTotal, costRate, sellRate]);
+      items: s.lines.map((l) => ({
+        name: l.description || s.name,
+        formula: `${l.quantity || 0} × $${l.unitAmount || 0}`,
+        defaultHours: Number(l.quantity) || 0,
+        hours: Number(l.quantity) || 0,
+        unitRate: Number(l.unitAmount) || 0,
+        unitLabel: s.name === "Labour" ? "hrs" : "x",
+      })),
+      totalHours: s.lines.reduce((sum, l) => sum + (Number(l.quantity) || 0), 0),
+      totalCost: s.total,
+      totalSell: s.total,
+    }));
+    const grandTotal = sections.reduce((sum, s) => sum + s.totalSell, 0);
+    return {
+      sections,
+      fixedCosts: [],
+      grandTotalHours: sections.reduce((sum, s) => sum + s.totalHours, 0),
+      grandTotalCost: grandTotal,
+      grandTotalSell: grandTotal,
+      costRate,
+      sellRate,
+    };
+  }, [manualLabourLines, costRate, sellRate]);
 
   // Manual BOM items converted to BOMItem format for summary calculation
   const manualBomAsBomItems: BOMItem[] = useMemo(() =>
@@ -919,12 +992,11 @@ export function QuoteWizard({
 
   const summary: QuoteSummary | null = useMemo(() => {
     if (quoteMode === "manual") {
-      // Manual mode now uses real labourData when available (computed from BOM
-      // × labour_code on entering the Labour step). Falls back to the legacy
-      // manualLabourData for old quotes that haven't entered the Labour step
-      // since the unification.
-      const effective = labourData ?? manualLabourData;
-      return calculateQuoteSummary(manualBomAsBomItems, effective, extras, { discountPercent, electricianCost, isInterstate });
+      // Manual mode is driven entirely by the line-item editor — no BOM-
+      // derived labour, no extras (electrician / freight live as labour
+      // lines now if the user wants them). Zero out extras + electrician
+      // so the summary reflects only what the user explicitly entered.
+      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, [], { discountPercent, electricianCost: 0, isInterstate: false });
     }
     if (!labourData) return null;
     return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent, electricianCost, isInterstate });
@@ -1050,7 +1122,9 @@ export function QuoteWizard({
         // Persist the user's labour-line deletions so regen doesn't
         // resurrect them next time the quote is edited.
         deleted_labour_keys: Array.from(deletedLabourKeys),
-        ...(quoteMode === "manual" ? { scope_of_works: manualScope, quote_mode: "manual" } : { quote_mode: "plan" }),
+        ...(quoteMode === "manual"
+          ? { scope_of_works: manualScope, quote_mode: "manual", manual_labour_lines: manualLabourLines }
+          : { quote_mode: "plan" }),
       },
       discount_percent: discountPercent,
       electrician_cost: electricianCost || 0,
@@ -1328,11 +1402,14 @@ export function QuoteWizard({
         </div>
       )}
 
-      {/* Step indicator */}
+      {/* Step indicator — manual mode hides "Rules" (no rules apply) and
+          renames "Extras" to "Scope" (the SoW textbox replaces the freight/
+          electrician extras editor). Indices use the canonical STEPS values
+          so existing `step === N` renders keep working. */}
       <div className="flex gap-1 mb-6">
-        {STEPS.map((name, i) => (
-          <button key={name} onClick={() => enterStep(i)} className={`flex-1 rounded-md py-2 text-xs font-medium transition-colors ${i === step ? "bg-primary text-primary-foreground" : i < step ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"}`}>
-            {i + 1}. {name}
+        {(quoteMode === "manual" ? STEPS_MANUAL_DISPLAY : STEPS.map((label, idx) => ({ idx, label }))).map(({ idx, label }, i) => (
+          <button key={label} onClick={() => enterStep(idx)} className={`flex-1 rounded-md py-2 text-xs font-medium transition-colors ${idx === step ? "bg-primary text-primary-foreground" : idx < step ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"}`}>
+            {i + 1}. {label}
           </button>
         ))}
       </div>
@@ -2197,104 +2274,99 @@ export function QuoteWizard({
         </div>
       )}
 
-      {/* STEP 4: LABOUR */}
-      {/* Legacy manual labour UI — only renders if labourData hasn't been generated
-          yet (e.g. opening an old manual quote saved before the labour engine
-          was unified). Entering the Labour step now auto-generates labourData
-          for both modes, so this branch is mostly a safety net. */}
-      {step === 3 && quoteMode === "manual" && !labourData && (
-        <div className="space-y-5 max-w-2xl">
-          <div className="grid grid-cols-4 gap-3">
-            <div className="rounded-lg border border-border bg-card p-4 text-center">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase">Total Hours</p>
-              <p className="text-lg font-bold font-mono mt-1">{manualLabourHours}h</p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-4 text-center">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase">Labour Rate</p>
-              <p className="text-lg font-bold font-mono mt-1">${fmt(sellRate)}/hr</p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-4 text-center">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase">Callout</p>
-              <p className="text-lg font-bold font-mono mt-1">${fmt(calloutTotal)}</p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-4 text-center">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase">Labour Total</p>
-              <p className="text-lg font-bold font-mono mt-1">${fmt(manualLabourHours * sellRate + calloutTotal + manualLabourAmount)}</p>
-            </div>
-          </div>
-
+      {/* STEP 4: LABOUR — manual mode */}
+      {/* Invoice-style line-item editor. Users pick a category (Labour /
+          Shipping / Call-out / Other), describe the line, set qty × unit
+          price. Cost == sell on manual quotes — the operator's already
+          decided the price. */}
+      {step === 3 && quoteMode === "manual" && (
+        <div className="space-y-4 max-w-3xl">
           <div className="rounded-lg border border-border overflow-hidden">
-            <div className="bg-muted/50 px-4 py-2.5 border-b border-border">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Labour</h3>
+            <div className="grid grid-cols-[140px_1fr_80px_120px_120px_32px] gap-2 bg-muted/50 px-4 py-2.5 border-b border-border text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+              <span>Type</span>
+              <span>Description</span>
+              <span className="text-center">Qty</span>
+              <span className="text-right">Unit $</span>
+              <span className="text-right">Total</span>
+              <span></span>
             </div>
             <div className="divide-y divide-border">
-              <div className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="text-sm">Labour Hours</p>
-                  <p className="text-[10px] text-muted-foreground">Rate: ${fmt(sellRate)}/hr (cost: ${fmt(costRate)}/hr)</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.25"
-                    value={manualLabourHours || ""}
-                    onChange={(e) => setManualLabourHours(parseFloat(e.target.value) || 0)}
-                    placeholder="0"
-                    className="w-20 rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                  <span className="text-[10px] text-muted-foreground w-6">hrs</span>
-                  <span className="w-24 text-right text-sm font-mono">${fmt(manualLabourHours * sellRate)}</span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="text-sm">Callout</p>
-                  <p className="text-[10px] text-muted-foreground">$80 per day on site</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={manualCalloutDays || ""}
-                    onChange={(e) => setManualCalloutDays(parseInt(e.target.value) || 0)}
-                    placeholder="0"
-                    className="w-20 rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                  <span className="text-[10px] text-muted-foreground w-6">days</span>
-                  <span className="w-24 text-right text-sm font-mono">${fmt(manualCalloutDays * 80)}</span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="text-sm">Additional Costs</p>
-                  <p className="text-[10px] text-muted-foreground">Flat amount for misc labour costs</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={manualLabourAmount || ""}
-                    onChange={(e) => setManualLabourAmount(parseFloat(e.target.value) || 0)}
-                    placeholder="$0"
-                    className="w-20 rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                  <span className="text-[10px] text-muted-foreground w-6">$</span>
-                  <span className="w-24 text-right text-sm font-mono">${fmt(manualLabourAmount)}</span>
-                </div>
-              </div>
+              {manualLabourLines.map((line) => {
+                const lineTotal = (Number(line.quantity) || 0) * (Number(line.unitAmount) || 0);
+                return (
+                  <div key={line.id} className="grid grid-cols-[140px_1fr_80px_120px_120px_32px] gap-2 items-center px-4 py-2">
+                    <select
+                      value={MANUAL_LABOUR_CATEGORIES.includes(line.category as typeof MANUAL_LABOUR_CATEGORIES[number]) ? line.category : "Other"}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setManualLabourLines((prev) => prev.map((l) => l.id === line.id ? { ...l, category: v } : l));
+                      }}
+                      className="rounded-md border border-border bg-input px-2 py-1 text-xs focus:border-primary focus:outline-none"
+                    >
+                      {MANUAL_LABOUR_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <input
+                      type="text"
+                      value={line.description}
+                      onChange={(e) => setManualLabourLines((prev) => prev.map((l) => l.id === line.id ? { ...l, description: e.target.value } : l))}
+                      placeholder="e.g. Site install — 8 hours"
+                      className="rounded-md border border-border bg-input px-2 py-1 text-xs focus:border-primary focus:outline-none"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.25"
+                      value={line.quantity || ""}
+                      onChange={(e) => setManualLabourLines((prev) => prev.map((l) => l.id === line.id ? { ...l, quantity: parseFloat(e.target.value) || 0 } : l))}
+                      placeholder="0"
+                      className="rounded-md border border-border bg-input px-2 py-1 text-xs text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={line.unitAmount || ""}
+                      onChange={(e) => setManualLabourLines((prev) => prev.map((l) => l.id === line.id ? { ...l, unitAmount: parseFloat(e.target.value) || 0 } : l))}
+                      placeholder="0.00"
+                      className="rounded-md border border-border bg-input px-2 py-1 text-xs text-right font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    <span className="text-right text-xs font-mono text-foreground">${fmt(lineTotal)}</span>
+                    <button
+                      type="button"
+                      onClick={() => setManualLabourLines((prev) => prev.length > 1 ? prev.filter((l) => l.id !== line.id) : prev)}
+                      disabled={manualLabourLines.length <= 1}
+                      className="text-muted-foreground hover:text-red-400 disabled:opacity-30 transition-colors"
+                      title="Remove line"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                );
+              })}
             </div>
-            <div className="flex items-center justify-between px-4 py-2.5 bg-muted/30 border-t border-border">
-              <span className="text-xs font-medium text-muted-foreground">Total Labour (sell)</span>
-              <span className="text-sm font-mono font-medium">${fmt(manualLabourHours * sellRate + calloutTotal + manualLabourAmount)}</span>
+            <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-t border-border">
+              <button
+                type="button"
+                onClick={() => setManualLabourLines((prev) => [...prev, { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "", category: "Labour", quantity: 1, unitAmount: 0 }])}
+                className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              >
+                + Add line
+              </button>
+              <div className="text-sm font-mono">
+                <span className="text-muted-foreground text-xs mr-3">Total</span>
+                <span className="font-semibold">${fmt(manualLabourData.grandTotalSell)}</span>
+              </div>
             </div>
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            Manual quotes price each line directly — unit price is what the customer pays per unit (ex GST). Cost equals sell here; there's no separate margin like in plan-based quotes.
+          </p>
         </div>
       )}
 
-      {step === 3 && labourData && (
+      {step === 3 && quoteMode !== "manual" && labourData && (
         <div className="space-y-5">
           {/* Docklands warning */}
           {labourWarnings.length > 0 && (
@@ -2428,8 +2500,38 @@ export function QuoteWizard({
         </div>
       )}
 
-      {/* STEP 5: EXTRAS */}
-      {step === 4 && (
+      {/* STEP 5: SCOPE OF WORKS — manual mode only */}
+      {step === 4 && quoteMode === "manual" && (
+        <div className="space-y-4 max-w-3xl">
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
+              Scope of Works
+            </label>
+            <p className="text-[11px] text-muted-foreground mb-2">
+              Plain-text scope shown on the customer-facing quote. The "no electrical works" exclusion and the standards-and-codes paragraph are pre-filled — edit the middle section to describe the actual job. No assumptions are auto-generated.
+            </p>
+            <textarea
+              value={manualScope}
+              onChange={(e) => setManualScope(e.target.value)}
+              rows={20}
+              placeholder="Write the scope of works for this job…"
+              className="w-full resize-y rounded-md border border-border bg-input px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none font-mono whitespace-pre-wrap break-words"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setManualScope(MANUAL_SCOPE_BOILERPLATE)}
+              className="rounded-md border border-border px-3 py-1.5 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            >
+              Reset to boilerplate
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* STEP 5: EXTRAS — plan mode */}
+      {step === 4 && quoteMode !== "manual" && (
         <div className="max-w-2xl">
           <p className="text-xs text-muted-foreground mb-4">Freight, travel, accommodation, and other costs. Leave at $0 for items not applicable.</p>
           <div className="rounded-lg border border-border overflow-hidden">
@@ -2614,29 +2716,41 @@ export function QuoteWizard({
         </div>
       )}
 
-      {/* Navigation */}
-      <div className="flex items-center gap-3 mt-8 pt-4 border-t border-border">
-        {step > 0 && (
-          <button onClick={() => enterStep(step - 1)} className="rounded-md border border-border px-5 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Back</button>
-        )}
-        <div className="flex-1" />
-        {step < STEPS.length - 1 && (() => {
-          const blocked = step === 0 && !linkedJobId;
-          return (
-            <button
-              onClick={() => enterStep(step + 1)}
-              disabled={blocked}
-              title={blocked ? "Link this quote to a job to continue" : undefined}
-              className="rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >Next</button>
-          );
-        })()}
-        {step === STEPS.length - 1 && (
-          <button onClick={handleSave} disabled={saving || labourWarnings.length > 0} className="rounded-md bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
-            {saving ? "Saving..." : "Save Quote"}
-          </button>
-        )}
-      </div>
+      {/* Navigation — Next/Back walk the visible-step sequence so manual
+          mode skips Rules cleanly in both directions. */}
+      {(() => {
+        const sequence = quoteMode === "manual"
+          ? STEPS_MANUAL_DISPLAY.map((s) => s.idx)
+          : STEPS.map((_, i) => i);
+        const pos = sequence.indexOf(step);
+        const prevStep = pos > 0 ? sequence[pos - 1] : null;
+        const nextStep = pos >= 0 && pos < sequence.length - 1 ? sequence[pos + 1] : null;
+        const isLast = pos === sequence.length - 1;
+        return (
+          <div className="flex items-center gap-3 mt-8 pt-4 border-t border-border">
+            {prevStep !== null && (
+              <button onClick={() => enterStep(prevStep)} className="rounded-md border border-border px-5 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Back</button>
+            )}
+            <div className="flex-1" />
+            {nextStep !== null && (() => {
+              const blocked = step === 0 && !linkedJobId;
+              return (
+                <button
+                  onClick={() => enterStep(nextStep)}
+                  disabled={blocked}
+                  title={blocked ? "Link this quote to a job to continue" : undefined}
+                  className="rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >Next</button>
+              );
+            })()}
+            {isLast && (
+              <button onClick={handleSave} disabled={saving || labourWarnings.length > 0} className="rounded-md bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
+                {saving ? "Saving..." : "Save Quote"}
+              </button>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

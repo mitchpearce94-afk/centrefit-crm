@@ -35,7 +35,7 @@ export default async function InvoiceDetailPage({
   const { data: invoice, error } = await supabase
     .from("invoices")
     .select(
-      "*, customer:customers(id, name), quote:quotes(id, ref, status, site:customer_sites(id, name, address, suburb)), job:jobs(id, number, site:customer_sites(id, name, address, suburb))"
+      "*, customer:customers(id, name, customer_contacts(name, email, is_primary)), quote:quotes(id, ref, status, site:customer_sites(id, name, address, suburb)), job:jobs(id, number, site:customer_sites(id, name, address, suburb))"
     )
     .eq("id", id)
     .single();
@@ -101,9 +101,17 @@ export default async function InvoiceDetailPage({
         </div>
         <InvoiceActions
           invoiceId={inv.id}
+          invoiceRef={inv.xero_invoice_number ?? null}
           payLink={inv.xero_online_url}
           status={inv.status}
           xeroInvoiceId={inv.xero_invoice_id}
+          sentAt={inv.sent_at ?? null}
+          sentToEmail={inv.sent_to_email ?? null}
+          defaultRecipient={(() => {
+            const contacts = inv.customer?.customer_contacts ?? [];
+            const primary = contacts.find((c: { is_primary: boolean | null }) => c.is_primary) ?? contacts[0];
+            return primary?.email ?? null;
+          })()}
         />
       </div>
 

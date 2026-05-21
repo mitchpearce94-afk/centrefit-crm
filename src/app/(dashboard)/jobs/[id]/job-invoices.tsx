@@ -548,7 +548,7 @@ export function JobInvoices({
                   onChange={(e) => setDescription(e.target.value)}
                   rows={14}
                   placeholder="Describe the work completed…"
-                  className="w-full resize-y rounded-md border border-border bg-input px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none font-mono whitespace-pre"
+                  className="w-full resize-y rounded-md border border-border bg-input px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none font-mono whitespace-pre-wrap break-words"
                 />
               </div>
 

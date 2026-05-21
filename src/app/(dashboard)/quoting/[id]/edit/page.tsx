@@ -70,6 +70,9 @@ export default async function EditQuotePage({
     quoteMode: (quote.quote_mode as "plan" | "manual" | undefined) ?? "plan",
     isInterstate: quote.is_interstate ?? false,
     manualScope: quote.labour_data?.scope_of_works ?? "",
+    manualLabourLines: Array.isArray(quote.labour_data?.manual_labour_lines)
+      ? quote.labour_data.manual_labour_lines
+      : undefined,
   };
 
   // Merge plans: include the one linked to this quote so the dropdown can show it

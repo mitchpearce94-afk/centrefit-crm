@@ -72,10 +72,15 @@ const AUTO_TRANSITIONS: Record<string, { from: string[]; to: string }> = {
     ],
     to: 'Ready to Invoice',
   },
+  // Any invoice raised on a Ready-to-Invoice job marks the job Complete.
+  // Payment tracking lives in Xero, not in the job board — there's no value
+  // in parking the job at a separate "Invoice Sent" interstitial.
   invoice_sent: {
     from: ['Ready to Invoice'],
-    to: 'Invoice Sent',
+    to: 'Complete',
   },
+  // Kept for historical jobs that landed on "Invoice Sent" before the rule
+  // change. New jobs skip "Invoice Sent" entirely.
   payment_received: {
     from: ['Invoice Sent'],
     to: 'Complete',

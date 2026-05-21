@@ -62,12 +62,23 @@ export async function POST(
     return NextResponse.json({ error: updErr.message }, { status: 500 });
   }
 
-  // Auto-transition the linked job. PP1 / full invoices park the job at
-  // "Awaiting Invoice Payment" until the webhook confirms payment. PP2 final
-  // invoices keep the existing `invoice_sent → Invoice Sent` rule, which
-  // applies from "Ready to Invoice" only.
+  // Auto-transition the linked job:
+  //   - If the job is in "Ready to Invoice", any invoice authorisation marks
+  //     it Complete (invoice_sent rule). Covers PP2 finals, full invoices on
+  //     wrapped jobs, and variance invoices on completed work.
+  //   - Otherwise PP1 / full invoices park the job at "Awaiting Invoice
+  //     Payment" until the Xero webhook confirms payment.
   if (invoice.job_id) {
-    const action = invoice.invoice_type === "progress_pp2" ? "invoice_sent" : "invoice_authorised";
+    const { data: jobRow } = await supabase
+      .from("jobs")
+      .select("status:statuses(name)")
+      .eq("id", invoice.job_id)
+      .single();
+    const statusField = jobRow?.status as { name: string } | { name: string }[] | null | undefined;
+    const currentStatus = Array.isArray(statusField)
+      ? statusField[0]?.name
+      : statusField?.name;
+    const action = currentStatus === "Ready to Invoice" ? "invoice_sent" : "invoice_authorised";
     try {
       await autoTransitionJobStatusServer(invoice.job_id, action, supabase);
     } catch (err) {
