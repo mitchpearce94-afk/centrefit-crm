@@ -209,7 +209,7 @@ function QuotingPanel({
       <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center">
         <p className="text-sm text-muted-foreground mb-3">No quotes linked to this job yet.</p>
         <Link
-          href={`/quoting/new?jobId=${jobId}`}
+          href={`/quoting/new?job=${jobId}`}
           className="inline-flex rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
           + New quote for this job
@@ -235,7 +235,7 @@ function QuotingPanel({
         </Link>
       ))}
       <Link
-        href={`/quoting/new?jobId=${jobId}`}
+        href={`/quoting/new?job=${jobId}`}
         className="inline-flex rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors mt-3"
       >
         + Add another quote
@@ -369,7 +369,7 @@ function JobOverview({
             <span className="text-sm text-muted-foreground">Not scheduled</span>
           )}
           <Link
-            href="/scheduler"
+            href={`/scheduler?jobId=${jobId}`}
             className="flex items-center rounded-md border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-primary hover:border-primary transition-colors"
           >
             {scheduleEntries.length > 0 ? "Open Scheduler" : "Schedule this job"}

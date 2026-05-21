@@ -271,8 +271,11 @@ export function QuoteWizard({
     (existingQuote?.quoteType as "full" | "progress") || "full"
   );
 
-  // Job linking
-  const [linkedJobId, setLinkedJobId] = useState(existingQuote?.jobId || searchParams.get("job") || "");
+  // Job linking. Accept either ?job= (from /plans CompletePlanModal) or
+  // ?jobId= (historical alias) so links from any caller pre-fill.
+  const [linkedJobId, setLinkedJobId] = useState(
+    existingQuote?.jobId || searchParams.get("job") || searchParams.get("jobId") || "",
+  );
 
   // Template selection — must be picked before BOM is generated
   const defaultTemplateId =
@@ -303,9 +306,19 @@ export function QuoteWizard({
   // Quote mode: plan-based or manual. MUST be declared before bomItems /
   // manualBomItems so the rehydration logic below can route saved line items
   // into the correct bucket.
-  const [quoteMode, setQuoteMode] = useState<"plan" | "manual">(
-    (existingQuote?.quoteMode as "plan" | "manual" | undefined) ?? "plan"
-  );
+  //
+  // Default routing for a fresh wizard:
+  //   - ?plan=…           → plan-based (came from a plan file)
+  //   - ?job=… (no plan)  → manual (came from a job that wasn't planned)
+  //   - no params         → plan (the standalone "New Quote" button)
+  // Editing an existing quote always restores the saved mode.
+  const [quoteMode, setQuoteMode] = useState<"plan" | "manual">(() => {
+    if (existingQuote?.quoteMode) return existingQuote.quoteMode;
+    const hasPlanParam = !!searchParams.get("plan");
+    const hasJobParam = !!(searchParams.get("job") || searchParams.get("jobId"));
+    if (hasJobParam && !hasPlanParam) return "manual";
+    return "plan";
+  });
 
   // Saved line items get rehydrated into ONE bucket only — manualBomItems for
   // a saved manual quote, bomItems for a plan quote. Loading them into both

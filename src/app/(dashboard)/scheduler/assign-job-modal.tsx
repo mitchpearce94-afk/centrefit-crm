@@ -65,6 +65,7 @@ export function AssignJobModal({
   staff,
   staffName,
   defaultStartTime,
+  defaultJobId,
   onClose,
   onSaved,
 }: {
@@ -75,6 +76,9 @@ export function AssignJobModal({
   staff?: StaffOption[];
   staffName: string;
   defaultStartTime?: string;
+  /** Pre-select this job in the picker — used when the user lands on the
+   *  scheduler from a "Schedule this job" link inside a job detail page. */
+  defaultJobId?: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -90,7 +94,7 @@ export function AssignJobModal({
   );
   const [selectedDate, setSelectedDate] = useState(entry?.schedule_date ?? date);
   const [endDate, setEndDate] = useState(entry?.end_date ?? "");
-  const [jobId, setJobId] = useState(entry?.job_id ?? "");
+  const [jobId, setJobId] = useState(entry?.job_id ?? defaultJobId ?? "");
   const [title, setTitle] = useState(entry?.title ?? "");
   const [startTime, setStartTime] = useState(entry?.start_time?.slice(0, 5) ?? defaultStartTime ?? "");
   const [endTime, setEndTime] = useState(entry?.end_time?.slice(0, 5) ?? "");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { AssignJobModal } from "./assign-job-modal";
 
@@ -113,8 +113,34 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
     if (window.matchMedia("(max-width: 767px)").matches) setView("day");
     setIsTouchDevice(!window.matchMedia("(hover: hover)").matches);
   }, []);
-  const [modal, setModal] = useState<{ staffId: string; date: string; startTime?: string; entry?: ScheduleEntry } | null>(null);
+  const [modal, setModal] = useState<{ staffId: string; date: string; startTime?: string; entry?: ScheduleEntry; defaultJobId?: string } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+
+  // Auto-open the assign modal when arriving from a job detail page with
+  // ?jobId=… so the user lands ready to pick date/staff/time. Runs once on
+  // mount; we strip the param off the URL afterwards so a refresh doesn't
+  // re-trigger and so back-nav lands cleanly.
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const jobId = searchParams.get("jobId");
+    if (!jobId) return;
+    if (!isAdmin) return;
+    // Only auto-open if the job exists in the list — otherwise the dropdown
+    // can't pre-select it. Stale URLs just fall through to the normal grid.
+    if (!jobs.some((j) => j.id === jobId)) return;
+    setModal({
+      staffId: staff[0]?.id ?? "",
+      date: todayStr(),
+      defaultJobId: jobId,
+    });
+    const url = new URL(window.location.href);
+    url.searchParams.delete("jobId");
+    window.history.replaceState({}, "", url.toString());
+    // Intentionally empty deps — this is a mount-only effect that reads the
+    // initial URL. searchParams object reference changes on every render but
+    // we don't want to re-fire.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Drag-and-drop: move entry to new date/time
   async function handleDrop(entryId: string, newDate: string, newHour?: number) {
@@ -324,7 +350,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
       <p className="mt-2 text-[10px] text-muted-foreground">{entries.length} entries this week</p>
 
       {modal && (
-        <AssignJobModal staffId={modal.staffId} date={modal.date} entry={modal.entry} jobs={jobs} staff={staff} staffName={staff.find(s => s.id === modal.staffId)?.display_name ?? ""} defaultStartTime={modal.startTime} onClose={() => setModal(null)} onSaved={() => { setModal(null); router.refresh(); }} />
+        <AssignJobModal staffId={modal.staffId} date={modal.date} entry={modal.entry} jobs={jobs} staff={staff} staffName={staff.find(s => s.id === modal.staffId)?.display_name ?? ""} defaultStartTime={modal.startTime} defaultJobId={modal.defaultJobId} onClose={() => setModal(null)} onSaved={() => { setModal(null); router.refresh(); }} />
       )}
     </div>
   );
