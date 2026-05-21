@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
-import { generateScopeOfWorks } from "@/lib/quote-engine";
+import { generateScopeOfWorks, manualScopeDocument } from "@/lib/quote-engine";
 import { generateQuotePdfBuffer, type QuoteForPdf } from "@/lib/quote-pdf";
 
 /**
@@ -79,13 +79,22 @@ export async function GET(
     if (r.description && r.description.trim().length > 0) roleDescriptions[r.slug] = r.description.trim();
   }
 
-  const scope = generateScopeOfWorks(
-    scopeBom,
-    scopeProducts,
-    siteInfo,
-    quote.scope_overrides ?? undefined,
-    roleDescriptions,
-  );
+  // Manual quotes use the operator-authored scope text verbatim. See the
+  // /api/quotes/[id]/pdf route for the same logic.
+  const manualScopeText =
+    quote.quote_mode === "manual"
+      ? (quote.labour_data?.scope_of_works ?? "").trim()
+      : "";
+
+  const scope = manualScopeText
+    ? manualScopeDocument(manualScopeText)
+    : generateScopeOfWorks(
+        scopeBom,
+        scopeProducts,
+        siteInfo,
+        quote.scope_overrides ?? undefined,
+        roleDescriptions,
+      );
 
   const quoteForPdf: QuoteForPdf = {
     ref: quote.ref,

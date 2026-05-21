@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { Resend } from "resend";
-import { generateScopeOfWorks, renderScopeAsText, type ScopeDocument } from "@/lib/quote-engine";
+import { generateScopeOfWorks, manualScopeDocument, renderScopeAsText, type ScopeDocument } from "@/lib/quote-engine";
 import { generateQuotePdfBuffer, type QuoteForPdf } from "@/lib/quote-pdf";
 import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.server";
 import { emailHeader, emailFooter, emailLayout } from "@/lib/emails/brand";
@@ -111,7 +111,16 @@ export async function POST(req: NextRequest) {
   for (const r of scopeRoleRows ?? []) {
     if (r.description && r.description.trim().length > 0) roleDescriptions[r.slug] = r.description.trim();
   }
-  const scope = generateScopeOfWorks(scopeBom, scopeProducts, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions);
+  // Manual quotes use the operator-authored scope text verbatim. The PDF +
+  // job description mirror keep the same plain text the customer sees on
+  // the response page.
+  const manualScopeText =
+    quote.quote_mode === "manual"
+      ? (quote.labour_data?.scope_of_works ?? "").trim()
+      : "";
+  const scope: ScopeDocument = manualScopeText
+    ? manualScopeDocument(manualScopeText)
+    : generateScopeOfWorks(scopeBom, scopeProducts, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions);
 
   // Mirror the scope-of-works + payment terms into the linked job's description.
   // Quote is the source of truth for scope, so we overwrite on every send —

@@ -678,6 +678,28 @@ export function generateScopeOfWorks(
   };
 }
 
+// ── Manual scope ───────────────────────────────────────────────────────────
+//
+// Manual quotes opt out of the BOM-driven scope generator entirely. The
+// operator wrote the scope free-hand in the wizard's Scope step; we wrap that
+// raw text into a ScopeDocument so the existing PDF/customer-page renderers
+// keep working without a separate code path. All structured blocks (systems,
+// byOthers, hardExclusion, ongoingCosts, assumptions, standards) are empty —
+// the operator's text is the entire scope, exclusion and closing paragraph
+// included. summary.rows is empty so the system × count grid doesn't render.
+
+export function manualScopeDocument(scopeText: string): ScopeDocument {
+  return {
+    summary: { lead: scopeText, rows: [] },
+    systems: [],
+    byOthers: [],
+    hardExclusion: '',
+    ongoingCosts: [],
+    assumptions: [],
+    standards: [],
+  };
+}
+
 // ── Renderers ───────────────────────────────────────────────────────────────
 //
 // Two emitters: HTML (for the customer-facing PDF + email) and plain text
@@ -729,9 +751,12 @@ export function renderScopeAsHtml(scope: ScopeDocument): string {
       </div>`)
     .join('');
 
+  // white-space:pre-wrap so manual quotes' multi-line scope text keeps its
+  // paragraph breaks. Auto-generated scopes never put newlines in
+  // summary.lead so this is a no-op for them.
   const summaryHtml = scope.summary.lead || scope.summary.rows.length > 0 ? `
     <div style="border:1px solid #e2e8f0;border-radius:10px;padding:18px 22px;margin-bottom:24px;background:#fff">
-      <p style="font-size:13px;color:#0f172a;line-height:1.65;margin:0">${escape(scope.summary.lead)}</p>
+      <p style="font-size:13px;color:#0f172a;line-height:1.65;margin:0;white-space:pre-wrap">${escape(scope.summary.lead)}</p>
       ${scope.summary.rows.length > 0 ? `<div style="margin-top:14px;display:grid;grid-template-columns:repeat(2,1fr);gap:8px 24px">${summaryRowsHtml}</div>` : ''}
     </div>` : '';
 

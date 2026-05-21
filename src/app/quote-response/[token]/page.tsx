@@ -1,6 +1,6 @@
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { headers } from "next/headers";
-import { generateScopeOfWorks } from "@/lib/quote-engine";
+import { generateScopeOfWorks, manualScopeDocument } from "@/lib/quote-engine";
 import { logDocumentActivity, shouldLogView } from "@/lib/activity/log";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
 import { QuoteResponseView } from "./response-view";
@@ -82,7 +82,15 @@ export default async function QuoteResponsePage({
   for (const r of scopeRoleRows ?? []) {
     if (r.description && r.description.trim().length > 0) roleDescriptions[r.slug] = r.description.trim();
   }
-  const scope = generateScopeOfWorks(bom, products, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions);
+  // Manual quotes use the operator-authored scope text verbatim — same
+  // logic as the PDF routes.
+  const manualScopeText =
+    quote.quote_mode === "manual"
+      ? (quote.labour_data?.scope_of_works ?? "").trim()
+      : "";
+  const scope = manualScopeText
+    ? manualScopeDocument(manualScopeText)
+    : generateScopeOfWorks(bom, products, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions);
 
   const clientName = quote.customer?.name || quote.client_name;
 

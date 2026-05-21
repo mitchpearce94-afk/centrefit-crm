@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { generateScopeOfWorks } from "@/lib/quote-engine";
+import { generateScopeOfWorks, manualScopeDocument } from "@/lib/quote-engine";
 import { generateQuotePdfBuffer, type QuoteForPdf } from "@/lib/quote-pdf";
 
 /**
@@ -80,13 +80,23 @@ export async function GET(
   }));
   const scopeProducts = (productsResult.data ?? []) as Array<{ id: string; scope_role: string }>;
 
-  const scope = generateScopeOfWorks(
-    scopeBom,
-    scopeProducts,
-    siteInfo,
-    (quote.scope_overrides as Parameters<typeof generateScopeOfWorks>[3]) ?? undefined,
-    roleDescriptions,
-  );
+  // Manual quotes use the operator-authored scope text verbatim. The
+  // generator would otherwise build a system-blocked scope from the BOM,
+  // which is exactly the auto-assumptions behaviour manual mode opts out of.
+  const manualScopeText =
+    (quote as { quote_mode?: string }).quote_mode === "manual"
+      ? ((quote as { labour_data?: { scope_of_works?: string } }).labour_data?.scope_of_works ?? "").trim()
+      : "";
+
+  const scope = manualScopeText
+    ? manualScopeDocument(manualScopeText)
+    : generateScopeOfWorks(
+        scopeBom,
+        scopeProducts,
+        siteInfo,
+        (quote.scope_overrides as Parameters<typeof generateScopeOfWorks>[3]) ?? undefined,
+        roleDescriptions,
+      );
 
   const quoteForPdf: QuoteForPdf = {
     ref: quote.ref,

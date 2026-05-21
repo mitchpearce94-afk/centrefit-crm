@@ -122,6 +122,8 @@ export default async function QuoteDetailPage({
           scopeOverrides={quote.scope_overrides ?? null}
           productScopeRoles={(productsResult.data ?? []) as any}
           roleDescriptions={roleDescriptions}
+          quoteMode={(quote.quote_mode as "plan" | "manual") ?? "plan"}
+          manualScopeText={quote.labour_data?.scope_of_works ?? ""}
           contactEmail={quote.customer?.customer_contacts?.find((c: any) => c.is_primary)?.email ?? null}
           jobId={quote.job_id ?? null}
           jobs={jobs}

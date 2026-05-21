@@ -123,12 +123,16 @@ export async function tryCreatePP2ForJob(
         : undefined;
 
       const header = `Progress Payment 2 — On Completion (Quote ${quote.ref})`;
+      const manualScopeText =
+        quote.quote_mode === "manual"
+          ? ((quote.labour_data as { scope_of_works?: string } | null)?.scope_of_works ?? "")
+          : "";
       const description = formatScopeDescription(
         scopeBom,
         scopeProducts,
         siteInfo,
         quote.scope_overrides ?? null,
-        { siteHeader, milestoneHeader: header },
+        { siteHeader, milestoneHeader: header, manualScopeText },
       );
       const lineItems: XeroLineItemInput[] = [{ description, quantity: 1, unitAmount: amount }];
 

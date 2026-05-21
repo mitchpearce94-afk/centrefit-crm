@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 import { KebabMenu } from "@/components/ui/kebab-menu";
-import { generateScopeOfWorks, renderScopeAsHtml } from "@/lib/quote-engine";
+import { generateScopeOfWorks, manualScopeDocument, renderScopeAsHtml } from "@/lib/quote-engine";
 import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 import type { SiteInfo, ScopeOverrides } from "@/lib/quote-engine";
 import { ScopeEditor } from "./scope-editor";
@@ -30,6 +30,8 @@ interface Props {
   scopeOverrides: ScopeOverrides | null;
   productScopeRoles: { id: string; scope_role: string }[];
   roleDescriptions: Record<string, string>;
+  quoteMode?: "plan" | "manual";
+  manualScopeText?: string;
   contactEmail: string | null;
   jobId: string | null;
   jobs?: { id: string; number: string; customer_name: string | null }[];
@@ -38,7 +40,9 @@ interface Props {
 export function QuoteActions({
   quoteId, status, quoteRef, clientName, siteName, siteAddress,
   quoteType, pricing, deviceCounts, lineItems, createdAt,
-  siteInfo, scopeOverrides, productScopeRoles, roleDescriptions, contactEmail, jobId, jobs = [],
+  siteInfo, scopeOverrides, productScopeRoles, roleDescriptions,
+  quoteMode = "plan", manualScopeText = "",
+  contactEmail, jobId, jobs = [],
 }: Props) {
   const router = useRouter();
   const supabase = createClient();
@@ -147,7 +151,13 @@ export function QuoteActions({
 
   const isProgress = quoteType === "progress";
   const scopeBom = lineItems.map((li: any) => ({ product_id: li.product_id ?? null, quantity: Number(li.quantity) || 0 }));
-  const scope = generateScopeOfWorks(scopeBom, productScopeRoles, siteInfo, scopeOverrides ?? undefined, roleDescriptions);
+  // Manual quotes render the operator-authored scope text verbatim in the
+  // CRM preview window (matches what the customer sees on the response page
+  // and in the PDF attachment).
+  const manualScopeTrimmed = quoteMode === "manual" ? manualScopeText.trim() : "";
+  const scope = manualScopeTrimmed
+    ? manualScopeDocument(manualScopeTrimmed)
+    : generateScopeOfWorks(scopeBom, productScopeRoles, siteInfo, scopeOverrides ?? undefined, roleDescriptions);
   const hasScopeOverrides = !!scopeOverrides;
 
   function openBOMWindow(mode: "warehouse" | "supplier") {
@@ -270,7 +280,7 @@ export function QuoteActions({
                 { label: "Preview Quote", onClick: () => setShowPreview(true) },
                 { label: "Edit Quote", onClick: () => router.push(`/quoting/${quoteId}/edit`), hidden: status !== "draft" },
                 { label: "Duplicate Quote", onClick: handleDuplicate },
-                { label: `Scope of Works${hasScopeOverrides ? " • Edited" : ""}`, onClick: () => setShowScopeEditor(true) },
+                { label: `Scope of Works${hasScopeOverrides ? " • Edited" : ""}`, onClick: () => setShowScopeEditor(true), hidden: quoteMode === "manual" },
                 { label: "Warehouse Pick List", onClick: () => openBOMWindow("warehouse") },
                 { label: "Supplier Orders", onClick: () => openBOMWindow("supplier") },
               ],

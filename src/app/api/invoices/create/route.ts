@@ -136,6 +136,10 @@ export async function POST(req: NextRequest) {
       quantity: Number(r.quantity) || 0,
     }));
     const scopeProducts = (scopeProductRows ?? []) as Array<{ id: string; scope_role: string }>;
+    const manualScopeText =
+      quote.quote_mode === "manual"
+        ? (quote.labour_data?.scope_of_works ?? "")
+        : "";
 
     if (body.type === "full") {
       if (quote.quote_type === "progress") {
@@ -149,7 +153,7 @@ export async function POST(req: NextRequest) {
         scopeProducts,
         siteInfo,
         quote.scope_overrides ?? null,
-        { siteHeader, milestoneHeader: `CentreFit Installation — Quote ${quote.ref}` },
+        { siteHeader, milestoneHeader: `CentreFit Installation — Quote ${quote.ref}`, manualScopeText },
       );
       headerDescription = `Installation per quote ${quote.ref}`;
       lineItems = [{
@@ -197,7 +201,7 @@ export async function POST(req: NextRequest) {
         scopeProducts,
         siteInfo,
         quote.scope_overrides ?? null,
-        { siteHeader, milestoneHeader: header },
+        { siteHeader, milestoneHeader: header, manualScopeText },
       );
       headerDescription = header;
       lineItems = [{

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { generateScopeOfWorks, renderScopeAsText } from "@/lib/quote-engine";
+import { generateScopeOfWorks, manualScopeDocument, renderScopeAsText } from "@/lib/quote-engine";
 
 function formatAud(n: number): string {
   return n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -62,13 +62,22 @@ export async function syncQuoteScopeToJob(
     }
   }
 
-  const scope = generateScopeOfWorks(
-    bom,
-    products,
-    siteInfo,
-    quote.scope_overrides ?? undefined,
-    roleDescriptions,
-  );
+  // Manual quotes mirror their operator-authored text into the job. The
+  // structured renderer would otherwise dump a system-blocked layout that
+  // doesn't match what the customer received.
+  const manualScopeText =
+    quote.quote_mode === "manual"
+      ? (quote.labour_data?.scope_of_works ?? "").trim()
+      : "";
+  const scope = manualScopeText
+    ? manualScopeDocument(manualScopeText)
+    : generateScopeOfWorks(
+        bom,
+        products,
+        siteInfo,
+        quote.scope_overrides ?? undefined,
+        roleDescriptions,
+      );
   const scopeText = renderScopeAsText(scope);
 
   const isProgress = quote.quote_type === "progress";

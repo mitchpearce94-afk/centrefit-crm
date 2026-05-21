@@ -1,6 +1,7 @@
 import type { XeroClient } from "xero-node";
 import {
   generateScopeOfWorks,
+  manualScopeDocument,
   renderScopeAsText,
   type ScopeOverrides,
   type SiteInfo,
@@ -226,6 +227,12 @@ export interface ScopeDescriptionOptions {
   /** Milestone label for progress invoices, e.g. "Progress Payment 1 — On Acceptance". */
   milestoneHeader?: string;
   roleDescriptions?: Record<string, string>;
+  /**
+   * Manual-quote scope text. When provided, the BOM-driven scope generator
+   * is skipped entirely and this text is used verbatim as the invoice line
+   * body — matching the scope the customer accepted on the quote.
+   */
+  manualScopeText?: string;
 }
 
 /**
@@ -243,7 +250,10 @@ export function formatScopeDescription(
   overrides: ScopeOverrides | null | undefined,
   opts: ScopeDescriptionOptions = {},
 ): string {
-  const scope = generateScopeOfWorks(bom, products, siteInfo, overrides ?? undefined, opts.roleDescriptions);
+  const manualText = opts.manualScopeText?.trim();
+  const scope = manualText
+    ? manualScopeDocument(manualText)
+    : generateScopeOfWorks(bom, products, siteInfo, overrides ?? undefined, opts.roleDescriptions);
   const body = renderScopeAsText(scope);
   const parts: string[] = [INVOICE_LINE_HEADLINE];
   if (opts.siteHeader) parts.push(opts.siteHeader.replace(/\n+$/, ''));

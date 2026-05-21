@@ -119,6 +119,11 @@ export async function createInvoiceFromAcceptedQuote(
   let lineItems: XeroLineItemInput[];
   let subtotal: number;
 
+  const manualScopeText =
+    quote.quote_mode === "manual"
+      ? (quote.labour_data?.scope_of_works ?? "")
+      : "";
+
   if (type === "full") {
     const amount = Number(pricing.totalExGST ?? 0);
     if (amount <= 0) throw new Error("Quote has no billable total");
@@ -127,7 +132,7 @@ export async function createInvoiceFromAcceptedQuote(
       scopeProducts,
       siteInfo,
       quote.scope_overrides ?? null,
-      { siteHeader },
+      { siteHeader, manualScopeText },
     );
     headerDescription = `Installation per quote ${quote.ref}`;
     lineItems = [{ description, quantity: 1, unitAmount: amount }];
@@ -140,7 +145,7 @@ export async function createInvoiceFromAcceptedQuote(
       scopeProducts,
       siteInfo,
       quote.scope_overrides ?? null,
-      { siteHeader, milestoneHeader: "Progress Payment 1 — On Acceptance" },
+      { siteHeader, milestoneHeader: "Progress Payment 1 — On Acceptance", manualScopeText },
     );
     headerDescription = `Progress Payment 1 — Quote ${quote.ref}`;
     lineItems = [{ description, quantity: 1, unitAmount: amount }];

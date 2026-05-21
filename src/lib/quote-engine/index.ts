@@ -68,6 +68,7 @@ export type { QuoteSummary } from './pricing'
 // Scope of Works (BOM-driven, system-card layout)
 export {
   generateScopeOfWorks,
+  manualScopeDocument,
   renderScopeAsHtml,
   renderScopeAsText,
   BOMRollup,
