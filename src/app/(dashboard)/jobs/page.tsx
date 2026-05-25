@@ -14,15 +14,22 @@ export default async function JobsPage({
   const { data: { user } } = await supabase.auth.getUser();
   const currentUserId = user?.id ?? "";
 
-  // Staff default: "my jobs" always, unless explicitly overridden.
-  //   no staff param        → default to the signed-in user
-  //   staff=all              → explicit "show everyone"
-  //   staff=<uuid>           → show that specific staff member
-  // This survives across quick-view changes (Today / This Week / Active / All)
-  // because we no longer treat "any filter present" as a signal to drop the
-  // staff default.
+  // Per-staff default override for the "Assigned" filter. Stored on
+  // staff.jobs_default_staff_filter — "all" means default to everyone,
+  // a UUID means default to that staff member, NULL means fall back to
+  // "my jobs" (the signed-in user).
+  let staffDefaultFilter: string | null = null;
+  if (currentUserId) {
+    const { data: meRow } = await supabase
+      .from("staff")
+      .select("jobs_default_staff_filter")
+      .eq("id", currentUserId)
+      .maybeSingle();
+    staffDefaultFilter = meRow?.jobs_default_staff_filter ?? null;
+  }
+
   const isActiveView = !params.view || params.view === "active";
-  const effectiveStaff = params.staff ?? currentUserId;
+  const effectiveStaff = params.staff ?? staffDefaultFilter ?? currentUserId;
   const isAllStaff = effectiveStaff === "all";
 
   function localISO(d: Date): string {
@@ -173,6 +180,7 @@ export default async function JobsPage({
         categories={categories}
         staff={staffList}
         currentUserId={currentUserId}
+        staffDefaultFilter={staffDefaultFilter}
         defaultQuery={params.q}
         defaultPhase={params.phase}
         defaultStatus={params.status}

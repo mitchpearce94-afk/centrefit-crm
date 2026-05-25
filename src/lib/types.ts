@@ -17,6 +17,7 @@ export interface Staff {
   role: StaffRole;
   phone: string | null;
   is_active: boolean;
+  jobs_default_staff_filter: string | null;
   created_at: string;
   updated_at: string;
 }

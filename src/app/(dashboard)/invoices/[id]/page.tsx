@@ -32,13 +32,21 @@ export default async function InvoiceDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: invoice, error } = await supabase
-    .from("invoices")
-    .select(
-      "*, customer:customers(id, name, customer_contacts(name, email, is_primary)), quote:quotes(id, ref, status, site:customer_sites(id, name, address, suburb)), job:jobs(id, number, site:customer_sites(id, name, address, suburb))"
-    )
-    .eq("id", id)
-    .single();
+  const [{ data: invoice, error }, { data: reminderHistory }] = await Promise.all([
+    supabase
+      .from("invoices")
+      .select(
+        "*, customer:customers(id, name, customer_contacts(name, email, is_primary)), quote:quotes(id, ref, status, site:customer_sites(id, name, address, suburb)), job:jobs(id, number, site:customer_sites(id, name, address, suburb))",
+      )
+      .eq("id", id)
+      .single(),
+    supabase
+      .from("invoice_reminders")
+      .select("id, sent_at, recipient_email, trigger, amount_due_at_send, days_overdue, error")
+      .eq("invoice_id", id)
+      .order("sent_at", { ascending: false })
+      .limit(20),
+  ]);
   if (error || !invoice) notFound();
 
   const inv = invoice as any;
@@ -104,9 +112,12 @@ export default async function InvoiceDetailPage({
           invoiceRef={inv.xero_invoice_number ?? null}
           payLink={inv.xero_online_url}
           status={inv.status}
+          amountDue={Number(inv.amount_due) || 0}
           xeroInvoiceId={inv.xero_invoice_id}
           sentAt={inv.sent_at ?? null}
           sentToEmail={inv.sent_to_email ?? null}
+          lastReminderAt={inv.last_reminder_sent_at ?? null}
+          reminderCount={inv.reminder_count ?? 0}
           defaultRecipient={(() => {
             const contacts = inv.customer?.customer_contacts ?? [];
             const primary = contacts.find((c: { is_primary: boolean | null }) => c.is_primary) ?? contacts[0];
@@ -220,6 +231,35 @@ export default async function InvoiceDetailPage({
           </>
         )}
       </div>
+
+      {reminderHistory && reminderHistory.length > 0 && (
+        <div className="mt-6 surface-card p-4">
+          <h2 className="text-sm font-semibold mb-2">Reminder history</h2>
+          <p className="text-[11px] text-muted-foreground mb-3">
+            {reminderHistory.length} reminder{reminderHistory.length === 1 ? "" : "s"} sent. Xero status is re-checked before every send.
+          </p>
+          <ul className="space-y-1.5 text-xs">
+            {reminderHistory.map((r: any) => (
+              <li key={r.id} className="flex items-baseline justify-between gap-3 border-b border-border/60 last:border-0 py-1.5">
+                <div>
+                  <span className="font-medium text-foreground">
+                    {new Date(r.sent_at).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  <span className="ml-2 text-muted-foreground">{r.recipient_email}</span>
+                  <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">{r.trigger}</span>
+                  {r.error && (
+                    <span className="ml-2 text-destructive">⚠ {r.error}</span>
+                  )}
+                </div>
+                <span className="font-mono text-muted-foreground">
+                  ${(Number(r.amount_due_at_send) || 0).toFixed(2)}
+                  {r.days_overdue > 0 && <span className="ml-2 text-destructive">{r.days_overdue}d overdue</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="mt-6">
         <DocumentActivityTimeline documentType="invoice" documentId={inv.id} />

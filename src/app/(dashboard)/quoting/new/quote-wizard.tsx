@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 import { useToast } from "@/components/ui/toast";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import {
   DEVICE_TYPES,
   DEFAULT_EXTRAS,
@@ -169,16 +170,26 @@ interface ManualLabourLine {
 
 const MANUAL_LABOUR_CATEGORIES = ["Labour", "Shipping", "Call-out", "Other"] as const;
 
-// Seeded boilerplate for the manual-quote Scope of Works textbox. Keeps the
+// Seeded boilerplate for the manual-quote Scope of Works editor. Keeps the
 // "no electrical works" exclusion + closing standards paragraph from the
 // auto-generated SoW; drops the assumptions block (Mitchell: "no assumptions
-// on that scope of works"). Users edit the middle to describe the actual job.
-const MANUAL_SCOPE_BOILERPLATE = `ANY AND ALL ELECTRICAL WORKS ARE NOT INCLUDED IN THIS QUOTE
+// on that scope of works"). Stored as HTML so the TipTap editor + PDF/email
+// renderers all share one format. Users edit the middle to describe the job.
+const MANUAL_SCOPE_BOILERPLATE = `<p><strong>ANY AND ALL ELECTRICAL WORKS ARE NOT INCLUDED IN THIS QUOTE</strong></p><p>[Describe the scope of works for this job here.]</p><h3>Standards &amp; codes of practice</h3><p>Installation complies with: AS/NZS 2201.1-2007 (Intruder alarm systems) · AS 4806 (CCTV — management &amp; operation) · AS/NZS 62676.1.2:2020 (Video surveillance) · AS/NZS IEC 60839.11.1:2019 (Electronic access control) · AS/CA S009:2020 (Customer cabling — wiring rules)</p>`;
 
-[Describe the scope of works for this job here.]
-
-Standards & codes of practice
-Installation complies with: AS/NZS 2201.1-2007 (Intruder alarm systems) · AS 4806 (CCTV — management & operation) · AS/NZS 62676.1.2:2020 (Video surveillance) · AS/NZS IEC 60839.11.1:2019 (Electronic access control) · AS/CA S009:2020 (Customer cabling — wiring rules)`;
+// Manual scopes are stored as HTML once the rich-text editor lands, but
+// quotes drafted before that change are plain text. Convert legacy plain text
+// to paragraph-wrapped HTML on load so TipTap renders it correctly.
+function normaliseManualScope(value: string): string {
+  if (!value) return value;
+  if (/<[a-z!/]/i.test(value)) return value;
+  return value
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => `<p>${p.replace(/\n/g, '<br>')}</p>`)
+    .join('');
+}
 
 function defaultManualLabourLines(): ManualLabourLine[] {
   return [
@@ -386,8 +397,10 @@ export function QuoteWizard({
   // Manual mode state — rehydrate from saved line items if this quote was
   // saved in manual mode.
   const [manualScope, setManualScope] = useState(
-    existingQuote?.manualScope ??
-      (existingQuote?.quoteMode === "manual" ? "" : MANUAL_SCOPE_BOILERPLATE),
+    normaliseManualScope(
+      existingQuote?.manualScope ??
+        (existingQuote?.quoteMode === "manual" ? "" : MANUAL_SCOPE_BOILERPLATE),
+    ),
   );
   const [manualLabourLines, setManualLabourLines] = useState<ManualLabourLine[]>(
     existingQuote?.manualLabourLines && existingQuote.manualLabourLines.length > 0
@@ -2521,14 +2534,13 @@ export function QuoteWizard({
               Scope of Works
             </label>
             <p className="text-[11px] text-muted-foreground mb-2">
-              Plain-text scope shown on the customer-facing quote. The "no electrical works" exclusion and the standards-and-codes paragraph are pre-filled — edit the middle section to describe the actual job. No assumptions are auto-generated.
+              Rich-text scope shown on the customer-facing quote. The "no electrical works" exclusion and the standards-and-codes paragraph are pre-filled — edit the middle section to describe the actual job. No assumptions are auto-generated.
             </p>
-            <textarea
+            <RichTextEditor
               value={manualScope}
-              onChange={(e) => setManualScope(e.target.value)}
-              rows={20}
+              onChange={setManualScope}
               placeholder="Write the scope of works for this job…"
-              className="w-full resize-y rounded-md border border-border bg-input px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none font-mono whitespace-pre-wrap break-words"
+              minHeight={420}
             />
           </div>
           <div className="flex items-center gap-2">
@@ -2653,11 +2665,15 @@ export function QuoteWizard({
             )}
           </div>
 
-          {/* Manual scope of works preview */}
+          {/* Manual scope of works preview — renders the rich-text HTML so
+              what's shown here matches the customer PDF. */}
           {quoteMode === "manual" && manualScope && (
             <div className="rounded-lg border border-border bg-card p-4">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Scope of Works</h3>
-              <p className="text-sm whitespace-pre-wrap">{manualScope}</p>
+              <div
+                className="prose prose-sm dark:prose-invert max-w-none [&_p]:my-1.5 [&_h1]:text-base [&_h1]:font-bold [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_ul]:list-disc [&_ul]:ml-5 [&_ol]:list-decimal [&_ol]:ml-5"
+                dangerouslySetInnerHTML={{ __html: manualScope }}
+              />
             </div>
           )}
 

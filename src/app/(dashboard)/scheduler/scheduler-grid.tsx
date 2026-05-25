@@ -428,7 +428,7 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
               const hour = Math.floor(y / HOUR_PX) + START_HOUR;
               if (eid && onDrop) onDrop(eid, date, hour);
             }}
-            className={`rounded-md border overflow-hidden cursor-pointer hover:brightness-110 transition-all ${draggingId === entry.id ? "opacity-40" : ""} ${!isJob ? "border-dashed" : ""}`}
+            className={`group rounded-md border cursor-pointer hover:brightness-110 transition-all ${draggingId === entry.id ? "opacity-40" : ""} ${!isJob ? "border-dashed" : ""}`}
             style={{
               position: "absolute",
               top,
@@ -444,7 +444,7 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
             }}
             onClick={e => { e.stopPropagation(); onEntryClick(entry); }}
           >
-            <div className={`px-2 py-1 h-full flex flex-col ${lanes > 2 ? "px-1" : ""}`}>
+            <div className={`px-2 py-1 h-full flex flex-col overflow-hidden rounded-md ${lanes > 2 ? "px-1" : ""}`}>
               <div className="flex items-center gap-1.5">
                 {s && (
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ backgroundColor: staffColour }}>
@@ -471,6 +471,65 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
                 <p className="text-[9px] text-muted-foreground mt-auto italic truncate">{entry.notes}</p>
               )}
             </div>
+
+            {/* Hover popover — desktop only. Sits to the right of the entry,
+                escaping the column clip via z-50. pointer-events-none so it
+                doesn't interfere with drag/click. */}
+            {!isTouchDevice && (
+              <div
+                className="pointer-events-none absolute left-full top-0 ml-2 hidden w-64 rounded-lg border border-border bg-popover px-3 py-2.5 text-popover-foreground shadow-xl group-hover:block"
+                style={{ zIndex: 50 }}
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  {s && (
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ backgroundColor: staffColour }}>
+                      {s.initials}
+                    </span>
+                  )}
+                  <span className="text-xs font-medium text-muted-foreground truncate">
+                    {s?.display_name ?? "—"}
+                  </span>
+                </div>
+                {isJob ? (
+                  <>
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-mono text-sm font-semibold">{entry.job?.number}</span>
+                      {entry.job?.status && (
+                        <span
+                          className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                          style={{ backgroundColor: `${entry.job.status.colour}20`, color: entry.job.status.colour }}
+                        >
+                          {entry.job.status.name}
+                        </span>
+                      )}
+                    </div>
+                    {entry.job?.reference && (
+                      <p className="mt-0.5 text-xs text-muted-foreground truncate">{entry.job.reference}</p>
+                    )}
+                    <div className="mt-1.5 space-y-0.5 text-xs">
+                      <p className="font-medium truncate">{entry.job?.site?.name ?? entry.job?.customer?.name ?? "—"}</p>
+                      {entry.job?.site?.name && entry.job?.customer?.name && (
+                        <p className="text-muted-foreground truncate">{entry.job.customer.name}</p>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm font-semibold">
+                    {entry.entry_type === "reminder" ? "⏰ " : ""}{entry.title ?? "Untitled"}
+                  </p>
+                )}
+                {(entry.start_time || entry.end_time) && (
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    {entry.start_time?.slice(0, 5)}{entry.end_time ? ` – ${entry.end_time.slice(0, 5)}` : ""}
+                  </p>
+                )}
+                {entry.notes && (
+                  <p className="mt-1.5 border-t border-border pt-1.5 text-[11px] italic text-muted-foreground line-clamp-3">
+                    {entry.notes}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         );
       })}

@@ -55,6 +55,7 @@ const roleColours: Record<StaffRole, string> = {
 const staffColours = [
   "#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6",
   "#ec4899", "#06b6d4", "#f97316", "#14b8a6", "#6366f1",
+  "#64748b", "#334155",
 ];
 
 export function StaffList({
@@ -361,6 +362,9 @@ function StaffEditForm({
   const [role, setRole] = useState<StaffRole>(member.role);
   const [phone, setPhone] = useState(member.phone ?? "");
   const [isActive, setIsActive] = useState(member.is_active);
+  const [jobsDefaultFilter, setJobsDefaultFilter] = useState<string>(
+    member.jobs_default_staff_filter ?? ""
+  );
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -375,6 +379,7 @@ function StaffEditForm({
         role,
         phone: phone.trim() || null,
         is_active: isActive,
+        jobs_default_staff_filter: jobsDefaultFilter || null,
       })
       .eq("id", member.id);
 
@@ -466,6 +471,23 @@ function StaffEditForm({
             />
           ))}
         </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-muted-foreground">
+          Default Jobs filter
+        </label>
+        <select
+          value={jobsDefaultFilter}
+          onChange={(e) => setJobsDefaultFilter(e.target.value)}
+          className="mt-1 block w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        >
+          <option value="">My jobs (default)</option>
+          <option value="all">All staff</option>
+        </select>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          What the Jobs page defaults to when this person logs in.
+        </p>
       </div>
 
       <label className="flex items-center gap-2 text-sm">

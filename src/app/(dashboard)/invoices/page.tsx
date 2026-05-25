@@ -10,6 +10,7 @@ const STATUS_COLOURS: Record<string, string> = {
   authorised: "#3b82f6",
   paid: "#22c55e",
   void: "#ef4444",
+  overdue: "#ef4444",
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -17,57 +18,85 @@ const TYPE_LABEL: Record<string, string> = {
   progress_pp1: "PP1",
   progress_pp2: "PP2",
   adhoc: "Ad-hoc",
+  recurring: "Recurring",
 };
 
-export default async function InvoicesPage() {
+type Tab = "active" | "overdue" | "drafts" | "paid" | "voided";
+
+export default async function InvoicesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const supabase = await createClient();
+  const params = await searchParams;
+  const tab = (params.tab ?? "active") as Tab;
 
   const { data: invoices } = await supabase
     .from("invoices")
     .select(
-      "*, customer:customers(id, name), quote:quotes(id, ref, site:customer_sites(id, name)), job:jobs(id, number, site:customer_sites(id, name))"
+      "id, xero_invoice_number, invoice_type, status, total, amount_due, due_date, paid_at, created_at, last_reminder_sent_at, reminder_count, auto_remind_enabled, customer:customers(id, name), quote:quotes(id, ref, site:customer_sites(id, name)), job:jobs(id, number, site:customer_sites(id, name))",
     )
     .order("created_at", { ascending: false })
     .limit(500);
 
+  const now = new Date();
   const list = (invoices ?? []) as any[];
 
-  // Top-line metrics
-  const outstanding = list
-    .filter((i) => i.status === "authorised")
-    .reduce((s, i) => s + Number(i.amount_due), 0);
-  const overdue = list
-    .filter((i) => i.status === "authorised" && i.due_date && new Date(i.due_date) < new Date())
-    .reduce((s, i) => s + Number(i.amount_due), 0);
+  const enriched = list.map((inv) => {
+    const isOverdue =
+      inv.status === "authorised" &&
+      inv.due_date &&
+      new Date(inv.due_date) < now &&
+      Number(inv.amount_due) > 0;
+    return { ...inv, _isOverdue: isOverdue };
+  });
+
+  const activeList = enriched.filter((i) => i.status === "authorised" && Number(i.amount_due) > 0);
+  const overdueList = enriched.filter((i) => i._isOverdue);
+  const draftsList = enriched.filter((i) => i.status === "draft");
+  const paidList = enriched.filter((i) => i.status === "paid");
+  const voidedList = enriched.filter((i) => i.status === "void");
+
+  const filtered =
+    tab === "overdue" ? overdueList
+    : tab === "drafts" ? draftsList
+    : tab === "paid" ? paidList
+    : tab === "voided" ? voidedList
+    : activeList;
+
+  // Metrics
+  const outstanding = activeList.reduce((s, i) => s + Number(i.amount_due), 0);
+  const overdueAmt = overdueList.reduce((s, i) => s + Number(i.amount_due), 0);
   const paidThisMonth = (() => {
     const monthStart = new Date();
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
-    return list
-      .filter((i) => i.status === "paid" && i.paid_at && new Date(i.paid_at) >= monthStart)
+    return paidList
+      .filter((i) => i.paid_at && new Date(i.paid_at) >= monthStart)
       .reduce((s, i) => s + Number(i.total), 0);
   })();
 
   return (
-    <>
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Invoices</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            One-off invoices generated from accepted quotes and jobs. Status mirrored from Xero via webhook.
+    <div>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Invoices</h1>
+          <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
+            <span className="font-medium text-foreground tabular-nums">{enriched.length}</span> total · status mirrored from Xero via webhook
           </p>
         </div>
       </div>
 
       {/* Metrics */}
-      <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="surface-card card-hover p-5">
           <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Outstanding</p>
           <p className="num-display num-gradient mt-2 text-2xl font-semibold">${fmt(outstanding)}</p>
         </div>
-        <div className={`surface-card card-hover p-5 ${overdue > 0 ? "border-destructive/30 bg-destructive/5" : ""}`}>
+        <div className={`surface-card card-hover p-5 ${overdueAmt > 0 ? "border-destructive/30 bg-destructive/5" : ""}`}>
           <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Overdue</p>
-          <p className={`num-display mt-2 text-2xl font-semibold ${overdue > 0 ? "text-destructive" : "num-gradient"}`}>${fmt(overdue)}</p>
+          <p className={`num-display mt-2 text-2xl font-semibold ${overdueAmt > 0 ? "text-destructive" : "num-gradient"}`}>${fmt(overdueAmt)}</p>
         </div>
         <div className="surface-card card-hover p-5">
           <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Paid this month</p>
@@ -75,36 +104,80 @@ export default async function InvoicesPage() {
         </div>
       </div>
 
+      {/* Tab strip — matches the quoting page so the two feel like siblings */}
+      <div className="mt-5 flex flex-nowrap items-center gap-1 border-b border-border overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
+        {[
+          { key: "active", label: "Active", count: activeList.length },
+          { key: "overdue", label: "Overdue", count: overdueList.length, accent: overdueList.length > 0 },
+          { key: "drafts", label: "Drafts", count: draftsList.length },
+          { key: "paid", label: "Paid", count: paidList.length },
+          { key: "voided", label: "Voided", count: voidedList.length },
+        ].map((t) => {
+          const active = tab === t.key;
+          return (
+            <Link
+              key={t.key}
+              href={t.key === "active" ? "/invoices" : `/invoices?tab=${t.key}`}
+              className={`relative shrink-0 -mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
+                active
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+              {t.count > 0 && (
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                    t.accent
+                      ? "bg-destructive/20 text-destructive"
+                      : active
+                      ? "bg-primary/20 text-primary"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {t.count}
+                </span>
+              )}
+            </Link>
+          );
+        })}
+      </div>
+
       {/* List */}
-      <div className="surface-card mt-6 overflow-x-auto">
+      <div className="surface-card mt-4 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-muted-foreground">
             <tr className="text-left">
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Invoice</th>
-              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Type</th>
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider hidden sm:table-cell">Type</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Site</th>
-              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Customer</th>
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider hidden md:table-cell">Customer</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Status</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider text-right">Total</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider text-right">Due</th>
-              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Due date</th>
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider hidden md:table-cell">Due date</th>
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider hidden lg:table-cell">Reminded</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {list.length === 0 && (
+            {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground text-sm">
-                  No invoices yet. Generate one from an accepted quote.
+                <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground text-sm">
+                  {tab === "active"
+                    ? "Nothing outstanding — sent invoices awaiting payment appear here."
+                    : tab === "overdue"
+                    ? "No overdue invoices."
+                    : `No ${tab} invoices.`}
                 </td>
               </tr>
             )}
-            {list.map((inv) => {
+            {filtered.map((inv) => {
               const colour = STATUS_COLOURS[inv.status] ?? "#6b7280";
-              const isOverdue = inv.status === "authorised" && inv.due_date && new Date(inv.due_date) < new Date();
-              // Site comes via the linked quote or job — invoices don't carry
-              // a site_id of their own. Falls back to em-dash for ad-hoc /
-              // recurring invoices that don't trace back to either.
+              const isOverdue = inv._isOverdue;
               const siteName = inv.quote?.site?.name ?? inv.job?.site?.name ?? null;
+              const lastReminded = inv.last_reminder_sent_at
+                ? Math.floor((Date.now() - new Date(inv.last_reminder_sent_at).getTime()) / 86_400_000)
+                : null;
               return (
                 <tr key={inv.id} className="transition-colors hover:bg-accent/40">
                   <td className="px-4 py-2.5">
@@ -115,7 +188,7 @@ export default async function InvoicesPage() {
                       <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{inv.quote.ref}</p>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-muted-foreground">{TYPE_LABEL[inv.invoice_type] ?? inv.invoice_type}</td>
+                  <td className="px-4 py-2.5 text-xs text-muted-foreground hidden sm:table-cell">{TYPE_LABEL[inv.invoice_type] ?? inv.invoice_type}</td>
                   <td className="px-4 py-2.5 text-sm font-medium">
                     {siteName ? (
                       <span className="text-foreground">{siteName}</span>
@@ -123,17 +196,24 @@ export default async function InvoicesPage() {
                       <span className="text-foreground">{inv.customer?.name ?? "—"}</span>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 text-sm text-muted-foreground">
+                  <td className="px-4 py-2.5 text-sm text-muted-foreground hidden md:table-cell">
                     {siteName ? (inv.customer?.name ?? "—") : "—"}
                   </td>
                   <td className="px-4 py-2.5">
-                    <span
-                      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize"
-                      style={{ backgroundColor: `${colour}20`, color: colour }}
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colour }} />
-                      {inv.status}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span
+                        className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize"
+                        style={{ backgroundColor: `${colour}20`, color: colour }}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colour }} />
+                        {inv.status}
+                      </span>
+                      {isOverdue && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium text-destructive uppercase tracking-wide">
+                          Overdue
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-sm">${fmt(Number(inv.total))}</td>
                   <td className="px-4 py-2.5 text-right font-mono text-sm">
@@ -143,7 +223,7 @@ export default async function InvoicesPage() {
                       <span className="text-muted-foreground">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 text-xs">
+                  <td className="px-4 py-2.5 text-xs hidden md:table-cell">
                     {inv.due_date ? (
                       <span className={isOverdue ? "text-red-400 font-medium" : "text-muted-foreground"}>
                         {new Date(inv.due_date).toLocaleDateString("en-AU")}
@@ -152,12 +232,21 @@ export default async function InvoicesPage() {
                       <span className="text-muted-foreground">—</span>
                     )}
                   </td>
+                  <td className="px-4 py-2.5 text-xs hidden lg:table-cell text-muted-foreground">
+                    {lastReminded === null ? (
+                      "—"
+                    ) : lastReminded === 0 ? (
+                      <span>today · {inv.reminder_count}×</span>
+                    ) : (
+                      <span>{lastReminded}d ago · {inv.reminder_count}×</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
-    </>
+    </div>
   );
 }

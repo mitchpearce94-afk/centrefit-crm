@@ -46,7 +46,7 @@ export function SiteDetail({
     { key: "contacts", label: "Contacts", count: contacts.length },
     { key: "jobs", label: "Jobs", count: jobs.length },
     { key: "assets", label: "Assets", count: activeAssetCount },
-    { key: "key-info", label: "Key Information" },
+    { key: "key-info", label: "Key Information", count: keyInfoPhotos.length },
     ...(canVault ? [{ key: "vault" as TabKey, label: "Vault", count: vaultFolders.length }] : []),
   ];
 

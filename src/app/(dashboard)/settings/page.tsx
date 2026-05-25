@@ -17,6 +17,11 @@ const SECTIONS: { name: string; href: string; description: string }[] = [
     description: "Templates for what can be added to a site's asset list.",
   },
   {
+    name: "Job Types",
+    href: "/settings/job-types",
+    description: "Categories that appear in the Job Type dropdown.",
+  },
+  {
     name: "Electricians",
     href: "/settings/electricians",
     description: "Electrician contacts and routing.",

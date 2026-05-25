@@ -9,10 +9,13 @@ interface Props {
   invoiceRef: string | null;
   payLink: string | null;
   status: string;
+  amountDue: number;
   xeroInvoiceId: string | null;
   sentAt: string | null;
   sentToEmail: string | null;
   defaultRecipient: string | null;
+  lastReminderAt: string | null;
+  reminderCount: number;
 }
 
 export function InvoiceActions({
@@ -20,10 +23,13 @@ export function InvoiceActions({
   invoiceRef,
   payLink,
   status,
+  amountDue,
   xeroInvoiceId,
   sentAt,
   sentToEmail,
   defaultRecipient,
+  lastReminderAt,
+  reminderCount,
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -31,8 +37,11 @@ export function InvoiceActions({
   const [authorising, setAuthorising] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showSendModal, setShowSendModal] = useState(false);
+  const [showReminderModal, setShowReminderModal] = useState(false);
   const [recipient, setRecipient] = useState<string>(sentToEmail ?? defaultRecipient ?? "");
+  const [reminderRecipient, setReminderRecipient] = useState<string>(sentToEmail ?? defaultRecipient ?? "");
   const [sending, setSending] = useState(false);
+  const [sendingReminder, setSendingReminder] = useState(false);
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -108,12 +117,56 @@ export function InvoiceActions({
     ? `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${xeroInvoiceId}`
     : null;
 
+  async function handleSendReminder() {
+    const email = reminderRecipient.trim();
+    if (!email) {
+      toast("Recipient email required", "error");
+      return;
+    }
+    setSendingReminder(true);
+    try {
+      const res = await fetch(`/api/invoices/${invoiceId}/send-reminder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, trigger: "manual" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        // 409 means Xero said paid/voided — sync already happened server-side,
+        // refresh the page so the user sees the latest status.
+        if (res.status === 409) {
+          toast(data.error ?? "Reminder skipped — invoice may have been paid.", "error");
+          setShowReminderModal(false);
+          router.refresh();
+          return;
+        }
+        throw new Error(data.error || "Reminder failed");
+      }
+      toast(`Reminder ${data.reminderNumber} sent to ${email}`);
+      setShowReminderModal(false);
+      router.refresh();
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : "Reminder failed", "error");
+    }
+    setSendingReminder(false);
+  }
+
+  function openReminderModal() {
+    setMenuOpen(false);
+    setReminderRecipient(sentToEmail ?? defaultRecipient ?? "");
+    setShowReminderModal(true);
+  }
+
   // Send/Resend is offered for any invoice that has actually been pushed to
   // Xero (i.e. has an xero_invoice_id). Drafts can be sent too — the email
   // includes the pay link only if one exists, so authorised invoices are the
   // useful case but a draft send is harmless.
   const canSend = !!xeroInvoiceId && status !== "void";
   const sendLabel = sentAt ? "Resend invoice" : "Send invoice";
+  // Reminders only make sense for authorised invoices with money outstanding.
+  // The server route also re-checks Xero before sending, so this is just to
+  // hide the menu item where it'd never apply.
+  const canRemind = status === "authorised" && amountDue > 0 && !!xeroInvoiceId;
 
   return (
     <>
@@ -161,7 +214,7 @@ export function InvoiceActions({
         {/* Kebab — currently only houses Send/Resend; lives alongside the
             inline buttons rather than absorbing them, since they're the
             high-frequency actions for an admin landing on this page. */}
-        {canSend && (
+        {(canSend || canRemind) && (
           <div className="relative">
             <button
               onClick={() => setMenuOpen((v) => !v)}
@@ -177,13 +230,28 @@ export function InvoiceActions({
             {menuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 mt-1 z-50 min-w-[180px] rounded-md border border-border bg-popover shadow-lg py-1">
-                  <button
-                    onClick={openSendModal}
-                    className="block w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent"
-                  >
-                    {sendLabel}
-                  </button>
+                <div className="absolute right-0 mt-1 z-50 min-w-[220px] rounded-md border border-border bg-popover shadow-lg py-1">
+                  {canSend && (
+                    <button
+                      onClick={openSendModal}
+                      className="block w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent"
+                    >
+                      {sendLabel}
+                    </button>
+                  )}
+                  {canRemind && (
+                    <button
+                      onClick={openReminderModal}
+                      className="block w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent"
+                    >
+                      Send payment reminder
+                      {reminderCount > 0 && (
+                        <span className="ml-1.5 text-[10px] text-muted-foreground">
+                          ({reminderCount} sent)
+                        </span>
+                      )}
+                    </button>
+                  )}
                 </div>
               </>
             )}
@@ -235,6 +303,60 @@ export function InvoiceActions({
                 className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
               >
                 {sending ? "Sending…" : sentAt ? "Resend now" : "Send now"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reminder modal — separate from the Send/Resend flow so the copy and
+          confirmation context are explicit. Server re-checks Xero before
+          actually emailing, but we still want the operator to confirm. */}
+      {showReminderModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => !sendingReminder && setShowReminderModal(false)} />
+          <div className="relative w-full max-w-md rounded-xl bg-background border border-border shadow-2xl">
+            <div className="border-b border-border px-5 py-3">
+              <p className="text-sm font-semibold text-foreground">Send payment reminder</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Invoice {invoiceRef ?? ""}
+                {amountDue > 0 ? ` — $${amountDue.toFixed(2)} outstanding.` : "."}
+                {lastReminderAt
+                  ? ` Last reminded ${new Date(lastReminderAt).toLocaleString("en-AU")} (${reminderCount}× total).`
+                  : " No previous reminders sent."}
+              </p>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                The CRM will re-check the invoice with Xero before sending. If it&apos;s actually been paid, the reminder will be skipped and the local status updated automatically.
+              </p>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Recipient email
+                </label>
+                <input
+                  type="email"
+                  value={reminderRecipient}
+                  onChange={(e) => setReminderRecipient(e.target.value)}
+                  placeholder="customer@example.com"
+                  className="mt-1 w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3 bg-muted/30">
+              <button
+                onClick={() => setShowReminderModal(false)}
+                disabled={sendingReminder}
+                className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSendReminder}
+                disabled={sendingReminder || !reminderRecipient.trim()}
+                className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
+              >
+                {sendingReminder ? "Sending…" : "Send reminder"}
               </button>
             </div>
           </div>

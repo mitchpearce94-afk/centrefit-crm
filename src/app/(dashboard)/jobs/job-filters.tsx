@@ -27,6 +27,7 @@ export function JobFilters({
   categories,
   staff,
   currentUserId,
+  staffDefaultFilter,
   defaultQuery,
   defaultPhase,
   defaultStatus,
@@ -39,6 +40,7 @@ export function JobFilters({
   categories: Category[];
   staff?: StaffOption[];
   currentUserId?: string;
+  staffDefaultFilter?: string | null;
   defaultQuery?: string;
   defaultPhase?: string;
   defaultStatus?: string;
@@ -63,15 +65,16 @@ export function JobFilters({
           ? "active"
           : "all";
 
-  // Extra-filter count (anything in the menu that's not at default).
-  // Staff default is "my jobs" (= currentUserId) — any other staff
-  // selection (including "all") counts as a divergence from default.
+  // Extra-filter count. The "no-divergence" staff value is the user's saved
+  // default if they have one (jobs_default_staff_filter), otherwise their
+  // own user ID ("my jobs"). Anything else counts as a divergence.
+  const baselineStaff = staffDefaultFilter ?? currentUserId ?? "";
   const extraCount =
     (defaultQuery ? 1 : 0) +
     (defaultPhase ? 1 : 0) +
     (defaultStatus ? 1 : 0) +
     (defaultCategory ? 1 : 0) +
-    (defaultStaff && defaultStaff !== currentUserId ? 1 : 0);
+    (defaultStaff && defaultStaff !== baselineStaff ? 1 : 0);
 
   const [menuOpen, setMenuOpen] = useState(extraCount > 0);
 

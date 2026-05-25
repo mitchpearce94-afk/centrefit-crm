@@ -709,10 +709,33 @@ function stripHtml(s: string): string {
   return s.replace(/<[^>]+>/g, '');
 }
 
+// Converts rich-text HTML (from the manual-quote editor) into clean plain text
+// suitable for Xero invoice descriptions: block tags become line breaks,
+// list items get a leading bullet, then all remaining tags are stripped and
+// HTML entities are decoded.
+function htmlToPlainText(html: string): string {
+  if (!html) return '';
+  // If there are no tags, treat as plain text and pass through.
+  if (!/<[a-z!/]/i.test(html)) return html;
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h[1-6]|li)>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '  • ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 /** Plain-text renderer — used for Xero invoice line descriptions. */
 export function renderScopeAsText(scope: ScopeDocument): string {
   const lines: string[] = [];
-  if (scope.summary.lead) lines.push(scope.summary.lead, '');
+  if (scope.summary.lead) lines.push(htmlToPlainText(scope.summary.lead), '');
 
   for (const sys of scope.systems) {
     lines.push(`${sys.name.toUpperCase()}${sys.countSummary ? `  (${sys.countSummary})` : ''}`);
@@ -751,12 +774,14 @@ export function renderScopeAsHtml(scope: ScopeDocument): string {
       </div>`)
     .join('');
 
-  // white-space:pre-wrap so manual quotes' multi-line scope text keeps its
-  // paragraph breaks. Auto-generated scopes never put newlines in
-  // summary.lead so this is a no-op for them.
+  // Manual-quote leads are now full HTML from the rich-text editor (paragraphs,
+  // headings, lists, bold). Auto-generated leads are short plain strings.
+  // We render lead in a <div> wrapper rather than <p>, so block-level HTML
+  // children are valid; pre-wrap keeps line-break preservation for any legacy
+  // plain-text leads that pre-date the rich-text switch.
   const summaryHtml = scope.summary.lead || scope.summary.rows.length > 0 ? `
     <div style="border:1px solid #e2e8f0;border-radius:10px;padding:18px 22px;margin-bottom:24px;background:#fff">
-      <p style="font-size:13px;color:#0f172a;line-height:1.65;margin:0;white-space:pre-wrap">${escape(scope.summary.lead)}</p>
+      <div style="font-size:13px;color:#0f172a;line-height:1.65;white-space:pre-wrap">${escape(scope.summary.lead)}</div>
       ${scope.summary.rows.length > 0 ? `<div style="margin-top:14px;display:grid;grid-template-columns:repeat(2,1fr);gap:8px 24px">${summaryRowsHtml}</div>` : ''}
     </div>` : '';
 
