@@ -94,7 +94,14 @@ function fmtLong(d: string): string { return new Date(d + "T00:00:00").toLocaleD
 export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, isAdmin }: { staff: StaffMember[]; entries: ScheduleEntry[]; jobs: JobOption[]; weekStart: string; currentUserId: string; isAdmin: boolean }) {
   const router = useRouter();
   const supabase = createClient();
-  const [view, setView] = useState<"week" | "day">("week");
+  const searchParams = useSearchParams();
+  // Seed `view` from the URL so the week-nav arrows (which do a full
+  // navigation) preserve the user's choice. Without this, switching to
+  // Week on mobile then clicking "next week" landed back in Day view
+  // because the mobile-default-to-day mount effect re-fired.
+  const urlView = searchParams.get("view");
+  const initialView: "week" | "day" = urlView === "day" || urlView === "week" ? urlView : "week";
+  const [view, setView] = useState<"week" | "day">(initialView);
   const [selectedDay, setSelectedDay] = useState(todayStr());
   // Touch devices fall back to tap-to-open-modal because HTML5
   // draggable doesn't fire reliably on iOS/Android — a long-press
@@ -106,12 +113,16 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   // Default to day view on phones — week view's 800px-wide grid forces
   // horizontal scroll and is unusable on a 375px viewport. Hydration-safe:
   // server + first client render are "week"; we flip after mount once we
-  // can read the viewport. Brief frame of "week" on mobile is fine; what
-  // we're avoiding is field techs having to manually toggle every time.
+  // can read the viewport. Only force "day" when the URL doesn't already
+  // specify a view — otherwise a user who explicitly picked Week on mobile
+  // would get bounced back to Day every time the week arrows navigate.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (window.matchMedia("(max-width: 767px)").matches) setView("day");
+    if (!urlView && window.matchMedia("(max-width: 767px)").matches) setView("day");
     setIsTouchDevice(!window.matchMedia("(hover: hover)").matches);
+    // urlView is captured at mount — re-running on URL change would
+    // override the user's in-session toggles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [modal, setModal] = useState<{ staffId: string; date: string; startTime?: string; entry?: ScheduleEntry; defaultJobId?: string } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -120,7 +131,6 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   // ?jobId=… so the user lands ready to pick date/staff/time. Runs once on
   // mount; we strip the param off the URL afterwards so a refresh doesn't
   // re-trigger and so back-nav lands cleanly.
-  const searchParams = useSearchParams();
   useEffect(() => {
     const jobId = searchParams.get("jobId");
     if (!jobId) return;
@@ -193,15 +203,25 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
     return { allDayByDate: allDay, timedByDate: timed };
   }, [entries]);
 
-  const prevWeekHref = `/scheduler?week=${addDaysStr(weekStart, -7)}`;
-  const nextWeekHref = `/scheduler?week=${addDaysStr(weekStart, 7)}`;
-  const todayWeekHref = "/scheduler";
+  // Keep `view` in the URL so a full navigation (next-week arrow, cross-week
+  // day-nav) doesn't drop the user's view choice.
+  const viewQuery = `view=${view}`;
+  const prevWeekHref = `/scheduler?week=${addDaysStr(weekStart, -7)}&${viewQuery}`;
+  const nextWeekHref = `/scheduler?week=${addDaysStr(weekStart, 7)}&${viewQuery}`;
+  const todayWeekHref = `/scheduler?${viewQuery}`;
+
+  function updateViewParam(next: "week" | "day") {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", next);
+    window.history.replaceState({}, "", url.toString());
+  }
 
   function goDay(dir: "prev" | "next" | "today") {
     const target = dir === "today" ? todayStr() : addDaysStr(selectedDay, dir === "prev" ? -1 : 1);
     const mon = getMondayOf(target);
     if (mon !== weekStart) {
-      window.location.href = `/scheduler?week=${mon}`;
+      window.location.href = `/scheduler?week=${mon}&${viewQuery}`;
       return;
     }
     setSelectedDay(target);
@@ -210,20 +230,23 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   function switchToDay(date: string) {
     setSelectedDay(date);
     setView("day");
+    updateViewParam("day");
   }
 
   function switchToWeek() {
     setView("week");
+    updateViewParam("week");
   }
 
   function switchToDayView() {
     const today = todayStr();
     if (getMondayOf(today) !== weekStart) {
-      window.location.href = "/scheduler";
+      window.location.href = `/scheduler?view=day`;
       return;
     }
     setSelectedDay(today);
     setView("day");
+    updateViewParam("day");
   }
 
   function getStaff(e: ScheduleEntry) { return staff.find(s => s.id === e.staff_id); }
