@@ -22,6 +22,7 @@ const PLAN_TO_QUOTE_MAP: Record<string, string> = {
   'duress-intercom': 'duress_intercom',
   'break-glass': 'break_glass',
   'ext-siren': 'light_siren',
+  'siren-piezo': 'siren_piezo',
   'bio-access': 'bio_access',
   'swipe-card': 'card_reader',
   'rex': 'rex_button',

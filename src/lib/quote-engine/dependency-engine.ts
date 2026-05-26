@@ -458,7 +458,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('OPTUS Mobile SIM', null), { id: ruleId(), trigger_code: 'duress_intercom', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'OPTUS SIM per duress intercom', preset, is_active: true })
 
   // === SECURITY CABLE ===
-  const totalSecurityCode = 'pir_360_roof + pir_wall + reed_switch + alarm_panel + door_strike + mag_lock + duress_button + duress_intercom + light_siren + rf_receiver'
+  const totalSecurityCode = 'pir_360_roof + pir_wall + reed_switch + alarm_panel + door_strike + mag_lock + duress_button + duress_intercom + light_siren + siren_piezo + rf_receiver'
   const secCableTrigger = { trigger_code: totalSecurityCode, trigger_condition: 'greater_than', trigger_value: 0, preset, is_active: true }
 
   pushRule(rules, find('6 Core Security Cable', 'EC6C14020300B'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'ceil_formula', quantity_multiplier: 45, quantity_divisor: 300, description: '6-core security cable — CEIL(total_security_devices × 45m / 300m rolls)' })

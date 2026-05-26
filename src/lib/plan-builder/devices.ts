@@ -25,6 +25,7 @@ export const DEVICE_CATALOG: DeviceDefinition[] = [
   { id: 'duress-intercom', name: 'Duress Intercom', category: 'security', cableType: 'sixcore', symbolType: 'duress-circle', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'D', symbolImage: '/plan-builder/symbols/duress-intercom.png' },
   { id: 'break-glass', name: 'Break Glass', category: 'security', cableType: 'sixcore', symbolType: 'labeled-square', fillColor: '#cc0000', strokeColor: '#ff4444', label: 'BG', symbolImage: '/plan-builder/symbols/break-glass.png' },
   { id: 'ext-siren', name: 'External Light & Siren', category: 'security', cableType: 'sixcore', symbolType: 'outline-square', fillColor: '#0066cc', strokeColor: '#3399ff', symbolImage: '/plan-builder/symbols/ext-light-siren.png' },
+  { id: 'siren-piezo', name: 'Piezo Siren', category: 'security', cableType: 'sixcore', symbolType: 'labeled-circle', fillColor: '#cc6600', strokeColor: '#ff9933', label: 'PZ' },
 
   // ACCESS CONTROL
   { id: 'bio-access', name: 'BIO Access Control Unit', category: 'security', cableType: 'sixcore', symbolType: 'labeled-circle', fillColor: '#005577', strokeColor: '#00bfff', label: 'B', symbolImage: '/plan-builder/symbols/bio-access.png' },

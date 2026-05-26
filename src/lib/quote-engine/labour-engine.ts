@@ -175,7 +175,7 @@ export function calculateLabour(
       speakerRoofCount + speakerWallCount +
       (c.wap || 0) + (c.data_point || 0) +
       (c.duress_button || 0) + (c.duress_intercom || 0) +
-      (c.light_siren || 0) + (c.rex_button || 0) +
+      (c.light_siren || 0) + (c.siren_piezo || 0) + (c.rex_button || 0) +
       (c.tailgate_system || 0)
 
   const roughInItems: LabourItem[] = []
@@ -243,6 +243,7 @@ export function calculateLabour(
     { name: 'Duress intercom', minutesPer: t('duress_intercom', 30), count: c.duress_intercom || 0 },
     { name: 'REX button', minutesPer: t('rex_button', 60), count: c.rex_button || 0 },
     { name: 'External siren', minutesPer: t('light_siren', 40), count: c.light_siren || 0 },
+    { name: 'Piezo siren', minutesPer: t('siren_piezo', 20), count: c.siren_piezo || 0 },
     { name: 'WAP', minutesPer: t('wap', 30), count: c.wap || 0 },
     { name: 'Ceiling speaker', minutesPer: t('speaker_roof', 40), count: speakerRoofCount },
     { name: 'Wall speaker', minutesPer: t('speaker_wall', 30), count: speakerWallCount },
