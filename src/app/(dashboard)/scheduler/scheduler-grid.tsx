@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { AssignJobModal } from "./assign-job-modal";
@@ -422,183 +423,223 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
       ))}
 
       {/* Entry blocks — laid out into side-by-side lanes for overlapping times */}
-      {layoutTimedEntries(entries).map(({ entry, lane, lanes }) => {
-        const startMin = timeMins(entry.start_time!) - START_HOUR * 60;
-        const endMin = timeMins(entry.end_time!) - START_HOUR * 60;
-        const top = Math.max(0, (startMin / 60) * HOUR_PX);
-        const height = Math.max(((endMin - startMin) / 60) * HOUR_PX, 28);
-        const s = getStaff(entry);
-        const staffColour = s?.colour ?? "#6b7280";
-        const isJob = entry.entry_type === "job";
-        // Job entries get a status-coloured left border; events/reminders use
-        // the staff colour with a dashed border so they're visually distinct
-        // from real work.
-        const leftBorderColour = isJob ? (entry.job?.status?.colour ?? "#6b7280") : staffColour;
-        // Lane-based horizontal layout. When only one lane in the cluster
-        // we keep the original 4px gutters; once it splits we use percent
-        // widths and tighter gutters so initials + job # still fit.
-        const gutter = lanes > 1 ? 2 : 4;
-        const leftStyle =
-          lanes > 1
-            ? `calc(${(lane * 100) / lanes}% + ${gutter}px)`
-            : `${gutter}px`;
-        const widthStyle =
-          lanes > 1
-            ? `calc(${100 / lanes}% - ${gutter * 2}px)`
-            : `calc(100% - ${gutter * 2}px)`;
+      {layoutTimedEntries(entries).map(({ entry, lane, lanes }) => (
+        <TimedEntryBlock
+          key={entry.id}
+          entry={entry}
+          lane={lane}
+          lanes={lanes}
+          date={date}
+          staff={getStaff(entry)}
+          isAdmin={isAdmin}
+          isTouchDevice={isTouchDevice}
+          draggingId={draggingId}
+          onEntryClick={onEntryClick}
+          onDrop={onDrop}
+        />
+      ))}
+    </div>
+  );
+}
 
-        return (
-          <div
-            key={entry.id}
-            draggable={isAdmin && !isTouchDevice}
-            onDragStart={e => { e.dataTransfer.setData("text/plain", entry.id); e.dataTransfer.effectAllowed = "move"; }}
-            onDragOver={e => { e.preventDefault(); }}
-            onDrop={e => {
-              e.preventDefault();
-              e.stopPropagation();
-              const eid = e.dataTransfer.getData("text/plain");
-              const rect = e.currentTarget.parentElement!.getBoundingClientRect();
-              const y = e.clientY - rect.top;
-              const hour = Math.floor(y / HOUR_PX) + START_HOUR;
-              if (eid && onDrop) onDrop(eid, date, hour);
-            }}
-            className={`group rounded-md border cursor-pointer hover:brightness-110 transition-all ${draggingId === entry.id ? "opacity-40" : ""} ${!isJob ? "border-dashed" : ""}`}
-            style={{
-              position: "absolute",
-              top,
-              height,
-              left: leftStyle,
-              width: widthStyle,
-              zIndex: 10,
-              backgroundColor: `${staffColour}18`,
-              borderColor: `${staffColour}50`,
-              borderLeftWidth: 3,
-              borderLeftColor: leftBorderColour,
-              borderLeftStyle: isJob ? "solid" : "dashed",
-            }}
-            onClick={e => { e.stopPropagation(); onEntryClick(entry); }}
-          >
-            <div className={`px-2 py-1 h-full flex flex-col overflow-hidden rounded-md ${lanes > 2 ? "px-1" : ""}`}>
-              <div className="flex items-center gap-1.5">
-                {s && (
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ backgroundColor: staffColour }}>
-                    {s.initials}
-                  </span>
-                )}
-                <span className="text-xs font-semibold truncate">
-                  {isJob
-                    ? <span className="font-mono">{entry.job?.number}</span>
-                    : <>{entry.entry_type === "reminder" ? "⏰ " : ""}{entry.title}</>}
-                </span>
-                {entry.recurrence_group_id && (
-                  <span
-                    className="text-[10px] opacity-70"
-                    title={`Recurring — ${entry.recurrence_pattern ?? "series"}`}
-                  >
-                    ↻
-                  </span>
-                )}
-              </div>
-              {height > 44 && isJob && lanes < 3 && (
-                <p className="text-[10px] text-muted-foreground truncate mt-0.5">
-                  {entry.job?.customer?.name}{entry.job?.site ? ` · ${entry.job.site.name}` : ""}
-                </p>
-              )}
-              {height > 64 && lanes < 3 && (
-                <p className="text-[10px] text-muted-foreground mt-0.5">
-                  {entry.start_time?.slice(0,5)} - {entry.end_time?.slice(0,5)}
-                </p>
-              )}
-              {height > 100 && entry.notes && lanes === 1 && (
-                <p className="text-[9px] text-muted-foreground mt-auto italic truncate">{entry.notes}</p>
-              )}
-            </div>
+/* Standalone timed-entry pill — owns its own hover-popover state so we can
+   render the popover via React portal at document.body. The previous inline
+   group-hover popover inherited the parent pill's CSS filter
+   (hover:brightness-110) and translucent backgroundColor, which composited
+   through to the popover and looked like transparency to Sue. Portal escapes
+   all parent stacking influence. */
+function TimedEntryBlock({
+  entry, lane, lanes, date, staff, isAdmin, isTouchDevice, draggingId, onEntryClick, onDrop,
+}: {
+  entry: ScheduleEntry;
+  lane: number;
+  lanes: number;
+  date: string;
+  staff: StaffMember | undefined;
+  isAdmin: boolean;
+  isTouchDevice: boolean;
+  draggingId?: string | null;
+  onEntryClick: (e: ScheduleEntry) => void;
+  onDrop?: (entryId: string, date: string, hour: number) => void;
+}) {
+  void date;
+  void onDrop;
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
 
-            {/* Hover popover — desktop only. Sits to the right of the entry,
-                escaping the column clip via z-50. pointer-events-none so it
-                doesn't interfere with drag/click. */}
-            {!isTouchDevice && (
-              <div
-                className="pointer-events-none absolute left-full top-0 ml-2 hidden w-64 rounded-lg border-2 border-primary/60 px-3 py-2.5 shadow-2xl group-hover:block"
-                style={{
-                  zIndex: 50,
-                  // ROOT CAUSE: the parent entry pill has
-                  // `hover:brightness-110` (a CSS filter) AND a translucent
-                  // backgroundColor of `${staffColour}18`. CSS filters and
-                  // semi-transparent parent backgrounds create stacking
-                  // contexts that visually bleed through to child elements
-                  // — even when the child has its own opaque bg, the
-                  // browser composites them with the parent's effects.
-                  //
-                  // Fix: force the popover into its own isolated
-                  // compositing layer (isolation: isolate) and explicitly
-                  // set opacity:1 so nothing inherits, then hard-code the
-                  // background colours so no variable resolution can fail.
-                  isolation: "isolate",
-                  opacity: 1,
-                  backgroundColor: "#1c1c2a",
-                  color: "#f4f4f8",
-                  backdropFilter: "none",
-                }}
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  function showPopover() {
+    if (isTouchDevice) return;
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    // Right of the pill by default; flip to left if not enough room.
+    const POPOVER_WIDTH = 256;
+    const margin = 8;
+    const wantRight = rect.right + margin + POPOVER_WIDTH < window.innerWidth;
+    setPopoverPos({
+      top: rect.top,
+      left: wantRight ? rect.right + margin : rect.left - POPOVER_WIDTH - margin,
+    });
+  }
+  function hidePopover() {
+    setPopoverPos(null);
+  }
+
+  const startMin = timeMins(entry.start_time!) - START_HOUR * 60;
+  const endMin = timeMins(entry.end_time!) - START_HOUR * 60;
+  const topPx = Math.max(0, (startMin / 60) * HOUR_PX);
+  const height = Math.max(((endMin - startMin) / 60) * HOUR_PX, 28);
+  const s = staff;
+  const staffColour = s?.colour ?? "#6b7280";
+  const isJob = entry.entry_type === "job";
+  const leftBorderColour = isJob ? (entry.job?.status?.colour ?? "#6b7280") : staffColour;
+  const gutter = lanes > 1 ? 2 : 4;
+  const leftStyle =
+    lanes > 1
+      ? `calc(${(lane * 100) / lanes}% + ${gutter}px)`
+      : `${gutter}px`;
+  const widthStyle =
+    lanes > 1
+      ? `calc(${100 / lanes}% - ${gutter * 2}px)`
+      : `calc(100% - ${gutter * 2}px)`;
+
+  return (
+    <>
+      <div
+        ref={triggerRef}
+        draggable={isAdmin && !isTouchDevice}
+        onDragStart={e => { e.dataTransfer.setData("text/plain", entry.id); e.dataTransfer.effectAllowed = "move"; }}
+        onDragOver={e => { e.preventDefault(); }}
+        onMouseEnter={showPopover}
+        onMouseLeave={hidePopover}
+        className={`rounded-md border cursor-pointer hover:brightness-110 transition-all ${draggingId === entry.id ? "opacity-40" : ""} ${!isJob ? "border-dashed" : ""}`}
+        style={{
+          position: "absolute",
+          top: topPx,
+          height,
+          left: leftStyle,
+          width: widthStyle,
+          zIndex: 10,
+          backgroundColor: `${staffColour}18`,
+          borderColor: `${staffColour}50`,
+          borderLeftWidth: 3,
+          borderLeftColor: leftBorderColour,
+          borderLeftStyle: isJob ? "solid" : "dashed",
+        }}
+        onClick={e => { e.stopPropagation(); onEntryClick(entry); }}
+      >
+        <div className={`px-2 py-1 h-full flex flex-col overflow-hidden rounded-md ${lanes > 2 ? "px-1" : ""}`}>
+          <div className="flex items-center gap-1.5">
+            {s && (
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ backgroundColor: staffColour }}>
+                {s.initials}
+              </span>
+            )}
+            <span className="text-xs font-semibold truncate">
+              {isJob
+                ? <span className="font-mono">{entry.job?.number}</span>
+                : <>{entry.entry_type === "reminder" ? "⏰ " : ""}{entry.title}</>}
+            </span>
+            {entry.recurrence_group_id && (
+              <span
+                className="text-[10px] opacity-70"
+                title={`Recurring — ${entry.recurrence_pattern ?? "series"}`}
               >
-                <div className="flex items-center gap-2 mb-1.5">
-                  {s && (
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ backgroundColor: staffColour }}>
-                      {s.initials}
-                    </span>
-                  )}
-                  <span className="text-xs font-medium text-muted-foreground truncate">
-                    {s?.display_name ?? "—"}
-                  </span>
-                </div>
-                {isJob ? (
-                  <>
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-mono text-sm font-semibold">{entry.job?.number}</span>
-                      {entry.job?.status && (
-                        <span
-                          className="rounded px-1.5 py-0.5 text-[10px] font-medium"
-                          style={{ backgroundColor: `${entry.job.status.colour}20`, color: entry.job.status.colour }}
-                        >
-                          {entry.job.status.name}
-                        </span>
-                      )}
-                    </div>
-                    {entry.job?.reference && (
-                      <p className="mt-0.5 text-xs text-muted-foreground truncate">{entry.job.reference}</p>
-                    )}
-                    <div className="mt-1.5 space-y-0.5 text-xs">
-                      <p className="font-medium truncate">{entry.job?.site?.name ?? entry.job?.customer?.name ?? "—"}</p>
-                      {entry.job?.site?.name && entry.job?.customer?.name && (
-                        <p className="text-muted-foreground truncate">{entry.job.customer.name}</p>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-sm font-semibold">
-                    {entry.entry_type === "reminder" ? "⏰ " : ""}{entry.title ?? "Untitled"}
-                  </p>
-                )}
-                {(entry.start_time || entry.end_time) && (
-                  <p className="mt-1.5 text-[11px] text-muted-foreground">
-                    {entry.start_time?.slice(0, 5)}{entry.end_time ? ` – ${entry.end_time.slice(0, 5)}` : ""}
-                  </p>
-                )}
-                {entry.recurrence_group_id && entry.recurrence_pattern && (
-                  <p className="mt-1.5 text-[11px] text-primary/80">
-                    ↻ Recurring {entry.recurrence_pattern}
-                  </p>
-                )}
-                {entry.notes && (
-                  <p className="mt-1.5 border-t border-border pt-1.5 text-[11px] italic text-muted-foreground line-clamp-3">
-                    {entry.notes}
-                  </p>
-                )}
-              </div>
+                ↻
+              </span>
             )}
           </div>
-        );
-      })}
-    </div>
+          {height > 44 && isJob && lanes < 3 && (
+            <p className="text-[10px] text-muted-foreground truncate mt-0.5">
+              {entry.job?.customer?.name}{entry.job?.site ? ` · ${entry.job.site.name}` : ""}
+            </p>
+          )}
+          {height > 64 && lanes < 3 && (
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              {entry.start_time?.slice(0,5)} - {entry.end_time?.slice(0,5)}
+            </p>
+          )}
+          {height > 100 && entry.notes && lanes === 1 && (
+            <p className="text-[9px] text-muted-foreground mt-auto italic truncate">{entry.notes}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Portal'd hover popover — escapes the parent pill's stacking
+          context (CSS filter + translucent bg) so it renders genuinely
+          opaque against the page, not composited with the entry. */}
+      {mounted && popoverPos && createPortal(
+        <div
+          className="fixed pointer-events-none w-64 rounded-lg border-2 border-primary/70 px-3 py-2.5 shadow-2xl"
+          style={{
+            top: popoverPos.top,
+            left: popoverPos.left,
+            zIndex: 9999,
+            backgroundColor: "#1c1c2a",
+            color: "#f4f4f8",
+            opacity: 1,
+          }}
+        >
+          <div className="flex items-center gap-2 mb-1.5">
+            {s && (
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ backgroundColor: staffColour }}>
+                {s.initials}
+              </span>
+            )}
+            <span className="text-xs font-medium opacity-70 truncate">
+              {s?.display_name ?? "—"}
+            </span>
+          </div>
+          {isJob ? (
+            <>
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-sm font-semibold">{entry.job?.number}</span>
+                {entry.job?.status && (
+                  <span
+                    className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                    style={{ backgroundColor: `${entry.job.status.colour}30`, color: entry.job.status.colour }}
+                  >
+                    {entry.job.status.name}
+                  </span>
+                )}
+              </div>
+              {entry.job?.reference && (
+                <p className="mt-0.5 text-xs opacity-70 truncate">{entry.job.reference}</p>
+              )}
+              <div className="mt-1.5 space-y-0.5 text-xs">
+                <p className="font-medium truncate">{entry.job?.site?.name ?? entry.job?.customer?.name ?? "—"}</p>
+                {entry.job?.site?.name && entry.job?.customer?.name && (
+                  <p className="opacity-70 truncate">{entry.job.customer.name}</p>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm font-semibold">
+              {entry.entry_type === "reminder" ? "⏰ " : ""}{entry.title ?? "Untitled"}
+            </p>
+          )}
+          {(entry.start_time || entry.end_time) && (
+            <p className="mt-1.5 text-[11px] opacity-70">
+              {entry.start_time?.slice(0, 5)}{entry.end_time ? ` – ${entry.end_time.slice(0, 5)}` : ""}
+            </p>
+          )}
+          {entry.recurrence_group_id && entry.recurrence_pattern && (
+            <p className="mt-1.5 text-[11px] text-primary">
+              ↻ Recurring {entry.recurrence_pattern}
+            </p>
+          )}
+          {entry.notes && (
+            <p className="mt-1.5 border-t border-white/10 pt-1.5 text-[11px] italic opacity-70 line-clamp-3">
+              {entry.notes}
+            </p>
+          )}
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
