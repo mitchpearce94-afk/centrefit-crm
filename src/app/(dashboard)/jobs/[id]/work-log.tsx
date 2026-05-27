@@ -33,7 +33,11 @@ export function WorkLog({
 }) {
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<any>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const router = useRouter();
+  const supabase = createClient();
+  const { toast } = useToast();
 
   function openNew() {
     setEditingEntry(null);
@@ -48,6 +52,23 @@ export function WorkLog({
   function closeForm() {
     setShowForm(false);
     setEditingEntry(null);
+  }
+
+  async function handleDelete(entryId: string) {
+    setDeletingId(entryId);
+    const { error } = await supabase
+      .from("job_work_entries")
+      .delete()
+      .eq("id", entryId);
+    if (error) {
+      toast(error.message, "error");
+      setDeletingId(null);
+      return;
+    }
+    toast("Entry deleted");
+    setConfirmDeleteId(null);
+    setDeletingId(null);
+    router.refresh();
   }
 
   return (
@@ -132,6 +153,31 @@ export function WorkLog({
                   >
                     Edit
                   </button>
+                  {confirmDeleteId === entry.id ? (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleDelete(entry.id)}
+                        disabled={deletingId === entry.id}
+                        className="rounded-md bg-destructive px-2.5 py-1 text-[11px] font-medium text-white hover:bg-destructive/90 disabled:opacity-50 transition-colors"
+                      >
+                        {deletingId === entry.id ? "Deleting…" : "Confirm delete"}
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        disabled={deletingId === entry.id}
+                        className="rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmDeleteId(entry.id)}
+                      className="rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
 
