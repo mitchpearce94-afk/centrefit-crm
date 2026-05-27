@@ -7,7 +7,7 @@
     },
     {
       "path": "/api/cron/retry-stuck-mandates",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 22 * * *"
     }
   ]
 }

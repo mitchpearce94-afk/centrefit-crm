@@ -3,10 +3,10 @@ import { createServiceRoleClient } from "@/lib/supabase/service";
 import { activatePlan } from "@/lib/recurring/activate-plan";
 
 /**
- * Every 15 minutes — re-run activatePlan on plans that signed a mandate
- * (so gc_mandate_id is populated) but never made it to `active` because
- * the original BR.fulfilled webhook trip through activatePlan failed
- * (Xero rate-limit, token refresh blip, RI creation error).
+ * Daily — re-run activatePlan on plans that signed a mandate (so
+ * gc_mandate_id is populated) but never made it to `active` because the
+ * original BR.fulfilled webhook trip through activatePlan failed (Xero
+ * rate-limit, token refresh blip, RI creation error).
  *
  * Without this cron, a single transient Xero hiccup means the plan stays
  * in pending_mandate forever — that's the silent-failure mode that bit
@@ -14,13 +14,18 @@ import { activatePlan } from "@/lib/recurring/activate-plan";
  * the GC IDs, activatePlan threw on the Xero step, console.error went
  * to function logs nobody reads).
  *
+ * Hobby plan caps cron jobs at once-daily, so this runs nightly. The
+ * immediate-recovery path is the "Retry now" button on the plan detail
+ * page — the cron is a safety net for plans Mitchell didn't notice
+ * (notification was missed, plan was created late at night, etc).
+ *
  * Eligibility:
  *   - status = pending_mandate (live plans aren't retried)
  *   - gc_mandate_id IS NOT NULL (we need a mandate to bill against)
  *   - activation_attempts < 10 (bail after persistent failure — Mitchell
  *     already has the notification from each attempt)
  *   - last_activation_attempt_at IS NULL or older than the backoff window
- *     for the current attempt count (1m, 5m, 15m, 1h, 4h, 12h, 24h, 24h...)
+ *     for the current attempt count (24h floor on Hobby).
  *
  * Auth: X-Cf-Cron-Secret matches CRON_SECRET (same pattern as
  * quote-followups). Vercel cron forwards the header automatically.
