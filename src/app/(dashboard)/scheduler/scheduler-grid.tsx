@@ -519,15 +519,18 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
                 doesn't interfere with drag/click. */}
             {!isTouchDevice && (
               <div
-                className="pointer-events-none absolute left-full top-0 ml-2 hidden w-64 rounded-lg border border-border bg-card px-3 py-2.5 text-foreground shadow-xl group-hover:block"
+                className="pointer-events-none absolute left-full top-0 ml-2 hidden w-64 rounded-lg border-2 border-primary/60 bg-accent px-3 py-2.5 text-accent-foreground shadow-2xl group-hover:block"
                 style={{
                   zIndex: 50,
-                  // Belt-and-braces — explicitly inline an opaque background
-                  // so the popover NEVER bleeds the cell colour behind it
-                  // regardless of Tailwind class resolution / cache state.
-                  // var() falls back to the dark token if the var stack is
-                  // somehow unset in this stacking context.
-                  backgroundColor: "var(--card-elevated, var(--card, #0f0f17))",
+                  // Sue kept reporting this as "transparent". The bg-card /
+                  // bg-card-elevated values (#0f0f17 / #14141d) ARE solid
+                  // but visually almost identical to the scheduler page bg
+                  // (#0f0f17), so the popover looked like it was bleeding
+                  // through. Switched to bg-accent (#1a1a26 dark / #eef0f6
+                  // light) — distinctly elevated from the page in both
+                  // themes — and bumped the border + shadow.
+                  backgroundColor: "var(--accent, #1a1a26)",
+                  color: "var(--accent-foreground, #f4f4f8)",
                 }}
               >
                 <div className="flex items-center gap-2 mb-1.5">
