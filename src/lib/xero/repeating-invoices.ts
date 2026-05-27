@@ -146,7 +146,14 @@ export async function createRepeatingInvoice(
   if (reference) payload.reference = reference.slice(0, 255);
   if (brandingThemeID) payload.brandingThemeID = brandingThemeID;
   payload.includePDF = includePDF;
-  payload.approvedForSending = true;
+  // Xero rejects ApprovedForSending=true on DRAFT templates with
+  // "Only AUTHORISED repeating invoices may have ApprovedForSending updated."
+  // Set it ONLY on AUTHORISED. When Mitchell flips the template DRAFT →
+  // AUTHORISED via authoriseRepeatingInvoice, we re-apply approvedForSending
+  // there (see authoriseRepeatingInvoice below).
+  if (childStatus === "AUTHORISED") {
+    payload.approvedForSending = true;
+  }
 
   const res = await xero.accountingApi.createRepeatingInvoices(
     tenantId,
@@ -234,8 +241,12 @@ export async function authoriseRepeatingInvoice(
   tenantId: string,
   repeatingInvoiceId: string,
 ): Promise<RepeatingInvoiceState> {
+  // Flip to AUTHORISED first. ApprovedForSending can only be set on an
+  // already-AUTHORISED template (Xero validation), so it goes in a second
+  // call. Auto-send-when-authorised at the org level still drives whether
+  // the next child actually emails — this just unblocks the flag.
   await xero.accountingApi.updateRepeatingInvoice(tenantId, repeatingInvoiceId, {
-    repeatingInvoices: [{ status: "AUTHORISED" } as never],
+    repeatingInvoices: [{ status: "AUTHORISED", approvedForSending: true } as never],
   });
   return getRepeatingInvoice(xero, tenantId, repeatingInvoiceId);
 }
