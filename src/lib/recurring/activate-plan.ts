@@ -239,9 +239,13 @@ async function activatePlanInner(
       frequency,
       startDate,
       dueDays: 7,
-      // childStatus defaults to "DRAFT" — auto-generated children sit in
-      // Mitchell's Xero Draft folder for manual review before authorising
-      // and sending. Locked in after the 2026-05-11 auto-send incident.
+      // Mitchell's 2026-05-27 call: new plans go live AUTHORISED + auto-send
+      // so the customer gets their first invoice automatically on the
+      // chosen first_invoice_date. The 2026-05-11 duplicate-send incident
+      // is mitigated by the idempotency key + activation safety net
+      // (recordActivationFailure + retry cron), so the "manual approve"
+      // gate is no longer needed.
+      childStatus: "AUTHORISED",
       brandingThemeID,
       idempotencyKey,
       lineItems: group.map((it) => ({

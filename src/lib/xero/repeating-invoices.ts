@@ -48,11 +48,12 @@ export interface CreateRepeatingInvoiceInput {
   dueDays?: number;
   lineItems: RepeatingInvoiceLineInput[];
   /**
-   * Status the auto-generated children inherit.
-   * DEFAULT: "DRAFT". Hard rule from 2026-05-11 — never default to
-   * AUTHORISED here because Xero's org-level "auto-send when authorised"
-   * setting will email customers without further confirmation. AUTHORISED
-   * is opt-in only and must be paired with Mitchell's explicit sign-off.
+   * Status the auto-generated children inherit. Default DRAFT, but the
+   * recurring-plan flow (lib/recurring/activate-plan.ts) passes AUTHORISED
+   * so new plans go live with auto-send enabled — Mitchell's 2026-05-27
+   * call after the duplicate-invoice risk was contained by the idempotency
+   * key + activation safety net. DRAFT remains available for callers that
+   * want a manual approve step.
    */
   childStatus?: "DRAFT" | "AUTHORISED";
   /**
