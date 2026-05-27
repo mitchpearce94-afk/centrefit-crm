@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/quote-followups",
       "schedule": "30 23 * * *"
+    },
+    {
+      "path": "/api/cron/retry-stuck-mandates",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

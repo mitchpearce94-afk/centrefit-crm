@@ -315,6 +315,25 @@ export function AssignJobModal({
       // Nudge the linked job into "Scheduled" if it's still in a
       // pre-work phase. Events/reminders never touch job status.
       await autoTransitionJobStatus(jobId, "job_scheduled", supabase);
+
+      // Notify the actual assignees they've been scheduled. Fire-and-forget
+      // — the modal closes regardless, the bell either shows up or it
+      // doesn't, but we don't block the save UX on a notification.
+      // Michael flagged 2026-05-27 that he wasn't getting any of these.
+      fetch("/api/notifications/job-scheduled", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobId,
+          staffIds: targetStaffIds,
+          scheduleDate: basePayload.schedule_date,
+          startTime: basePayload.start_time,
+          endTime: basePayload.end_time,
+        }),
+      }).catch(() => {
+        // Already saved — a missed notification is recoverable, the
+        // schedule entry isn't. Don't fail the modal save on this.
+      });
     }
 
     onSaved();

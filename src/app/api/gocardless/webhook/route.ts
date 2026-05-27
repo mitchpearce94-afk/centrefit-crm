@@ -115,11 +115,54 @@ async function handleBillingRequestEvent(
     })
     .eq("id", plan.id);
 
+  // Tell staff the customer actually signed. Distinct from mandate.active
+  // (the bank-verified state) — for AU BECS that doesn't fire until first
+  // payment, but `fulfilled` is the human "they signed" signal we care
+  // about for ops visibility.
+  if (event.action === "fulfilled") {
+    try {
+      // Pull labels for a useful notification body — best-effort.
+      const { data: planRow } = await supabase
+        .from("recurring_plans")
+        .select("id, customers(name), customer_sites(name)")
+        .eq("id", plan.id)
+        .single();
+      const cust = planRow
+        ? Array.isArray(planRow.customers)
+          ? planRow.customers[0]
+          : planRow.customers
+        : null;
+      const site = planRow
+        ? Array.isArray(planRow.customer_sites)
+          ? planRow.customer_sites[0]
+          : planRow.customer_sites
+        : null;
+      const who =
+        site?.name && cust?.name
+          ? `${cust.name} — ${site.name}`
+          : (cust?.name ?? "Customer");
+      await enqueueNotification({
+        supabase,
+        typeCode: "recurring_plan.signup_completed",
+        refType: "recurring_plan",
+        refId: plan.id,
+        audience: { allActive: true },
+        title: `${who} signed mandate`,
+        body: "Recurring billing signup completed — provisioning Xero template now.",
+        href: `/invoices/recurring/${plan.id}`,
+      });
+    } catch (err) {
+      console.error(`[gc-webhook] signup_completed notify failed for ${plan.id}:`, err);
+    }
+  }
+
   // AU BECS quirk: GC doesn't submit the mandate to the bank until the first
   // payment is created. So waiting for `mandate.active` to provision the Xero
   // RepeatingInvoice creates a dead-end (no RI → no payment → mandate never
   // activates). Fire activatePlan from BR.fulfilled instead — that's when we
-  // have the IDs we need, regardless of mandate-state lifecycle.
+  // have the IDs we need, regardless of mandate-state lifecycle. Failure
+  // surfacing now lives inside activatePlan itself — recordActivationFailure
+  // writes the error to the plan + fires recurring_plan.activation_failed.
   if (event.action === "fulfilled" && mandateId) {
     try {
       const result = await activatePlan(supabase, plan.id);

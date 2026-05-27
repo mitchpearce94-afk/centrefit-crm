@@ -7,6 +7,64 @@ import { enqueueNotification } from "@/lib/notifications/enqueue";
 
 type ServiceClient = ReturnType<typeof createServiceRoleClient>;
 
+/**
+ * Persist an activation failure so the UI, the retry cron, and Mitchell's
+ * notification bell all see it. Called from every failure path in
+ * activatePlanInner + the outer catch. Best-effort — if the row update
+ * itself fails we still emit a console.error as a last-resort breadcrumb,
+ * but every code path that reaches here already has a notification on
+ * its way too.
+ */
+async function recordActivationFailure(
+  supabase: ServiceClient,
+  planId: string,
+  reason: string,
+): Promise<void> {
+  try {
+    // Pull the previous attempt count so we can increment, plus enough
+    // customer/site context for a useful notification body.
+    const { data: plan } = await supabase
+      .from("recurring_plans")
+      .select(
+        "id, activation_attempts, customer_id, site_id, customers(name), customer_sites(name)",
+      )
+      .eq("id", planId)
+      .single();
+    const attempts = (plan?.activation_attempts ?? 0) + 1;
+    await supabase
+      .from("recurring_plans")
+      .update({
+        activation_error: reason,
+        activation_attempts: attempts,
+        last_activation_attempt_at: new Date().toISOString(),
+      })
+      .eq("id", planId);
+
+    const customer = Array.isArray(plan?.customers) ? plan?.customers[0] : plan?.customers;
+    const site = Array.isArray(plan?.customer_sites) ? plan?.customer_sites[0] : plan?.customer_sites;
+    const who =
+      site?.name && customer?.name
+        ? `${customer.name} — ${site.name}`
+        : customer?.name ?? "Unknown customer";
+    await enqueueNotification({
+      supabase,
+      typeCode: "recurring_plan.activation_failed",
+      refType: "recurring_plan",
+      refId: planId,
+      audience: { allActive: true },
+      title: `Activation failed: ${who}`,
+      body: `Attempt ${attempts} — ${reason}. Auto-retry will run within 15 min, or hit Retry on the plan page.`,
+      href: `/invoices/recurring/${planId}`,
+    });
+  } catch (err) {
+    // Never let the failure-recorder itself throw — it would mask the real
+    // error from the caller. Log so the breadcrumb survives if everything
+    // upstream collapses.
+    console.error(`[activatePlan] recordActivationFailure failed for ${planId}:`, err);
+  }
+}
+
+
 export type ActivatePlanResult =
   | { ok: true; skipped: "already_active"; planId: string }
   | { ok: true; activated: true; planId: string; xeroRepeatingInvoiceId: string; startDate: string }
@@ -36,6 +94,23 @@ export async function activatePlan(
   supabase: ServiceClient,
   planId: string,
 ): Promise<ActivatePlanResult> {
+  // Outer try/catch so every failure path goes through the same
+  // record-error + notify pipeline. Without this, a thrown Xero API error
+  // (rate limit, token refresh, RI creation) silently kills the plan in
+  // pending_mandate with nothing surfaced — Ben Gunning / Woodend 2026-05-25.
+  try {
+    return await activatePlanInner(supabase, planId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await recordActivationFailure(supabase, planId, `threw: ${message}`);
+    return { ok: false, reason: `activation_threw: ${message}`, planId };
+  }
+}
+
+async function activatePlanInner(
+  supabase: ServiceClient,
+  planId: string,
+): Promise<ActivatePlanResult> {
   const { data: plan } = await supabase
     .from("recurring_plans")
     .select(`
@@ -45,7 +120,10 @@ export async function activatePlan(
     `)
     .eq("id", planId)
     .single();
-  if (!plan) return { ok: false, reason: "plan_not_found", planId };
+  if (!plan) {
+    await recordActivationFailure(supabase, planId, "plan_not_found");
+    return { ok: false, reason: "plan_not_found", planId };
+  }
 
   // Branding-theme selection: NBN-derived plans get the Communications DD
   // theme; everything else gets the Solutions DD theme. NBN-derivation is
@@ -59,13 +137,11 @@ export async function activatePlan(
     ? process.env.XERO_BRANDING_THEME_COMMUNICATIONS_DD_ID
     : process.env.XERO_BRANDING_THEME_SOLUTIONS_DD_ID;
   if (!brandingThemeID) {
-    return {
-      ok: false,
-      reason: isNbnPlan
-        ? "XERO_BRANDING_THEME_COMMUNICATIONS_DD_ID env var not set"
-        : "XERO_BRANDING_THEME_SOLUTIONS_DD_ID env var not set",
-      planId,
-    };
+    const reason = isNbnPlan
+      ? "XERO_BRANDING_THEME_COMMUNICATIONS_DD_ID env var not set"
+      : "XERO_BRANDING_THEME_SOLUTIONS_DD_ID env var not set";
+    await recordActivationFailure(supabase, planId, reason);
+    return { ok: false, reason, planId };
   }
 
   // Already activated — idempotent.
@@ -78,7 +154,10 @@ export async function activatePlan(
     .from("recurring_plan_items")
     .select("service_code, service_name, description, price_inc_gst, frequency, account_code, quantity")
     .eq("recurring_plan_id", planId);
-  if (!items || items.length === 0) return { ok: false, reason: "no_plan_items", planId };
+  if (!items || items.length === 0) {
+    await recordActivationFailure(supabase, planId, "no_plan_items");
+    return { ok: false, reason: "no_plan_items", planId };
+  }
 
   // Plans with mixed monthly/yearly need separate Xero RepeatingInvoices,
   // one per cadence. Group items by frequency and create one template per
@@ -92,7 +171,10 @@ export async function activatePlan(
   }
 
   const customer = Array.isArray(plan.customers) ? plan.customers[0] : plan.customers;
-  if (!customer) return { ok: false, reason: "no_customer", planId };
+  if (!customer) {
+    await recordActivationFailure(supabase, planId, "no_customer");
+    return { ok: false, reason: "no_customer", planId };
+  }
   const site = Array.isArray(plan.customer_sites) ? plan.customer_sites[0] : plan.customer_sites;
   const primary =
     customer.customer_contacts?.find((c: { is_primary: boolean }) => c.is_primary) ??
@@ -178,8 +260,14 @@ export async function activatePlan(
   const primaryRiId = monthlyRiId ?? yearlyRiId;
   const secondaryRiId = monthlyRiId && yearlyRiId ? yearlyRiId : null;
 
-  if (!primaryRiId) return { ok: false, reason: "no_ri_created", planId };
+  if (!primaryRiId) {
+    await recordActivationFailure(supabase, planId, "no_ri_created");
+    return { ok: false, reason: "no_ri_created", planId };
+  }
 
+  // Successful activation — clear any prior error breadcrumb and stamp the
+  // success state. activation_attempts intentionally keeps its history so we
+  // can spot plans that flapped.
   await supabase
     .from("recurring_plans")
     .update({
@@ -188,6 +276,8 @@ export async function activatePlan(
       xero_repeating_invoice_id: primaryRiId,
       xero_repeating_invoice_secondary_id: secondaryRiId,
       next_invoice_date: startDate,
+      activation_error: null,
+      last_activation_attempt_at: new Date().toISOString(),
     })
     .eq("id", planId);
 

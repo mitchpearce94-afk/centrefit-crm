@@ -5,6 +5,7 @@ import { CancelButton } from "./cancel-button";
 import { EditServicesButton } from "./edit-services-button";
 import { EditStartDateButton } from "./edit-start-date-button";
 import { AuthoriseXeroButton } from "./authorise-xero-button";
+import { RetryActivationButton } from "./retry-activation-button";
 import { accountCodeLabel } from "@/lib/xero/account-codes";
 import { getAuthedClient } from "@/lib/xero/client";
 import { getRepeatingInvoice, type RepeatingInvoiceState } from "@/lib/xero/repeating-invoices";
@@ -38,6 +39,7 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
       .select(`
         id, status, next_invoice_date, first_invoice_date, alias_email, signup_link_url, signup_emailed_at,
         gc_customer_id, gc_mandate_id, xero_repeating_invoice_id, xero_contact_id,
+        activation_error, activation_attempts, last_activation_attempt_at,
         created_at, notes,
         customers(id, name),
         customer_sites(id, name, address, suburb, state, postcode),
@@ -124,6 +126,37 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
           />
         </div>
       </div>
+
+      {/* Activation-failure banner — surfaces the silent-failure mode that
+          bit Ben Gunning / Snap Fitness Woodend on 2026-05-25. The retry
+          cron will pick this up automatically within 15 min, but the
+          Retry button gives Mitchell an immediate kick. */}
+      {plan.activation_error && plan.status === "pending_mandate" && plan.gc_mandate_id && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-destructive">
+                Activation failed — plan stuck after signup
+              </p>
+              <p className="mt-1 text-xs text-foreground/90 break-words">
+                {plan.activation_error}
+              </p>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                {plan.activation_attempts ?? 0} attempt
+                {(plan.activation_attempts ?? 0) === 1 ? "" : "s"}
+                {plan.last_activation_attempt_at ? (
+                  <>
+                    {" "}— last tried{" "}
+                    {new Date(plan.last_activation_attempt_at).toLocaleString("en-AU")}
+                  </>
+                ) : null}
+                . Auto-retry runs every 15 min while attempts &lt; 10.
+              </p>
+            </div>
+            <RetryActivationButton planId={plan.id} />
+          </div>
+        </div>
+      )}
 
       {/* Status detail */}
       <div className="surface-card p-5 space-y-3">

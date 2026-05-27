@@ -665,47 +665,53 @@ function MandateSourcePicker({
         <div className="space-y-2 rounded-md border border-border bg-muted/10 p-3">
           {loading ? (
             <p className="text-xs text-muted-foreground italic">Fetching mandates from GoCardless…</p>
-          ) : mandates.length === 0 && loaded ? (
-            <p className="text-xs text-muted-foreground">
-              No active mandates found for this customer in GoCardless.
-              {" "}
-              <button
-                onClick={() => setShowPaste(true)}
-                className="text-primary hover:underline"
-              >
-                Paste a mandate ID
-              </button>{" "}
-              if you know one (e.g. mandate is on a different GC customer record).
-            </p>
           ) : (
             <>
-              <label className="block">
-                <span className="text-xs font-medium text-muted-foreground">Pick mandate</span>
-                <select
-                  value={mandateId}
-                  onChange={(e) => onMandateIdChange(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm font-mono"
-                >
-                  <option value="">Pick…</option>
-                  {mandates.map((m) => (
-                    <option key={m.mandate_id} value={m.mandate_id}>
-                      {m.mandate_id}
-                      {" — "}
-                      {m.bank_name ?? "Bank unknown"}
-                      {m.account_last4 ? ` ••${m.account_last4}` : ""}
-                      {" · "}
-                      {m.status}
-                      {m.scheme ? ` (${m.scheme})` : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {mandates.length === 0 && loaded ? (
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5 text-xs text-amber-300 space-y-1">
+                  <p className="font-medium">No mandates auto-detected for this customer.</p>
+                  <p className="text-amber-300/80 leading-relaxed">
+                    The auto-detect only finds mandates already linked to this
+                    CRM customer via a prior plan. If the customer signed a
+                    mandate elsewhere (e.g. brought over from outside the CRM,
+                    or sits on a different customer record) paste the
+                    mandate ID below — it starts with <span className="font-mono">MD</span>
+                    and you&apos;ll find it on the GoCardless dashboard under
+                    Customers → Mandates.
+                  </p>
+                </div>
+              ) : (
+                <label className="block">
+                  <span className="text-xs font-medium text-muted-foreground">Pick mandate</span>
+                  <select
+                    value={mandateId}
+                    onChange={(e) => onMandateIdChange(e.target.value)}
+                    className="mt-1 w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm font-mono"
+                  >
+                    <option value="">Pick…</option>
+                    {mandates.map((m) => (
+                      <option key={m.mandate_id} value={m.mandate_id}>
+                        {m.mandate_id}
+                        {" — "}
+                        {m.bank_name ?? "Bank unknown"}
+                        {m.account_last4 ? ` ••${m.account_last4}` : ""}
+                        {" · "}
+                        {m.status}
+                        {m.scheme ? ` (${m.scheme})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {/* Paste-by-ID is always available, not only on empty list —
+                  mandate may live on a different customer record. */}
               {!showPaste && (
                 <button
                   onClick={() => setShowPaste(true)}
-                  className="text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                  className="text-[11px] text-primary hover:text-primary/80 hover:underline"
                 >
-                  …or paste a mandate ID manually
+                  + Paste a mandate ID from GoCardless
                 </button>
               )}
             </>
