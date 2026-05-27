@@ -708,8 +708,8 @@ export function AssignJobModal({
               </div>
               {isMultiDay && (
                 <p className="mt-2 text-[10px] text-muted-foreground">
-                  Multi-day entry — times apply on the start day. Continues across
-                  intermediate days as all-day.
+                  Multi-day entry — these times render on every day of the
+                  span. Leave times blank for an all-day multi-day block.
                 </p>
               )}
             </div>

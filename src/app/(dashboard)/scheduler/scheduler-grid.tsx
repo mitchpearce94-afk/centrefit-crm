@@ -181,20 +181,29 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
     const allDay = new Map<string, ScheduleEntry[]>();
     const timed = new Map<string, ScheduleEntry[]>();
     for (const e of entries) {
-      // Multi-day entries (end_date > schedule_date) render as all-day on
-      // every date they span. Single-day entries with start/end times go on
-      // the time grid; everything else lands in the all-day bar above.
+      // Routing rules:
+      //   - Has start_time AND end_time → render in the time grid. If it
+      //     also spans multiple days, repeat the timed block on every day
+      //     of the span (Mitchell wants a 9-5 Mon-Wed job to show 9-5 on
+      //     each of those columns, not pinned to the all-day strip).
+      //   - No times → all-day bar, on every day spanned.
       const isMultiDay = !!e.end_date && e.end_date > e.schedule_date;
-      if (isMultiDay) {
+      const hasTimes = !!e.start_time && !!e.end_time;
+      if (hasTimes) {
+        let cursor = e.schedule_date;
+        const lastDay = isMultiDay ? e.end_date! : e.schedule_date;
+        while (cursor <= lastDay) {
+          if (!timed.has(cursor)) timed.set(cursor, []);
+          timed.get(cursor)!.push(e);
+          cursor = addDaysStr(cursor, 1);
+        }
+      } else if (isMultiDay) {
         let cursor = e.schedule_date;
         while (cursor <= e.end_date!) {
           if (!allDay.has(cursor)) allDay.set(cursor, []);
           allDay.get(cursor)!.push(e);
           cursor = addDaysStr(cursor, 1);
         }
-      } else if (e.start_time && e.end_time) {
-        if (!timed.has(e.schedule_date)) timed.set(e.schedule_date, []);
-        timed.get(e.schedule_date)!.push(e);
       } else {
         if (!allDay.has(e.schedule_date)) allDay.set(e.schedule_date, []);
         allDay.get(e.schedule_date)!.push(e);
