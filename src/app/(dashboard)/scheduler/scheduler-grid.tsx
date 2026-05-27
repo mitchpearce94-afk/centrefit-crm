@@ -520,7 +520,15 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
             {!isTouchDevice && (
               <div
                 className="pointer-events-none absolute left-full top-0 ml-2 hidden w-64 rounded-lg border border-border bg-card px-3 py-2.5 text-foreground shadow-xl group-hover:block"
-                style={{ zIndex: 50 }}
+                style={{
+                  zIndex: 50,
+                  // Belt-and-braces — explicitly inline an opaque background
+                  // so the popover NEVER bleeds the cell colour behind it
+                  // regardless of Tailwind class resolution / cache state.
+                  // var() falls back to the dark token if the var stack is
+                  // somehow unset in this stacking context.
+                  backgroundColor: "var(--card-elevated, var(--card, #0f0f17))",
+                }}
               >
                 <div className="flex items-center gap-2 mb-1.5">
                   {s && (
