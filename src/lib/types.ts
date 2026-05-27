@@ -51,6 +51,9 @@ export interface Customer {
   health_score: number;
   total_revenue: number;
   notes: string | null;
+  // Default billing email for invoices/quotes. Comma-separated list allowed.
+  // Site-level billing_email overrides this when an invoice is site-scoped.
+  billing_email: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -83,6 +86,9 @@ export interface CustomerSite {
   state: string | null;
   postcode: string | null;
   phone: string | null;
+  // Site-level invoice email. Wins over customer.billing_email when present.
+  // Comma-separated for multi-recipient billing (Total Fusion pattern).
+  billing_email: string | null;
   lat: number | null;
   lng: number | null;
   site_contact_id: string | null;
@@ -111,6 +117,7 @@ export interface SiteAsset {
   firmware: string | null;
   vlans: { name?: string; id?: string; notes?: string }[];
   wifi_ssids: { ssid?: string; password?: string; notes?: string }[];
+  rfid: string | null;
   location_note: string | null;
   install_date: string | null;
   warranty_expiry: string | null;
@@ -126,6 +133,7 @@ export interface AssetType {
   name: string;
   category: string | null;
   default_manufacturer: string | null;
+  default_model: string | null;
   has_serial: boolean;
   has_mac: boolean;
   has_ip: boolean;
@@ -134,6 +142,7 @@ export interface AssetType {
   has_firmware: boolean;
   has_vlans: boolean;
   has_wifi: boolean;
+  has_rfid: boolean;
   is_key_info: boolean;
   is_active: boolean;
   sort_order: number;

@@ -5,7 +5,10 @@ export interface CustomerForXero {
   id: string;
   name: string;
   xero_contact_id?: string | null;
+  /** Legacy single-contact email. Prefer billing_email for new code. */
   email?: string | null;
+  /** Site-first billing — customer-level fallback when no site override. */
+  billing_email?: string | null;
   phone?: string | null;
   abn?: string | null;
 }
@@ -28,6 +31,8 @@ export interface SiteForXero {
   id: string;
   name: string;
   xero_contact_id?: string | null;
+  /** Site-level invoice email. Wins over customer-level when present. */
+  billing_email?: string | null;
   address?: string | null;
   suburb?: string | null;
   state?: string | null;
@@ -114,7 +119,16 @@ export async function findOrCreateContact(
     const contactPayload: Record<string, unknown> = {
       name: displayName,
     };
-    if (customer.email) contactPayload.emailAddress = customer.email;
+    // Email priority: site billing_email → customer billing_email → legacy
+    // customer.email. We take only the first address from a comma list
+    // because Xero contacts have a single emailAddress field; the rest are
+    // added via Xero ContactPersons or used only for our own send routes.
+    const billingEmail =
+      site?.billing_email?.split(",")[0]?.trim() ||
+      customer.billing_email?.split(",")[0]?.trim() ||
+      customer.email ||
+      null;
+    if (billingEmail) contactPayload.emailAddress = billingEmail;
     if (customer.phone) {
       contactPayload.phones = [{ phoneType: "DEFAULT", phoneNumber: customer.phone }];
     }

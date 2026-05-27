@@ -40,8 +40,8 @@ export async function activatePlan(
     .from("recurring_plans")
     .select(`
       id, status, customer_id, site_id, gc_mandate_id, xero_repeating_invoice_id, first_invoice_date,
-      customers(id, name, abn, xero_contact_id, customer_contacts(name, email, phone, is_primary)),
-      customer_sites(name, address, suburb, state, postcode, xero_contact_id)
+      customers(id, name, abn, xero_contact_id, billing_email, customer_contacts(name, email, phone, is_primary)),
+      customer_sites(name, address, suburb, state, postcode, xero_contact_id, billing_email)
     `)
     .eq("id", planId)
     .single();
@@ -113,6 +113,7 @@ export async function activatePlan(
       name: customer.name,
       xero_contact_id: customer.xero_contact_id,
       email: primary?.email ?? null,
+      billing_email: (customer as { billing_email?: string | null }).billing_email ?? null,
       phone: primary?.phone ?? null,
       abn: customer.abn ?? null,
     },
@@ -121,6 +122,7 @@ export async function activatePlan(
           id: plan.site_id,
           name: site.name,
           xero_contact_id: (site as { xero_contact_id?: string | null }).xero_contact_id ?? null,
+          billing_email: (site as { billing_email?: string | null }).billing_email ?? null,
           address: site.address ?? null,
           suburb: site.suburb ?? null,
           state: site.state ?? null,

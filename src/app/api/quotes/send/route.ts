@@ -201,11 +201,20 @@ export async function POST(req: NextRequest) {
 `);
 
   try {
+    // Accept comma-separated email lists from the UI — Sue asked for multi-
+    // recipient billing for sites that have a separate AP / GM email split.
+    const recipients = email
+      .split(",")
+      .map((s: string) => s.trim())
+      .filter((s: string) => s.length > 0);
+    if (recipients.length === 0) {
+      return NextResponse.json({ error: "No valid recipient email address" }, { status: 400 });
+    }
     const filename = `Centrefit-Quote-${quote.ref}.pdf`;
     const { error: sendError } = await getResend().emails.send({
       from: FROM_QUOTES,
       replyTo: REPLY_TO_SALES,
-      to: email,
+      to: recipients,
       subject: `Quotation ${quote.ref} — ${clientName}${quote.site_name ? ` — ${quote.site_name}` : ''}`,
       html: emailHtml,
       // Custom headers — picked up by /api/resend/webhook to link

@@ -223,7 +223,7 @@ export async function POST(req: NextRequest) {
   // ── Resolve customer + Xero contact ──
   const { data: customer, error: custErr } = await supabase
     .from("customers")
-    .select("id, name, abn, xero_contact_id, customer_contacts(email, phone, is_primary)")
+    .select("id, name, abn, xero_contact_id, billing_email, customer_contacts(email, phone, is_primary)")
     .eq("id", customerId)
     .single();
   if (custErr || !customer) {
@@ -236,11 +236,11 @@ export async function POST(req: NextRequest) {
 
   // Resolve site row if we have one, so the contact gets the per-site
   // mapping + address attached (workstream Xero polish, 2026-04-29).
-  let siteRow: { id: string; name: string; address: string | null; suburb: string | null; state: string | null; postcode: string | null; xero_contact_id: string | null } | null = null;
+  let siteRow: { id: string; name: string; address: string | null; suburb: string | null; state: string | null; postcode: string | null; xero_contact_id: string | null; billing_email: string | null } | null = null;
   if (siteId) {
     const { data } = await supabase
       .from("customer_sites")
-      .select("id, name, address, suburb, state, postcode, xero_contact_id")
+      .select("id, name, address, suburb, state, postcode, xero_contact_id, billing_email")
       .eq("id", siteId)
       .maybeSingle();
     if (data) siteRow = data;
@@ -259,6 +259,7 @@ export async function POST(req: NextRequest) {
         name: customer.name,
         xero_contact_id: customer.xero_contact_id,
         email: primary?.email ?? null,
+        billing_email: customer.billing_email ?? null,
         phone: primary?.phone ?? null,
         abn: customer.abn ?? null,
       },
@@ -290,6 +291,7 @@ export async function POST(req: NextRequest) {
       quote_id: quoteId,
       job_id: jobId,
       customer_id: customerId,
+      site_id: siteRow?.id ?? null,
       description: headerDescription,
       line_items: lineItems,
       subtotal: xeroResult.subTotal,

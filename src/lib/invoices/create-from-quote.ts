@@ -95,11 +95,12 @@ export async function createInvoiceFromAcceptedQuote(
     state: string | null;
     postcode: string | null;
     xero_contact_id: string | null;
+    billing_email: string | null;
   } | null = null;
   if (quote.site_id) {
     const { data: siteRow } = await supabase
       .from("customer_sites")
-      .select("id, name, address, suburb, state, postcode, xero_contact_id")
+      .select("id, name, address, suburb, state, postcode, xero_contact_id, billing_email")
       .eq("id", quote.site_id)
       .maybeSingle();
     if (siteRow) site = siteRow;
@@ -154,7 +155,7 @@ export async function createInvoiceFromAcceptedQuote(
 
   const { data: customer, error: custErr } = await supabase
     .from("customers")
-    .select("id, name, abn, xero_contact_id, customer_contacts(email, phone, is_primary)")
+    .select("id, name, abn, xero_contact_id, billing_email, customer_contacts(email, phone, is_primary)")
     .eq("id", quote.customer_id)
     .single();
   if (custErr || !customer) throw new Error("Customer not found");
@@ -173,6 +174,7 @@ export async function createInvoiceFromAcceptedQuote(
       name: customer.name,
       xero_contact_id: customer.xero_contact_id,
       email: primary?.email ?? null,
+      billing_email: customer.billing_email ?? null,
       phone: primary?.phone ?? null,
       abn: customer.abn ?? null,
     },
@@ -181,6 +183,7 @@ export async function createInvoiceFromAcceptedQuote(
           id: site.id,
           name: site.name,
           xero_contact_id: site.xero_contact_id,
+          billing_email: site.billing_email,
           address: site.address,
           suburb: site.suburb,
           state: site.state,
@@ -205,6 +208,7 @@ export async function createInvoiceFromAcceptedQuote(
       quote_id: quoteId,
       job_id: quote.job_id ?? null,
       customer_id: customer.id,
+      site_id: site?.id ?? null,
       description: headerDescription,
       line_items: lineItems,
       subtotal: xeroResult.subTotal,

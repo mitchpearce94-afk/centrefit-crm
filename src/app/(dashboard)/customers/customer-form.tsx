@@ -28,6 +28,7 @@ export function CustomerForm({ customer }: CustomerFormProps) {
   const [name, setName] = useState(customer?.name ?? "");
   const [type, setType] = useState<CustomerType>(customer?.type ?? "commercial");
   const [abn, setAbn] = useState(customer?.abn ?? "");
+  const [billingEmail, setBillingEmail] = useState(customer?.billing_email ?? "");
   const [notes, setNotes] = useState(customer?.notes ?? "");
 
   // Primary contact fields (new customer only)
@@ -57,6 +58,7 @@ export function CustomerForm({ customer }: CustomerFormProps) {
       name: name.trim(),
       type,
       abn: abn.trim() || null,
+      billing_email: billingEmail.trim() || null,
       notes: notes.trim() || null,
     };
 
@@ -207,6 +209,24 @@ export function CustomerForm({ customer }: CustomerFormProps) {
               placeholder="XX XXX XXX XXX"
             />
           </div>
+        </div>
+
+        <div>
+          <label htmlFor="billing_email" className="block text-sm font-medium">
+            Default billing email
+          </label>
+          <input
+            id="billing_email"
+            type="text"
+            value={billingEmail}
+            onChange={(e) => setBillingEmail(e.target.value)}
+            className={inputClass}
+            placeholder="finance@example.com, manager@example.com"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Fallback for invoices and quotes when a site doesn&apos;t have its own
+            billing email. Comma-separate for multiple recipients.
+          </p>
         </div>
       </div>
 

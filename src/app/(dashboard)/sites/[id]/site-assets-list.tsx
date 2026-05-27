@@ -24,24 +24,51 @@ export function SiteAssetsList({
   const visible = showArchived ? assets : assets.filter((a) => a.is_active);
   const archivedCount = assets.filter((a) => !a.is_active).length;
 
+  // Headline counts — Cameras (any cctv "Camera" type) and PIRs (security
+  // type whose slug contains "pir"). Counted across active assets only so
+  // archived units don't inflate the install count.
+  const activeAssets = assets.filter((a) => a.is_active);
+  const typeById = new Map(assetTypes.map((t) => [t.id, t]));
+  let cameraCount = 0;
+  let pirCount = 0;
+  for (const a of activeAssets) {
+    const t = a.asset_type_id ? typeById.get(a.asset_type_id) : null;
+    const isCamera =
+      (t && t.category === "cctv" && /camera/i.test(t.name)) ||
+      (!t && (a.device_type ?? "").toLowerCase().includes("camera"));
+    const isPir =
+      (t && t.category === "security" && /pir/i.test(t.slug)) ||
+      (!t && /\bpir\b/i.test(a.device_type ?? ""));
+    if (isCamera) cameraCount++;
+    if (isPir) pirCount++;
+  }
+
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-sm font-semibold text-muted-foreground">
           Site assets ({visible.length}
           {archivedCount > 0 ? ` · ${archivedCount} archived` : ""})
         </h2>
-        {archivedCount > 0 && (
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(e) => setShowArchived(e.target.checked)}
-              className="rounded border-border"
-            />
-            Show archived
-          </label>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+            Cameras <span className="text-foreground">{cameraCount}</span>
+          </span>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+            PIRs <span className="text-foreground">{pirCount}</span>
+          </span>
+          {archivedCount > 0 && (
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => setShowArchived(e.target.checked)}
+                className="rounded border-border"
+              />
+              Show archived
+            </label>
+          )}
+        </div>
       </div>
 
       <QuickAddRow siteId={siteId} assetTypes={assetTypes} />
@@ -105,11 +132,16 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
     [assetTypes, assetTypeId],
   );
 
-  // When picking a type, auto-fill manufacturer if it has a default and the
-  // user hasn't typed one yet. Doesn't override user input.
+  // When picking a type, auto-fill manufacturer / model if the type has
+  // defaults and the user hasn't typed their own yet. Doesn't override
+  // user input — also doesn't override what the previous sticky save left
+  // behind unless the field is blank.
   useEffect(() => {
     if (selectedType?.default_manufacturer && !manufacturer) {
       setManufacturer(selectedType.default_manufacturer);
+    }
+    if (selectedType?.default_model && !model) {
+      setModel(selectedType.default_model);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedType]);
@@ -125,6 +157,7 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
   const [staffUser, setStaffUser] = useState("");
   const [staffPassword, setStaffPassword] = useState("");
   const [firmware, setFirmware] = useState("");
+  const [rfid, setRfid] = useState("");
   const [vlans, setVlans] = useState<{ id?: string; name?: string; notes?: string }[]>([]);
   const [wifiSsids, setWifiSsids] = useState<{ ssid?: string; password?: string; notes?: string }[]>([]);
 
@@ -132,9 +165,13 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
   const macRef = useRef<HTMLInputElement>(null);
   const ipRef = useRef<HTMLInputElement>(null);
 
-  // Focus Serial on first render so a scanner can fire straight away
+  // Focus Serial on first render so a scanner can fire straight away.
+  // preventScroll keeps the page where the user left it — without it, the
+  // QuickAdd row at the top of the list yanks the page to the top after
+  // every save (and on initial mount), which Michael flagged as the
+  // friendly-name scroll-jump bug.
   useEffect(() => {
-    serialRef.current?.focus();
+    serialRef.current?.focus({ preventScroll: true });
   }, []);
 
   async function save() {
@@ -160,6 +197,7 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
       staff_user: staffUser.trim() || null,
       staff_password: staffPassword.trim() || null,
       firmware: firmware.trim() || null,
+      rfid: rfid.trim() || null,
       vlans,
       wifi_ssids: wifiSsids,
       location_note: locationNote.trim() || null,
@@ -182,12 +220,14 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
     setStaffUser("");
     setStaffPassword("");
     setFirmware("");
+    setRfid("");
     setVlans([]);
     setWifiSsids([]);
     setSaving(false);
     router.refresh();
-    // Refocus Serial for the next scan
-    setTimeout(() => serialRef.current?.focus(), 0);
+    // Refocus Serial for the next scan — preventScroll stops the page from
+    // jumping to the top of the list (see initial-focus effect above).
+    setTimeout(() => serialRef.current?.focus({ preventScroll: true }), 0);
   }
 
   function handleSerialKey(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -362,6 +402,17 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
         </div>
       )}
 
+      {selectedType?.has_rfid && (
+        <input
+          placeholder="RFID number"
+          value={rfid}
+          onChange={(e) => setRfid(e.target.value)}
+          className={inputClass + " w-full font-mono"}
+          autoComplete="off"
+          spellCheck={false}
+        />
+      )}
+
       {selectedType?.has_vlans && (
         <RepeatList
           title="VLANs"
@@ -449,6 +500,12 @@ function AssetRow({ asset, onEdit }: { asset: SiteAsset; onEdit: () => void }) {
             <span>
               <span className="text-muted-foreground/70">IP </span>
               <span className="font-mono">{asset.ip_address}</span>
+            </span>
+          )}
+          {asset.rfid && (
+            <span>
+              <span className="text-muted-foreground/70">RFID </span>
+              <span className="font-mono">{asset.rfid}</span>
             </span>
           )}
           {asset.location_note && <span>📍 {asset.location_note}</span>}
@@ -544,6 +601,7 @@ function SiteAssetEditForm({
   const [staffUser, setStaffUser] = useState(asset.staff_user ?? "");
   const [staffPassword, setStaffPassword] = useState(asset.staff_password ?? "");
   const [firmware, setFirmware] = useState(asset.firmware ?? "");
+  const [rfid, setRfid] = useState(asset.rfid ?? "");
   const [vlans, setVlans] = useState<{ name?: string; id?: string; notes?: string }[]>(
     Array.isArray(asset.vlans) ? asset.vlans : [],
   );
@@ -580,6 +638,7 @@ function SiteAssetEditForm({
       staff_user: staffUser.trim() || null,
       staff_password: staffPassword.trim() || null,
       firmware: firmware.trim() || null,
+      rfid: rfid.trim() || null,
       vlans,
       wifi_ssids: wifiSsids,
       location_note: locationNote.trim() || null,
@@ -729,6 +788,17 @@ function SiteAssetEditForm({
             </div>
           )}
         </div>
+      )}
+
+      {selectedType?.has_rfid && (
+        <input
+          placeholder="RFID number"
+          value={rfid}
+          onChange={(e) => setRfid(e.target.value)}
+          className={inputClass + " w-full font-mono"}
+          autoComplete="off"
+          spellCheck={false}
+        />
       )}
 
       {selectedType?.has_vlans && (

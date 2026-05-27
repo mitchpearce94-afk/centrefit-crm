@@ -500,7 +500,7 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
                 doesn't interfere with drag/click. */}
             {!isTouchDevice && (
               <div
-                className="pointer-events-none absolute left-full top-0 ml-2 hidden w-64 rounded-lg border border-border bg-popover px-3 py-2.5 text-popover-foreground shadow-xl group-hover:block"
+                className="pointer-events-none absolute left-full top-0 ml-2 hidden w-64 rounded-lg border border-border bg-card px-3 py-2.5 text-foreground shadow-xl group-hover:block"
                 style={{ zIndex: 50 }}
               >
                 <div className="flex items-center gap-2 mb-1.5">

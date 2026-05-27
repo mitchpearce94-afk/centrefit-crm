@@ -36,7 +36,7 @@ export default async function InvoiceDetailPage({
     supabase
       .from("invoices")
       .select(
-        "*, customer:customers(id, name, customer_contacts(name, email, is_primary)), quote:quotes(id, ref, status, site:customer_sites(id, name, address, suburb)), job:jobs(id, number, site:customer_sites(id, name, address, suburb))",
+        "*, customer:customers(id, name, billing_email, customer_contacts(name, email, is_primary)), site:customer_sites!invoices_site_id_fkey(id, name, address, suburb, billing_email), quote:quotes(id, ref, status, site:customer_sites(id, name, address, suburb, billing_email)), job:jobs(id, number, site:customer_sites(id, name, address, suburb, billing_email))",
       )
       .eq("id", id)
       .single(),
@@ -94,7 +94,10 @@ export default async function InvoiceDetailPage({
             )}
           </p>
           {(() => {
-            const site = inv.quote?.site ?? inv.job?.site;
+            // Prefer invoice.site (the site-first FK we backfill onto every
+            // invoice); fall back through quote.site / job.site for legacy
+            // invoices created before invoices.site_id existed.
+            const site = inv.site ?? inv.quote?.site ?? inv.job?.site;
             if (!site) return null;
             const addressLine = [site.address, site.suburb].filter(Boolean).join(", ");
             return (
@@ -119,6 +122,22 @@ export default async function InvoiceDetailPage({
           lastReminderAt={inv.last_reminder_sent_at ?? null}
           reminderCount={inv.reminder_count ?? 0}
           defaultRecipient={(() => {
+            // Site-first billing prefill chain:
+            //   1. invoices.site_id → site.billing_email
+            //   2. quote.site.billing_email (legacy invoices pre-backfill)
+            //   3. job.site.billing_email (same)
+            //   4. customer.billing_email
+            //   5. primary contact email
+            // Sue asked for this so site-level invoice emails actually
+            // surface in the send modal instead of always defaulting to the
+            // customer-level contact (see 2026-05-27 site-first work).
+            const siteEmail =
+              inv.site?.billing_email ??
+              inv.quote?.site?.billing_email ??
+              inv.job?.site?.billing_email ??
+              null;
+            if (siteEmail) return siteEmail;
+            if (inv.customer?.billing_email) return inv.customer.billing_email;
             const contacts = inv.customer?.customer_contacts ?? [];
             const primary = contacts.find((c: { is_primary: boolean | null }) => c.is_primary) ?? contacts[0];
             return primary?.email ?? null;

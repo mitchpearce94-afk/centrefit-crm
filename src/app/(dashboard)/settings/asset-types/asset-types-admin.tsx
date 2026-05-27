@@ -17,6 +17,7 @@ const FLAG_LABELS: { key: keyof AssetType; label: string; hint: string }[] = [
   { key: "has_firmware", label: "Firmware", hint: "Firmware version field" },
   { key: "has_vlans", label: "VLANs", hint: "Repeating VLAN entries" },
   { key: "has_wifi", label: "Wi-Fi SSIDs", hint: "Repeating SSID + password entries" },
+  { key: "has_rfid", label: "RFID", hint: "Show RFID number field (duress pendants, fobs)" },
   { key: "is_key_info", label: "Key info", hint: "Surface on the Site → Key Information tab" },
 ];
 
@@ -229,6 +230,7 @@ function EditRow({
   const [name, setName] = useState(type.name);
   const [category, setCategory] = useState(type.category ?? "");
   const [defaultMfr, setDefaultMfr] = useState(type.default_manufacturer ?? "");
+  const [defaultModel, setDefaultModel] = useState(type.default_model ?? "");
   const [flags, setFlags] = useState({
     has_serial: type.has_serial,
     has_mac: type.has_mac,
@@ -238,6 +240,7 @@ function EditRow({
     has_firmware: type.has_firmware,
     has_vlans: type.has_vlans,
     has_wifi: type.has_wifi,
+    has_rfid: type.has_rfid,
     is_key_info: type.is_key_info,
   });
   const [saving, setSaving] = useState(false);
@@ -254,6 +257,7 @@ function EditRow({
         name: name.trim(),
         category: category || null,
         default_manufacturer: defaultMfr.trim() || null,
+        default_model: defaultModel.trim() || null,
         ...flags,
       })
       .eq("id", type.id);
@@ -268,7 +272,7 @@ function EditRow({
   return (
     <tr className="border-b border-border bg-muted/20">
       <td colSpan={6} className="px-3 py-3">
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-4">
           <label className="text-xs">
             <span className="text-muted-foreground">Name</span>
             <input
@@ -300,6 +304,16 @@ function EditRow({
               value={defaultMfr}
               onChange={(e) => setDefaultMfr(e.target.value)}
               className="mt-0.5 w-full rounded-md border border-border bg-input px-2 py-1 text-sm"
+            />
+          </label>
+          <label className="text-xs">
+            <span className="text-muted-foreground">Default model / part #</span>
+            <input
+              type="text"
+              value={defaultModel}
+              onChange={(e) => setDefaultModel(e.target.value)}
+              className="mt-0.5 w-full rounded-md border border-border bg-input px-2 py-1 text-sm font-mono"
+              placeholder="e.g. DH-IPC-HFW1431S-W"
             />
           </label>
         </div>
@@ -350,6 +364,7 @@ function NewAssetTypeForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [defaultMfr, setDefaultMfr] = useState("");
+  const [defaultModel, setDefaultModel] = useState("");
   const [flags, setFlags] = useState({
     has_serial: true,
     has_mac: false,
@@ -359,6 +374,7 @@ function NewAssetTypeForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
     has_firmware: false,
     has_vlans: false,
     has_wifi: false,
+    has_rfid: false,
     is_key_info: false,
   });
   const [saving, setSaving] = useState(false);
@@ -374,6 +390,7 @@ function NewAssetTypeForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
       name: name.trim(),
       category: category || null,
       default_manufacturer: defaultMfr.trim() || null,
+      default_model: defaultModel.trim() || null,
       sort_order: 500,
       ...flags,
     });
@@ -388,7 +405,7 @@ function NewAssetTypeForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
   return (
     <div className="mb-4 rounded-lg border border-primary/30 bg-card p-4">
       <h3 className="text-sm font-semibold mb-3">New asset type</h3>
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-4">
         <label className="text-xs">
           <span className="text-muted-foreground">Name</span>
           <input
@@ -397,7 +414,7 @@ function NewAssetTypeForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
             onChange={(e) => setName(e.target.value)}
             autoFocus
             className="mt-0.5 w-full rounded-md border border-border bg-input px-2 py-1 text-sm"
-            placeholder="e.g. Cardio Distribution"
+            placeholder="e.g. Camera (White)"
           />
         </label>
         <label className="text-xs">
@@ -422,6 +439,16 @@ function NewAssetTypeForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
             value={defaultMfr}
             onChange={(e) => setDefaultMfr(e.target.value)}
             className="mt-0.5 w-full rounded-md border border-border bg-input px-2 py-1 text-sm"
+          />
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Default model / part #</span>
+          <input
+            type="text"
+            value={defaultModel}
+            onChange={(e) => setDefaultModel(e.target.value)}
+            className="mt-0.5 w-full rounded-md border border-border bg-input px-2 py-1 text-sm font-mono"
+            placeholder="e.g. DH-IPC-HFW1431S-W"
           />
         </label>
       </div>

@@ -8,7 +8,8 @@ function getResend() {
 }
 
 export interface SendInvoiceEmailInput {
-  to: string;
+  /** Single recipient, or comma-separated list — both forms accepted. */
+  to: string | string[];
   invoiceRef: string;          // local invoice ref (e.g. "INV-CF-2026-0123") or Xero number
   customerName: string;
   contactFirstName?: string | null;
@@ -71,10 +72,18 @@ export async function sendInvoiceEmail(input: SendInvoiceEmailInput): Promise<{ 
   `);
 
   try {
+    // Accept either a comma-separated string ("a@x, b@y") or an array —
+    // normalise into Resend's array form. Filter blanks to be safe.
+    const recipients = (Array.isArray(input.to) ? input.to : input.to.split(","))
+      .map((e) => e.trim())
+      .filter((e) => e.length > 0);
+    if (recipients.length === 0) {
+      return { ok: false, error: "No valid recipient email address" };
+    }
     const sendArgs: Parameters<ReturnType<typeof getResend>["emails"]["send"]>[0] = {
       from: FROM_INVOICES,
       replyTo: REPLY_TO_ACCOUNTS,
-      to: input.to,
+      to: recipients,
       subject: `${typeLabel} ${input.invoiceRef} — ${input.customerName}`,
       html,
       headers: {

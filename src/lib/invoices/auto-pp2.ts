@@ -69,7 +69,7 @@ export async function tryCreatePP2ForJob(
 
       const { data: customer, error: custErr } = await supabase
         .from("customers")
-        .select("id, name, abn, xero_contact_id, customer_contacts(email, phone, is_primary)")
+        .select("id, name, abn, xero_contact_id, billing_email, customer_contacts(email, phone, is_primary)")
         .eq("id", quote.customer_id)
         .single();
       if (custErr || !customer) {
@@ -109,11 +109,11 @@ export async function tryCreatePP2ForJob(
       // Pull site info so the invoice has a "Site:" header + the Xero contact
       // resolves to the per-site billing entity (matches the quote-driven flow
       // in lib/invoices/create-from-quote.ts).
-      let siteRow: { id: string; name: string; address: string | null; suburb: string | null; state: string | null; postcode: string | null; xero_contact_id: string | null } | null = null;
+      let siteRow: { id: string; name: string; address: string | null; suburb: string | null; state: string | null; postcode: string | null; xero_contact_id: string | null; billing_email: string | null } | null = null;
       if (quote.site_id) {
         const { data } = await supabase
           .from("customer_sites")
-          .select("id, name, address, suburb, state, postcode, xero_contact_id")
+          .select("id, name, address, suburb, state, postcode, xero_contact_id, billing_email")
           .eq("id", quote.site_id)
           .maybeSingle();
         if (data) siteRow = data;
@@ -146,6 +146,7 @@ export async function tryCreatePP2ForJob(
           name: customer.name,
           xero_contact_id: customer.xero_contact_id,
           email: primary?.email ?? null,
+          billing_email: customer.billing_email ?? null,
           phone: primary?.phone ?? null,
           abn: customer.abn ?? null,
         },
@@ -177,6 +178,7 @@ export async function tryCreatePP2ForJob(
           quote_id: quote.id,
           job_id: jobId,
           customer_id: customer.id,
+          site_id: siteRow?.id ?? null,
           description: header,
           line_items: lineItems,
           subtotal: xeroResult.subTotal,

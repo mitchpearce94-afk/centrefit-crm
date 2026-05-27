@@ -278,15 +278,18 @@ export function InvoiceActions({
             <div className="px-5 py-4 space-y-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Recipient email
+                  Recipient email{recipient.includes(",") ? "s" : ""}
                 </label>
                 <input
-                  type="email"
+                  type="text"
                   value={recipient}
                   onChange={(e) => setRecipient(e.target.value)}
-                  placeholder="customer@example.com"
+                  placeholder="finance@example.com, manager@example.com"
                   className="mt-1 w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
                 />
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Separate multiple recipients with commas. Defaults to the site billing email, falls back to the customer&apos;s primary contact.
+                </p>
               </div>
             </div>
             <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3 bg-muted/30">
@@ -332,15 +335,18 @@ export function InvoiceActions({
               </p>
               <div>
                 <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Recipient email
+                  Recipient email{reminderRecipient.includes(",") ? "s" : ""}
                 </label>
                 <input
-                  type="email"
+                  type="text"
                   value={reminderRecipient}
                   onChange={(e) => setReminderRecipient(e.target.value)}
-                  placeholder="customer@example.com"
+                  placeholder="finance@example.com, manager@example.com"
                   className="mt-1 w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
                 />
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Separate multiple recipients with commas.
+                </p>
               </div>
             </div>
             <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3 bg-muted/30">

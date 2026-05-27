@@ -8,7 +8,8 @@ function getResend() {
 }
 
 export interface SendInvoiceReminderInput {
-  to: string;
+  /** Single recipient, or comma-separated list — both forms accepted. */
+  to: string | string[];
   invoiceRef: string;
   customerName: string;
   contactFirstName?: string | null;
@@ -82,7 +83,9 @@ export async function sendInvoiceReminderEmail(
     const { data, error } = await getResend().emails.send({
       from: FROM_INVOICES,
       replyTo: REPLY_TO_ACCOUNTS,
-      to: input.to,
+      to: (Array.isArray(input.to) ? input.to : input.to.split(","))
+        .map((e) => e.trim())
+        .filter((e) => e.length > 0),
       subject: `Reminder: ${input.invoiceRef} — ${input.customerName}`,
       html,
       headers: {

@@ -23,6 +23,9 @@ const RECOVERY_ALLOW_LIST = new Set([
   "8d746236-9124-426d-90f7-959765978fbb", // Gavin Pereira — Snap Fitness Sunshine
   "90d96e4c-5c77-49d0-961f-c30ea2ccbc32", // Kosta Magdalinos — Snap Fitness Wantirna
   "99bbf8da-9baf-4df2-b1d9-37ddf5e3579a", // Ajit Singh — Snap Fitness Point Cook
+  // 2026-05-27: BR.fulfilled webhook wrote the GC IDs but activatePlan
+  // failed silently — re-run from the admin URL to backfill Xero RI.
+  "569aa2c2-9a5c-4668-b679-25f2184a4a00", // Benjamin Gunning — Snap Fitness Woodend
 ]);
 
 export async function GET(req: NextRequest) {

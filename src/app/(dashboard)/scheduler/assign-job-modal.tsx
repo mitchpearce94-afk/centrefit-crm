@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
@@ -115,6 +115,49 @@ export function AssignJobModal({
       document.body.style.overflow = prev;
     };
   }, []);
+
+  // Drag-to-move (desktop only — bottom-sheet mobile layout stays put).
+  // Offset is applied as a translate on top of the existing centred layout
+  // so the modal opens centred and can be dragged anywhere from there. Sue
+  // wanted this so she can peek at the scheduler grid behind the popup
+  // without having to close it.
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const dragStartRef = useRef<{ pointerId: number; startX: number; startY: number; baseX: number; baseY: number } | null>(null);
+
+  function onHeaderPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    // Skip on mobile bottom-sheet (the modal is already full-width pinned
+    // to bottom) — only allow drag on lg+ viewports where it floats.
+    if (window.innerWidth < 1024) return;
+    // Ignore drags that start on the close button itself.
+    if ((e.target as HTMLElement).closest("button")) return;
+    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+    dragStartRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      baseX: dragOffset.x,
+      baseY: dragOffset.y,
+    };
+  }
+  function onHeaderPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const s = dragStartRef.current;
+    if (!s || s.pointerId !== e.pointerId) return;
+    setDragOffset({
+      x: s.baseX + (e.clientX - s.startX),
+      y: s.baseY + (e.clientY - s.startY),
+    });
+  }
+  function onHeaderPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    const s = dragStartRef.current;
+    if (s && s.pointerId === e.pointerId) {
+      dragStartRef.current = null;
+      try {
+        (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+      } catch {
+        // releasePointerCapture throws if already released; non-fatal.
+      }
+    }
+  }
 
   const filteredJobs = useMemo(() => {
     if (!search || search.length < 2) return [];
@@ -316,23 +359,50 @@ export function AssignJobModal({
   return (
     <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative w-full max-w-lg rounded-t-2xl lg:rounded-2xl border border-border bg-card shadow-2xl max-h-[90dvh] overflow-y-auto">
+      <div
+        className="relative w-full max-w-lg rounded-t-2xl lg:rounded-2xl border border-border bg-card shadow-2xl max-h-[90dvh] overflow-y-auto"
+        style={{
+          transform:
+            dragOffset.x || dragOffset.y
+              ? `translate(${dragOffset.x}px, ${dragOffset.y}px)`
+              : undefined,
+        }}
+      >
         <div className="p-5">
-          <div className="flex items-center justify-between mb-4">
+          <div
+            className="flex items-center justify-between mb-4 lg:cursor-move touch-none select-none"
+            onPointerDown={onHeaderPointerDown}
+            onPointerMove={onHeaderPointerMove}
+            onPointerUp={onHeaderPointerUp}
+            onPointerCancel={onHeaderPointerUp}
+            title="Drag to move (desktop only)"
+          >
             <div>
               <h2 className="text-lg font-bold">{headerLabel}</h2>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {staffName} · {formattedDate}
               </p>
             </div>
-            <button
-              onClick={onClose}
-              className="rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
-            >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 6L6 18" /><path d="M6 6l12 12" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-1.5">
+              {(dragOffset.x !== 0 || dragOffset.y !== 0) && (
+                <button
+                  type="button"
+                  onClick={() => setDragOffset({ x: 0, y: 0 })}
+                  className="hidden lg:inline-block rounded-md border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
+                  title="Re-centre the modal"
+                >
+                  Re-centre
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18" /><path d="M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           {/* Type toggle */}

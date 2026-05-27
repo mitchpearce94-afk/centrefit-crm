@@ -47,7 +47,7 @@ export default async function DashboardLayout({
       <IdleLogout />
       <div className="flex h-dvh overflow-hidden">
         <Sidebar user={user} staff={staff ?? null} allowedFlags={allowedFlags} />
-        <main className="flex-1 overflow-y-auto pb-mobile-nav lg:pb-0">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden pb-mobile-nav lg:pb-0">
           {/* Mobile fallback top bar — visible on screens that haven't yet
               migrated to <PageHeader>. Once a page renders its own
               <PageHeader> it stacks below this, which is intentional during
