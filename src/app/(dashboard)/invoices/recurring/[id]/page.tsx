@@ -127,20 +127,31 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
         </div>
       </div>
 
-      {/* Activation-failure banner — surfaces the silent-failure mode that
-          bit Ben Gunning / Snap Fitness Woodend on 2026-05-25. The retry
-          cron will pick this up automatically within 15 min, but the
-          Retry button gives Mitchell an immediate kick. */}
-      {plan.activation_error && plan.status === "pending_mandate" && plan.gc_mandate_id && (
+      {/* Stuck-activation banner — any plan in pending_mandate with a
+          gc_mandate_id present has a signed mandate but never completed
+          activation. Shows the recorded error if we have one (new path,
+          post-2026-05-27), or a generic "never activated" message for
+          plans that failed before the safety net existed (Ben Gunning /
+          Snap Fitness Woodend 2026-05-25). The retry cron runs nightly;
+          the button gives an immediate kick. */}
+      {plan.status === "pending_mandate" && plan.gc_mandate_id && (
         <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div className="min-w-0">
               <p className="text-sm font-semibold text-destructive">
-                Activation failed — plan stuck after signup
+                Mandate signed but activation never completed
               </p>
-              <p className="mt-1 text-xs text-foreground/90 break-words">
-                {plan.activation_error}
-              </p>
+              {plan.activation_error ? (
+                <p className="mt-1 text-xs text-foreground/90 break-words">
+                  {plan.activation_error}
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-foreground/90">
+                  The customer signed the GoCardless mandate but the
+                  follow-up Xero RepeatingInvoice was never created. Hit
+                  Retry to provision it now.
+                </p>
+              )}
               <p className="mt-2 text-[11px] text-muted-foreground">
                 {plan.activation_attempts ?? 0} attempt
                 {(plan.activation_attempts ?? 0) === 1 ? "" : "s"}
@@ -150,7 +161,7 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
                     {new Date(plan.last_activation_attempt_at).toLocaleString("en-AU")}
                   </>
                 ) : null}
-                . Auto-retry runs every 15 min while attempts &lt; 10.
+                . Auto-retry runs nightly while attempts &lt; 10.
               </p>
             </div>
             <RetryActivationButton planId={plan.id} />
