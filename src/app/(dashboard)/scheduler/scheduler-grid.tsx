@@ -18,6 +18,8 @@ interface ScheduleEntry {
   notes: string | null;
   entry_type: EntryType;
   title: string | null;
+  recurrence_group_id: string | null;
+  recurrence_pattern: "weekly" | "fortnightly" | "monthly" | null;
   job?: { id: string; number: string; reference: string | null; customer?: { id: string; name: string }; site?: { id: string; name: string }; status?: { id: string; name: string; colour: string } } | null;
 }
 interface JobOption { id: string; number: string; reference: string | null; customer?: { id: string; name: string }; site?: { id: string; name: string }; status?: { id: string; name: string; colour: string }; }
@@ -488,6 +490,14 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
                     ? <span className="font-mono">{entry.job?.number}</span>
                     : <>{entry.entry_type === "reminder" ? "⏰ " : ""}{entry.title}</>}
                 </span>
+                {entry.recurrence_group_id && (
+                  <span
+                    className="text-[10px] opacity-70"
+                    title={`Recurring — ${entry.recurrence_pattern ?? "series"}`}
+                  >
+                    ↻
+                  </span>
+                )}
               </div>
               {height > 44 && isJob && lanes < 3 && (
                 <p className="text-[10px] text-muted-foreground truncate mt-0.5">
@@ -553,6 +563,11 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
                 {(entry.start_time || entry.end_time) && (
                   <p className="mt-1.5 text-[11px] text-muted-foreground">
                     {entry.start_time?.slice(0, 5)}{entry.end_time ? ` – ${entry.end_time.slice(0, 5)}` : ""}
+                  </p>
+                )}
+                {entry.recurrence_group_id && entry.recurrence_pattern && (
+                  <p className="mt-1.5 text-[11px] text-primary/80">
+                    ↻ Recurring {entry.recurrence_pattern}
                   </p>
                 )}
                 {entry.notes && (

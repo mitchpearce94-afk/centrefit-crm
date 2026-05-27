@@ -17,6 +17,10 @@ interface JobOption {
   status?: { id: string; name: string; colour: string };
 }
 
+type RecurrencePattern = "weekly" | "fortnightly" | "monthly";
+type RecurrenceEnd = "count" | "date" | "ongoing";
+const ONGOING_OCCURRENCE_CAP = 26; // ~6 months weekly / ~12 months fortnightly
+
 interface ScheduleEntry {
   id: string;
   job_id: string | null;
@@ -28,7 +32,70 @@ interface ScheduleEntry {
   notes: string | null;
   entry_type: EntryType;
   title: string | null;
+  recurrence_group_id?: string | null;
+  recurrence_pattern?: RecurrencePattern | null;
   job?: JobOption | null;
+}
+
+// Local date string helpers — we only ever deal in en-AU date math, never UTC,
+// so a date string stays a date string and never gets pulled into a timezone.
+function parseISODate(s: string): Date {
+  // Treat YYYY-MM-DD as local midnight to avoid timezone drift on
+  // toISOString(). The scheduler is brisbane-local everywhere.
+  return new Date(`${s}T00:00:00`);
+}
+function toISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Generate the list of schedule_date values for a recurring series.
+ *
+ *   - weekly = +7 days each step
+ *   - fortnightly = +14 days each step
+ *   - monthly = same day-of-month next month, clamped to last day if
+ *     overshooting (e.g. Jan 31 → Feb 28, March 31 → April 30).
+ *
+ * Ongoing series are capped at ONGOING_OCCURRENCE_CAP so we don't generate
+ * thousands of rows. A future cron can extend them lazily — out of scope for
+ * v1, Mitchell can manually re-create after ~6 months if needed.
+ */
+function generateRecurrenceDates(
+  startDate: string,
+  pattern: RecurrencePattern,
+  endType: RecurrenceEnd,
+  endDate: string | null,
+  occurrenceCount: number | null,
+): string[] {
+  const dates: string[] = [];
+  const start = parseISODate(startDate);
+  const max =
+    endType === "count"
+      ? Math.max(1, Math.min(ONGOING_OCCURRENCE_CAP * 4, occurrenceCount ?? 1))
+      : ONGOING_OCCURRENCE_CAP * 4; // outer safety regardless of end type
+  const endLimit = endType === "date" && endDate ? parseISODate(endDate) : null;
+
+  for (let i = 0; i < max; i++) {
+    let next: Date;
+    if (pattern === "weekly") {
+      next = new Date(start);
+      next.setDate(start.getDate() + i * 7);
+    } else if (pattern === "fortnightly") {
+      next = new Date(start);
+      next.setDate(start.getDate() + i * 14);
+    } else {
+      // Monthly — add i months, clamp day-of-month to month length.
+      const target = new Date(start.getFullYear(), start.getMonth() + i, 1);
+      const monthLen = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+      target.setDate(Math.min(start.getDate(), monthLen));
+      next = target;
+    }
+    if (endLimit && next > endLimit) break;
+    dates.push(toISODate(next));
+    if (endType === "ongoing" && dates.length >= ONGOING_OCCURRENCE_CAP) break;
+    if (endType === "count" && dates.length >= (occurrenceCount ?? 1)) break;
+  }
+  return dates;
 }
 
 interface StaffOption {
@@ -102,6 +169,22 @@ export function AssignJobModal({
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Recurrence — create mode only. Generates one row per occurrence on save,
+  // tagged with a shared recurrence_group_id so "edit/delete whole series"
+  // queries find every sibling later. Edit-mode users go through the
+  // editScope picker instead (see below).
+  const [recurrencePattern, setRecurrencePattern] = useState<RecurrencePattern | "">("");
+  const [recurrenceEnd, setRecurrenceEnd] = useState<RecurrenceEnd>("count");
+  const [recurrenceCount, setRecurrenceCount] = useState<number>(12);
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState<string>("");
+
+  // Edit scope for an existing recurring entry. Defaults to "occurrence" so
+  // a careless save doesn't ripple across the whole series — Mitchell can
+  // explicitly opt in to "series" via the toggle.
+  const [editScope, setEditScope] = useState<"occurrence" | "series">("occurrence");
+
+  const isPartOfSeries = !!(entry?.recurrence_group_id);
 
   const selectedJob = jobs.find((j) => j.id === jobId);
 
@@ -237,20 +320,38 @@ export function AssignJobModal({
     };
 
     if (isEditing && entry) {
-      // Edit-mode: the original entry's staff_id stays as-is (the chip
-      // for it is locked-on in the UI). The original entry just gets its
-      // non-staff fields updated. Any ADDITIONAL chips create new
-      // schedule_entries with the same job/time. Simpler model, less
-      // ambiguity around what "deselecting the original" means.
-      const { error: err } = await supabase
-        .from("schedule_entries")
-        .update({ ...basePayload, staff_id: entry.staff_id })
-        .eq("id", entry.id);
-      if (err) {
-        setError(err.message);
-        setSaving(false);
-        return;
+      // Recurring edit: scope determines blast radius. The schedule_date is
+      // ALWAYS per-occurrence (you can't change "what day" the whole series
+      // happens via this flow — that's a "cancel + recreate" job). The
+      // editable-everywhere fields are job/title/notes/start_time/end_time
+      // plus recurrence flags themselves.
+      const seriesEditable = {
+        entry_type: basePayload.entry_type,
+        job_id: basePayload.job_id,
+        title: basePayload.title,
+        start_time: basePayload.start_time,
+        end_time: basePayload.end_time,
+        notes: basePayload.notes,
+      };
+
+      if (isPartOfSeries && editScope === "series" && entry.recurrence_group_id) {
+        // Whole-series update: apply the shared fields across every sibling.
+        // staff_id stays per-row (we don't reshuffle who's on the team via
+        // a series edit — that gets weird fast).
+        const { error: err } = await supabase
+          .from("schedule_entries")
+          .update(seriesEditable)
+          .eq("recurrence_group_id", entry.recurrence_group_id);
+        if (err) { setError(err.message); setSaving(false); return; }
+      } else {
+        // Single-occurrence update (default path + non-recurring edits).
+        const { error: err } = await supabase
+          .from("schedule_entries")
+          .update({ ...basePayload, staff_id: entry.staff_id })
+          .eq("id", entry.id);
+        if (err) { setError(err.message); setSaving(false); return; }
       }
+
       const additionalStaff = selectedStaffIds.filter((sid) => sid !== entry.staff_id);
       if (additionalStaff.length > 0) {
         const rows = additionalStaff.map((sid) => ({ ...basePayload, staff_id: sid }));
@@ -269,8 +370,71 @@ export function AssignJobModal({
           return;
         }
       }
+    } else if (recurrencePattern) {
+      // Create-mode with recurrence: generate every occurrence date, then
+      // fan out one row per (occurrence × selected staff). All rows share
+      // a single recurrence_group_id so edit-series and delete-series work
+      // off it later.
+      if (recurrenceEnd === "date" && (!recurrenceEndDate || recurrenceEndDate < selectedDate)) {
+        setError("Recurrence end date must be on or after the start date");
+        setSaving(false);
+        return;
+      }
+      if (recurrenceEnd === "count" && (recurrenceCount < 1 || recurrenceCount > 104)) {
+        setError("Occurrence count must be between 1 and 104");
+        setSaving(false);
+        return;
+      }
+      const occurrenceDates = generateRecurrenceDates(
+        selectedDate,
+        recurrencePattern,
+        recurrenceEnd,
+        recurrenceEnd === "date" ? recurrenceEndDate : null,
+        recurrenceEnd === "count" ? recurrenceCount : null,
+      );
+      if (occurrenceDates.length === 0) {
+        setError("Recurrence produced zero occurrences — check the end condition.");
+        setSaving(false);
+        return;
+      }
+      const groupId = crypto.randomUUID();
+      const rows: Record<string, unknown>[] = [];
+      for (const occDate of occurrenceDates) {
+        for (const sid of selectedStaffIds) {
+          rows.push({
+            ...basePayload,
+            schedule_date: occDate,
+            // Per-occurrence end_date offset preserves multi-day blocks. If
+            // the user picked a span (Mon-Wed), every occurrence is also a
+            // Mon-Wed span shifted forward by the cadence.
+            end_date:
+              basePayload.end_date && basePayload.end_date !== selectedDate
+                ? toISODate(
+                    new Date(
+                      parseISODate(occDate).getTime() +
+                        (parseISODate(basePayload.end_date).getTime() -
+                          parseISODate(selectedDate).getTime()),
+                    ),
+                  )
+                : null,
+            staff_id: sid,
+            recurrence_group_id: groupId,
+            recurrence_pattern: recurrencePattern,
+          });
+        }
+      }
+      const { error: err, data: insData } = await supabase
+        .from("schedule_entries")
+        .insert(rows)
+        .select("id");
+      if (err) { setError(err.message); setSaving(false); return; }
+      if (!insData || insData.length !== rows.length) {
+        setError(`Expected ${rows.length} entries, got ${insData?.length ?? 0}. RLS or constraint may be blocking.`);
+        setSaving(false);
+        return;
+      }
     } else {
-      // Create-mode: fan out one row per selected staff member.
+      // Create-mode, non-recurring: fan out one row per selected staff.
       const rows = selectedStaffIds.map((sid) => ({ ...basePayload, staff_id: sid }));
       const { error: err, data: insData } = await supabase
         .from("schedule_entries")
@@ -340,7 +504,34 @@ export function AssignJobModal({
   }
 
   async function handleDelete() {
-    if (!entry || !confirm("Remove this schedule entry?")) return;
+    if (!entry) return;
+    // Recurring entries get a two-question confirm: delete-one or
+    // delete-whole-series. Standalone entries keep the single-question flow.
+    if (isPartOfSeries && entry.recurrence_group_id) {
+      const choice = window.prompt(
+        "This entry is part of a recurring series.\n\n" +
+          "Type 'one' to delete this occurrence only,\n" +
+          "type 'all' to delete the whole series,\n" +
+          "or cancel to keep it.",
+        "one",
+      );
+      if (!choice) return;
+      const scope = choice.trim().toLowerCase();
+      if (scope !== "one" && scope !== "all") {
+        setError(`Unknown choice "${choice}" — type "one" or "all".`);
+        return;
+      }
+      setSaving(true);
+      const q = supabase.from("schedule_entries").delete();
+      const { error: err } = await (scope === "all"
+        ? q.eq("recurrence_group_id", entry.recurrence_group_id)
+        : q.eq("id", entry.id));
+      if (err) { setError(err.message); setSaving(false); return; }
+      onSaved();
+      return;
+    }
+
+    if (!confirm("Remove this schedule entry?")) return;
     setSaving(true);
     const { error: err } = await supabase
       .from("schedule_entries")
@@ -713,6 +904,128 @@ export function AssignJobModal({
                 </p>
               )}
             </div>
+
+            {/* Recurrence — create-mode only. Edit-mode users go through
+                the series-edit scope picker below instead. */}
+            {!isEditing && (
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Repeat
+                </label>
+                <div className="flex rounded-md border border-border p-0.5">
+                  {([
+                    { v: "", label: "Off" },
+                    { v: "weekly", label: "Weekly" },
+                    { v: "fortnightly", label: "Fortnightly" },
+                    { v: "monthly", label: "Monthly" },
+                  ] as { v: RecurrencePattern | ""; label: string }[]).map((opt) => (
+                    <button
+                      key={opt.v || "off"}
+                      type="button"
+                      onClick={() => setRecurrencePattern(opt.v)}
+                      className={`flex-1 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
+                        recurrencePattern === opt.v
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {recurrencePattern && (
+                  <div className="mt-2 rounded-md border border-border bg-muted/20 p-3 space-y-2">
+                    <div className="flex rounded-md border border-border p-0.5 bg-card">
+                      {(["count", "date", "ongoing"] as RecurrenceEnd[]).map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => setRecurrenceEnd(opt)}
+                          className={`flex-1 rounded px-2 py-1 text-[11px] font-medium capitalize transition-colors ${
+                            recurrenceEnd === opt
+                              ? "bg-primary/15 text-primary"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {opt === "count"
+                            ? "After N times"
+                            : opt === "date"
+                              ? "On date"
+                              : "Ongoing"}
+                        </button>
+                      ))}
+                    </div>
+
+                    {recurrenceEnd === "count" && (
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        Number of occurrences
+                        <input
+                          type="number"
+                          min={1}
+                          max={104}
+                          value={recurrenceCount}
+                          onChange={(e) =>
+                            setRecurrenceCount(Math.max(1, Math.min(104, parseInt(e.target.value || "1", 10))))
+                          }
+                          className="w-20 rounded-md border border-border bg-input px-2 py-1 text-sm text-foreground"
+                        />
+                      </label>
+                    )}
+                    {recurrenceEnd === "date" && (
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        Repeat until
+                        <input
+                          type="date"
+                          value={recurrenceEndDate}
+                          min={selectedDate}
+                          onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                          className="flex-1 rounded-md border border-border bg-input px-2 py-1 text-sm text-foreground"
+                        />
+                      </label>
+                    )}
+                    {recurrenceEnd === "ongoing" && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Schedules {ONGOING_OCCURRENCE_CAP} occurrences upfront ({recurrencePattern === "weekly" ? "~6 months" : recurrencePattern === "fortnightly" ? "~12 months" : "~2 years"}). Re-schedule before they run out.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Edit-mode: series scope toggle for recurring entries. */}
+            {isEditing && isPartOfSeries && (
+              <div className="rounded-md border border-primary/30 bg-primary/5 p-3 space-y-2">
+                <p className="text-xs font-medium text-foreground">
+                  Part of a {entry?.recurrence_pattern ?? "recurring"} series.
+                </p>
+                <div className="flex rounded-md border border-border p-0.5 bg-card">
+                  {([
+                    { v: "occurrence", label: "Edit this occurrence" },
+                    { v: "series", label: "Edit whole series" },
+                  ] as { v: "occurrence" | "series"; label: string }[]).map((opt) => (
+                    <button
+                      key={opt.v}
+                      type="button"
+                      onClick={() => setEditScope(opt.v)}
+                      className={`flex-1 rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                        editScope === opt.v
+                          ? "bg-primary/15 text-primary"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  {editScope === "series"
+                    ? "Job, title, times and notes will apply to every occurrence. The date of each occurrence stays as-is."
+                    : "Changes only affect this single occurrence."}
+                </p>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">
