@@ -132,6 +132,23 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
     [assetTypes, assetTypeId],
   );
 
+  // Wi-Fi-only types (has_wifi but no serial/mac/ip/creds/firmware/vlans/rfid)
+  // get a streamlined SSID + password capture instead of the full device
+  // form. Each Enter-to-save creates one asset per network so a tech can
+  // bang through "office", "guest", "staff" wifi names in three keystrokes
+  // each. Mitchell flagged 2026-05-27.
+  const isWifiOnly = !!(
+    selectedType &&
+    selectedType.has_wifi &&
+    !selectedType.has_serial &&
+    !selectedType.has_mac &&
+    !selectedType.has_ip &&
+    !selectedType.has_network_credentials &&
+    !selectedType.has_firmware &&
+    !selectedType.has_vlans &&
+    !selectedType.has_rfid
+  );
+
   // When picking a type, auto-fill manufacturer / model if the type has
   // defaults and the user hasn't typed their own yet. Doesn't override
   // user input — also doesn't override what the previous sticky save left
@@ -160,10 +177,15 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
   const [rfid, setRfid] = useState("");
   const [vlans, setVlans] = useState<{ id?: string; name?: string; notes?: string }[]>([]);
   const [wifiSsids, setWifiSsids] = useState<{ ssid?: string; password?: string; notes?: string }[]>([]);
+  // Wi-Fi-only inline fields (one row per network). Stored as wifi_ssids[0]
+  // on save so the underlying schema doesn't fork.
+  const [wifiSsid, setWifiSsid] = useState("");
+  const [wifiPassword, setWifiPassword] = useState("");
 
   const serialRef = useRef<HTMLInputElement>(null);
   const macRef = useRef<HTMLInputElement>(null);
   const ipRef = useRef<HTMLInputElement>(null);
+  const wifiSsidRef = useRef<HTMLInputElement>(null);
 
   // Focus Serial on first render so a scanner can fire straight away.
   // preventScroll keeps the page where the user left it — without it, the
@@ -175,32 +197,42 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
   }, []);
 
   async function save() {
-    if (!assetTypeId && !serial && !macAddress && !ipAddress && !deviceName) {
-      // Nothing to save
+    // Wi-Fi-only mode: require at least an SSID; everything else is optional.
+    // Non-wifi mode: require at least one of the device fields filled.
+    if (isWifiOnly) {
+      if (!wifiSsid.trim()) return;
+    } else if (!assetTypeId && !serial && !macAddress && !ipAddress && !deviceName) {
       return;
     }
     setSaving(true);
     setError(null);
+    const effectiveWifiSsids = isWifiOnly
+      ? [{ ssid: wifiSsid.trim(), password: wifiPassword.trim() }]
+      : wifiSsids;
     const payload = {
       site_id: siteId,
       asset_type_id: assetTypeId || null,
       device_type: selectedType?.name ?? null,
-      device_name: deviceName.trim() || null,
-      manufacturer: manufacturer.trim() || null,
-      model: model.trim() || null,
-      serial: serial.trim() || null,
-      mac_address: macAddress.trim() || null,
-      ip_address: ipAddress.trim() || null,
-      subnet: subnet.trim() || null,
-      admin_user: adminUser.trim() || null,
-      admin_password: adminPassword.trim() || null,
-      staff_user: staffUser.trim() || null,
-      staff_password: staffPassword.trim() || null,
-      firmware: firmware.trim() || null,
-      rfid: rfid.trim() || null,
-      vlans,
-      wifi_ssids: wifiSsids,
-      location_note: locationNote.trim() || null,
+      // For wifi-only assets the "friendly name" is the SSID so the row in
+      // the list reads "Office Wi-Fi — Wi-Fi Network" instead of "(unnamed)".
+      device_name: isWifiOnly
+        ? wifiSsid.trim() || null
+        : deviceName.trim() || null,
+      manufacturer: isWifiOnly ? null : manufacturer.trim() || null,
+      model: isWifiOnly ? null : model.trim() || null,
+      serial: isWifiOnly ? null : serial.trim() || null,
+      mac_address: isWifiOnly ? null : macAddress.trim() || null,
+      ip_address: isWifiOnly ? null : ipAddress.trim() || null,
+      subnet: isWifiOnly ? null : subnet.trim() || null,
+      admin_user: isWifiOnly ? null : adminUser.trim() || null,
+      admin_password: isWifiOnly ? null : adminPassword.trim() || null,
+      staff_user: isWifiOnly ? null : staffUser.trim() || null,
+      staff_password: isWifiOnly ? null : staffPassword.trim() || null,
+      firmware: isWifiOnly ? null : firmware.trim() || null,
+      rfid: isWifiOnly ? null : rfid.trim() || null,
+      vlans: isWifiOnly ? [] : vlans,
+      wifi_ssids: effectiveWifiSsids,
+      location_note: isWifiOnly ? null : locationNote.trim() || null,
     };
     const { error: err } = await supabase.from("site_assets").insert(payload);
     if (err) {
@@ -208,7 +240,11 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
       setSaving(false);
       return;
     }
-    toast(serial.trim() ? `Added · ${serial.trim()}` : "Asset added");
+    toast(
+      isWifiOnly
+        ? `Added · ${wifiSsid.trim()}`
+        : serial.trim() ? `Added · ${serial.trim()}` : "Asset added",
+    );
     // Clear per-unit fields, keep sticky ones
     setDeviceName("");
     setSerial("");
@@ -223,11 +259,20 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
     setRfid("");
     setVlans([]);
     setWifiSsids([]);
+    setWifiSsid("");
+    setWifiPassword("");
     setSaving(false);
     router.refresh();
-    // Refocus Serial for the next scan — preventScroll stops the page from
-    // jumping to the top of the list (see initial-focus effect above).
-    setTimeout(() => serialRef.current?.focus({ preventScroll: true }), 0);
+    // Refocus the right input for the next entry — preventScroll stops the
+    // page from jumping to the top of the list. In wifi-only mode the SSID
+    // input is the natural next focus; otherwise the Serial scanner field.
+    setTimeout(() => {
+      if (isWifiOnly) {
+        wifiSsidRef.current?.focus({ preventScroll: true });
+      } else {
+        serialRef.current?.focus({ preventScroll: true });
+      }
+    }, 0);
   }
 
   function handleSerialKey(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -277,7 +322,10 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
 
       {error && <p className="text-xs text-destructive">{error}</p>}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      {/* Device-type picker is always visible — it's how the user switches
+          into wifi-only mode. Sticky meta fields collapse when wifi-only
+          since they don't apply to a Wi-Fi network row. */}
+      <div className={`grid gap-2 ${isWifiOnly ? "" : "grid-cols-2 sm:grid-cols-4"}`}>
         <select
           value={assetTypeId}
           onChange={(e) => setAssetTypeId(e.target.value)}
@@ -289,64 +337,96 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
             <option key={t.id} value={t.id}>{t.name}</option>
           ))}
         </select>
-        <input
-          placeholder="Manufacturer (sticky)"
-          value={manufacturer}
-          onChange={(e) => setManufacturer(e.target.value)}
-          className={inputClass}
-        />
-        <input
-          placeholder="Model (sticky)"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          className={inputClass}
-        />
-        <input
-          placeholder="Location (sticky)"
-          value={locationNote}
-          onChange={(e) => setLocationNote(e.target.value)}
-          className={inputClass}
-        />
+        {!isWifiOnly && (
+          <>
+            <input
+              placeholder="Manufacturer (sticky)"
+              value={manufacturer}
+              onChange={(e) => setManufacturer(e.target.value)}
+              className={inputClass}
+            />
+            <input
+              placeholder="Model (sticky)"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className={inputClass}
+            />
+            <input
+              placeholder="Location (sticky)"
+              value={locationNote}
+              onChange={(e) => setLocationNote(e.target.value)}
+              className={inputClass}
+            />
+          </>
+        )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <input
-          placeholder="Friendly name (optional)"
-          value={deviceName}
-          onChange={(e) => setDeviceName(e.target.value)}
-          className={inputClass}
-        />
-        <input
-          ref={serialRef}
-          placeholder="Serial #  (scan → Enter)"
-          value={serial}
-          onChange={(e) => setSerial(e.target.value)}
-          onKeyDown={handleSerialKey}
-          className={inputClass + " font-mono"}
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <input
-          ref={macRef}
-          placeholder="MAC  (scan → Enter)"
-          value={macAddress}
-          onChange={(e) => setMacAddress(e.target.value)}
-          onKeyDown={handleMacKey}
-          className={inputClass + " font-mono"}
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <input
-          ref={ipRef}
-          placeholder="IP  (Enter to save)"
-          value={ipAddress}
-          onChange={(e) => setIpAddress(e.target.value)}
-          onKeyDown={handleIpKey}
-          className={inputClass + " font-mono"}
-          autoComplete="off"
-          spellCheck={false}
-        />
-      </div>
+      {isWifiOnly ? (
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            ref={wifiSsidRef}
+            placeholder="SSID  (Tab to password)"
+            value={wifiSsid}
+            onChange={(e) => setWifiSsid(e.target.value)}
+            className={inputClass + " font-mono"}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <input
+            placeholder="Password  (Enter to save)"
+            value={wifiPassword}
+            onChange={(e) => setWifiPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                save();
+              }
+            }}
+            className={inputClass + " font-mono"}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <input
+            placeholder="Friendly name (optional)"
+            value={deviceName}
+            onChange={(e) => setDeviceName(e.target.value)}
+            className={inputClass}
+          />
+          <input
+            ref={serialRef}
+            placeholder="Serial #  (scan → Enter)"
+            value={serial}
+            onChange={(e) => setSerial(e.target.value)}
+            onKeyDown={handleSerialKey}
+            className={inputClass + " font-mono"}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <input
+            ref={macRef}
+            placeholder="MAC  (scan → Enter)"
+            value={macAddress}
+            onChange={(e) => setMacAddress(e.target.value)}
+            onKeyDown={handleMacKey}
+            className={inputClass + " font-mono"}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <input
+            ref={ipRef}
+            placeholder="IP  (Enter to save)"
+            value={ipAddress}
+            onChange={(e) => setIpAddress(e.target.value)}
+            onKeyDown={handleIpKey}
+            className={inputClass + " font-mono"}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+      )}
 
       {(selectedType?.has_network_credentials || selectedType?.has_firmware) && (
         <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
@@ -426,7 +506,10 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
         />
       )}
 
-      {selectedType?.has_wifi && (
+      {/* The multi-SSID repeating list is for devices that host multiple
+          networks (routers, controllers). Wi-Fi-only mode uses the inline
+          SSID/password row above instead — one Wi-Fi network per row. */}
+      {selectedType?.has_wifi && !isWifiOnly && (
         <RepeatList
           title="Wi-Fi SSIDs"
           rows={wifiSsids.map((w) => ({ ssid: w.ssid ?? "", password: w.password ?? "", notes: w.notes ?? "" }))}
@@ -507,6 +590,21 @@ function AssetRow({ asset, onEdit }: { asset: SiteAsset; onEdit: () => void }) {
               <span className="text-muted-foreground/70">RFID </span>
               <span className="font-mono">{asset.rfid}</span>
             </span>
+          )}
+          {Array.isArray(asset.wifi_ssids) && asset.wifi_ssids.length > 0 && (
+            asset.wifi_ssids.map((w, i) => (
+              <span key={i}>
+                <span className="text-muted-foreground/70">SSID </span>
+                <span className="font-mono">{w.ssid}</span>
+                {w.password && (
+                  <>
+                    {" "}
+                    <span className="text-muted-foreground/70">/ </span>
+                    <span className="font-mono">{w.password}</span>
+                  </>
+                )}
+              </span>
+            ))
           )}
           {asset.location_note && <span>📍 {asset.location_note}</span>}
         </div>
