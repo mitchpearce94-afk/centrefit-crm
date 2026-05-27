@@ -519,18 +519,26 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
                 doesn't interfere with drag/click. */}
             {!isTouchDevice && (
               <div
-                className="pointer-events-none absolute left-full top-0 ml-2 hidden w-64 rounded-lg border-2 border-primary/60 bg-accent px-3 py-2.5 text-accent-foreground shadow-2xl group-hover:block"
+                className="pointer-events-none absolute left-full top-0 ml-2 hidden w-64 rounded-lg border-2 border-primary/60 px-3 py-2.5 shadow-2xl group-hover:block"
                 style={{
                   zIndex: 50,
-                  // Sue kept reporting this as "transparent". The bg-card /
-                  // bg-card-elevated values (#0f0f17 / #14141d) ARE solid
-                  // but visually almost identical to the scheduler page bg
-                  // (#0f0f17), so the popover looked like it was bleeding
-                  // through. Switched to bg-accent (#1a1a26 dark / #eef0f6
-                  // light) — distinctly elevated from the page in both
-                  // themes — and bumped the border + shadow.
-                  backgroundColor: "var(--accent, #1a1a26)",
-                  color: "var(--accent-foreground, #f4f4f8)",
+                  // ROOT CAUSE: the parent entry pill has
+                  // `hover:brightness-110` (a CSS filter) AND a translucent
+                  // backgroundColor of `${staffColour}18`. CSS filters and
+                  // semi-transparent parent backgrounds create stacking
+                  // contexts that visually bleed through to child elements
+                  // — even when the child has its own opaque bg, the
+                  // browser composites them with the parent's effects.
+                  //
+                  // Fix: force the popover into its own isolated
+                  // compositing layer (isolation: isolate) and explicitly
+                  // set opacity:1 so nothing inherits, then hard-code the
+                  // background colours so no variable resolution can fail.
+                  isolation: "isolate",
+                  opacity: 1,
+                  backgroundColor: "#1c1c2a",
+                  color: "#f4f4f8",
+                  backdropFilter: "none",
                 }}
               >
                 <div className="flex items-center gap-2 mb-1.5">
