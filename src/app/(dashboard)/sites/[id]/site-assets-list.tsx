@@ -105,6 +105,42 @@ export function SiteAssetsList({
     if (isPir) pirCount++;
   }
 
+  // Group assets by category for display (#8) so they read in tidy sections
+  // instead of one long list. Wi-Fi network entries collapse into a single
+  // "Wi-Fi Details" group rather than scattering as separate boxes (#9).
+  // Unknown categories fold into "Other".
+  const CATEGORY_ORDER: { key: string; label: string }[] = [
+    { key: "security", label: "Security" },
+    { key: "cctv", label: "CCTV" },
+    { key: "access", label: "Access Control" },
+    { key: "data", label: "Data & Network" },
+    { key: "wifi", label: "Wi-Fi Details" },
+    { key: "av", label: "Audio Visual" },
+    { key: "audio", label: "Audio" },
+    { key: "other", label: "Other" },
+  ];
+  const knownCats = new Set(CATEGORY_ORDER.map((c) => c.key));
+  const groupKeyFor = (a: (typeof visible)[number]): string => {
+    const t = a.asset_type_id ? typeById.get(a.asset_type_id) : null;
+    const isWifiNetwork =
+      !!t?.has_wifi &&
+      !a.serial &&
+      !a.ip_address &&
+      !a.mac_address &&
+      Array.isArray(a.wifi_ssids) &&
+      a.wifi_ssids.length > 0;
+    if (isWifiNetwork) return "wifi";
+    const cat = t?.category ?? "other";
+    return knownCats.has(cat) ? cat : "other";
+  };
+  const groupedAssets = new Map<string, typeof visible>();
+  for (const a of visible) {
+    const k = groupKeyFor(a);
+    const arr = groupedAssets.get(k);
+    if (arr) arr.push(a);
+    else groupedAssets.set(k, [a]);
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -135,25 +171,8 @@ export function SiteAssetsList({
 
       <QuickAddRow siteId={siteId} assetTypes={assetTypes} />
 
-      <div className="mt-3 space-y-2">
-        {visible.map((a) =>
-          editingId === a.id ? (
-            <SiteAssetEditForm
-              key={a.id}
-              siteId={siteId}
-              asset={a}
-              assetTypes={assetTypes}
-              onDone={() => setEditingId(null)}
-            />
-          ) : (
-            <AssetRow
-              key={a.id}
-              asset={a}
-              onEdit={() => setEditingId(a.id)}
-            />
-          )
-        )}
-        {visible.length === 0 && (
+      <div className="mt-3 space-y-5">
+        {visible.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
             <p className="text-sm text-muted-foreground">
               No assets recorded yet. Use the row above to start adding — set the
@@ -161,6 +180,32 @@ export function SiteAssetsList({
               and queue another.
             </p>
           </div>
+        ) : (
+          CATEGORY_ORDER.filter((c) => groupedAssets.has(c.key)).map((cat) => {
+            const rows = groupedAssets.get(cat.key)!;
+            return (
+              <div key={cat.key}>
+                <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {cat.label} <span className="text-foreground/40">({rows.length})</span>
+                </h3>
+                <div className="space-y-2">
+                  {rows.map((a) =>
+                    editingId === a.id ? (
+                      <SiteAssetEditForm
+                        key={a.id}
+                        siteId={siteId}
+                        asset={a}
+                        assetTypes={assetTypes}
+                        onDone={() => setEditingId(null)}
+                      />
+                    ) : (
+                      <AssetRow key={a.id} asset={a} onEdit={() => setEditingId(a.id)} />
+                    )
+                  )}
+                </div>
+              </div>
+            );
+          })
         )}
       </div>
     </div>
