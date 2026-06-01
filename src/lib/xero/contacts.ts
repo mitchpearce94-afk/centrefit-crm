@@ -15,9 +15,9 @@ export interface CustomerForXero {
 
 /**
  * Optional site context. When supplied:
- *   - The Xero contact is named "<customer> — <site>" so a customer with
- *     multiple sites gets one contact per facility (the billing entity model
- *     Centrefit actually operates against).
+ *   - The Xero contact is named after the SITE only (e.g. "Snap Fitness
+ *     Preston") so a customer with multiple sites gets one clearly-labelled
+ *     contact per facility (the billing entity model Centrefit operates).
  *   - The site address is attached to the contact's POBOX address slot,
  *     which Xero renders in the "Bill To" block on the invoice template.
  *   - Resolution prefers `customer_sites.xero_contact_id` (per-site) over
@@ -69,9 +69,12 @@ export async function findOrCreateContact(
   if (site?.xero_contact_id) return site.xero_contact_id;
   if (!site && customer.xero_contact_id) return customer.xero_contact_id;
 
-  // Display name follows the per-site naming convention when there's a site.
+  // Display name is the SITE name only when there's a site (e.g. "Snap Fitness
+  // Preston", NOT "Benjamin Gunning — Snap Fitness Preston"). The site is the
+  // billing entity the customer recognises on their invoice. Falls back to the
+  // customer name for the site-less ad-hoc case. (Mitchell, 2026-05-28)
   const displayName = site
-    ? `${customer.name} — ${site.name}`.slice(0, 255)
+    ? site.name.slice(0, 255)
     : customer.name.slice(0, 255);
   const safeName = displayName.replace(/"/g, '\\"');
   let contactId: string | undefined;
@@ -99,7 +102,7 @@ export async function findOrCreateContact(
         tenantId,
         undefined,
         site
-          ? `Name.Contains("${customer.name.replace(/"/g, '\\"').slice(0, 60)}")`
+          ? `Name.Contains("${site.name.replace(/"/g, '\\"').slice(0, 60)}")`
           : `Name.Contains("${safeName.slice(0, 60)}")`,
         undefined,  // order
         undefined,  // iDs

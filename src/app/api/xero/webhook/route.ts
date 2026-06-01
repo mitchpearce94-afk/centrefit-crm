@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { getAuthedClient } from "@/lib/xero/client";
 import { fetchXeroInvoice } from "@/lib/xero/invoices";
+import type { XeroClient } from "xero-node";
 import {
   isXeroRateLimited,
   captureXeroRateLimit,
@@ -163,7 +164,7 @@ async function processInvoiceEvent(
     const { client, conn } = await getAuthedClient(supabase);
     const latest = await fetchXeroInvoice(client, conn.tenant_id, xeroInvoiceId);
     if (latest.repeatingInvoiceID) {
-      await ingestRecurringChildInvoice(supabase, xeroInvoiceId, latest);
+      await ingestRecurringChildInvoice(supabase, xeroInvoiceId, latest, client, conn.tenant_id);
     }
     return;
   }
@@ -256,6 +257,8 @@ async function ingestRecurringChildInvoice(
   supabase: ReturnType<typeof createServiceRoleClient>,
   xeroInvoiceId: string,
   latest: Awaited<ReturnType<typeof fetchXeroInvoice>>,
+  xero: XeroClient,
+  tenantId: string,
 ) {
   if (!latest.repeatingInvoiceID) return;
 
@@ -266,11 +269,16 @@ async function ingestRecurringChildInvoice(
     .from("recurring_plans")
     .select(`
       id, customer_id, site_id, status, alias_email,
-      customers(id, name, customer_contacts(name, email, is_primary)),
-      customer_sites(name),
+      customers(id, name, billing_email, customer_contacts(name, email, is_primary)),
+      customer_sites(name, billing_email),
       recurring_plan_items(service_name, quantity)
     `)
-    .eq("xero_repeating_invoice_id", latest.repeatingInvoiceID)
+    // Match either the primary (monthly) OR secondary (yearly) RI template —
+    // mixed monthly+yearly plans store the yearly RI separately, and its
+    // children were previously dropped with "no plan owns RI".
+    .or(
+      `xero_repeating_invoice_id.eq.${latest.repeatingInvoiceID},xero_repeating_invoice_secondary_id.eq.${latest.repeatingInvoiceID}`,
+    )
     .maybeSingle();
 
   if (!plan) {
@@ -330,8 +338,14 @@ async function ingestRecurringChildInvoice(
     const site = Array.isArray(plan.customer_sites) ? plan.customer_sites[0] : plan.customer_sites;
     const primary = customer?.customer_contacts?.find((c: { is_primary: boolean }) => c.is_primary)
       ?? customer?.customer_contacts?.[0];
-    if (!primary?.email) {
-      console.warn(`[xero-webhook] plan ${plan.id} customer has no primary email; skipping recurring email`);
+    // Recipient precedence mirrors the Xero contact email (findOrCreateContact):
+    // site billing_email → customer billing_email → primary contact email. The
+    // app-side notice must land at the same inbox Xero bills, not the contact.
+    const siteBillingEmail = (site as { billing_email?: string | null } | null)?.billing_email?.split(",")[0]?.trim();
+    const custBillingEmail = (customer as { billing_email?: string | null } | undefined)?.billing_email?.split(",")[0]?.trim();
+    const recipient = siteBillingEmail || custBillingEmail || primary?.email || null;
+    if (!recipient) {
+      console.warn(`[xero-webhook] plan ${plan.id} has no billing/contact email; skipping recurring email`);
       return;
     }
 
@@ -341,8 +355,8 @@ async function ingestRecurringChildInvoice(
       : items.map((it: { service_name: string; quantity: number }) => it.quantity > 1 ? `${it.service_name} × ${it.quantity}` : it.service_name).join(", ");
 
     await sendDDRecurringInvoiceEmail({
-      to: primary.email,
-      customerName: primary.name ?? customer?.name ?? "there",
+      to: recipient,
+      customerName: primary?.name ?? customer?.name ?? "there",
       siteLabel: site?.name ?? customer?.name ?? "your account",
       invoiceNumber: latest.invoiceNumber,
       total: latest.total,
@@ -351,6 +365,20 @@ async function ingestRecurringChildInvoice(
       serviceSummary,
       invoiceId: inserted.id,
     });
+
+    // Mark the invoice as "sent" in Xero so staff can see at a glance the
+    // customer was notified. We've just sent the DD notice via Resend above;
+    // setting sentToContact only flips Xero's status flag — it does NOT
+    // trigger another Xero email. Only for live (authorised/paid) invoices.
+    if (normalisedStatus === "authorised" || normalisedStatus === "paid") {
+      try {
+        await xero.accountingApi.updateInvoice(tenantId, xeroInvoiceId, {
+          invoices: [{ sentToContact: true } as Record<string, unknown>],
+        });
+      } catch (markErr) {
+        console.error(`[xero-webhook] couldn't mark RI child ${xeroInvoiceId} sent in Xero:`, markErr);
+      }
+    }
   } catch (err) {
     console.error(`[xero-webhook] DD recurring email failed for plan ${plan.id}:`, err);
   }
