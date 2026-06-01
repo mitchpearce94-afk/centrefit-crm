@@ -186,7 +186,13 @@ export function AssignJobModal({
 
   const isPartOfSeries = !!(entry?.recurrence_group_id);
 
-  const selectedJob = jobs.find((j) => j.id === jobId);
+  // Resolve from the picker list, then fall back to the entry's own job data
+  // so the "Open Job" link still works for jobs the picker filters out
+  // (completion-phase: Ready to Invoice / Complete). Without the fallback the
+  // link vanished once a scheduled job was finished. (#10/#11)
+  const selectedJob =
+    jobs.find((j) => j.id === jobId) ??
+    (entry?.job && entry.job.id === jobId ? entry.job : undefined);
 
   // Lock body scroll while the modal is open — prevents the page behind it
   // from scrolling on mobile and stops the visual "jumping" Mitchell saw
