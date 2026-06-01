@@ -106,6 +106,9 @@ function SiteForm({
   const [state, setState] = useState(site?.state ?? "QLD");
   const [postcode, setPostcode] = useState(site?.postcode ?? "");
   const [phone, setPhone] = useState(site?.phone ?? "");
+  const [billingEmail, setBillingEmail] = useState(
+    (site as { billing_email?: string | null } | undefined)?.billing_email ?? "",
+  );
   const [notes, setNotes] = useState(site?.notes ?? "");
 
   async function handleSubmit(e: React.FormEvent) {
@@ -125,6 +128,7 @@ function SiteForm({
       state: state.trim() || null,
       postcode: postcode.trim() || null,
       phone: phone.trim() || null,
+      billing_email: billingEmail.trim() || null,
       notes: notes.trim() || null,
     };
 
@@ -217,6 +221,13 @@ function SiteForm({
         value={phone}
         onChange={(e) => setPhone(e.target.value)}
         type="tel"
+        className="w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+      />
+      <input
+        placeholder="Billing email (where this site's invoices go — wins over the customer's)"
+        value={billingEmail}
+        onChange={(e) => setBillingEmail(e.target.value)}
+        type="text"
         className="w-full rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
       />
       <textarea
