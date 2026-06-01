@@ -37,7 +37,8 @@ const PUBLIC_PATH_PREFIXES = [
   "/forgot-password",
   "/auth",
   "/api/auth/forgot-password",
-  "/api/seed-",
+  "/api/auth/reset-password",
+  "/reset-password",
   "/api/quotes/respond",
   "/api/quotes/by-token/",
   "/api/nbn-enquiries/create",
@@ -137,6 +138,24 @@ export async function updateSession(request: NextRequest) {
         ...COOKIE_OPTIONS,
         maxAge: Math.floor(MAX_SESSION_MS / 1000),
       });
+    }
+  }
+
+  // Admin-segment hard gate: every /api/admin/* route requires the admin
+  // role. Belt-and-braces single chokepoint — several admin routes
+  // historically checked only "is logged in", letting any authenticated
+  // staffer trigger destructive Xero/recurring ops (audit 2026-06-01).
+  if (user && pathname.startsWith("/api/admin")) {
+    const { data: me } = await supabase
+      .from("staff")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+    if (me?.role !== "admin") {
+      return NextResponse.json(
+        { error: "Forbidden — admin access required" },
+        { status: 403 },
+      );
     }
   }
 

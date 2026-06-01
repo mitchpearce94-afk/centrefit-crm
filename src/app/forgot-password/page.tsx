@@ -59,7 +59,7 @@ export default function ForgotPasswordPage() {
           {done ? (
             <div className="space-y-4">
               <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-300">
-                If that email is on a Centrefit CRM account, a temporary password is on its way. Check your inbox in a minute.
+                If that email is on a Centrefit CRM account, a password reset link is on its way. Check your inbox in a minute — the link expires in 1 hour.
               </div>
               <Link
                 href="/login"
@@ -77,7 +77,7 @@ export default function ForgotPasswordPage() {
               )}
 
               <p className="text-xs text-muted-foreground">
-                Enter your email and we'll send you a temporary password. You'll be prompted to set a new one when you sign in.
+                Enter your email and we'll send you a link to choose a new password. Your current password keeps working until you do.
               </p>
 
               <div>

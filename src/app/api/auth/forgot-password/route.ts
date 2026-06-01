@@ -11,21 +11,20 @@ interface Body {
 /**
  * Public endpoint — no auth required (the user can't log in, that's the point).
  *
- * We deliberately don't reveal whether the email exists or not. Any valid
- * email shape returns 200; only the actual reset/email is conditional. This
- * prevents enumerating which addresses are real Centrefit accounts.
+ * Hardened 2026-06-01 (audit). The old version called updateUserById() the
+ * instant any email was submitted, which (a) instantly invalidated the
+ * victim's current password — an unauthenticated lockout DoS — and (b) had
+ * no rate limiting, so it was repeatable at will.
+ *
+ * New flow: mint a single-use, 1-hour token, store only its SHA-256 hash, and
+ * email a reset LINK. The password is NOT changed here. It only changes when
+ * the user clicks the link and chooses a new password (see
+ * /api/auth/reset-password/complete). We still never reveal whether the email
+ * exists, and we rate-limit per email to stop reset-email spam.
  */
-function generateTempPassword(): string {
-  const words = [
-    "harbour", "summit", "ranger", "anchor", "boulder", "cobalt",
-    "delta", "ember", "frost", "granite", "horizon", "ivory",
-    "junction", "lantern", "marina", "quartz", "ranger", "shore",
-  ];
-  const w1 = words[crypto.randomInt(0, words.length)];
-  const w2 = words[crypto.randomInt(0, words.length)];
-  const num = crypto.randomInt(1000, 10000);
-  return `${w1}-${w2}-${num}`;
-}
+
+const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+const RESEND_COOLDOWN_MS = 5 * 60 * 1000; // one reset email per address per 5 min
 
 export async function POST(req: NextRequest) {
   let body: Body;
@@ -58,44 +57,51 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  const tempPassword = generateTempPassword();
-  const loginUrl = `${req.nextUrl.origin}/login`;
-
-  const { error: updErr } = await admin.auth.admin.updateUserById(existing.id, {
-    password: tempPassword,
-    email_confirm: true,
-  });
-  if (updErr) {
-    return NextResponse.json({ error: `Failed to reset password: ${updErr.message}` }, { status: 502 });
+  // Rate limit: if we already sent a reset link to this address very recently,
+  // silently succeed without sending another. Stops reset-email spam/abuse.
+  const cooldownSince = new Date(Date.now() - RESEND_COOLDOWN_MS).toISOString();
+  const { data: recent } = await admin
+    .from("password_reset_tokens")
+    .select("id")
+    .eq("email", email)
+    .gte("created_at", cooldownSince)
+    .limit(1);
+  if (recent && recent.length > 0) {
+    return NextResponse.json({ ok: true });
   }
 
-  // Force the user to change this temp password on next login.
-  await admin
-    .from("staff")
-    .update({ must_change_password: true })
-    .eq("id", existing.id);
+  // Mint a single-use token; store only its hash.
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
+
+  const { error: insErr } = await admin.from("password_reset_tokens").insert({
+    user_id: existing.id,
+    email,
+    token_hash: tokenHash,
+    expires_at: expiresAt,
+  });
+  if (insErr) {
+    return NextResponse.json({ error: `Failed to start reset: ${insErr.message}` }, { status: 502 });
+  }
+
+  const resetUrl = `${req.nextUrl.origin}/reset-password?token=${rawToken}`;
 
   const html = emailLayout(`
     ${emailHeader({ rightLabel: "Password Reset" })}
     <tr><td style="padding:32px 32px 8px">
-      <h1 style="font-size:20px;font-weight:600;color:#0f172a;margin:0 0 8px">Centrefit CRM password reset</h1>
-      <p style="margin:0 0 16px;font-size:13px;color:#475569;line-height:1.55">Someone (hopefully you) requested a password reset on your Centrefit CRM account.</p>
+      <h1 style="font-size:20px;font-weight:600;color:#0f172a;margin:0 0 8px">Reset your Centrefit CRM password</h1>
+      <p style="margin:0 0 16px;font-size:13px;color:#475569;line-height:1.55">Someone (hopefully you) requested a password reset on your Centrefit CRM account. Click the button below to choose a new password. This link expires in 1 hour and can only be used once.</p>
 
-      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:18px;margin:18px 0">
-        <p style="margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;font-weight:700">Login URL</p>
-        <p style="margin:0 0 14px;font-family:monospace;font-size:13px;color:#0f172a">${loginUrl}</p>
-        <p style="margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;font-weight:700">Email</p>
-        <p style="margin:0 0 14px;font-family:monospace;font-size:13px;color:#0f172a">${email}</p>
-        <p style="margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;font-weight:700">Temporary password</p>
-        <p style="margin:0;font-family:monospace;font-size:16px;font-weight:600;color:#0f172a;letter-spacing:0.5px">${tempPassword}</p>
-      </div>
-
-      <p style="margin:16px 0;text-align:center">
-        <a href="${loginUrl}" style="display:inline-block;background:#3b82f6;color:#ffffff;padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px">Sign in to the CRM</a>
+      <p style="margin:24px 0;text-align:center">
+        <a href="${resetUrl}" style="display:inline-block;background:#3b82f6;color:#ffffff;padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px">Choose a new password</a>
       </p>
 
+      <p style="margin:16px 0 0;font-size:12px;color:#64748b;line-height:1.55">If the button doesn't work, copy this link into your browser:</p>
+      <p style="margin:4px 0 0;font-family:monospace;font-size:12px;color:#0f172a;word-break:break-all">${resetUrl}</p>
+
       <p style="margin:24px 0 0;font-size:11px;color:#94a3b8;text-align:center;line-height:1.5">
-        You'll be prompted to choose a new password right after signing in. If you didn't request this, your old password still works as long as you don't sign in with the temporary one — let an admin know.
+        If you didn't request this, you can safely ignore this email — your current password has NOT been changed and will keep working. Nothing happens until the link above is used.
       </p>
     </td></tr>
     ${emailFooter()}
@@ -106,21 +112,18 @@ export async function POST(req: NextRequest) {
     const { error: sendErr } = await resend.emails.send({
       from: "Centrefit CRM <noreply@centrefit.com.au>",
       to: email,
-      subject: "Centrefit CRM password reset",
+      subject: "Reset your Centrefit CRM password",
       html,
     });
     if (sendErr) {
       return NextResponse.json(
-        { error: `Password reset done but email failed: ${sendErr.message}`, tempPassword },
+        { error: `Couldn't send the reset email: ${sendErr.message}` },
         { status: 502 },
       );
     }
   } catch (err: unknown) {
     return NextResponse.json(
-      {
-        error: `Password reset done but email failed: ${err instanceof Error ? err.message : String(err)}`,
-        tempPassword,
-      },
+      { error: `Couldn't send the reset email: ${err instanceof Error ? err.message : String(err)}` },
       { status: 502 },
     );
   }

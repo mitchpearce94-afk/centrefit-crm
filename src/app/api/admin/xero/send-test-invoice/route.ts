@@ -5,25 +5,46 @@ import { getAuthedClient } from "@/lib/xero/client";
 
 /**
  * One-shot test-invoice sender. Creates a $1 AUTHORISED invoice in Xero
- * using the requested branding theme and emails it to Mitchell so he can
- * see what the customer experience (PDF + email body) actually looks like
- * before any real RI fires.
+ * using the requested branding theme and emails it to an INTERNAL viewer so
+ * the team can see what the customer experience (PDF + email body) actually
+ * looks like before any real RI fires.
  *
- * GET so it's URL-bar-triggerable. Auth-gated. Side effect: leaves a $1
- * invoice in Xero — Mitchell voids it after viewing.
+ * Hardened 2026-06-01 (audit): POST only (not URL-bar / prefetch triggerable),
+ * admin-gated at the middleware layer, and the recipient is restricted to an
+ * internal allow-list so this can never be used to spray branded invoice
+ * emails to arbitrary/customer addresses (the no-customer-send hard rule).
  *
- * Query params:
- *   ?email=    Recipient email (default: mitchpearce94@gmail.com).
- *   ?theme=    "solutions" (default) or "communications".
+ * Body (JSON):
+ *   { "email": "...", "theme": "solutions" | "communications" }
+ *   email — optional, MUST be an internal address; defaults to the env
+ *           XERO_TEST_INVOICE_RECIPIENT or mitchpearce94@gmail.com.
  */
 
-export async function GET(req: NextRequest) {
+// Only these recipients may ever receive the test invoice. Anything else is
+// rejected outright — no free-text customer addresses on a path that calls
+// emailInvoice.
+const DEFAULT_TEST_RECIPIENT =
+  process.env.XERO_TEST_INVOICE_RECIPIENT ?? "mitchpearce94@gmail.com";
+
+function isAllowedRecipient(email: string): boolean {
+  const e = email.trim().toLowerCase();
+  return e === DEFAULT_TEST_RECIPIENT.toLowerCase() || e.endsWith("@centrefit.com.au");
+}
+
+export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
 
-  const email = req.nextUrl.searchParams.get("email") ?? "mitchpearce94@gmail.com";
-  const themeParam = req.nextUrl.searchParams.get("theme") ?? "solutions";
+  const body = (await req.json().catch(() => ({}))) as { email?: string; theme?: string };
+  const email = (body.email ?? DEFAULT_TEST_RECIPIENT).trim();
+  if (!isAllowedRecipient(email)) {
+    return NextResponse.json(
+      { error: "Recipient must be an internal @centrefit.com.au address. Refusing to send a branded invoice externally." },
+      { status: 400 },
+    );
+  }
+  const themeParam = body.theme ?? "solutions";
   const brandingThemeID =
     themeParam === "communications"
       ? process.env.XERO_BRANDING_THEME_COMMUNICATIONS_DD_ID
