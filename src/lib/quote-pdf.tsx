@@ -77,6 +77,111 @@ function tokenize(text: string): { text: string; bold: boolean }[] {
   return out;
 }
 
+// ── Rich-text (manual scope) → PDF blocks ────────────────────────────────────
+//
+// Manual quotes author their scope in a TipTap editor and store HTML. React-PDF
+// can't render HTML, so we parse the (non-nested) block structure TipTap emits
+// — paragraphs, headings, bullet/ordered lists — into styled blocks, with
+// inline <strong>/<em> handled via segment styling and <br>/newlines
+// preserved. Without this the customer PDF printed literal <p>…</p> tag-soup
+// with all line breaks collapsed (audit 2026-06-01).
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+type RichSeg = { text: string; bold: boolean };
+
+function inlineSegments(html: string): RichSeg[] {
+  const withBreaks = html.replace(/<br\s*\/?>/gi, "\n");
+  const strip = (s: string) => decodeEntities(s.replace(/<[^>]+>/g, ""));
+  const out: RichSeg[] = [];
+  const re = /<(strong|b|em|i)>([\s\S]*?)<\/\1>/gi;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(withBreaks)) !== null) {
+    if (m.index > last) out.push({ text: strip(withBreaks.slice(last, m.index)), bold: false });
+    const t = m[1].toLowerCase();
+    out.push({ text: strip(m[2]), bold: t === "strong" || t === "b" });
+    last = m.index + m[0].length;
+  }
+  if (last < withBreaks.length) out.push({ text: strip(withBreaks.slice(last)), bold: false });
+  return out.filter((s) => s.text.length > 0);
+}
+
+type RichBlock = { type: "p" | "h" | "ul" | "ol"; text?: string; items?: string[] };
+
+function parseRichBlocks(html: string): RichBlock[] {
+  const blocks: RichBlock[] = [];
+  const re = /<(p|h[1-6]|ul|ol|blockquote)([^>]*)>([\s\S]*?)<\/\1>/gi;
+  let m: RegExpExecArray | null;
+  let matched = false;
+  while ((m = re.exec(html)) !== null) {
+    matched = true;
+    const tag = m[1].toLowerCase();
+    const inner = m[3];
+    if (tag === "ul" || tag === "ol") {
+      const items = [...inner.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)].map((li) => li[1]);
+      blocks.push({ type: tag === "ul" ? "ul" : "ol", items });
+    } else if (tag[0] === "h") {
+      blocks.push({ type: "h", text: inner });
+    } else {
+      blocks.push({ type: "p", text: inner });
+    }
+  }
+  // No block tags (legacy plain-text or auto-generated lead) — preserve as one
+  // paragraph; inlineSegments keeps embedded newlines so breaks still render.
+  if (!matched) blocks.push({ type: "p", text: html });
+  return blocks;
+}
+
+function RichSegments({ segs }: { segs: RichSeg[] }) {
+  return (
+    <>
+      {segs.map((seg, i) => (
+        <Text key={i} style={seg.bold ? { fontFamily: "Helvetica-Bold", color: "#0f172a" } : {}}>
+          {seg.text}
+        </Text>
+      ))}
+    </>
+  );
+}
+
+/** Renders manual-quote rich-text HTML as proper PDF blocks. */
+function RichScope({ html }: { html: string }) {
+  const blocks = parseRichBlocks(html);
+  return (
+    <View>
+      {blocks.map((b, i) => {
+        if (b.type === "ul" || b.type === "ol") {
+          return (b.items ?? []).map((it, j) => {
+            const segs = inlineSegments(it);
+            if (segs.length === 0) return null;
+            return (
+              <View key={`${i}-${j}`} style={styles.bulletRow}>
+                <Text style={[styles.bullet, { color: "#047857" }]}>{b.type === "ol" ? `${j + 1}.` : "•"}</Text>
+                <Text style={styles.bulletText}><RichSegments segs={segs} /></Text>
+              </View>
+            );
+          });
+        }
+        const segs = inlineSegments(b.text ?? "");
+        if (segs.length === 0) return <View key={i} style={{ height: 6 }} />;
+        if (b.type === "h") {
+          return <Text key={i} style={styles.scopeHeading}><RichSegments segs={segs} /></Text>;
+        }
+        return <Text key={i} style={styles.summaryLead}><RichSegments segs={segs} /></Text>;
+      })}
+    </View>
+  );
+}
+
 // ── Styles ─────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -138,6 +243,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   summaryLead: { fontSize: 10, lineHeight: 1.55, marginBottom: 10 },
+  scopeHeading: { fontSize: 11, fontFamily: "Helvetica-Bold", color: "#0f172a", marginTop: 4, marginBottom: 6 },
   summaryGrid: { flexDirection: "row", flexWrap: "wrap", marginTop: 6 },
   summaryRow: {
     width: "50%",
@@ -461,8 +567,8 @@ export function QuoteDocument({ quote, scope }: { quote: QuoteForPdf; scope: Sco
 
         {/* Executive summary */}
         {(scope.summary.lead || scope.summary.rows.length > 0) && (
-          <View style={styles.summaryCard} wrap={false}>
-            {!!scope.summary.lead && <Text style={styles.summaryLead}>{scope.summary.lead}</Text>}
+          <View style={styles.summaryCard}>
+            {!!scope.summary.lead && <RichScope html={scope.summary.lead} />}
             {scope.summary.rows.length > 0 && (
               <View style={styles.summaryGrid}>
                 {scope.summary.rows.map((row, i) => (

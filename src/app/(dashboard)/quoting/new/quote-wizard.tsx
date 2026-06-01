@@ -436,8 +436,10 @@ export function QuoteWizard({
   // Map products
   const products: Product[] = useMemo(() =>
     rawProducts.map((p) => ({
-      id: p.id, name: p.name, sku: p.sku, category: p.category,
-      supplier: p.supplier, cost_price: p.cost_price, markup: p.markup,
+      // Coalesce nullable text columns — a single null sku/supplier/name in
+      // quote_products used to crash product search (.toLowerCase() on null).
+      id: p.id, name: p.name ?? "", sku: p.sku ?? "", category: p.category ?? "",
+      supplier: p.supplier ?? "", cost_price: p.cost_price, markup: p.markup,
       sell_price: p.sell_price, device_type: p.device_type,
       is_default: p.is_default, is_active: p.is_active,
     })), [rawProducts]);
