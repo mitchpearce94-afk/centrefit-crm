@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/service";
 import { getAuthedClient } from "@/lib/xero/client";
 import { fetchXeroInvoice } from "@/lib/xero/invoices";
 import { isXeroRateLimited, captureXeroRateLimit } from "@/lib/xero/rate-limit";
@@ -151,9 +152,15 @@ export async function POST(
     reminderNumber,
   });
 
+  // The invoice_reminders audit table is admin-only on INSERT under RLS, but
+  // any staffer with invoices.send can legitimately reach this route. Write
+  // the audit row via the service-role client so a non-admin's reminder is
+  // never silently dropped from the history (audit 2026-06-01 HIGH).
+  const svc = createServiceRoleClient();
+
   if (!result.ok) {
     // Log the failed attempt — useful for debugging Resend issues.
-    await supabase.from("invoice_reminders").insert({
+    const { error: logErr } = await svc.from("invoice_reminders").insert({
       invoice_id: invoice.id,
       recipient_email: email,
       trigger,
@@ -161,11 +168,12 @@ export async function POST(
       days_overdue: daysOverdue,
       error: result.error,
     });
+    if (logErr) console.error("[send-reminder] failed-attempt audit insert error:", logErr);
     return NextResponse.json({ error: result.error }, { status: 502 });
   }
 
   const nowIso = new Date().toISOString();
-  await supabase.from("invoice_reminders").insert({
+  const { error: auditErr } = await svc.from("invoice_reminders").insert({
     invoice_id: invoice.id,
     recipient_email: email,
     trigger,
@@ -173,6 +181,7 @@ export async function POST(
     days_overdue: daysOverdue,
     resend_message_id: result.messageId,
   });
+  if (auditErr) console.error("[send-reminder] audit insert error:", auditErr);
 
   await supabase
     .from("invoices")
