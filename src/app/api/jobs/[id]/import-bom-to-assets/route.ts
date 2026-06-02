@@ -68,10 +68,22 @@ export async function POST(
   }
 
   // Asset-type lookup by name (asset types are named like the catalogue
-  // products, e.g. "PIR - Blue Line Gen2 Quad").
-  const { data: assetTypes } = await supabase.from("asset_types").select("id, name");
+  // products, e.g. "PIR - Blue Line Gen2 Quad"). Pull the default make/model
+  // so imported shells come pre-filled — the tech then only scans serials.
+  const { data: assetTypes } = await supabase
+    .from("asset_types")
+    .select("id, name, default_manufacturer, default_model");
   const typeByName = new Map(
     (assetTypes ?? []).map((t) => [(t.name ?? "").trim().toLowerCase(), t.id as string]),
+  );
+  const defaultsById = new Map(
+    (assetTypes ?? []).map((t) => [
+      t.id as string,
+      {
+        manufacturer: (t.default_manufacturer ?? "").trim() || null,
+        model: (t.default_model ?? "").trim() || null,
+      },
+    ]),
   );
 
   type Row = {
@@ -79,6 +91,7 @@ export async function POST(
     job_id: string;
     device_name: string;
     device_type: string | null;
+    manufacturer: string | null;
     model: string | null;
     asset_type_id: string | null;
     is_active: boolean;
@@ -96,15 +109,19 @@ export async function POST(
       typeByName.get((prod?.name ?? "").trim().toLowerCase()) ??
       null;
     const deviceType = prod?.device_type ?? null;
-    // Michael: carry the BOM SKU onto each shell as the model/part number so
-    // the asset record ties back to the catalogue part without re-keying.
-    const model = (li.sku ?? "").trim() || null;
+    // Pre-fill make + model from the matched asset type's defaults so Michael
+    // doesn't re-type them per device. Model falls back to the BOM SKU when the
+    // type has no default model set yet, so the part # is at least captured.
+    const defaults = assetTypeId ? defaultsById.get(assetTypeId) : null;
+    const manufacturer = defaults?.manufacturer ?? null;
+    const model = defaults?.model ?? ((li.sku ?? "").trim() || null);
     for (let i = 0; i < qty; i++) {
       rows.push({
         site_id: job.site_id,
         job_id: jobId,
         device_name: name,
         device_type: deviceType,
+        manufacturer,
         model,
         asset_type_id: assetTypeId,
         is_active: true,

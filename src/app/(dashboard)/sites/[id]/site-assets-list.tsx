@@ -838,6 +838,20 @@ function SiteAssetEditForm({
     [assetTypes, assetTypeId],
   );
 
+  // Auto-fill make/model from the device type's defaults when the field is
+  // still blank — same as Quick Add. Lets Michael pick a type on a blank
+  // (or BOM-imported) shell and have make/model populate without typing.
+  // Never overwrites a value already on the asset.
+  useEffect(() => {
+    if (selectedType?.default_manufacturer && !manufacturer) {
+      setManufacturer(selectedType.default_manufacturer);
+    }
+    if (selectedType?.default_model && !model) {
+      setModel(selectedType.default_model);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedType]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
