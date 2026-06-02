@@ -50,8 +50,10 @@ export async function POST(
     return NextResponse.json({ alreadyImported: true, existing: existingCount });
   }
 
-  // Most recent accepted quote for the job.
-  const { data: quote } = await supabase
+  // Prefer the most recent accepted quote; if there isn't one yet (e.g. the
+  // quote is still draft on a test/early job), fall back to the most recent
+  // quote of any status — the BOM exists regardless of quote status.
+  let { data: quote } = await supabase
     .from("quotes")
     .select("id, ref")
     .eq("job_id", jobId)
@@ -60,7 +62,17 @@ export async function POST(
     .limit(1)
     .maybeSingle();
   if (!quote) {
-    return NextResponse.json({ error: "No accepted quote found for this job" }, { status: 400 });
+    const fallback = await supabase
+      .from("quotes")
+      .select("id, ref")
+      .eq("job_id", jobId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    quote = fallback.data;
+  }
+  if (!quote) {
+    return NextResponse.json({ error: "No quote found for this job to import a BOM from" }, { status: 400 });
   }
 
   // BOM lines + the catalogue product's asset-type mapping + device_type.

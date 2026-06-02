@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import Link from "next/link";
+import { ProcurementBoard, type ReadyEntry, type ActiveEntry } from "./procurement-board";
 
 type ItemRow = {
   job_id: string;
@@ -79,12 +79,35 @@ export default async function ProcurementIndexPage() {
     statsByJob.set(it.job_id, s);
   }
 
-  // Active jobs with procurement (most recently active first isn't tracked —
-  // fall back to job number desc)
+  // Active jobs with procurement → flat, serializable entries (job number desc)
   const active = Array.from(statsByJob.keys())
     .map((jobId) => ({ job: jobsById.get(jobId)!, stats: statsByJob.get(jobId)! }))
     .filter((e) => !!e.job)
     .sort((a, b) => (b.job.number ?? 0) - (a.job.number ?? 0));
+
+  const activeEntries: ActiveEntry[] = active.map(({ job, stats }) => ({
+    jobId: job.id,
+    number: job.number,
+    customerName: job.customer?.name ?? "—",
+    siteName: job.site?.name ?? null,
+    total: stats.total,
+    inStock: stats.in_stock,
+    order: stats.order,
+    ordered: stats.ordered,
+    received: stats.received,
+    poCount: stats.poNumbers.size,
+  }));
+
+  // "Needs work" = anything still to triage, order or receive. "Complete" =
+  // every line is either received or fulfilled from stock (nothing actionable),
+  // so finished jobs drop out of the working view instead of lingering.
+  const entryById = new Map(activeEntries.map((e) => [e.jobId, e]));
+  const needsWork = active
+    .filter(({ stats }) => stats.pending + stats.order + stats.ordered > 0)
+    .map(({ job }) => entryById.get(job.id)!);
+  const complete = active
+    .filter(({ stats }) => stats.total > 0 && stats.pending + stats.order + stats.ordered === 0)
+    .map(({ job }) => entryById.get(job.id)!);
 
   // Jobs with accepted quote but NO procurement rows — ready to start
   const jobsWithProcurement = new Set(statsByJob.keys());
@@ -93,13 +116,21 @@ export default async function ProcurementIndexPage() {
     if (!q.job_id || jobsWithProcurement.has(q.job_id)) continue;
     if (!readyByJobId.has(q.job_id)) readyByJobId.set(q.job_id, q);
   }
-  const ready = Array.from(readyByJobId.entries())
+  const readyEntries: ReadyEntry[] = Array.from(readyByJobId.entries())
     .map(([jobId, quote]) => ({ job: jobsById.get(jobId)!, quote }))
-    .filter((e) => !!e.job);
+    .filter((e) => !!e.job)
+    .map(({ job, quote }) => ({
+      jobId: job.id,
+      number: job.number,
+      customerName: job.customer?.name ?? "—",
+      siteName: job.site?.name ?? null,
+      quoteRef: quote.ref,
+      acceptedAt: quote.accepted_at,
+    }));
 
-  // Global totals
+  // Global totals — count only jobs that still need work as "active".
   const totals = {
-    jobs: active.length,
+    jobs: needsWork.length,
     pending: active.reduce((s, e) => s + e.stats.pending, 0),
     inStock: active.reduce((s, e) => s + e.stats.in_stock, 0),
     toOrder: active.reduce((s, e) => s + e.stats.order, 0),
@@ -118,7 +149,7 @@ export default async function ProcurementIndexPage() {
       </div>
 
       <div className="mt-5 grid grid-cols-2 sm:grid-cols-6 gap-3">
-        <Stat label="Active jobs" value={totals.jobs} />
+        <Stat label="Jobs needing work" value={totals.jobs} />
         <Stat label="Pending" value={totals.pending} tone="muted" />
         <Stat label="In stock" value={totals.inStock} tone="sky" />
         <Stat label="To order" value={totals.toOrder} tone="amber" />
@@ -126,104 +157,7 @@ export default async function ProcurementIndexPage() {
         <Stat label="Received" value={totals.received} tone="emerald" />
       </div>
 
-      {ready.length > 0 && (
-        <section className="mt-6">
-          <h2 className="text-sm font-semibold mb-2">Ready to start</h2>
-          <p className="text-xs text-muted-foreground mb-3">
-            Jobs with an accepted quote but no procurement started. Click into the job and hit
-            Start Ordering.
-          </p>
-          <div className="rounded-lg border border-border bg-card overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border text-left bg-muted/30 text-muted-foreground">
-                  <th className="px-3 py-2 font-medium">Job</th>
-                  <th className="px-3 py-2 font-medium">Quote</th>
-                  <th className="px-3 py-2 font-medium">Customer</th>
-                  <th className="px-3 py-2 font-medium">Site</th>
-                  <th className="px-3 py-2 font-medium text-right w-32">Accepted</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ready.map(({ job, quote }) => (
-                  <tr key={job.id} className="border-b border-border last:border-0 hover:bg-accent/30">
-                    <td className="px-3 py-2 font-mono">
-                      <Link href={`/procurement/${job.id}`} className="text-primary hover:underline">
-                        CFA-{job.number ?? "?"}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2 font-mono text-muted-foreground">{quote.ref}</td>
-                    <td className="px-3 py-2">{job.customer?.name ?? "—"}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{job.site?.name ?? "—"}</td>
-                    <td className="px-3 py-2 text-right text-muted-foreground">
-                      {quote.accepted_at ? new Date(quote.accepted_at).toLocaleDateString() : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      <section className="mt-6">
-        <h2 className="text-sm font-semibold mb-2">Active procurement</h2>
-        {active.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            No jobs have procurement started yet. Accept a quote and hit &ldquo;Start Ordering&rdquo;.
-          </p>
-        ) : (
-          <div className="rounded-lg border border-border bg-card overflow-hidden">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border text-left bg-muted/30 text-muted-foreground">
-                  <th className="px-3 py-2 font-medium">Job</th>
-                  <th className="px-3 py-2 font-medium">Customer · Site</th>
-                  <th className="px-3 py-2 font-medium text-right w-16">Lines</th>
-                  <th className="px-3 py-2 font-medium text-right w-20">In Stock</th>
-                  <th className="px-3 py-2 font-medium text-right w-20">To Order</th>
-                  <th className="px-3 py-2 font-medium text-right w-20">Ordered</th>
-                  <th className="px-3 py-2 font-medium text-right w-20">Received</th>
-                  <th className="px-3 py-2 font-medium text-right w-20">POs</th>
-                </tr>
-              </thead>
-              <tbody>
-                {active.map(({ job, stats }) => (
-                  <tr key={job.id} className="border-b border-border last:border-0 hover:bg-accent/30">
-                    <td className="px-3 py-2 font-mono">
-                      <Link href={`/procurement/${job.id}`} className="text-primary hover:underline">
-                        CFA-{job.number ?? "?"}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="font-medium">{job.customer?.name ?? "—"}</div>
-                      {job.site?.name && (
-                        <div className="text-[10px] text-muted-foreground">{job.site.name}</div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono">{stats.total}</td>
-                    <td className="px-3 py-2 text-right font-mono text-sky-400">
-                      {stats.in_stock || "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-amber-400">
-                      {stats.order || "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-indigo-400">
-                      {stats.ordered || "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-emerald-400">
-                      {stats.received || "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">
-                      {stats.poNumbers.size || "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      <ProcurementBoard ready={readyEntries} needsWork={needsWork} complete={complete} />
     </div>
   );
 }

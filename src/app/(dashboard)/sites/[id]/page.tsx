@@ -80,15 +80,16 @@ export default async function SiteDetailPage({
     canVault
       ? supabase.rpc("vault_folders_for_ref", { p_ref_type: "site", p_ref_id: id })
       : Promise.resolve({ data: [] as VaultFolderForRefRow[] }),
-    // Most recent accepted-quote job for THIS site — powers the "Import from
-    // BOM" button on the Assets tab (defaults to the latest accepted quote).
+    // Job for THIS site to power the "Import from BOM" button on the Assets
+    // tab. Prefer the most recent accepted quote; fall back to the latest
+    // quote of any status (so it still shows on jobs whose quote is draft).
     supabase
       .from("quotes")
-      .select("job_id, accepted_at, jobs!inner(site_id, number)")
+      .select("job_id, accepted_at, created_at, jobs!inner(site_id, number)")
       .eq("jobs.site_id", id)
-      .eq("status", "accepted")
       .not("job_id", "is", null)
-      .order("accepted_at", { ascending: false })
+      .order("accepted_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
   ]);
