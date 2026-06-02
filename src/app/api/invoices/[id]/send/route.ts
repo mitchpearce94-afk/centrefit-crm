@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { sendInvoiceEmail } from "@/lib/emails/invoice-send";
+import { getAuthedClient } from "@/lib/xero/client";
+import { markXeroInvoiceSent } from "@/lib/xero/invoices";
 import { logDocumentActivity } from "@/lib/activity/log";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
 
@@ -78,6 +80,18 @@ export async function POST(
       sent_to_email: email,
     })
     .eq("id", id);
+
+  // Reflect "sent" back into Xero (SentToContact=true) so its UI shows the
+  // invoice as Sent for tracking. Best-effort — the customer already has the
+  // email; a Xero hiccup here shouldn't fail the send.
+  if (invoice.xero_invoice_id) {
+    try {
+      const { client, conn } = await getAuthedClient();
+      await markXeroInvoiceSent(client, conn.tenant_id, invoice.xero_invoice_id);
+    } catch (err) {
+      console.error(`[invoice.send] couldn't set SentToContact in Xero for ${id}:`, err);
+    }
+  }
 
   await logDocumentActivity({
     supabase,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthedClient } from "@/lib/xero/client";
 import { fetchXeroInvoice } from "@/lib/xero/invoices";
+import { logDocumentActivity } from "@/lib/activity/log";
 import {
   isXeroRateLimited,
   captureXeroRateLimit,
@@ -16,7 +17,7 @@ export async function POST(
 
   const { data: invoice, error } = await supabase
     .from("invoices")
-    .select("id, xero_invoice_id, total")
+    .select("id, xero_invoice_id, total, status")
     .eq("id", id)
     .single();
   if (error || !invoice) {
@@ -88,6 +89,29 @@ export async function POST(
     .single();
   if (updErr) {
     return NextResponse.json({ error: updErr.message }, { status: 500 });
+  }
+
+  // Log the transition to the activity timeline so a manual refresh that
+  // discovers a payment (or void) is recorded — mirrors the Xero webhook,
+  // which may be missed/filtered. Only on an actual status change.
+  if (invoice.status !== normalisedStatus) {
+    await logDocumentActivity({
+      supabase,
+      documentType: "invoice",
+      documentId: id,
+      eventType:
+        normalisedStatus === "paid" ? "invoice.paid"
+        : normalisedStatus === "void" ? "invoice.voided"
+        : normalisedStatus === "authorised" ? "invoice.authorised_in_xero"
+        : "invoice.status_changed",
+      metadata: {
+        from: invoice.status,
+        to: normalisedStatus,
+        amount_due: latest.amountDue,
+        amount_paid: latest.amountPaid,
+        via: "manual refresh",
+      },
+    });
   }
 
   return NextResponse.json({ invoice: updated });

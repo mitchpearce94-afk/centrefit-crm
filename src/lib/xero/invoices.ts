@@ -180,6 +180,24 @@ export async function authoriseXeroInvoice(
 }
 
 /**
+ * Mark a Xero invoice as "sent" (SentToContact=true) WITHOUT emailing through
+ * Xero. We email the customer with our own branded template (Resend), then flip
+ * this flag so Xero's UI shows the invoice as Sent for tracking/reconciliation.
+ *
+ * Best-effort: callers should not fail the user-facing send if this errors —
+ * the customer still got the email; only Xero's flag is out of sync.
+ */
+export async function markXeroInvoiceSent(
+  xero: XeroClient,
+  tenantId: string,
+  xeroInvoiceId: string,
+): Promise<void> {
+  await xero.accountingApi.updateInvoice(tenantId, xeroInvoiceId, {
+    invoices: [{ sentToContact: true } as Record<string, unknown>],
+  });
+}
+
+/**
  * Pull the latest state of a Xero invoice (for refreshing payment status).
  */
 export async function fetchXeroInvoice(

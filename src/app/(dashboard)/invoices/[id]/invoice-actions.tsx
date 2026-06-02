@@ -35,6 +35,8 @@ export function InvoiceActions({
   const { toast } = useToast();
   const [refreshing, setRefreshing] = useState(false);
   const [authorising, setAuthorising] = useState(false);
+  const [showAuthSend, setShowAuthSend] = useState(false);
+  const [authSendRecipient, setAuthSendRecipient] = useState<string>(sentToEmail ?? defaultRecipient ?? "");
   const [menuOpen, setMenuOpen] = useState(false);
   const [showSendModal, setShowSendModal] = useState(false);
   const [showReminderModal, setShowReminderModal] = useState(false);
@@ -57,21 +59,52 @@ export function InvoiceActions({
     setRefreshing(false);
   }
 
-  async function handleAuthorise() {
-    if (!confirm("Authorise this invoice? It will post to Xero's books (A/R, revenue, GST) and a pay-now link will be generated.")) {
-      return;
-    }
+  function openAuthSend() {
+    setAuthSendRecipient(sentToEmail ?? defaultRecipient ?? "");
+    setShowAuthSend(true);
+  }
+
+  // Authorise & Send in one. Posts the invoice to Xero's books, then (unless
+  // "authorise only" is chosen) emails the customer — which also flips Xero's
+  // SentToContact flag. Never silent: the recipient is confirmed in the modal.
+  async function handleAuthoriseAndSend(doSend: boolean) {
     setAuthorising(true);
     try {
-      const res = await fetch(`/api/invoices/${invoiceId}/authorise`, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Authorise failed");
-      toast("Invoice authorised in Xero");
+      const aRes = await fetch(`/api/invoices/${invoiceId}/authorise`, { method: "POST" });
+      const aData = await aRes.json();
+      if (!aRes.ok) {
+        toast(aData.error || "Authorise failed", "error");
+        return;
+      }
+      if (!doSend) {
+        toast("Invoice authorised in Xero (not emailed)");
+        setShowAuthSend(false);
+        router.refresh();
+        return;
+      }
+      const email = authSendRecipient.trim();
+      if (!email) {
+        toast("Authorised — but no recipient set, so it wasn't emailed. Use Send to email it.", "error");
+        setShowAuthSend(false);
+        router.refresh();
+        return;
+      }
+      const sRes = await fetch(`/api/invoices/${invoiceId}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const sData = await sRes.json();
+      if (!sRes.ok) {
+        toast(`Authorised, but the email failed: ${sData.error || "unknown"}. Use Send to retry.`, "error");
+      } else {
+        toast(`Authorised & emailed to ${email}`);
+      }
+      setShowAuthSend(false);
       router.refresh();
-    } catch (err: unknown) {
-      toast(err instanceof Error ? err.message : "Authorise failed", "error");
+    } finally {
+      setAuthorising(false);
     }
-    setAuthorising(false);
   }
 
   async function copyPayLink() {
@@ -196,11 +229,11 @@ export function InvoiceActions({
         )}
         {status === "draft" && (
           <button
-            onClick={handleAuthorise}
+            onClick={openAuthSend}
             disabled={authorising}
             className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
           >
-            {authorising ? "Authorising…" : "Authorise"}
+            {authorising ? "Working…" : "Authorise & Send"}
           </button>
         )}
         <button
@@ -258,6 +291,65 @@ export function InvoiceActions({
           </div>
         )}
       </div>
+
+      {/* Authorise & Send modal — posts to Xero AND emails the customer in one
+          step. Recipient is always confirmed here (never a silent send). An
+          "authorise only" escape hatch covers invoices you don't want emailed. */}
+      {showAuthSend && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => !authorising && setShowAuthSend(false)} />
+          <div className="relative w-full max-w-md rounded-xl bg-background border border-border shadow-2xl">
+            <div className="border-b border-border px-5 py-3">
+              <p className="text-sm font-semibold text-foreground">Authorise &amp; Send</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Posts {invoiceRef ?? "this invoice"} to Xero&apos;s books and emails it to the customer from accounts@centrefit.com.au. Marks it Sent in Xero too.
+              </p>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Recipient email{authSendRecipient.includes(",") ? "s" : ""}
+                </label>
+                <input
+                  type="text"
+                  value={authSendRecipient}
+                  onChange={(e) => setAuthSendRecipient(e.target.value)}
+                  placeholder="finance@example.com, manager@example.com"
+                  className="mt-1 w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                />
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Separate multiple recipients with commas. Defaults to the site billing email, falls back to the customer&apos;s primary contact.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 border-t border-border px-5 py-3 bg-muted/30">
+              <button
+                onClick={() => handleAuthoriseAndSend(false)}
+                disabled={authorising}
+                className="text-[11px] text-muted-foreground hover:text-foreground underline disabled:opacity-50"
+              >
+                Authorise only (don&apos;t email)
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowAuthSend(false)}
+                  disabled={authorising}
+                  className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleAuthoriseAndSend(true)}
+                  disabled={authorising || !authSendRecipient.trim()}
+                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                >
+                  {authorising ? "Working…" : "Authorise & Send"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Send / Resend confirmation modal — never skip the confirm step on
           customer-facing email actions. The recipient is editable in case the

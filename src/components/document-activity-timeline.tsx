@@ -31,6 +31,9 @@ const EVENT_LABEL: Record<string, string> = {
   "invoice.created": "Invoice created",
   "invoice.authorised": "Authorised in Xero",
   "invoice.authorised_in_xero": "Authorised in Xero",
+  "invoice.sent": "Emailed to customer",
+  "invoice.lines_updated": "Line items updated",
+  "invoice.reminder.sent": "Payment reminder sent",
   "invoice.paid": "Paid",
   "invoice.voided": "Voided",
   "invoice.status_changed": "Status changed",
@@ -54,6 +57,9 @@ const EVENT_ICON: Record<string, { glyph: string; color: string }> = {
   "invoice.created": { glyph: "+", color: "#3b82f6" },
   "invoice.authorised": { glyph: "✓", color: "#0ea5e9" },
   "invoice.authorised_in_xero": { glyph: "✓", color: "#0ea5e9" },
+  "invoice.sent": { glyph: "→", color: "#3b82f6" },
+  "invoice.lines_updated": { glyph: "✎", color: "#64748b" },
+  "invoice.reminder.sent": { glyph: "⏰", color: "#f59e0b" },
   "invoice.paid": { glyph: "$", color: "#22c55e" },
   "invoice.voided": { glyph: "×", color: "#ef4444" },
   "invoice.email_delivered": { glyph: "✉", color: "#64748b" },
@@ -143,7 +149,7 @@ function ActivityMeta({ metadata, eventType }: { metadata: Record<string, unknow
   // Render a small subset of metadata that's actually useful inline.
   // Full metadata is on the row for debugging if needed.
   const bits: string[] = [];
-  if (eventType === "quote.sent" || eventType === "invoice.email_delivered") {
+  if (eventType === "quote.sent" || eventType === "invoice.email_delivered" || eventType === "invoice.sent") {
     if (metadata.to) bits.push(`to: ${String(metadata.to)}`);
   }
   if (eventType === "invoice.paid" || eventType === "invoice.status_changed") {
