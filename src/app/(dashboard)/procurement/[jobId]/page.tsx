@@ -45,12 +45,16 @@ export default async function ProcurementJobPage({
   if (jobResult.error || !jobResult.data) notFound();
   const job = jobResult.data as unknown as {
     id: string;
-    number: number | null;
+    number: string | number | null;
     description: string | null;
     customer: { id: string; name: string } | null;
     site: { name: string | null; address: string | null; suburb: string | null; state: string | null; postcode: string | null } | null;
   };
   const quote = quoteResult.data as { ref: string; accepted_at: string | null } | null;
+  // Job numbers already carry the "CFA" prefix; only add it if missing.
+  const jobLabel = job.number == null
+    ? "?"
+    : /^cfa/i.test(String(job.number)) ? String(job.number) : `CFA-${job.number}`;
 
   const siteLine = job.site
     ? [job.site.name, job.site.address, job.site.suburb, job.site.state, job.site.postcode]
@@ -65,10 +69,10 @@ export default async function ProcurementJobPage({
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Link href="/procurement" className="hover:text-foreground">Procurement</Link>
             <span>/</span>
-            <span>CFA-{job.number ?? "?"}</span>
+            <span>{jobLabel}</span>
           </div>
           <h1 className="mt-1 text-2xl font-bold tracking-tight">
-            Procurement · CFA-{job.number ?? "?"}
+            Procurement · {jobLabel}
           </h1>
           <div className="mt-1 text-sm text-muted-foreground">
             {job.customer?.name ?? "—"}

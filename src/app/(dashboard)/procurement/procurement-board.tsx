@@ -5,7 +5,7 @@ import Link from "next/link";
 
 export interface ReadyEntry {
   jobId: string;
-  number: number | null;
+  number: string | number | null;
   customerName: string;
   siteName: string | null;
   quoteRef: string;
@@ -14,7 +14,7 @@ export interface ReadyEntry {
 
 export interface ActiveEntry {
   jobId: string;
-  number: number | null;
+  number: string | number | null;
   customerName: string;
   siteName: string | null;
   total: number;
@@ -26,6 +26,14 @@ export interface ActiveEntry {
 }
 
 type Tab = "needs" | "ready" | "complete";
+
+// Job numbers are stored already including the "CFA" prefix (e.g. "CFA05030"),
+// so only prepend "CFA-" when it isn't there (defensive for legacy numerics).
+function jobLabel(n: string | number | null): string {
+  if (n == null) return "?";
+  const s = String(n);
+  return /^cfa/i.test(s) ? s : `CFA-${s}`;
+}
 
 export function ProcurementBoard({
   ready,
@@ -82,7 +90,7 @@ export function ProcurementBoard({
                     <tr key={e.jobId} className="border-b border-border last:border-0 hover:bg-accent/30">
                       <td className="px-3 py-2 font-mono">
                         <Link href={`/procurement/${e.jobId}`} className="text-primary hover:underline">
-                          CFA-{e.number ?? "?"}
+                          {jobLabel(e.number)}
                         </Link>
                       </td>
                       <td className="px-3 py-2 font-mono text-muted-foreground">{e.quoteRef}</td>
@@ -144,7 +152,7 @@ function ActiveTable({ entries, empty }: { entries: ActiveEntry[]; empty: string
         <thead>
           <tr className="border-b border-border text-left bg-muted/30 text-muted-foreground">
             <th className="px-3 py-2 font-medium">Job</th>
-            <th className="px-3 py-2 font-medium">Customer · Site</th>
+            <th className="px-3 py-2 font-medium">Site</th>
             <th className="px-3 py-2 font-medium text-right w-16">Lines</th>
             <th className="px-3 py-2 font-medium text-right w-20">In Stock</th>
             <th className="px-3 py-2 font-medium text-right w-20">To Order</th>
@@ -158,12 +166,14 @@ function ActiveTable({ entries, empty }: { entries: ActiveEntry[]; empty: string
             <tr key={e.jobId} className="border-b border-border last:border-0 hover:bg-accent/30">
               <td className="px-3 py-2 font-mono">
                 <Link href={`/procurement/${e.jobId}`} className="text-primary hover:underline">
-                  CFA-{e.number ?? "?"}
+                  {jobLabel(e.number)}
                 </Link>
               </td>
               <td className="px-3 py-2">
-                <div className="font-medium">{e.customerName}</div>
-                {e.siteName && <div className="text-[10px] text-muted-foreground">{e.siteName}</div>}
+                <div className="font-medium">{e.siteName ?? e.customerName}</div>
+                {e.siteName && e.customerName && e.customerName !== e.siteName && (
+                  <div className="text-[10px] text-muted-foreground">{e.customerName}</div>
+                )}
               </td>
               <td className="px-3 py-2 text-right font-mono">{e.total}</td>
               <td className="px-3 py-2 text-right font-mono text-sky-400">{e.inStock || "—"}</td>

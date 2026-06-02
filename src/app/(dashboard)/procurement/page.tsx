@@ -9,7 +9,7 @@ type ItemRow = {
 
 type JobRow = {
   id: string;
-  number: number | null;
+  number: string | number | null;
   description: string | null;
   customer: { id: string; name: string } | null;
   site: { id: string; name: string | null } | null;
@@ -83,7 +83,7 @@ export default async function ProcurementIndexPage() {
   const active = Array.from(statsByJob.keys())
     .map((jobId) => ({ job: jobsById.get(jobId)!, stats: statsByJob.get(jobId)! }))
     .filter((e) => !!e.job)
-    .sort((a, b) => (b.job.number ?? 0) - (a.job.number ?? 0));
+    .sort((a, b) => String(b.job.number ?? "").localeCompare(String(a.job.number ?? "")));
 
   const activeEntries: ActiveEntry[] = active.map(({ job, stats }) => ({
     jobId: job.id,
