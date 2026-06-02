@@ -254,7 +254,9 @@ function calculateQuantity(rule: DependencyRule, deviceCounts: DeviceCounts, sit
       return Number((siteInfo as Record<string, unknown>)[rule.quantity_site_field!]) || 0
 
     case 'per_n': {
-      const n = rule.quantity_value || 1
+      // The rules UI writes the "1 per N" value into quantity_divisor, so read
+      // that first and fall back to quantity_value (older/code-seeded rules).
+      const n = rule.quantity_divisor || rule.quantity_value || 1
       return Math.ceil(triggerCount / n)
     }
 
