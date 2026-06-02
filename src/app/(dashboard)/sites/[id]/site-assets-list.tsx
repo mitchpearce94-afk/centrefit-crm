@@ -87,6 +87,23 @@ export function SiteAssetsList({
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const supabase = createClient();
+  const { toast } = useToast();
+
+  // Inline (spreadsheet-style) save of a single identifier field. No refresh —
+  // the value is already in the input, so we avoid the focus jump / jank that
+  // a router.refresh would cause while the tech tabs through rows.
+  async function saveField(
+    assetId: string,
+    field: "serial" | "mac_address" | "ip_address" | "rfid",
+    value: string,
+  ) {
+    const { error } = await supabase
+      .from("site_assets")
+      .update({ [field]: value.trim() || null })
+      .eq("id", assetId);
+    if (error) toast(error.message, "error");
+  }
 
   const visible = showArchived ? assets : assets.filter((a) => a.is_active);
   const archivedCount = assets.filter((a) => !a.is_active).length;
@@ -189,26 +206,75 @@ export function SiteAssetsList({
         ) : (
           CATEGORY_ORDER.filter((c) => groupedAssets.has(c.key)).map((cat) => {
             const rows = groupedAssets.get(cat.key)!;
+            const header = (
+              <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {cat.label} <span className="text-foreground/40">({rows.length})</span>
+              </h3>
+            );
+
+            // Wi-Fi networks don't have serial/MAC/IP per row — keep the card
+            // view (it shows SSID/password) and the full edit form.
+            if (cat.key === "wifi") {
+              return (
+                <div key={cat.key}>
+                  {header}
+                  <div className="space-y-2">
+                    {rows.map((a) =>
+                      editingId === a.id ? (
+                        <SiteAssetEditForm key={a.id} siteId={siteId} asset={a} assetTypes={assetTypes} isAdmin={isAdmin} onDone={() => setEditingId(null)} />
+                      ) : (
+                        <AssetRow key={a.id} asset={a} onEdit={() => setEditingId(a.id)} />
+                      )
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            // Spreadsheet view — only show MAC/IP/RFID columns the group uses.
+            const showMac = rows.some((a) => a.asset_type_id && typeById.get(a.asset_type_id)?.has_mac);
+            const showIp = rows.some((a) => a.asset_type_id && typeById.get(a.asset_type_id)?.has_ip);
+            const showRfid = rows.some((a) => a.asset_type_id && typeById.get(a.asset_type_id)?.has_rfid);
+            const colSpan = 3 + (showMac ? 1 : 0) + (showIp ? 1 : 0) + (showRfid ? 1 : 0) + 1;
             return (
               <div key={cat.key}>
-                <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {cat.label} <span className="text-foreground/40">({rows.length})</span>
-                </h3>
-                <div className="space-y-2">
-                  {rows.map((a) =>
-                    editingId === a.id ? (
-                      <SiteAssetEditForm
-                        key={a.id}
-                        siteId={siteId}
-                        asset={a}
-                        assetTypes={assetTypes}
-                        isAdmin={isAdmin}
-                        onDone={() => setEditingId(null)}
-                      />
-                    ) : (
-                      <AssetRow key={a.id} asset={a} onEdit={() => setEditingId(a.id)} />
-                    )
-                  )}
+                {header}
+                <div className="overflow-x-auto rounded-lg border border-border">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/40 text-left text-muted-foreground">
+                        <th className="px-2 py-2 font-medium">Device</th>
+                        <th className="px-2 py-2 font-medium hidden sm:table-cell w-40">Make / Model</th>
+                        <th className="px-2 py-2 font-medium">Serial</th>
+                        {showMac && <th className="px-2 py-2 font-medium">MAC</th>}
+                        {showIp && <th className="px-2 py-2 font-medium">IP</th>}
+                        {showRfid && <th className="px-2 py-2 font-medium">RFID</th>}
+                        <th className="px-2 py-2 font-medium text-right w-12"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((a) =>
+                        editingId === a.id ? (
+                          <tr key={a.id}>
+                            <td colSpan={colSpan} className="p-0">
+                              <SiteAssetEditForm siteId={siteId} asset={a} assetTypes={assetTypes} isAdmin={isAdmin} onDone={() => setEditingId(null)} />
+                            </td>
+                          </tr>
+                        ) : (
+                          <EditableAssetRow
+                            key={a.id}
+                            asset={a}
+                            type={a.asset_type_id ? typeById.get(a.asset_type_id) ?? null : null}
+                            showMac={showMac}
+                            showIp={showIp}
+                            showRfid={showRfid}
+                            onEdit={() => setEditingId(a.id)}
+                            onSaveField={saveField}
+                          />
+                        )
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             );
@@ -661,6 +727,75 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
         </span>
       </div>
     </div>
+  );
+}
+
+// ── Editable spreadsheet row — inline serial/MAC/IP/RFID, autosave on blur ──
+
+function EditableAssetRow({
+  asset,
+  type,
+  showMac,
+  showIp,
+  showRfid,
+  onEdit,
+  onSaveField,
+}: {
+  asset: SiteAsset;
+  type: AssetType | null;
+  showMac: boolean;
+  showIp: boolean;
+  showRfid: boolean;
+  onEdit: () => void;
+  onSaveField: (
+    assetId: string,
+    field: "serial" | "mac_address" | "ip_address" | "rfid",
+    value: string,
+  ) => void;
+}) {
+  const dim = !asset.is_active ? "opacity-60" : "";
+  const headline =
+    [asset.device_name, asset.device_type].filter(Boolean).join(" — ") || "(unnamed)";
+  const makeModel = [asset.manufacturer, asset.model].filter(Boolean).join(" ") || "—";
+
+  // Legacy assets (no type) still allow a serial; otherwise honour the type's
+  // capability flags so we don't invite a MAC on a device that hasn't got one.
+  function fieldCell(
+    field: "serial" | "mac_address" | "ip_address" | "rfid",
+    supported: boolean,
+    current: string | null | undefined,
+  ) {
+    if (!supported) return <span className="text-muted-foreground/30">—</span>;
+    return (
+      <input
+        defaultValue={current ?? ""}
+        onBlur={(e) => {
+          if (e.target.value !== (current ?? "")) onSaveField(asset.id, field, e.target.value);
+        }}
+        autoComplete="off"
+        spellCheck={false}
+        className="w-full min-w-[7rem] rounded border border-border bg-input px-2 py-1 font-mono text-xs text-foreground focus:border-primary focus:outline-none"
+      />
+    );
+  }
+
+  return (
+    <tr className={`border-b border-border last:border-0 align-middle ${dim}`}>
+      <td className="px-2 py-1.5">
+        <div className="font-medium text-foreground">{headline}</div>
+        {!asset.is_active && <span className="text-[10px] text-muted-foreground">Archived</span>}
+      </td>
+      <td className="px-2 py-1.5 hidden sm:table-cell text-muted-foreground">{makeModel}</td>
+      <td className="px-2 py-1.5">{fieldCell("serial", !type || type.has_serial, asset.serial)}</td>
+      {showMac && <td className="px-2 py-1.5">{fieldCell("mac_address", !!type?.has_mac, asset.mac_address)}</td>}
+      {showIp && <td className="px-2 py-1.5">{fieldCell("ip_address", !!type?.has_ip, asset.ip_address)}</td>}
+      {showRfid && <td className="px-2 py-1.5">{fieldCell("rfid", !!type?.has_rfid, asset.rfid)}</td>}
+      <td className="px-2 py-1.5 text-right">
+        <button onClick={onEdit} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+          Edit
+        </button>
+      </td>
+    </tr>
   );
 }
 
