@@ -236,10 +236,12 @@ export function ProductCatalog({
       });
       return;
     }
-    const newSell = Number((parsed * (1 + Number(product.markup ?? 0))).toFixed(2));
+    // sell_price is a GENERATED column (cost x (1+markup)) — writing it errors
+    // and the whole update fails, which is why the cost wasn't saving. Update
+    // cost only; the DB recalculates sell automatically.
     const { error } = await supabase
       .from("quote_products")
-      .update({ cost_price: parsed, sell_price: newSell, cost_updated_at: new Date().toISOString() })
+      .update({ cost_price: parsed, cost_updated_at: new Date().toISOString() })
       .eq("id", productId);
     if (error) {
       toast(error.message, "error");
@@ -554,7 +556,7 @@ export function ProductCatalog({
                   )}
                 </div>
                 <div className="overflow-x-auto rounded-lg border border-border">
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm table-fixed">
                     <thead>
                       <tr className="border-b border-border bg-muted/50">
                         {supplierId && (
@@ -569,12 +571,12 @@ export function ProductCatalog({
                           </th>
                         )}
                         <th className="px-3 py-2 text-left font-medium text-muted-foreground">Product</th>
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground hidden md:table-cell">SKU</th>
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground hidden lg:table-cell">Category</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground w-32">Cost (ex-GST)</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Markup</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Sell</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground w-20"></th>
+                        <th className="px-3 py-2 text-left font-medium text-muted-foreground hidden md:table-cell w-32">SKU</th>
+                        <th className="px-3 py-2 text-left font-medium text-muted-foreground hidden lg:table-cell w-36">Category</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground w-28">Cost (ex-GST)</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground w-16">Markup</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground w-24">Sell</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground w-16"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -630,7 +632,12 @@ export function ProductCatalog({
                               />
                             </td>
                             <td className="px-3 py-2 text-right text-xs font-mono text-muted-foreground">{(p.markup * 100).toFixed(0)}%</td>
-                            <td className="px-3 py-2 text-right text-xs font-mono">${p.sell_price.toFixed(2)}</td>
+                            <td className={`px-3 py-2 text-right text-xs font-mono ${dirty ? "text-amber-400" : ""}`}>
+                              ${(dirty && editValue !== undefined && editValue !== "" && !Number.isNaN(Number(editValue))
+                                ? Number(editValue) * (1 + Number(p.markup ?? 0))
+                                : p.sell_price
+                              ).toFixed(2)}
+                            </td>
                             <td className="px-3 py-2 text-right">
                               <button
                                 onClick={() => setEditingId(p.id)}
@@ -732,7 +739,11 @@ function ProductFormModal(props: ProductFormModalProps) {
   const [sku, setSku] = useState(isEditing ? (props.product.sku || "") : "");
   const [supplierId, setSupplierId] = useState(isEditing ? (props.product.supplier_id || "") : "");
   const [costPrice, setCostPrice] = useState(isEditing ? props.product.cost_price.toString() : "");
-  const [markup, setMarkup] = useState(isEditing ? props.product.markup.toString() : "0.50");
+  // Map the stored markup to the exact dropdown option string. (0.5).toString()
+  // is "0.5" which didn't match the "0.50" option, so edit defaulted to 25%.
+  const [markup, setMarkup] = useState(
+    isEditing ? (Number(props.product.markup) === 0.25 ? "0.25" : "0.50") : "0.50",
+  );
   const [deviceType, setDeviceType] = useState(isEditing ? (props.product.device_type || "") : "");
   const [scopeRole, setScopeRole] = useState(isEditing ? (props.product.scope_role || "") : "");
   const [labourCode, setLabourCode] = useState(isEditing ? (props.product.labour_code || "") : "");
