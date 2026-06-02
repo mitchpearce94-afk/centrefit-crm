@@ -71,7 +71,24 @@ export async function POST(
     );
   }
 
-  const rows = lineItems.map((li) => {
+  // Only catalogue parts get procured — a line is orderable when it's linked
+  // to a real product (product_id set) with a positive quantity. This filters
+  // out labour placeholders, freeform notes and $0 sundry lines so a
+  // labour-only job never spawns an empty procurement list.
+  const orderable = lineItems.filter(
+    (li) => li.product_id != null && Number(li.quantity) > 0,
+  );
+  if (orderable.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "This quote has no orderable parts (labour-only) — nothing to procure.",
+      },
+      { status: 400 },
+    );
+  }
+
+  const rows = orderable.map((li) => {
     const productRow = li.quote_products as { supplier_id?: string | null } | null;
     const supplierId = productRow?.supplier_id ?? null;
     return {

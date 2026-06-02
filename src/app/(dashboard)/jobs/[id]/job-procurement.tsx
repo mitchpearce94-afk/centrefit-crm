@@ -19,12 +19,24 @@ export interface ProcurementItem {
   received_at: string | null;
   received_by: string | null;
   received_by_staff?: { display_name: string } | null;
+  product?: { category: string | null } | null;
+  line?: { cost_price: number | null } | null;
 }
 
 interface Supplier {
   id: string;
   name: string;
 }
+
+// Triage order for the Active tab: untriaged first, then what's queued to
+// order, then shed stock, then already-ordered (waiting on delivery).
+const STATUS_ORDER: Record<ProcurementItem["status"], number> = {
+  pending: 0,
+  order: 1,
+  in_stock: 2,
+  ordered: 3,
+  received: 4,
+};
 
 function StatusBadge({ status }: { status: ProcurementItem["status"] }) {
   const conf = {
@@ -54,6 +66,7 @@ export function JobProcurement({
   const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [tab, setTab] = useState<"active" | "received">("active");
   const [splitTarget, setSplitTarget] = useState<ProcurementItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProcurementItem | null>(null);
   // Ad-hoc parts picker (service jobs with no quote BOM).
@@ -64,10 +77,43 @@ export function JobProcurement({
   const [picked, setPicked] = useState<Map<string, number>>(new Map());
   const [addBusy, setAddBusy] = useState(false);
 
+  const supplierName = useMemo(() => {
+    const m = new Map(suppliers.map((s) => [s.id, s.name]));
+    return (id: string | null) => (id ? m.get(id) ?? "—" : "—");
+  }, [suppliers]);
+
   const hasItems = items.length > 0;
   const orderCount = useMemo(() => items.filter((i) => i.status === "order").length, [items]);
   const unassignedOrderCount = useMemo(
     () => items.filter((i) => i.status === "order" && !i.actual_supplier_id).length,
+    [items],
+  );
+  const zeroPricedOrderCount = useMemo(
+    () => items.filter((i) => i.status === "order" && Number(i.line?.cost_price ?? 0) <= 0).length,
+    [items],
+  );
+  const inStockCount = useMemo(() => items.filter((i) => i.status === "in_stock").length, [items]);
+  const supplierOrderCount = useMemo(
+    () => items.filter((i) => i.status === "order" || i.status === "ordered").length,
+    [items],
+  );
+
+  const activeItems = useMemo(
+    () =>
+      items
+        .filter((i) => i.status !== "received")
+        .sort(
+          (a, b) =>
+            STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
+            a.product_name.localeCompare(b.product_name),
+        ),
+    [items],
+  );
+  const receivedItems = useMemo(
+    () =>
+      items
+        .filter((i) => i.status === "received")
+        .sort((a, b) => (b.received_at ?? "").localeCompare(a.received_at ?? "")),
     [items],
   );
 
@@ -159,11 +205,44 @@ export function JobProcurement({
     }
   }
 
-  async function generatePOs() {
-    if (unassignedOrderCount > 0) {
-      if (!confirm(`${unassignedOrderCount} ORDER row(s) have no supplier set and will be skipped. Continue?`)) {
-        return;
+  async function resetPO(item: ProcurementItem) {
+    if (!item.xero_po_id) return;
+    const label = item.xero_po_number ?? "this PO";
+    if (
+      !confirm(
+        `Reset ${label}? This deletes the draft PO in Xero and puts its lines back to ORDER so you can re-triage and regenerate. Only works if it hasn't been billed.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(item.id);
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/procurement/cancel-po`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ xeroPoId: item.xero_po_id }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) toast(json.error ?? "Reset failed", "error");
+      else {
+        toast(`${label} deleted — ${json.reverted} line(s) back to Order`);
+        router.refresh();
       }
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function generatePOs() {
+    const warnings: string[] = [];
+    if (unassignedOrderCount > 0) {
+      warnings.push(`${unassignedOrderCount} ORDER row(s) have no supplier set and will be skipped.`);
+    }
+    if (zeroPricedOrderCount > 0) {
+      warnings.push(`${zeroPricedOrderCount} ORDER row(s) have no cost price — they'll go to Xero at $0 for you to fix before authorising.`);
+    }
+    if (warnings.length > 0 && !confirm(`${warnings.join("\n\n")}\n\nContinue?`)) {
+      return;
     }
     setGenerating(true);
     try {
@@ -189,6 +268,120 @@ export function JobProcurement({
     } finally {
       setGenerating(false);
     }
+  }
+
+  // ── Warehouse Pick List (IN STOCK rows — what to pull from the shed) ──
+  function openPickList() {
+    const rows = items.filter((i) => i.status === "in_stock");
+    if (rows.length === 0) {
+      toast("No items flagged In Stock to pick", "error");
+      return;
+    }
+    const byCat = new Map<string, ProcurementItem[]>();
+    for (const it of rows) {
+      const cat = it.product?.category || "Uncategorised";
+      const list = byCat.get(cat) ?? [];
+      list.push(it);
+      byCat.set(cat, list);
+    }
+    const sortedCats = [...byCat.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    let body = "";
+    for (const [cat, catItems] of sortedCats) {
+      body += `<tr><td colspan="4" style="padding:12px 8px 6px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;border-bottom:2px solid #e2e8f0">${cat}</td></tr>`;
+      for (const it of catItems.sort((a, b) => a.product_name.localeCompare(b.product_name))) {
+        body += `<tr>
+          <td style="padding:8px;text-align:center;width:40px"><div style="width:18px;height:18px;border:2px solid #94a3b8;border-radius:3px;margin:0 auto"></div></td>
+          <td style="padding:8px;font-weight:500">${it.product_name}</td>
+          <td style="padding:8px;font-family:monospace;color:#64748b;font-size:12px">${it.sku || "—"}</td>
+          <td style="padding:8px;text-align:center;font-weight:700;font-size:16px">${it.quantity}</td>
+        </tr>`;
+      }
+    }
+    printWindow(
+      "Warehouse Pick List",
+      `<h1 style="font-size:22px;font-weight:700;margin:0">Warehouse Pick List</h1>
+       <p style="color:#94a3b8;margin:2px 0 24px;font-size:12px">${rows.length} line item${rows.length === 1 ? "" : "s"} flagged In Stock</p>
+       <table style="width:100%;border-collapse:collapse;font-size:13px">
+         <thead><tr style="border-bottom:2px solid #0f172a">
+           <th style="padding:8px;width:40px"></th>
+           <th style="padding:8px;text-align:left">Product</th>
+           <th style="padding:8px;text-align:left">SKU</th>
+           <th style="padding:8px;text-align:center;width:60px">Qty</th>
+         </tr></thead>
+         <tbody>${body}</tbody>
+       </table>
+       <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between">
+         <div><p style="font-size:11px;color:#94a3b8">Picked by: ___________________________</p></div>
+         <div><p style="font-size:11px;color:#94a3b8">Date: _______________</p></div>
+       </div>`,
+    );
+  }
+
+  // ── Supplier Orders (ORDER + ORDERED rows grouped by actual supplier) ──
+  function openSupplierOrders() {
+    const rows = items.filter((i) => i.status === "order" || i.status === "ordered");
+    if (rows.length === 0) {
+      toast("No items queued to order", "error");
+      return;
+    }
+    const bySupplier = new Map<string, ProcurementItem[]>();
+    for (const it of rows) {
+      const sup = supplierName(it.actual_supplier_id) || "No Supplier Assigned";
+      const list = bySupplier.get(sup) ?? [];
+      list.push(it);
+      bySupplier.set(sup, list);
+    }
+    const sorted = [...bySupplier.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    let sections = "";
+    for (const [supplier, supItems] of sorted) {
+      let rowsHtml = "";
+      for (const it of supItems) {
+        rowsHtml += `<tr style="border-bottom:1px solid #f1f5f9">
+          <td style="padding:8px;font-weight:500">${it.product_name}${
+            it.status === "ordered" && it.xero_po_number
+              ? ` <span style="font-size:10px;color:#6366f1;font-family:monospace">${it.xero_po_number}</span>`
+              : ""
+          }</td>
+          <td style="padding:8px;font-family:monospace;color:#64748b;font-size:12px">${it.sku || "—"}</td>
+          <td style="padding:8px;text-align:right;font-weight:600">${it.quantity}</td>
+        </tr>`;
+      }
+      sections += `
+        <div style="margin-bottom:28px;page-break-inside:avoid">
+          <h2 style="font-size:15px;font-weight:700;margin:0;border-bottom:2px solid #0f172a;padding-bottom:6px">${supplier}</h2>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed">
+            <colgroup><col /><col style="width:180px" /><col style="width:60px" /></colgroup>
+            <thead><tr style="border-bottom:1px solid #e2e8f0">
+              <th style="padding:8px;text-align:left">Product</th>
+              <th style="padding:8px;text-align:left">SKU</th>
+              <th style="padding:8px;text-align:right">Qty</th>
+            </tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>`;
+    }
+    printWindow(
+      "Supplier Orders",
+      `<h1 style="font-size:22px;font-weight:700;margin:0">Supplier Purchase Orders</h1>
+       <p style="color:#94a3b8;margin:2px 0 24px;font-size:12px">${sorted.length} supplier${sorted.length !== 1 ? "s" : ""}</p>
+       ${sections}`,
+    );
+  }
+
+  function printWindow(title: string, body: string) {
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write(`<!DOCTYPE html><html><head>
+      <title>${title}</title>
+      <style>
+        @page { size: A4; margin: 15mm; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 32px; color: #1a1a1a; }
+        @media print { body { padding: 0; } }
+        table { border-spacing: 0; }
+        tr:nth-child(even) { background: #f8fafc; }
+      </style>
+    </head><body>${body}</body></html>`);
+    w.document.close();
   }
 
   async function openAddParts() {
@@ -343,23 +536,42 @@ export function JobProcurement({
     );
   }
 
+  const rowsToShow = tab === "active" ? activeItems : receivedItems;
+
   return (
     <>
     {addPartsModal}
     <div className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-start justify-between gap-4 mb-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
         <div>
           <h2 className="text-sm font-semibold">Procurement</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {items.length} line{items.length === 1 ? "" : "s"} · {orderCount} to order
+            {receivedItems.length > 0 && ` · ${receivedItems.length} received`}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <button
             onClick={openAddParts}
             className="rounded-md border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent"
           >
             + Add parts
+          </button>
+          <button
+            onClick={openPickList}
+            disabled={inStockCount === 0}
+            title={inStockCount === 0 ? "Flag rows In Stock to build a pick list" : "Print the warehouse pick list (In Stock rows)"}
+            className="rounded-md border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40"
+          >
+            Pick List{inStockCount ? ` (${inStockCount})` : ""}
+          </button>
+          <button
+            onClick={openSupplierOrders}
+            disabled={supplierOrderCount === 0}
+            title={supplierOrderCount === 0 ? "No rows queued to order" : "Print supplier order sheets grouped by supplier"}
+            className="rounded-md border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40"
+          >
+            Supplier Orders
           </button>
           <button
             onClick={generatePOs}
@@ -372,33 +584,82 @@ export function JobProcurement({
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="mb-3 flex items-center gap-1 border-b border-border">
+        <button
+          onClick={() => setTab("active")}
+          className={`-mb-px border-b-2 px-3 py-1.5 text-xs font-medium transition-colors ${
+            tab === "active"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Active ({activeItems.length})
+        </button>
+        <button
+          onClick={() => setTab("received")}
+          className={`-mb-px border-b-2 px-3 py-1.5 text-xs font-medium transition-colors ${
+            tab === "received"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Received ({receivedItems.length})
+        </button>
+      </div>
+
+      {rowsToShow.length === 0 ? (
+        <p className="py-6 text-center text-xs text-muted-foreground">
+          {tab === "active" ? "Everything's been received — nothing active." : "Nothing received yet."}
+        </p>
+      ) : (
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-border text-left text-muted-foreground">
               <th className="px-2 py-2 font-medium">Product</th>
-              <th className="px-2 py-2 font-medium w-16 text-right">Qty</th>
+              <th className="px-2 py-2 font-medium w-20 text-right">Qty</th>
               <th className="px-2 py-2 font-medium">Supplier</th>
               <th className="px-2 py-2 font-medium">Status</th>
-              <th className="px-2 py-2 font-medium">Notes</th>
+              {tab === "active" && <th className="px-2 py-2 font-medium">Notes</th>}
               <th className="px-2 py-2 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => {
+            {rowsToShow.map((item) => {
               const isLocked = item.status === "ordered" || item.status === "received";
               const rowBusy = busy === item.id;
+              const noCost =
+                item.status === "order" && Number(item.line?.cost_price ?? 0) <= 0;
               return (
                 <tr key={item.id} className="border-b border-border last:border-0 align-top">
                   <td className="px-2 py-2">
                     <div className="font-medium text-foreground">{item.product_name}</div>
                     {item.sku && <div className="font-mono text-[10px] text-muted-foreground">{item.sku}</div>}
                   </td>
-                  <td className="px-2 py-2 text-right font-mono">{item.quantity}</td>
+                  <td className="px-2 py-2 text-right">
+                    {isLocked ? (
+                      <span className="font-mono">{item.quantity}</span>
+                    ) : (
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        defaultValue={item.quantity}
+                        disabled={rowBusy}
+                        onBlur={(e) => {
+                          const v = Math.floor(Number(e.target.value));
+                          if (v >= 1 && v !== item.quantity) patchItem(item.id, { quantity: v });
+                          else e.target.value = String(item.quantity);
+                        }}
+                        className="w-16 rounded-md border border-border bg-input px-2 py-1 text-right font-mono text-xs text-foreground focus:border-primary focus:outline-none disabled:opacity-50"
+                      />
+                    )}
+                  </td>
                   <td className="px-2 py-2">
                     {isLocked ? (
                       <span className="text-muted-foreground">
-                        {suppliers.find((s) => s.id === item.actual_supplier_id)?.name ?? "—"}
+                        {supplierName(item.actual_supplier_id)}
                       </span>
                     ) : (
                       <select
@@ -428,65 +689,86 @@ export function JobProcurement({
                         {item.received_at && item.received_by_staff && (
                           <span className="text-[10px] text-muted-foreground">
                             by {item.received_by_staff.display_name}
+                            {" · "}
+                            {new Date(item.received_at).toLocaleDateString()}
                           </span>
                         )}
                       </div>
                     ) : (
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => patchItem(item.id, { status: "in_stock" })}
-                          disabled={rowBusy}
-                          className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                            item.status === "in_stock"
-                              ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
-                              : "border border-border text-muted-foreground hover:bg-accent"
-                          }`}
-                        >
-                          In Stock
-                        </button>
-                        <button
-                          onClick={() => patchItem(item.id, { status: "order" })}
-                          disabled={rowBusy}
-                          className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                            item.status === "order"
-                              ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                              : "border border-border text-muted-foreground hover:bg-accent"
-                          }`}
-                        >
-                          Order
-                        </button>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => patchItem(item.id, { status: "in_stock" })}
+                            disabled={rowBusy}
+                            className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                              item.status === "in_stock"
+                                ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
+                                : "border border-border text-muted-foreground hover:bg-accent"
+                            }`}
+                          >
+                            In Stock
+                          </button>
+                          <button
+                            onClick={() => patchItem(item.id, { status: "order" })}
+                            disabled={rowBusy}
+                            className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                              item.status === "order"
+                                ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                                : "border border-border text-muted-foreground hover:bg-accent"
+                            }`}
+                          >
+                            Order
+                          </button>
+                        </div>
+                        {noCost && (
+                          <span className="text-[10px] text-amber-400" title="No cost price — PO will go to Xero at $0">
+                            ⚠ no cost price
+                          </span>
+                        )}
                       </div>
                     )}
                   </td>
-                  <td className="px-2 py-2">
-                    {isLocked ? (
-                      <span className="text-muted-foreground">{item.backorder_note ?? ""}</span>
-                    ) : (
-                      <input
-                        type="text"
-                        defaultValue={item.backorder_note ?? ""}
-                        onBlur={(e) => {
-                          const val = e.target.value.trim();
-                          if (val !== (item.backorder_note ?? "")) {
-                            patchItem(item.id, { backorder_note: val || null });
-                          }
-                        }}
-                        disabled={rowBusy}
-                        placeholder="e.g. backordered, China direct"
-                        className="w-full rounded-md border border-border bg-input px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none disabled:opacity-50"
-                      />
-                    )}
-                  </td>
+                  {tab === "active" && (
+                    <td className="px-2 py-2">
+                      {isLocked ? (
+                        <span className="text-muted-foreground">{item.backorder_note ?? ""}</span>
+                      ) : (
+                        <input
+                          type="text"
+                          defaultValue={item.backorder_note ?? ""}
+                          onBlur={(e) => {
+                            const val = e.target.value.trim();
+                            if (val !== (item.backorder_note ?? "")) {
+                              patchItem(item.id, { backorder_note: val || null });
+                            }
+                          }}
+                          disabled={rowBusy}
+                          placeholder="e.g. backordered, China direct"
+                          className="w-full rounded-md border border-border bg-input px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none disabled:opacity-50"
+                        />
+                      )}
+                    </td>
+                  )}
                   <td className="px-2 py-2 text-right">
                     <div className="flex flex-wrap justify-end gap-2">
                       {item.status === "ordered" && (
-                        <button
-                          onClick={() => receiveItem(item.id)}
-                          disabled={rowBusy}
-                          className="text-xs text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
-                        >
-                          Receive
-                        </button>
+                        <>
+                          <button
+                            onClick={() => receiveItem(item.id)}
+                            disabled={rowBusy}
+                            className="text-xs text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
+                          >
+                            Receive
+                          </button>
+                          <button
+                            onClick={() => resetPO(item)}
+                            disabled={rowBusy}
+                            className="text-xs text-muted-foreground hover:text-red-400 disabled:opacity-50"
+                            title="Delete the draft PO in Xero and revert these lines to Order"
+                          >
+                            Reset PO
+                          </button>
+                        </>
                       )}
                       {!isLocked && item.quantity > 1 && (
                         <button
@@ -514,6 +796,7 @@ export function JobProcurement({
           </tbody>
         </table>
       </div>
+      )}
       {splitTarget && (
         <SplitModal
           item={splitTarget}

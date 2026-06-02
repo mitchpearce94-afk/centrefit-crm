@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthedClient } from "@/lib/xero/client";
@@ -113,6 +114,12 @@ export async function POST(
   }[] = [];
   const failures: { supplierId: string; supplierName?: string; message: string }[] = [];
 
+  // Surface lines we're about to push at $0 so the UI can warn — these go to
+  // Xero with a zero unit amount for Mitchell to correct before authorising.
+  const zeroPriced = actionable.filter(
+    (it) => Number(it.quote_line_items?.cost_price ?? 0) <= 0,
+  );
+
   for (const [supplierId, rows] of grouped) {
     const supplier = supplierById.get(supplierId);
     if (!supplier) {
@@ -150,13 +157,23 @@ export async function POST(
         };
       });
 
+      // Idempotency key derived from the exact row set so a double-click or
+      // retry can't create a duplicate PO in Xero (24h dedupe window). Stable
+      // for the same supplier + same rows; changes if the triage changes.
+      const rowFingerprint = createHash("sha1")
+        .update(rows.map((r) => r.id).sort().join(","))
+        .digest("hex")
+        .slice(0, 16);
+      const idempotencyKey = `po-${jobId}-${supplierId}-${rowFingerprint}`.slice(0, 128);
+
       const po = await createXeroPurchaseOrder({
         xero,
         tenantId: conn.tenant_id,
         supplierContactId: xeroSupplierContactId,
         lineItems,
-        reference: job.number,
+        reference: `CFA-${job.number}`,
         deliveryAddress,
+        idempotencyKey,
       });
 
       // Mark rows ordered
@@ -195,5 +212,6 @@ export async function POST(
     failures,
     unassignedCount: orphans.length,
     unassignedItemIds: orphans.map((o) => o.id),
+    zeroPricedCount: zeroPriced.length,
   });
 }

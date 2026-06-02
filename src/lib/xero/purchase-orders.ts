@@ -25,6 +25,7 @@ export interface CreateXeroPOInput {
   deliveryAddress?: string; // site address
   deliveryInstructions?: string;
   date?: Date;              // PO issue date, defaults to today
+  idempotencyKey?: string;  // dedupes retries/double-clicks at Xero (24h window)
 }
 
 export interface CreatedXeroPO {
@@ -47,6 +48,7 @@ export async function createXeroPurchaseOrder({
   deliveryAddress,
   deliveryInstructions,
   date,
+  idempotencyKey,
 }: CreateXeroPOInput): Promise<CreatedXeroPO> {
   if (lineItems.length === 0) {
     throw new Error("Cannot create a Xero PO with zero line items");
@@ -77,9 +79,12 @@ export async function createXeroPurchaseOrder({
     poPayload.deliveryInstructions = deliveryInstructions.slice(0, 500);
   }
 
-  const res = await xero.accountingApi.createPurchaseOrders(tenantId, {
-    purchaseOrders: [poPayload],
-  });
+  const res = await xero.accountingApi.createPurchaseOrders(
+    tenantId,
+    { purchaseOrders: [poPayload] },
+    true, // summarizeErrors
+    idempotencyKey,
+  );
   const po = res.body.purchaseOrders?.[0];
   if (!po?.purchaseOrderID) {
     throw new Error("Xero did not return a PurchaseOrderID for the new PO");
@@ -91,4 +96,25 @@ export async function createXeroPurchaseOrder({
     total: Number(po.total ?? 0),
     status: String(po.status ?? "DRAFT"),
   };
+}
+
+/**
+ * Delete a DRAFT purchase order in Xero (sets status DELETED). Used by the
+ * "reset PO" action so staff can undo a mistaken Generate POs and re-triage.
+ *
+ * Only DRAFT/SUBMITTED POs can be deleted — a PO that's been BILLED can't be
+ * unwound this way. Xero returns an error in that case, which we surface.
+ */
+export async function deleteXeroPurchaseOrder({
+  xero,
+  tenantId,
+  purchaseOrderID,
+}: {
+  xero: XeroClient;
+  tenantId: string;
+  purchaseOrderID: string;
+}): Promise<void> {
+  await xero.accountingApi.updatePurchaseOrder(tenantId, purchaseOrderID, {
+    purchaseOrders: [{ status: "DELETED" } as Record<string, unknown>],
+  } as never);
 }

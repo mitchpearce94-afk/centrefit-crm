@@ -160,114 +160,6 @@ export function QuoteActions({
     : generateScopeOfWorks(scopeBom, productScopeRoles, siteInfo, scopeOverrides ?? undefined, roleDescriptions);
   const hasScopeOverrides = !!scopeOverrides;
 
-  function openBOMWindow(mode: "warehouse" | "supplier") {
-    const w = window.open("", "_blank");
-    if (!w) return;
-
-    const date = new Date(createdAt).toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" });
-    const items = lineItems.filter((i: any) => i.quantity > 0);
-
-    let body = "";
-
-    if (mode === "warehouse") {
-      // Flat pick list sorted by category, with checkbox column
-      const sorted = [...items].sort((a: any, b: any) => (a.category || "").localeCompare(b.category || "") || (a.product_name || "").localeCompare(b.product_name || ""));
-      let currentCat = "";
-      let rows = "";
-      for (const item of sorted) {
-        if (item.category !== currentCat) {
-          currentCat = item.category;
-          rows += `<tr><td colspan="5" style="padding:12px 8px 6px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;border-bottom:2px solid #e2e8f0">${currentCat}</td></tr>`;
-        }
-        rows += `<tr>
-          <td style="padding:8px;text-align:center;width:40px"><div style="width:18px;height:18px;border:2px solid #94a3b8;border-radius:3px;margin:0 auto"></div></td>
-          <td style="padding:8px;font-weight:500">${item.product_name}</td>
-          <td style="padding:8px;font-family:monospace;color:#64748b;font-size:12px">${item.sku || "—"}</td>
-          <td style="padding:8px;text-align:center;font-weight:700;font-size:16px">${item.quantity}</td>
-          <td style="padding:8px;color:#94a3b8;font-size:12px">${item.supplier || "—"}</td>
-        </tr>`;
-      }
-      body = `
-        <h1 style="font-size:22px;font-weight:700;margin:0">Warehouse Pick List</h1>
-        <p style="color:#64748b;margin:4px 0 0;font-size:13px">${quoteRef} — ${clientName}${siteName ? " — " + siteName : ""}</p>
-        <p style="color:#94a3b8;margin:2px 0 24px;font-size:12px">${date} · ${items.length} line items</p>
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead><tr style="border-bottom:2px solid #0f172a">
-            <th style="padding:8px;width:40px"></th>
-            <th style="padding:8px;text-align:left">Product</th>
-            <th style="padding:8px;text-align:left">SKU</th>
-            <th style="padding:8px;text-align:center;width:60px">Qty</th>
-            <th style="padding:8px;text-align:left">Supplier</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-        <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between">
-          <div><p style="font-size:11px;color:#94a3b8">Picked by: ___________________________</p></div>
-          <div><p style="font-size:11px;color:#94a3b8">Date: _______________</p></div>
-        </div>`;
-    } else {
-      // Group by supplier
-      const bySupplier = new Map<string, any[]>();
-      for (const item of items) {
-        const sup = item.supplier || "No Supplier Assigned";
-        const list = bySupplier.get(sup) ?? [];
-        list.push(item);
-        bySupplier.set(sup, list);
-      }
-      const sortedSuppliers = [...bySupplier.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-
-      // Fixed column widths so every supplier's table lines up identically.
-      const colgroup = `<colgroup>
-        <col />
-        <col style="width:180px" />
-        <col style="width:60px" />
-      </colgroup>`;
-
-      let sections = "";
-      for (const [supplier, supItems] of sortedSuppliers) {
-        let rows = "";
-        for (const item of supItems) {
-          rows += `<tr style="border-bottom:1px solid #f1f5f9">
-            <td style="padding:8px;font-weight:500">${item.product_name}</td>
-            <td style="padding:8px;font-family:monospace;color:#64748b;font-size:12px">${item.sku || "—"}</td>
-            <td style="padding:8px;text-align:right;font-weight:600">${item.quantity}</td>
-          </tr>`;
-        }
-        sections += `
-          <div style="margin-bottom:28px;page-break-inside:avoid">
-            <h2 style="font-size:15px;font-weight:700;margin:0;border-bottom:2px solid #0f172a;padding-bottom:6px">${supplier}</h2>
-            <table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed">
-              ${colgroup}
-              <thead><tr style="border-bottom:1px solid #e2e8f0">
-                <th style="padding:8px;text-align:left">Product</th>
-                <th style="padding:8px;text-align:left">SKU</th>
-                <th style="padding:8px;text-align:right">Qty</th>
-              </tr></thead>
-              <tbody>${rows}</tbody>
-            </table>
-          </div>`;
-      }
-
-      body = `
-        <h1 style="font-size:22px;font-weight:700;margin:0">Supplier Purchase Orders</h1>
-        <p style="color:#64748b;margin:4px 0 0;font-size:13px">${quoteRef} — ${clientName}${siteName ? " — " + siteName : ""}</p>
-        <p style="color:#94a3b8;margin:2px 0 24px;font-size:12px">${date} · ${sortedSuppliers.length} supplier${sortedSuppliers.length !== 1 ? "s" : ""}</p>
-        ${sections}`;
-    }
-
-    w.document.write(`<!DOCTYPE html><html><head>
-      <title>${mode === "warehouse" ? "Warehouse Pick List" : "Supplier Orders"} — ${quoteRef}</title>
-      <style>
-        @page { size: A4; margin: 15mm; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 32px; color: #1a1a1a; }
-        @media print { body { padding: 0; } }
-        table { border-spacing: 0; }
-        tr:nth-child(even) { background: #f8fafc; }
-      </style>
-    </head><body>${body}</body></html>`);
-    w.document.close();
-  }
-
   const linkedJob = jobs.find((j) => j.id === currentJobId);
 
   return (
@@ -281,8 +173,6 @@ export function QuoteActions({
                 { label: "Edit Quote", onClick: () => router.push(`/quoting/${quoteId}/edit`), hidden: status !== "draft" },
                 { label: "Duplicate Quote", onClick: handleDuplicate },
                 { label: `Scope of Works${hasScopeOverrides ? " • Edited" : ""}`, onClick: () => setShowScopeEditor(true), hidden: quoteMode === "manual" },
-                { label: "Warehouse Pick List", onClick: () => openBOMWindow("warehouse") },
-                { label: "Supplier Orders", onClick: () => openBOMWindow("supplier") },
               ],
             },
             {

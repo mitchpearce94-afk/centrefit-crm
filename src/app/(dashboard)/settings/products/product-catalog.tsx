@@ -172,6 +172,12 @@ export function ProductCatalog({
   async function sendSupplierRfq(supplierId: string, supplierName: string) {
     const selected = rfqSelections.get(supplierId);
     const productIds = selected && selected.size > 0 ? Array.from(selected) : undefined;
+    // Confirm before firing — this emails a real supplier. "Send all" is the
+    // riskier path (whole active list) so it gets a louder warning.
+    const confirmMsg = productIds
+      ? `Send an RFQ email to ${supplierName} for ${productIds.length} selected product${productIds.length === 1 ? "" : "s"}?`
+      : `Send an RFQ email to ${supplierName} for ALL active products? This emails the supplier their entire active product list.`;
+    if (!confirm(confirmMsg)) return;
     setSendingRfqSupplierId(supplierId);
     try {
       const res = await fetch(`/api/suppliers/${supplierId}/rfq`, {
