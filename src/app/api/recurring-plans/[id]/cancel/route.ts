@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { cancelMandate, getBillingRequest } from "@/lib/gocardless/client";
+import { cancelMandate, cancelSubscription, getBillingRequest } from "@/lib/gocardless/client";
 import { getAuthedClient } from "@/lib/xero/client";
 import { cancelRepeatingInvoice } from "@/lib/xero/repeating-invoices";
 
@@ -39,7 +39,7 @@ export async function POST(
 
   const { data: plan, error: planErr } = await supabase
     .from("recurring_plans")
-    .select("id, status, gc_mandate_id, gc_billing_request_id, xero_repeating_invoice_id, xero_repeating_invoice_secondary_id")
+    .select("id, status, gc_mandate_id, gc_billing_request_id, gc_subscription_id, gc_subscription_secondary_id, xero_repeating_invoice_id, xero_repeating_invoice_secondary_id")
     .eq("id", id)
     .maybeSingle();
   if (planErr || !plan) {
@@ -51,6 +51,18 @@ export async function POST(
   }
 
   const errors: string[] = [];
+
+  // Cancel any GoCardless subscriptions first so GC stops charging. Cancelling
+  // the mandate below also cancels its subscriptions, but doing it explicitly
+  // is clearer and survives a mandate-cancel failure.
+  const subIds = [plan.gc_subscription_id, plan.gc_subscription_secondary_id].filter(Boolean) as string[];
+  for (const subId of subIds) {
+    try {
+      await cancelSubscription(subId);
+    } catch (err) {
+      errors.push(`GC subscription ${subId.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   // Always check for a real mandate to cancel BEFORE deleting/soft-cancelling.
   // Covers two cases the previous code missed:

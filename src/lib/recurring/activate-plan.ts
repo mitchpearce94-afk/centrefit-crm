@@ -3,6 +3,7 @@ import { createServiceRoleClient } from "@/lib/supabase/service";
 import { getAuthedClient } from "@/lib/xero/client";
 import { findOrCreateContact } from "@/lib/xero/contacts";
 import { createRepeatingInvoice, type PlanFrequency } from "@/lib/xero/repeating-invoices";
+import { createSubscription } from "@/lib/gocardless/client";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
 
 type ServiceClient = ReturnType<typeof createServiceRoleClient>;
@@ -114,7 +115,9 @@ async function activatePlanInner(
   const { data: plan } = await supabase
     .from("recurring_plans")
     .select(`
-      id, status, customer_id, site_id, gc_mandate_id, xero_repeating_invoice_id, first_invoice_date,
+      id, status, customer_id, site_id, gc_mandate_id, first_invoice_date, yearly_first_invoice_date,
+      xero_repeating_invoice_id, xero_repeating_invoice_secondary_id,
+      gc_subscription_id, gc_subscription_secondary_id,
       customers(id, name, abn, xero_contact_id, billing_email, customer_contacts(name, email, phone, is_primary)),
       customer_sites(name, address, suburb, state, postcode, xero_contact_id, billing_email)
     `)
@@ -144,8 +147,10 @@ async function activatePlanInner(
     return { ok: false, reason, planId };
   }
 
-  // Already activated — idempotent.
-  if (plan.status === "active" && plan.xero_repeating_invoice_id) {
+  // Fully activated — Xero RI(s) AND a GC subscription both exist. Idempotent
+  // no-op. A plan that's active but has no subscription (activated before
+  // subscriptions existed) deliberately falls through to backfill one below.
+  if (plan.status === "active" && plan.xero_repeating_invoice_id && plan.gc_subscription_id) {
     return { ok: true, skipped: "already_active", planId };
   }
 
@@ -222,6 +227,15 @@ async function activatePlanInner(
     ? plan.first_invoice_date
     : todayStr;
 
+  // ── Xero RepeatingInvoice(s) ──
+  // Reuse if already created (e.g. backfilling a subscription onto a plan
+  // that was activated before subscriptions existed), otherwise create one
+  // per cadence and persist immediately so a later failure can't make a
+  // retry duplicate the templates.
+  let primaryRiId: string | null = plan.xero_repeating_invoice_id ?? null;
+  let secondaryRiId: string | null = plan.xero_repeating_invoice_secondary_id ?? null;
+
+  if (!primaryRiId) {
   let monthlyRiId: string | null = null;
   let yearlyRiId: string | null = null;
 
@@ -261,12 +275,77 @@ async function activatePlanInner(
 
   // Primary = monthly when both exist (most common cadence). Secondary holds
   // the yearly RI ID so cancel can find both cleanly.
-  const primaryRiId = monthlyRiId ?? yearlyRiId;
-  const secondaryRiId = monthlyRiId && yearlyRiId ? yearlyRiId : null;
+  primaryRiId = monthlyRiId ?? yearlyRiId;
+  secondaryRiId = monthlyRiId && yearlyRiId ? yearlyRiId : null;
 
   if (!primaryRiId) {
     await recordActivationFailure(supabase, planId, "no_ri_created");
     return { ok: false, reason: "no_ri_created", planId };
+  }
+
+  // Persist RI ids straight away so a failure in the subscription step below
+  // doesn't cause a retry to create duplicate Xero templates.
+  await supabase
+    .from("recurring_plans")
+    .update({
+      xero_repeating_invoice_id: primaryRiId,
+      xero_repeating_invoice_secondary_id: secondaryRiId,
+    })
+    .eq("id", planId);
+  }
+
+  // ── GoCardless subscription(s) ──
+  // THIS is what actually collects the money: a subscription per cadence
+  // against the mandate. GoCardless then debits the customer on schedule.
+  // Without it the mandate + Xero invoice exist but nothing is ever charged.
+  // Stable idempotency key per (plan, cadence) so retries — or a backfill of
+  // an already-active plan — never create duplicate billing schedules.
+  const mandateId = plan.gc_mandate_id;
+  if (!mandateId) {
+    await recordActivationFailure(supabase, planId, "no_gc_mandate — cannot create subscription");
+    return { ok: false, reason: "no_gc_mandate", planId };
+  }
+
+  let monthlySubId: string | null = plan.gc_subscription_id ?? null;
+  let yearlySubId: string | null = plan.gc_subscription_secondary_id ?? null;
+
+  for (const [frequency, group] of byFreq.entries()) {
+    if (frequency === "monthly" && monthlySubId) continue;
+    if (frequency === "yearly" && yearlySubId) continue;
+
+    const amountCents = Math.round(
+      group.reduce((sum, it) => sum + Number(it.price_inc_gst) * (it.quantity ?? 1), 0) * 100,
+    );
+    if (amountCents <= 0) continue;
+
+    // Yearly cadence can bill on its own date (e.g. a MyAlarm yearly sub
+    // migrated in mid-cycle); monthly uses the plan start date.
+    const subStart =
+      frequency === "yearly" && plan.yearly_first_invoice_date && plan.yearly_first_invoice_date >= todayStr
+        ? plan.yearly_first_invoice_date
+        : startDate;
+
+    const sub = await createSubscription(
+      {
+        amount: amountCents,
+        currency: "AUD",
+        interval_unit: frequency === "yearly" ? "yearly" : "monthly",
+        start_date: subStart,
+        name: site?.name ? `${site.name} (${frequency})` : `${customer.name} (${frequency})`,
+        metadata: { plan_id: plan.id, cadence: frequency },
+        links: { mandate: mandateId },
+      },
+      `crm-sub-${plan.id.slice(0, 8)}-${frequency}`,
+    );
+    if (frequency === "monthly") monthlySubId = sub.id;
+    if (frequency === "yearly") yearlySubId = sub.id;
+  }
+
+  const primarySubId = monthlySubId ?? yearlySubId;
+  const secondarySubId = monthlySubId && yearlySubId ? yearlySubId : null;
+  if (!primarySubId) {
+    await recordActivationFailure(supabase, planId, "no_gc_subscription_created");
+    return { ok: false, reason: "no_gc_subscription_created", planId };
   }
 
   // Successful activation — clear any prior error breadcrumb and stamp the
@@ -279,6 +358,8 @@ async function activatePlanInner(
       xero_contact_id: xeroContactId,
       xero_repeating_invoice_id: primaryRiId,
       xero_repeating_invoice_secondary_id: secondaryRiId,
+      gc_subscription_id: primarySubId,
+      gc_subscription_secondary_id: secondarySubId,
       next_invoice_date: startDate,
       activation_error: null,
       last_activation_attempt_at: new Date().toISOString(),

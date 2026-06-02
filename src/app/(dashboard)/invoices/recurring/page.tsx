@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
+import { isCurrentUserAdmin } from "@/lib/auth/current-staff";
 import Link from "next/link";
+import { BackfillSubscriptionsButton } from "./backfill-subscriptions-button";
 
 const STATUS_LABEL: Record<string, string> = {
   pending_mandate: "Awaiting Mandate",
@@ -72,6 +74,8 @@ export default async function RecurringInvoicesPage() {
   const activeCount = list.filter((p) => p.status === "active").length;
   const pendingCount = list.filter((p) => p.status === "pending_mandate").length;
 
+  const isAdmin = await isCurrentUserAdmin();
+
   return (
     <>
       <div className="flex items-start justify-between">
@@ -81,12 +85,15 @@ export default async function RecurringInvoicesPage() {
             Direct-debit subscriptions. Linked to GoCardless mandates and Xero RepeatingInvoices.
           </p>
         </div>
-        <Link
-          href="/invoices/recurring/new"
-          className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
-        >
-          + New recurring plan
-        </Link>
+        <div className="flex items-center gap-2">
+          {isAdmin && <BackfillSubscriptionsButton />}
+          <Link
+            href="/invoices/recurring/new"
+            className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            + New recurring plan
+          </Link>
+        </div>
       </div>
 
       {/* Metrics */}

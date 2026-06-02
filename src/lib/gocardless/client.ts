@@ -398,4 +398,77 @@ export async function collectCustomerDetails(
   return res.billing_requests;
 }
 
+// ─── Subscriptions ───────────────────────────────────────────────────────────
+//
+// A subscription tells GoCardless to charge a mandate on a recurring schedule.
+// This is what actually collects the money — the CRM creates one per cadence
+// against the customer's mandate, and GC does the debiting. Amount is in the
+// minor currency unit (cents for AUD).
+
+export interface GcSubscriptionInput {
+  amount: number; // integer cents
+  currency: string; // "AUD"
+  interval_unit: "weekly" | "monthly" | "yearly";
+  interval?: number; // default 1
+  /** First charge date, YYYY-MM-DD. GC schedules subsequent charges from here. */
+  start_date?: string;
+  /** Day of month for monthly subs (1-28, or -1 for last). Optional when start_date is set. */
+  day_of_month?: number;
+  name?: string;
+  metadata?: Record<string, string>;
+  links: { mandate: string };
+}
+
+export interface GcSubscription {
+  id: string;
+  status:
+    | "pending_customer_approval"
+    | "customer_approval_denied"
+    | "active"
+    | "finished"
+    | "cancelled"
+    | "paused";
+  amount: number;
+  currency: string;
+  interval_unit: string;
+  start_date: string | null;
+  name: string | null;
+  created_at: string;
+  links: { mandate: string };
+}
+
+/**
+ * Create a subscription against an existing mandate. Pass a stable
+ * idempotencyKey (e.g. plan id + cadence) so retries return the SAME
+ * subscription instead of creating duplicate billing schedules.
+ */
+export async function createSubscription(
+  input: GcSubscriptionInput,
+  idempotencyKey?: string,
+): Promise<GcSubscription> {
+  const res = await gcFetch<{ subscriptions: GcSubscription }>("/subscriptions", {
+    method: "POST",
+    body: { subscriptions: input },
+    idempotencyKey,
+  });
+  return res.subscriptions;
+}
+
+export async function getSubscription(subscriptionId: string): Promise<GcSubscription> {
+  const res = await gcFetch<{ subscriptions: GcSubscription }>(`/subscriptions/${subscriptionId}`);
+  return res.subscriptions;
+}
+
+/**
+ * Cancel a subscription so GoCardless stops charging. Idempotent at GC for an
+ * already-cancelled subscription.
+ */
+export async function cancelSubscription(subscriptionId: string): Promise<GcSubscription> {
+  const res = await gcFetch<{ subscriptions: GcSubscription }>(
+    `/subscriptions/${subscriptionId}/actions/cancel`,
+    { method: "POST" },
+  );
+  return res.subscriptions;
+}
+
 export { GoCardlessApiError };
