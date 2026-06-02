@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { SitesSearch } from "./sites-search";
+import { AddSiteButton } from "./add-site-button";
 
 export default async function SitesPage({
   searchParams,
@@ -25,6 +26,11 @@ export default async function SitesPage({
   }
 
   const { data: sites, error } = await query;
+  const { data: customers } = await supabase
+    .from("customers")
+    .select("id, name")
+    .eq("is_active", true)
+    .order("name");
 
   if (error) {
     return (
@@ -57,6 +63,7 @@ export default async function SitesPage({
             {sites?.length ?? 0} sites
           </p>
         </div>
+        <AddSiteButton customers={(customers ?? []) as { id: string; name: string }[]} />
       </div>
 
       <SitesSearch defaultQuery={params.q} defaultState={params.state} />
