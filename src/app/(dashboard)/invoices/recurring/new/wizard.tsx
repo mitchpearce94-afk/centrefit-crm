@@ -62,6 +62,9 @@ export function NewRecurringPlanWizard({
     return [];
   });
   const [firstInvoiceDate, setFirstInvoiceDate] = useState<string>("");
+  // Independent first-charge date for the yearly cadence (e.g. a MyAlarm
+  // yearly sub migrated in mid-cycle bills on a different date than monthly).
+  const [yearlyFirstInvoiceDate, setYearlyFirstInvoiceDate] = useState<string>("");
 
   // Mandate attachment mode. Default = send signup link to the customer
   // (existing flow). Alternative = attach an existing GC mandate the
@@ -167,6 +170,7 @@ export function NewRecurringPlanWizard({
         body: JSON.stringify({
           customerId: customer.id,
           firstInvoiceDate: firstInvoiceDate || null,
+          yearlyFirstInvoiceDate: yearlyFirstInvoiceDate || null,
           sites: sites.map((s) => ({
             siteId: s.siteId,
             items: Array.from(s.items.entries()).map(([serviceId, quantity]) => ({
@@ -309,6 +313,21 @@ export function NewRecurringPlanWizard({
                 Leave blank to bill from the day the customer&apos;s mandate is verified. Pick a future date for sites that haven&apos;t opened yet (e.g. a gym launching in 3 months).
               </span>
             </label>
+            {totals.yearly > 0 && (
+              <label className="mt-3 block border-t border-border pt-3">
+                <span className="text-xs font-medium text-muted-foreground">Yearly charge date (optional)</span>
+                <input
+                  type="date"
+                  value={yearlyFirstInvoiceDate}
+                  min={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setYearlyFirstInvoiceDate(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-border bg-input px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <span className="mt-1 block text-[11px] text-muted-foreground">
+                  This plan has a yearly service. Set its own first-charge date if it differs from the monthly start (e.g. a MyAlarm yearly sub migrated from the old system). Blank = same as the start date above.
+                </span>
+              </label>
+            )}
           </div>
           <div className="rounded-md border border-border bg-muted/20 p-4 space-y-1.5 text-sm">
             <div className="flex justify-between">

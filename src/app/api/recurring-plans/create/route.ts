@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
   let body: {
     customerId?: string;
     firstInvoiceDate?: string | null;
+    yearlyFirstInvoiceDate?: string | null;
     sites?: Array<{ siteId?: string | null; items?: Array<{ serviceId: string; quantity?: number }> }>;
     existingMandateId?: string | null;
   };
@@ -51,6 +52,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "firstInvoiceDate cannot be in the past" }, { status: 400 });
     }
     firstInvoiceDate = body.firstInvoiceDate;
+  }
+
+  let yearlyFirstInvoiceDate: string | null = null;
+  if (body.yearlyFirstInvoiceDate) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(body.yearlyFirstInvoiceDate)) {
+      return NextResponse.json({ error: "yearlyFirstInvoiceDate must be YYYY-MM-DD" }, { status: 400 });
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (body.yearlyFirstInvoiceDate < today) {
+      return NextResponse.json({ error: "yearlyFirstInvoiceDate cannot be in the past" }, { status: 400 });
+    }
+    yearlyFirstInvoiceDate = body.yearlyFirstInvoiceDate;
   }
 
   const supabase = await createClient();
@@ -119,6 +132,7 @@ export async function POST(req: NextRequest) {
         items: s.items!,
       })),
       firstInvoiceDate,
+      yearlyFirstInvoiceDate,
       createdByStaffId: staff?.id ?? null,
       appUrl,
       sendEmail: !body.existingMandateId,

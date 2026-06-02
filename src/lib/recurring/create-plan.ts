@@ -54,6 +54,8 @@ export interface CreateRecurringPlansInput {
   sites: OrchestrationSiteInput[];
   /** Optional first invoice date (YYYY-MM-DD); null = bill on mandate verify. */
   firstInvoiceDate: string | null;
+  /** Optional independent first-charge date for the yearly cadence. */
+  yearlyFirstInvoiceDate?: string | null;
   /** staff.id — null when called from the public website endpoint. */
   createdByStaffId: string | null;
   /** App URL used in the GC redirect (e.g. https://crm.centrefit.com.au). */
@@ -101,7 +103,7 @@ export async function createRecurringPlansForSites(
 ): Promise<CreateRecurringPlansResult> {
   const {
     supabase, customer, customerSitesById, primary, servicesById,
-    sites, firstInvoiceDate, createdByStaffId, appUrl, sendEmail = true,
+    sites, firstInvoiceDate, yearlyFirstInvoiceDate = null, createdByStaffId, appUrl, sendEmail = true,
     existingMandateId,
   } = input;
 
@@ -133,6 +135,7 @@ export async function createRecurringPlansForSites(
         status: "pending_mandate",
         created_by: createdByStaffId,
         first_invoice_date: firstInvoiceDate,
+        yearly_first_invoice_date: yearlyFirstInvoiceDate,
       })
       .select("id")
       .single();
