@@ -56,6 +56,13 @@ export function JobProcurement({
   const [generating, setGenerating] = useState(false);
   const [splitTarget, setSplitTarget] = useState<ProcurementItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProcurementItem | null>(null);
+  // Ad-hoc parts picker (service jobs with no quote BOM).
+  const [addOpen, setAddOpen] = useState(false);
+  const [catalog, setCatalog] = useState<{ id: string; name: string; sku: string; supplierId: string | null }[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [picked, setPicked] = useState<Map<string, number>>(new Map());
+  const [addBusy, setAddBusy] = useState(false);
 
   const hasItems = items.length > 0;
   const orderCount = useMemo(() => items.filter((i) => i.status === "order").length, [items]);
@@ -184,31 +191,161 @@ export function JobProcurement({
     }
   }
 
-  if (!hasItems) {
-    return (
-      <div className="rounded-lg border border-border bg-card p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-sm font-semibold">Procurement</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Generate draft purchase orders for the accepted quote&rsquo;s BOM. Populates from
-              the quote, lets you split by stock vs order, pick suppliers, then pushes draft
-              POs into Xero for you to review + send.
-            </p>
+  async function openAddParts() {
+    setPicked(new Map());
+    setSearch("");
+    setAddOpen(true);
+    if (catalog.length === 0) {
+      setCatalogLoading(true);
+      try {
+        const res = await fetch(`/api/jobs/${jobId}/procurement/add-items`);
+        const json = await res.json();
+        if (res.ok) setCatalog(json.products ?? []);
+        else toast(json.error ?? "Couldn't load products", "error");
+      } finally {
+        setCatalogLoading(false);
+      }
+    }
+  }
+
+  function setPickedQty(productId: string, qty: number) {
+    setPicked((prev) => {
+      const next = new Map(prev);
+      if (qty <= 0) next.delete(productId);
+      else next.set(productId, qty);
+      return next;
+    });
+  }
+
+  async function submitAddParts() {
+    const itemsToAdd = [...picked.entries()].map(([productId, quantity]) => ({ productId, quantity }));
+    if (itemsToAdd.length === 0) {
+      toast("Pick at least one part", "error");
+      return;
+    }
+    setAddBusy(true);
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/procurement/add-items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: itemsToAdd }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast(json.error ?? "Failed to add parts", "error");
+        return;
+      }
+      toast(`Added ${json.created} part${json.created === 1 ? "" : "s"} to order`);
+      setAddOpen(false);
+      router.refresh();
+    } finally {
+      setAddBusy(false);
+    }
+  }
+
+  const filteredCatalog = (() => {
+    const q = search.trim().toLowerCase();
+    const base = q
+      ? catalog.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q))
+      : catalog;
+    return base.slice(0, 40);
+  })();
+
+  const addPartsModal = addOpen ? (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !addBusy && setAddOpen(false)}>
+      <div className="w-full max-w-lg rounded-lg border border-border bg-card shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <h3 className="text-sm font-semibold">Add parts to order</h3>
+          <button onClick={() => setAddOpen(false)} disabled={addBusy} className="text-muted-foreground hover:text-foreground">✕</button>
+        </div>
+        <div className="p-4 space-y-3">
+          <input
+            autoFocus
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search parts by name or SKU…"
+            className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          <div className="max-h-56 overflow-y-auto rounded-md border border-border divide-y divide-border">
+            {catalogLoading ? (
+              <p className="px-3 py-4 text-center text-xs text-muted-foreground">Loading catalogue…</p>
+            ) : filteredCatalog.length === 0 ? (
+              <p className="px-3 py-4 text-center text-xs text-muted-foreground">No matching parts.</p>
+            ) : (
+              filteredCatalog.map((p) => {
+                const qty = picked.get(p.id) ?? 0;
+                return (
+                  <div key={p.id} className="flex items-center gap-2 px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-medium">{p.name}</div>
+                      {p.sku && <div className="font-mono text-[10px] text-muted-foreground">{p.sku}</div>}
+                    </div>
+                    {qty > 0 ? (
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => setPickedQty(p.id, qty - 1)} className="h-6 w-6 rounded border border-border text-muted-foreground hover:bg-accent">−</button>
+                        <span className="w-6 text-center font-mono text-xs">{qty}</span>
+                        <button onClick={() => setPickedQty(p.id, qty + 1)} className="h-6 w-6 rounded border border-border text-muted-foreground hover:bg-accent">+</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setPickedQty(p.id, 1)} className="rounded-md bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary hover:bg-primary/20">Add</button>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
-          <button
-            onClick={initFromQuote}
-            disabled={busy === "init"}
-            className="shrink-0 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {busy === "init" ? "Loading…" : "Start Ordering"}
-          </button>
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-xs text-muted-foreground">{picked.size} part{picked.size === 1 ? "" : "s"} selected</span>
+            <div className="flex gap-2">
+              <button onClick={() => setAddOpen(false)} disabled={addBusy} className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+              <button onClick={submitAddParts} disabled={addBusy || picked.size === 0} className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                {addBusy ? "Adding…" : "Add to order"}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
+    </div>
+  ) : null;
+
+  if (!hasItems) {
+    return (
+      <>
+        {addPartsModal}
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-semibold">Procurement</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Generate draft purchase orders from the accepted quote&rsquo;s BOM — or add parts
+                ad-hoc for a service job. Split by stock vs order, pick suppliers, then push draft
+                POs into Xero for you to review + send.
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-col gap-2">
+              <button
+                onClick={initFromQuote}
+                disabled={busy === "init"}
+                className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {busy === "init" ? "Loading…" : "Start from quote"}
+              </button>
+              <button
+                onClick={openAddParts}
+                className="rounded-md border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent"
+              >
+                + Add parts ad-hoc
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
     );
   }
 
   return (
+    <>
+    {addPartsModal}
     <div className="rounded-lg border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-4 mb-3">
         <div>
@@ -217,14 +354,22 @@ export function JobProcurement({
             {items.length} line{items.length === 1 ? "" : "s"} · {orderCount} to order
           </p>
         </div>
-        <button
-          onClick={generatePOs}
-          disabled={generating || orderCount === 0}
-          className="shrink-0 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          title={orderCount === 0 ? "Flip some rows to ORDER first" : "Create draft POs in Xero, grouped by supplier"}
-        >
-          {generating ? "Generating…" : `Generate Draft POs${orderCount ? ` (${orderCount})` : ""}`}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={openAddParts}
+            className="rounded-md border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent"
+          >
+            + Add parts
+          </button>
+          <button
+            onClick={generatePOs}
+            disabled={generating || orderCount === 0}
+            className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            title={orderCount === 0 ? "Flip some rows to ORDER first" : "Create draft POs in Xero, grouped by supplier"}
+          >
+            {generating ? "Generating…" : `Generate Draft POs${orderCount ? ` (${orderCount})` : ""}`}
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -386,6 +531,7 @@ export function JobProcurement({
         />
       )}
     </div>
+    </>
   );
 }
 
