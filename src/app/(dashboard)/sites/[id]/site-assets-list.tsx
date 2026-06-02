@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
 import type { AssetType, SiteAsset } from "@/lib/types";
+import { ImportBomToAssetsButton } from "../../jobs/[id]/import-bom-to-assets-button";
 
 const inputClass =
   "rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
@@ -76,11 +77,13 @@ export function SiteAssetsList({
   assets,
   assetTypes,
   isAdmin,
+  importJobId,
 }: {
   siteId: string;
   assets: SiteAsset[];
   assetTypes: AssetType[];
   isAdmin: boolean;
+  importJobId: string | null;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -168,6 +171,7 @@ export function SiteAssetsList({
               Show archived
             </label>
           )}
+          {importJobId && <ImportBomToAssetsButton jobId={importJobId} />}
         </div>
       </div>
 

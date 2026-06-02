@@ -37,7 +37,7 @@ export default async function SiteDetailPage({
     isAdmin = viewerStaff?.role === "admin";
   }
 
-  const [siteResult, contactsResult, jobsResult, assetsResult, assetTypesResult, keyInfoPhotosResult, vaultFoldersResult] = await Promise.all([
+  const [siteResult, contactsResult, jobsResult, assetsResult, assetTypesResult, keyInfoPhotosResult, vaultFoldersResult, importJobResult] = await Promise.all([
     supabase
       .from("customer_sites")
       .select(
@@ -80,6 +80,17 @@ export default async function SiteDetailPage({
     canVault
       ? supabase.rpc("vault_folders_for_ref", { p_ref_type: "site", p_ref_id: id })
       : Promise.resolve({ data: [] as VaultFolderForRefRow[] }),
+    // Most recent accepted-quote job for THIS site — powers the "Import from
+    // BOM" button on the Assets tab (defaults to the latest accepted quote).
+    supabase
+      .from("quotes")
+      .select("job_id, accepted_at, jobs!inner(site_id, number)")
+      .eq("jobs.site_id", id)
+      .eq("status", "accepted")
+      .not("job_id", "is", null)
+      .order("accepted_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   if (siteResult.error || !siteResult.data) {
@@ -109,6 +120,7 @@ export default async function SiteDetailPage({
     created_at: string;
   }>;
   const vaultFolders = (vaultFoldersResult.data ?? []) as VaultFolderForRefRow[];
+  const importJobId = (importJobResult.data as { job_id: string | null } | null)?.job_id ?? null;
 
   return (
     <div>
@@ -151,6 +163,7 @@ export default async function SiteDetailPage({
           canVault={canVault}
           vaultFolders={vaultFolders}
           isAdmin={isAdmin}
+          importJobId={importJobId}
         />
       </div>
     </div>

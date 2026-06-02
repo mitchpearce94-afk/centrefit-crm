@@ -50,10 +50,10 @@ export function ImportBomToAssetsButton({ jobId }: { jobId: string }) {
       <button
         type="button"
         onClick={() => setConfirming(true)}
-        className="text-xs text-muted-foreground hover:text-foreground"
+        className="rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
         title="Create site asset shells (one per unit) from this job's quote BOM"
       >
-        Pre-fill site assets from BOM
+        Pre-fill assets from BOM
       </button>
     );
   }

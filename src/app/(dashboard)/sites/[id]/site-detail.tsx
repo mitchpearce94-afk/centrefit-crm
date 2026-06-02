@@ -28,6 +28,7 @@ export function SiteDetail({
   canVault,
   vaultFolders,
   isAdmin,
+  importJobId,
 }: {
   site: CustomerSite & { customer: { id: string; name: string } | null };
   contacts: CustomerContact[];
@@ -38,6 +39,7 @@ export function SiteDetail({
   canVault: boolean;
   vaultFolders: VaultFolderForRefRow[];
   isAdmin: boolean;
+  importJobId: string | null;
 }) {
   const activeAssetCount = assets.filter((a) => a.is_active).length;
   const tabs = [
@@ -136,7 +138,7 @@ export function SiteDetail({
           )}
 
           {activeTab === "assets" && (
-            <SiteAssetsList siteId={site.id} assets={assets} assetTypes={assetTypes} isAdmin={isAdmin} />
+            <SiteAssetsList siteId={site.id} assets={assets} assetTypes={assetTypes} isAdmin={isAdmin} importJobId={importJobId} />
           )}
 
           {activeTab === "key-info" && (
