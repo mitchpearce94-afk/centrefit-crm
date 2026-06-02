@@ -376,11 +376,23 @@ export function JobProcurement({
       <style>
         @page { size: A4; margin: 15mm; }
         body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 32px; color: #1a1a1a; }
-        @media print { body { padding: 0; } }
         table { border-spacing: 0; }
         tr:nth-child(even) { background: #f8fafc; }
+        .pw-toolbar { display: flex; align-items: center; gap: 8px; margin: -12px 0 20px; }
+        .pw-btn { font: 600 13px 'Segoe UI', system-ui, sans-serif; border: 0; border-radius: 6px; padding: 8px 14px; cursor: pointer; }
+        .pw-print { background: #0f172a; color: #fff; }
+        .pw-close { background: #e2e8f0; color: #0f172a; }
+        .pw-hint { font-size: 11px; color: #94a3b8; margin-left: auto; }
+        @media print { body { padding: 0; } .pw-toolbar { display: none !important; } }
       </style>
-    </head><body>${body}</body></html>`);
+    </head><body>
+      <div class="pw-toolbar">
+        <button class="pw-btn pw-print" onclick="window.print()">Print / Save as PDF</button>
+        <button class="pw-btn pw-close" onclick="window.close()">Close</button>
+        <span class="pw-hint">Tip: pick &ldquo;Save as PDF&rdquo; as the destination to download.</span>
+      </div>
+      ${body}
+    </body></html>`);
     w.document.close();
   }
 
