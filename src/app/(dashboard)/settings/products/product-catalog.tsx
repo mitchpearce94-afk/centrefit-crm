@@ -21,6 +21,7 @@ interface Product {
   device_type: string | null;
   scope_role: string | null;
   labour_code: string | null;
+  asset_type_id: string | null;
   description: string | null;
   default_quantity: number;
   internal_notes: string | null;
@@ -45,6 +46,17 @@ interface LabourTimingOption {
   name: string;
 }
 
+interface AssetTypeOption {
+  id: string;
+  name: string;
+  category: string | null;
+  has_serial: boolean;
+  has_mac: boolean;
+  has_ip: boolean;
+  has_wifi: boolean;
+  has_rfid: boolean;
+}
+
 const inputClass = "block w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
 
 function slugify(s: string): string {
@@ -56,18 +68,20 @@ export function ProductCatalog({
   suppliers,
   scopeRoles,
   labourTimings,
+  assetTypes,
 }: {
   products: Product[];
   suppliers: Supplier[];
   scopeRoles: ScopeRoleOption[];
   labourTimings: LabourTimingOption[];
+  assetTypes: AssetTypeOption[];
 }) {
   const router = useRouter();
   const supabase = createClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
-  const [taggingFilter, setTaggingFilter] = useState<"" | "untagged_any" | "untagged_scope" | "untagged_labour">("");
+  const [taggingFilter, setTaggingFilter] = useState<"" | "untagged_any" | "untagged_scope" | "untagged_labour" | "untagged_asset">("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [addingToCategory, setAddingToCategory] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
@@ -99,6 +113,16 @@ export function ProductCatalog({
     () => [...suppliers].sort((a, b) => a.name.localeCompare(b.name)),
     [suppliers]
   );
+  // Inline asset-type tag — drives the BOM->assets import (only products mapped
+  // to a trackable asset type become asset shells). Saves on change.
+  async function saveAssetType(productId: string, assetTypeId: string) {
+    const { error } = await supabase
+      .from("quote_products")
+      .update({ asset_type_id: assetTypeId || null })
+      .eq("id", productId);
+    if (error) toast(error.message, "error");
+    else router.refresh();
+  }
 
   const filtered = useMemo(() => {
     let list = products;
@@ -110,6 +134,8 @@ export function ProductCatalog({
       list = list.filter((p) => !p.scope_role);
     } else if (taggingFilter === "untagged_labour") {
       list = list.filter((p) => !p.labour_code);
+    } else if (taggingFilter === "untagged_asset") {
+      list = list.filter((p) => !p.asset_type_id);
     }
     if (search.length >= 2) {
       const q = search.toLowerCase();
@@ -130,6 +156,7 @@ export function ProductCatalog({
       untaggedScope: active.filter((p) => !p.scope_role).length,
       untaggedLabour: active.filter((p) => !p.labour_code).length,
       untaggedAny: active.filter((p) => !p.scope_role || !p.labour_code).length,
+      untaggedAsset: active.filter((p) => !p.asset_type_id).length,
     };
   }, [products]);
 
@@ -342,21 +369,22 @@ export function ProductCatalog({
   return (
     <div>
       {/* Tagging audit banner — shown when there are untagged products */}
-      {taggingStats.untaggedAny > 0 && (
+      {(taggingStats.untaggedAny > 0 || taggingStats.untaggedAsset > 0) && (
         <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-amber-400">
-                {taggingStats.untaggedAny} active product{taggingStats.untaggedAny === 1 ? "" : "s"} need{taggingStats.untaggedAny === 1 ? "s" : ""} tagging
+                Product tagging needs attention
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {taggingStats.untaggedScope} missing scope role · {taggingStats.untaggedLabour} missing labour code. Untagged products fall into "Additional items" on the SoW and skip labour calculation.
+                {taggingStats.untaggedScope} missing scope role · {taggingStats.untaggedLabour} missing labour code · {taggingStats.untaggedAsset} missing asset type. Scope/labour gaps affect the SoW + labour calc; an asset type lets the device flow into the BOM → assets import (leave cable/mounts blank).
               </p>
             </div>
             <div className="flex flex-wrap gap-2 shrink-0">
               <button onClick={() => setTaggingFilter("untagged_any")} className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${taggingFilter === "untagged_any" ? "bg-amber-500 text-amber-950" : "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"}`}>Show all untagged</button>
               <button onClick={() => setTaggingFilter("untagged_scope")} className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${taggingFilter === "untagged_scope" ? "bg-amber-500 text-amber-950" : "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"}`}>Missing scope only</button>
               <button onClick={() => setTaggingFilter("untagged_labour")} className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${taggingFilter === "untagged_labour" ? "bg-amber-500 text-amber-950" : "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"}`}>Missing labour only</button>
+              <button onClick={() => setTaggingFilter("untagged_asset")} className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${taggingFilter === "untagged_asset" ? "bg-amber-500 text-amber-950" : "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"}`}>Missing asset type</button>
               {taggingFilter && (
                 <button onClick={() => setTaggingFilter("")} className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">Clear</button>
               )}
@@ -579,6 +607,7 @@ export function ProductCatalog({
                         <th className="px-3 py-2 text-left font-medium text-muted-foreground">Product</th>
                         <th className="px-3 py-2 text-left font-medium text-muted-foreground hidden md:table-cell w-32">SKU</th>
                         <th className="px-3 py-2 text-left font-medium text-muted-foreground hidden lg:table-cell w-36">Category</th>
+                        <th className="px-3 py-2 text-left font-medium text-muted-foreground hidden xl:table-cell w-44" title="Maps this product to an asset type for the BOM → assets import. Leave blank for cable/mounts/consumables.">Asset type</th>
                         <th className="px-3 py-2 text-right font-medium text-muted-foreground w-28">Cost (ex-GST)</th>
                         <th className="px-3 py-2 text-right font-medium text-muted-foreground w-16">Markup</th>
                         <th className="px-3 py-2 text-right font-medium text-muted-foreground w-24">Sell</th>
@@ -614,6 +643,19 @@ export function ProductCatalog({
                             </td>
                             <td className="px-3 py-2 text-xs text-muted-foreground font-mono hidden md:table-cell">{p.sku || "—"}</td>
                             <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">{p.category}</td>
+                            <td className="px-3 py-2 hidden xl:table-cell">
+                              <select
+                                value={p.asset_type_id ?? ""}
+                                onChange={(e) => saveAssetType(p.id, e.target.value)}
+                                className="w-full rounded-md border border-border bg-input px-1.5 py-1 text-xs text-foreground focus:border-primary focus:outline-none"
+                                title="Asset type for BOM → assets import"
+                              >
+                                <option value="">— none —</option>
+                                {assetTypes.map((t) => (
+                                  <option key={t.id} value={t.id}>{t.name}</option>
+                                ))}
+                              </select>
+                            </td>
                             <td className="px-3 py-2 text-right">
                               <input
                                 type="number"
@@ -672,6 +714,7 @@ export function ProductCatalog({
           suppliers={sortedSuppliers}
           scopeRoles={sortedScopeRoles}
           labourTimings={sortedLabourTimings}
+          assetTypes={assetTypes}
           onScopeRoleCreated={handleScopeRoleCreated}
           onLabourTimingCreated={handleLabourTimingCreated}
           onClose={() => setAddingToCategory(null)}
@@ -690,6 +733,7 @@ export function ProductCatalog({
             suppliers={sortedSuppliers}
             scopeRoles={sortedScopeRoles}
             labourTimings={sortedLabourTimings}
+            assetTypes={assetTypes}
             onScopeRoleCreated={handleScopeRoleCreated}
             onLabourTimingCreated={handleLabourTimingCreated}
             onClose={() => setEditingId(null)}
@@ -713,6 +757,7 @@ type ProductFormModalProps =
       suppliers: Supplier[];
       scopeRoles: ScopeRoleOption[];
       labourTimings: LabourTimingOption[];
+      assetTypes: AssetTypeOption[];
       onScopeRoleCreated: (role: ScopeRoleOption) => void;
       onLabourTimingCreated: (timing: LabourTimingOption) => void;
       onClose: () => void;
@@ -726,6 +771,7 @@ type ProductFormModalProps =
       suppliers: Supplier[];
       scopeRoles: ScopeRoleOption[];
       labourTimings: LabourTimingOption[];
+      assetTypes: AssetTypeOption[];
       onScopeRoleCreated: (role: ScopeRoleOption) => void;
       onLabourTimingCreated: (timing: LabourTimingOption) => void;
       onClose: () => void;
@@ -753,6 +799,7 @@ function ProductFormModal(props: ProductFormModalProps) {
   const [deviceType, setDeviceType] = useState(isEditing ? (props.product.device_type || "") : "");
   const [scopeRole, setScopeRole] = useState(isEditing ? (props.product.scope_role || "") : "");
   const [labourCode, setLabourCode] = useState(isEditing ? (props.product.labour_code || "") : "");
+  const [assetTypeId, setAssetTypeId] = useState(isEditing ? (props.product.asset_type_id || "") : "");
   const [description, setDescription] = useState(isEditing ? (props.product.description || "") : "");
   const [defaultQuantity, setDefaultQuantity] = useState(isEditing ? props.product.default_quantity.toString() : "1");
   const [internalNotes, setInternalNotes] = useState(isEditing ? (props.product.internal_notes || "") : "");
@@ -825,6 +872,7 @@ function ProductFormModal(props: ProductFormModalProps) {
       device_type: deviceType || null,
       scope_role: scopeRole || null,
       labour_code: labourCode || null,
+      asset_type_id: assetTypeId || null,
       image_url: imageUrl || null,
       requires_cable_run: requiresCableRun,
       description: description.trim() || null,
@@ -990,6 +1038,19 @@ function ProductFormModal(props: ProductFormModalProps) {
               </select>
             </div>
           )}
+
+          {/* Asset type — maps this product to the asset register for the
+              BOM → assets import. Optional; leave blank for cable/mounts. */}
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">
+              Asset type
+              <span className="ml-1 font-normal text-muted-foreground/60">— if installed as a tracked device, becomes this asset on BOM → assets import</span>
+            </label>
+            <select value={assetTypeId} onChange={(e) => setAssetTypeId(e.target.value)} className={inputClass}>
+              <option value="">None — not a tracked asset (cable, mounts, consumables)</option>
+              {props.assetTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
 
           {/* Scope role with inline create */}
           <div>

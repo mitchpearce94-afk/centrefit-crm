@@ -34,7 +34,10 @@ export function ImportBomToAssetsButton({ jobId }: { jobId: string }) {
         }
         return;
       }
-      toast(`Created ${data.created} asset shell(s) from ${data.quoteRef ?? "the quote"} — scan serials on the site's Assets tab.`);
+      const skipNote = data.skippedCount
+        ? ` (${data.skippedCount} non-trackable line${data.skippedCount === 1 ? "" : "s"} skipped)`
+        : "";
+      toast(`Created ${data.created} asset shell(s) from ${data.quoteRef ?? "the quote"}${skipNote} — scan serials on the site's Assets tab.`);
       setConfirming(false);
       router.refresh();
     } finally {
