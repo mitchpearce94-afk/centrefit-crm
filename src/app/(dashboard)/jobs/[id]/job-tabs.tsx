@@ -11,6 +11,7 @@ import { TimePanel } from "./time-panel";
 import { StaffPanel } from "./staff-panel";
 import { NbnPanel } from "./nbn-panel";
 import { JobInvoices } from "./job-invoices";
+import { ImportBomToAssetsButton } from "./import-bom-to-assets-button";
 import { JobProcurement } from "./job-procurement";
 import { ScopeEditor } from "./scope-editor";
 
@@ -165,7 +166,8 @@ export function JobTabs({
         )}
         {activeTab === "procurement" && (
           <div>
-            <div className="mb-2 flex justify-end">
+            <div className="mb-2 flex items-center justify-end gap-3">
+              <ImportBomToAssetsButton jobId={jobId} />
               <Link
                 href={`/procurement/${jobId}`}
                 className="text-xs text-muted-foreground hover:text-foreground"
