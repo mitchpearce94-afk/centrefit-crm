@@ -27,6 +27,7 @@ export function SiteDetail({
   keyInfoPhotos,
   canVault,
   vaultFolders,
+  isAdmin,
 }: {
   site: CustomerSite & { customer: { id: string; name: string } | null };
   contacts: CustomerContact[];
@@ -36,6 +37,7 @@ export function SiteDetail({
   keyInfoPhotos: KeyInfoPhoto[];
   canVault: boolean;
   vaultFolders: VaultFolderForRefRow[];
+  isAdmin: boolean;
 }) {
   const activeAssetCount = assets.filter((a) => a.is_active).length;
   const tabs = [
@@ -134,7 +136,7 @@ export function SiteDetail({
           )}
 
           {activeTab === "assets" && (
-            <SiteAssetsList siteId={site.id} assets={assets} assetTypes={assetTypes} />
+            <SiteAssetsList siteId={site.id} assets={assets} assetTypes={assetTypes} isAdmin={isAdmin} />
           )}
 
           {activeTab === "key-info" && (

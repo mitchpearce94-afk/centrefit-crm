@@ -75,10 +75,12 @@ export function SiteAssetsList({
   siteId,
   assets,
   assetTypes,
+  isAdmin,
 }: {
   siteId: string;
   assets: SiteAsset[];
   assetTypes: AssetType[];
+  isAdmin: boolean;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -196,6 +198,7 @@ export function SiteAssetsList({
                         siteId={siteId}
                         asset={a}
                         assetTypes={assetTypes}
+                        isAdmin={isAdmin}
                         onDone={() => setEditingId(null)}
                       />
                     ) : (
@@ -777,11 +780,13 @@ function SiteAssetEditForm({
   siteId,
   asset,
   assetTypes,
+  isAdmin,
   onDone,
 }: {
   siteId: string;
   asset: SiteAsset;
   assetTypes: AssetType[];
+  isAdmin: boolean;
   onDone: () => void;
 }) {
   const router = useRouter();
@@ -790,6 +795,7 @@ function SiteAssetEditForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Legacy assets (pre-2026-05-13) have asset_type_id=null but a free-text
   // device_type. Map that to the new asset_types row so the extended fields
@@ -886,6 +892,32 @@ function SiteAssetEditForm({
       onDone();
       router.refresh();
     }
+  }
+
+  // Hard delete — admin-only (RLS: site_assets_delete USING is_admin()).
+  // .select() lets us catch the silent RLS no-op (0 rows, no error) and tell
+  // the user instead of pretending it worked. Archive remains the soft option.
+  async function handleDelete() {
+    setSaving(true);
+    setError(null);
+    const { data: deleted, error: err } = await supabase
+      .from("site_assets")
+      .delete()
+      .eq("id", asset.id)
+      .select("id");
+    if (err) {
+      setError(err.message);
+      setSaving(false);
+      return;
+    }
+    if (!deleted || deleted.length === 0) {
+      setError("You don't have permission to delete assets — archive it instead.");
+      setSaving(false);
+      return;
+    }
+    toast("Asset deleted");
+    onDone();
+    router.refresh();
   }
 
   return (
@@ -1097,7 +1129,7 @@ function SiteAssetEditForm({
         className={inputClass + " w-full resize-none"}
       />
 
-      <div className="flex gap-2 pt-1">
+      <div className="flex flex-wrap items-center gap-2 pt-1">
         <button
           type="submit"
           disabled={saving}
@@ -1112,33 +1144,74 @@ function SiteAssetEditForm({
         >
           Cancel
         </button>
-        {!confirmArchive && (
-          <button
-            type="button"
-            onClick={() => setConfirmArchive(true)}
-            className="ml-auto rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
-          >
-            {asset.is_active ? "Archive" : "Restore"}
-          </button>
-        )}
-        {confirmArchive && (
-          <div className="ml-auto flex gap-1">
+
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {/* Archive (soft) — always available */}
+          {!confirmArchive && (
             <button
               type="button"
-              onClick={handleArchiveToggle}
-              className="rounded-md bg-muted px-3 py-1.5 text-xs text-foreground hover:bg-accent"
+              onClick={() => {
+                setConfirmArchive(true);
+                setConfirmDelete(false);
+              }}
+              className="rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
             >
-              {asset.is_active ? "Confirm archive" : "Confirm restore"}
+              {asset.is_active ? "Archive" : "Restore"}
             </button>
+          )}
+          {confirmArchive && (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handleArchiveToggle}
+                className="rounded-md bg-muted px-3 py-1.5 text-xs text-foreground hover:bg-accent"
+              >
+                {asset.is_active ? "Confirm archive" : "Confirm restore"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmArchive(false)}
+                className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+              >
+                No
+              </button>
+            </div>
+          )}
+
+          {/* Delete (hard, permanent) — admin only, matches RLS */}
+          {isAdmin && !confirmDelete && (
             <button
               type="button"
-              onClick={() => setConfirmArchive(false)}
-              className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+              onClick={() => {
+                setConfirmDelete(true);
+                setConfirmArchive(false);
+              }}
+              className="rounded-md px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300"
             >
-              No
+              Delete
             </button>
-          </div>
-        )}
+          )}
+          {isAdmin && confirmDelete && (
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] text-muted-foreground">Delete permanently?</span>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={saving}
+                className="rounded-md bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50"
+              >
+                {saving ? "Deleting…" : "Confirm delete"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+              >
+                No
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </form>
   );

@@ -23,6 +23,20 @@ export default async function SiteDetailPage({
 
   const canVault = await currentUserHasPermission("vault.access");
 
+  // Hard-deleting an asset is admin-only at the RLS layer (site_assets_delete
+  // USING is_admin()), so gate the Delete button on the same check — match the
+  // is_admin() definition: staff row id = auth.uid() with role 'admin'.
+  const { data: { user } } = await supabase.auth.getUser();
+  let isAdmin = false;
+  if (user) {
+    const { data: viewerStaff } = await supabase
+      .from("staff")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    isAdmin = viewerStaff?.role === "admin";
+  }
+
   const [siteResult, contactsResult, jobsResult, assetsResult, assetTypesResult, keyInfoPhotosResult, vaultFoldersResult] = await Promise.all([
     supabase
       .from("customer_sites")
@@ -136,6 +150,7 @@ export default async function SiteDetailPage({
           keyInfoPhotos={keyInfoPhotos}
           canVault={canVault}
           vaultFolders={vaultFolders}
+          isAdmin={isAdmin}
         />
       </div>
     </div>

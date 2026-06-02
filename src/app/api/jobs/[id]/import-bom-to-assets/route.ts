@@ -79,6 +79,7 @@ export async function POST(
     job_id: string;
     device_name: string;
     device_type: string | null;
+    model: string | null;
     asset_type_id: string | null;
     is_active: boolean;
   };
@@ -95,12 +96,16 @@ export async function POST(
       typeByName.get((prod?.name ?? "").trim().toLowerCase()) ??
       null;
     const deviceType = prod?.device_type ?? null;
+    // Michael: carry the BOM SKU onto each shell as the model/part number so
+    // the asset record ties back to the catalogue part without re-keying.
+    const model = (li.sku ?? "").trim() || null;
     for (let i = 0; i < qty; i++) {
       rows.push({
         site_id: job.site_id,
         job_id: jobId,
         device_name: name,
         device_type: deviceType,
+        model,
         asset_type_id: assetTypeId,
         is_active: true,
       });
