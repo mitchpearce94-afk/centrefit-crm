@@ -100,6 +100,83 @@ export default async function DashboardPage({
     filteredSchedule = filteredSchedule.filter((e: any) => e.staff?.id === params.staff || false);
   }
 
+  // ── Accountability board (ops oversight) — surfaces work that should
+  // already be done so the responsible person can be held to it. Only fetched
+  // for staff who can see all jobs (admin / PM / ops).
+  type ReadyToInvoiceRow = { id: string; number: string | number | null; customer: string; site: string | null; days: number };
+  let acct: {
+    overdueInvCount: number;
+    overdueInvTotal: number;
+    overdueOldestDays: number;
+    awaitingSendCount: number;
+    readyCount: number;
+    readyAged: number;
+    readyList: ReadyToInvoiceRow[];
+    quotesToChase: number;
+  } | null = null;
+
+  if (canSeeAllJobs) {
+    const sevenDaysAgoISO = isoDate(addDays(todayDate, -7));
+    const startOfToday = new Date(todayISO + "T00:00:00").getTime();
+    const { data: riStatusRow } = await supabase
+      .from("statuses").select("id").eq("name", "Ready to Invoice").maybeSingle();
+    const riId = riStatusRow?.id ?? null;
+
+    const [overdueInvRes, awaitingSendRes, readyJobsRes, quotesChaseRes] = await Promise.all([
+      supabase
+        .from("invoices")
+        .select("amount_due, due_date")
+        .eq("status", "authorised")
+        .gt("amount_due", 0)
+        .lt("due_date", todayISO),
+      supabase
+        .from("invoices")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "authorised")
+        .is("sent_at", null),
+      riId
+        ? supabase
+            .from("jobs")
+            .select("id, number, updated_at, customer:customers(name), site:customer_sites(name)")
+            .eq("status_id", riId)
+            .order("updated_at", { ascending: true })
+        : Promise.resolve({ data: [] as any[] }),
+      supabase
+        .from("quotes")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "sent")
+        .lt("sent_at", sevenDaysAgoISO),
+    ]);
+
+    const ov = (overdueInvRes.data ?? []) as { amount_due: number | null; due_date: string | null }[];
+    const overdueInvTotal = ov.reduce((s, r) => s + (Number(r.amount_due) || 0), 0);
+    const overdueOldestDays = ov.reduce((max, r) => {
+      if (!r.due_date) return max;
+      const d = Math.floor((startOfToday - new Date(r.due_date + "T00:00:00").getTime()) / 86_400_000);
+      return d > max ? d : max;
+    }, 0);
+
+    const readyJobs = (readyJobsRes.data ?? []) as any[];
+    const readyList: ReadyToInvoiceRow[] = readyJobs.map((j) => {
+      const days = Math.max(0, Math.floor((startOfToday - new Date(j.updated_at).getTime()) / 86_400_000));
+      const cust = Array.isArray(j.customer) ? j.customer[0]?.name : j.customer?.name;
+      const site = Array.isArray(j.site) ? j.site[0]?.name : j.site?.name;
+      return { id: j.id, number: j.number, customer: cust ?? "—", site: site ?? null, days };
+    });
+    readyList.sort((a, b) => b.days - a.days);
+
+    acct = {
+      overdueInvCount: ov.length,
+      overdueInvTotal,
+      overdueOldestDays,
+      awaitingSendCount: awaitingSendRes.count ?? 0,
+      readyCount: readyList.length,
+      readyAged: readyList.filter((r) => r.days >= 1).length,
+      readyList: readyList.slice(0, 8),
+      quotesToChase: quotesChaseRes.count ?? 0,
+    };
+  }
+
   const greeting = (() => {
     const h = new Date().getHours();
     if (h < 5) return "Working late,";
@@ -220,6 +297,76 @@ export default async function DashboardPage({
             />
           )}
         </div>
+
+        {/* ── Accountability board — work that should already be done ── */}
+        {acct && (
+          <section className="mt-8">
+            <div className="flex items-baseline justify-between mb-3">
+              <h2 className="text-base font-semibold tracking-tight">Accountability</h2>
+              <span className="text-xs text-muted-foreground">Things that should already be done</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <StatCard
+                label="Overdue invoices"
+                value={String(acct.overdueInvCount)}
+                warning={acct.overdueInvCount > 0}
+                sublabel={acct.overdueInvCount > 0
+                  ? `$${acct.overdueInvTotal.toLocaleString("en-AU", { maximumFractionDigits: 0 })} out · oldest ${acct.overdueOldestDays}d`
+                  : "all clear"}
+                href="/invoices"
+              />
+              <StatCard
+                label="Authorised, not emailed"
+                value={String(acct.awaitingSendCount)}
+                warning={acct.awaitingSendCount > 0}
+                sublabel={acct.awaitingSendCount > 0 ? "customer never received these" : "all sent"}
+                href="/invoices"
+              />
+              <StatCard
+                label="Ready to invoice"
+                value={String(acct.readyCount)}
+                warning={acct.readyAged > 0}
+                sublabel={acct.readyCount > 0 ? `${acct.readyAged} sitting >1 day` : "none waiting"}
+                href="/jobs"
+              />
+              <StatCard
+                label="Quotes to chase"
+                value={String(acct.quotesToChase)}
+                warning={acct.quotesToChase > 0}
+                sublabel=">7 days, no response"
+                href="/quoting"
+              />
+            </div>
+
+            {acct.readyList.length > 0 && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold tracking-tight">Ready to invoice — needs doing</h3>
+                  <span className="text-[11px] text-muted-foreground">Invoice the day of completion or next day</span>
+                </div>
+                <div className="surface-card overflow-hidden">
+                  {acct.readyList.map((r) => (
+                    <Link
+                      key={r.id}
+                      href={`/jobs/${r.id}`}
+                      className="group flex items-center justify-between border-b border-border last:border-0 px-4 py-3 transition-colors hover:bg-accent/40"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-mono text-sm font-semibold text-foreground">
+                          {typeof r.number === "string" ? r.number : r.number != null ? `CFA-${r.number}` : "—"}
+                        </span>
+                        <span className="ml-2 text-sm text-muted-foreground truncate">{r.site ?? r.customer}</span>
+                      </div>
+                      <span className={`shrink-0 text-xs font-medium ${r.days >= 1 ? "text-destructive" : "text-muted-foreground"}`}>
+                        {r.days === 0 ? "today" : r.days === 1 ? "1 day" : `${r.days} days`}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         <div className="mt-8 grid gap-6 lg:grid-cols-2">
           {/* Recent Jobs */}
@@ -403,7 +550,7 @@ function MobileEntryCard({ entry, showDate }: { entry: any; showDate: boolean })
   );
 }
 
-function StatCard({ label, value, href, warning }: { label: string; value: string; href?: string; warning?: boolean }) {
+function StatCard({ label, value, href, warning, sublabel }: { label: string; value: string; href?: string; warning?: boolean; sublabel?: string }) {
   const baseClass = warning
     ? "border-destructive/30 bg-destructive/5 hover:border-destructive/50"
     : "border-border bg-card hover:border-border-strong";
@@ -416,6 +563,9 @@ function StatCard({ label, value, href, warning }: { label: string; value: strin
       <p className={`num-display mt-2 text-3xl font-semibold ${warning ? "text-destructive" : "num-gradient"}`}>
         {value}
       </p>
+      {sublabel && (
+        <p className={`mt-1 text-[11px] ${warning ? "text-destructive/80" : "text-muted-foreground"}`}>{sublabel}</p>
+      )}
     </div>
   );
   return href ? <Link href={href}>{content}</Link> : content;
