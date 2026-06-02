@@ -180,6 +180,7 @@ export function JobTabs({
           <JobInvoices
             jobId={jobId}
             customerId={job.customer_id ?? null}
+            siteId={job.site_id ?? null}
             jobDescription={job.description ?? null}
             jobNumber={job.number ?? null}
             invoices={invoices}

@@ -16,6 +16,7 @@ interface CreateBody {
   jobId?: string;
   customerId?: string;
   // Ad-hoc only
+  siteId?: string;
   description?: string;
   lineItems?: XeroLineItemInput[];
   dueDate?: string; // ISO
@@ -63,6 +64,9 @@ export async function POST(req: NextRequest) {
       );
     }
     customerId = body.customerId;
+    // Site context so the Xero contact uses the SITE name (not the customer
+    // name) — same site-first billing rule as recurring/quote invoices.
+    siteId = body.siteId ?? null;
     const pricedLines = body.lineItems;
     headerDescription = body.description ?? "";
     subtotal = pricedLines.reduce((s, li) => s + (li.unitAmount * (li.quantity ?? 1)), 0);

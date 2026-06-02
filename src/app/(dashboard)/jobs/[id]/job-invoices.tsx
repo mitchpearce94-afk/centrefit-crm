@@ -75,6 +75,7 @@ interface ProductPrice {
 interface Props {
   jobId: string;
   customerId: string | null;
+  siteId: string | null;
   jobDescription: string | null;
   jobNumber: string | null;
   invoices: Invoice[];
@@ -241,7 +242,7 @@ function buildAutoLineItems(
 }
 
 export function JobInvoices({
-  jobId, customerId, jobDescription, jobNumber,
+  jobId, customerId, siteId, jobDescription, jobNumber,
   invoices, linkedQuotes, checklistItems, workEntries,
   productPrices, billingSettings, isAdmin,
 }: Props) {
@@ -251,6 +252,9 @@ export function JobInvoices({
   const [busy, setBusy] = useState(false);
   const [description, setDescription] = useState("");
   const [rows, setRows] = useState<LineItemDraft[]>([newRow()]);
+  // When on, collapse the individual material rows into one "Parts Used" line
+  // so the customer doesn't see every SKU (Sue, 2026-06-02).
+  const [combineParts, setCombineParts] = useState(false);
 
   const hasLinkedQuote = linkedQuotes.length > 0;
   const primaryQuote = linkedQuotes[0] ?? null;
@@ -311,13 +315,29 @@ export function JobInvoices({
       toast("Job has no linked customer", "error");
       return;
     }
-    const lineItems = rows
-      .filter((r) => r.description.trim() && Number(r.unitAmount) > 0)
-      .map((r) => ({
-        description: r.description.trim(),
-        quantity: Number(r.quantity) || 1,
-        unitAmount: Number(r.unitAmount),
-      }));
+    const priced = rows.filter((r) => r.description.trim() && Number(r.unitAmount) > 0);
+    const toLine = (r: LineItemDraft) => ({
+      description: r.description.trim(),
+      quantity: Number(r.quantity) || 1,
+      unitAmount: Number(r.unitAmount),
+    });
+    let lineItems: { description: string; quantity: number; unitAmount: number }[];
+    if (combineParts) {
+      // Collapse material rows (auto-built ids start "row_mat_") into one
+      // "Parts Used" line; keep labour / call-out / manual rows as-is.
+      const partRows = priced.filter((r) => r.id.startsWith("row_mat_"));
+      const otherRows = priced.filter((r) => !r.id.startsWith("row_mat_"));
+      const partsTotal = partRows.reduce(
+        (s, r) => s + (Number(r.quantity) || 1) * (Number(r.unitAmount) || 0),
+        0,
+      );
+      lineItems = [
+        ...otherRows.map(toLine),
+        ...(partsTotal > 0 ? [{ description: "Parts Used", quantity: 1, unitAmount: partsTotal }] : []),
+      ];
+    } else {
+      lineItems = priced.map(toLine);
+    }
     if (lineItems.length === 0) {
       toast("Add at least one line item with a description and amount", "error");
       return;
@@ -332,6 +352,7 @@ export function JobInvoices({
           type: "adhoc",
           jobId,
           customerId,
+          siteId: siteId ?? undefined,
           description: description.trim() || undefined,
           lineItems,
         }),
@@ -568,6 +589,16 @@ export function JobInvoices({
                 <p className="text-[11px] text-muted-foreground mb-2">
                   Auto-filled at quoted rates: labour @ ${billingSettings.labour_sell_rate.toFixed(2)}/hr, call-out @ ${billingSettings.callout_fee_sell.toFixed(2)}, materials at their sell price. Unit price is ex GST — Xero adds 10% GST.
                 </p>
+
+                <label className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={combineParts}
+                    onChange={(e) => setCombineParts(e.target.checked)}
+                    className="rounded border-border"
+                  />
+                  Combine materials into a single &quot;Parts Used&quot; line on the invoice (labour &amp; call-out stay separate)
+                </label>
 
                 <div className="space-y-1.5">
                   {rows.map((r) => (
