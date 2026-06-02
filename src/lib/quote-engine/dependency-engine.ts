@@ -175,6 +175,28 @@ function calculateCustomQuantity(key: string, deviceCounts: DeviceCounts, siteIn
       const readers = dc.card_reader || 0
       return 2 + Math.ceil(readers / 2)
     }
+
+    // ── Ubiquiti switch / patch-panel sizing (2026-06-02) ──
+    // Switch ports needed = cardio + TVs + cat6 cable runs (cameras, WAPs,
+    // tailgate, data points). Each 24-port patch panel covers 24 ports.
+    //   panels  = CEIL(ports / 24)
+    //   couplers (12-pack Cat6A) = panels × 2
+    //   250mm patch leads        = panels × 24
+    //   snap plugs (pkt 100)     = CEIL((panels×24 + dataRuns×2) / 100)
+    case 'switch_couplers':
+    case 'switch_250mm_leads':
+    case 'switch_snap_plugs': {
+      const dataRuns =
+        (dc.camera_black || 0) + (dc.camera_white || 0) + (dc.tailgate_system || 0) +
+        (dc.wap || 0) + (dc.data_point || 0)
+      const ports = (si.cardio_count || 0) + (si.tv_count || 0) + dataRuns
+      if (ports <= 0) return 0
+      const panels = Math.ceil(ports / 24)
+      if (key === 'switch_couplers') return panels * 2
+      if (key === 'switch_250mm_leads') return panels * 24
+      return Math.ceil((panels * 24 + dataRuns * 2) / 100) // switch_snap_plugs
+    }
+
     default:
       return 0
   }
