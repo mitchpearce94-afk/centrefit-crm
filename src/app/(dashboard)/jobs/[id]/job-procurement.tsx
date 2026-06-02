@@ -92,7 +92,6 @@ export function JobProcurement({
     () => items.filter((i) => i.status === "order" && Number(i.line?.cost_price ?? 0) <= 0).length,
     [items],
   );
-  const inStockCount = useMemo(() => items.filter((i) => i.status === "in_stock").length, [items]);
   const supplierOrderCount = useMemo(
     () => items.filter((i) => i.status === "order" || i.status === "ordered").length,
     [items],
@@ -270,11 +269,13 @@ export function JobProcurement({
     }
   }
 
-  // ── Warehouse Pick List (IN STOCK rows — what to pull from the shed) ──
+  // ── Warehouse Pick List — every line on the job, grouped by category, as a
+  // physical checklist to pull/stage. (Not just In-Stock rows: on a fresh job
+  // nothing's triaged yet, and the warehouse stages the whole job regardless.)
   function openPickList() {
-    const rows = items.filter((i) => i.status === "in_stock");
+    const rows = items;
     if (rows.length === 0) {
-      toast("No items flagged In Stock to pick", "error");
+      toast("Nothing to pick yet", "error");
       return;
     }
     const byCat = new Map<string, ProcurementItem[]>();
@@ -300,7 +301,7 @@ export function JobProcurement({
     printWindow(
       "Warehouse Pick List",
       `<h1 style="font-size:22px;font-weight:700;margin:0">Warehouse Pick List</h1>
-       <p style="color:#94a3b8;margin:2px 0 24px;font-size:12px">${rows.length} line item${rows.length === 1 ? "" : "s"} flagged In Stock</p>
+       <p style="color:#94a3b8;margin:2px 0 24px;font-size:12px">${rows.length} line item${rows.length === 1 ? "" : "s"}</p>
        <table style="width:100%;border-collapse:collapse;font-size:13px">
          <thead><tr style="border-bottom:2px solid #0f172a">
            <th style="padding:8px;width:40px"></th>
@@ -571,11 +572,10 @@ export function JobProcurement({
           </button>
           <button
             onClick={openPickList}
-            disabled={inStockCount === 0}
-            title={inStockCount === 0 ? "Flag rows In Stock to build a pick list" : "Print the warehouse pick list (In Stock rows)"}
-            className="rounded-md border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40"
+            title="Print the full warehouse pick list for this job"
+            className="rounded-md border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent"
           >
-            Pick List{inStockCount ? ` (${inStockCount})` : ""}
+            Pick List
           </button>
           <button
             onClick={openSupplierOrders}
