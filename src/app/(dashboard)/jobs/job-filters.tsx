@@ -167,6 +167,16 @@ export function JobFilters({
           })}
         </div>
 
+        {/* Search lives on the toolbar (next to Filters), not buried in the
+            filter menu — Mitchell 2026-06-04. */}
+        <input
+          type="text"
+          placeholder="Search jobs…"
+          defaultValue={defaultQuery}
+          onChange={(e) => updateParam("q", e.target.value)}
+          className="flex-1 min-w-[160px] rounded-md border border-border bg-input px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        />
+
         <button
           onClick={() => setMenuOpen((v) => !v)}
           className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
@@ -210,14 +220,6 @@ export function JobFilters({
               </button>
             )}
           </div>
-
-          <input
-            type="text"
-            placeholder="Search by number, reference, description, customer or site…"
-            defaultValue={defaultQuery}
-            onChange={(e) => updateParam("q", e.target.value)}
-            className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-          />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
             <FilterSelect

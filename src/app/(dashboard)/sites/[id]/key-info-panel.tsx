@@ -16,6 +16,37 @@ export interface KeyInfoPhoto {
   created_at: string;
 }
 
+// Downscale a photo in the browser before upload so Key Info stays snappy —
+// full-res phone shots were making the tab lag (Michael, 2026-06-04). Caps the
+// longest edge at 1600px and re-encodes JPEG. Returns null (upload original)
+// for non-images, already-small files, or formats the browser can't decode
+// (e.g. some HEIC) so we never block an upload on the resize.
+async function downscaleImage(file: File, maxEdge = 1600, quality = 0.82): Promise<Blob | null> {
+  if (!file.type.startsWith("image/")) return null;
+  if (file.size < 600_000) return null; // already small enough to leave alone
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      bitmap.close?.();
+      return null;
+    }
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    return await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", quality),
+    );
+  } catch {
+    return null; // unsupported format — fall back to uploading the original
+  }
+}
+
 // Legacy device_type strings that should still surface on the Key Info tab
 // for sites whose assets pre-date the asset_types table.
 const LEGACY_KEY_INFO_TYPES = new Set([
@@ -219,11 +250,13 @@ function PhotosSection({ siteId, photos }: { siteId: string; photos: KeyInfoPhot
         data: { user },
       } = await supabase.auth.getUser();
       for (const file of files) {
-        const ext = file.name.split(".").pop();
+        const resized = await downscaleImage(file);
+        const body: Blob = resized ?? file;
+        const ext = resized ? "jpg" : (file.name.split(".").pop() || "jpg");
         const path = `sites/${siteId}/key-info/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
         const { error: uploadErr } = await supabase.storage
           .from("job-attachments")
-          .upload(path, file);
+          .upload(path, body, { contentType: resized ? "image/jpeg" : file.type || undefined });
         if (uploadErr) {
           toast(uploadErr.message, "error");
           continue;
