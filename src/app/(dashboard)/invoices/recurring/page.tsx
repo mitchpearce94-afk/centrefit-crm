@@ -22,11 +22,57 @@ function fmt(n: number): string {
   return n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function StreamLine({
+  label,
+  value,
+  fmt,
+  colour,
+}: {
+  label: string;
+  value: number;
+  fmt: (n: number) => string;
+  colour: string;
+}) {
+  return (
+    <div className="flex items-center justify-between text-[11px]">
+      <span className="flex items-center gap-1.5 text-muted-foreground">
+        <span className="h-2 w-2 rounded-full" style={{ background: colour }} />
+        {label}
+      </span>
+      <span className="num-display font-medium text-foreground">${fmt(value)}</span>
+    </div>
+  );
+}
+
 interface PlanItemRow {
   service_name: string;
+  service_code: string | null;
+  account_code: string | null;
   price_inc_gst: number | string;
   frequency: "monthly" | "yearly";
   quantity: number;
+}
+
+type RevenueStream = "security" | "sim" | "nbn" | "other";
+
+// Bucket a recurring line into a revenue stream. We lead with the Xero
+// account code (the financial truth: NBN=204, SIM=207, security monitoring=
+// 208/209) and fall back to the service code / name so newly-added services
+// still land somewhere sensible. The "Security Monitoring + SIM Card" combo
+// books to the security GL (209), so it counts as security — matching Xero.
+function streamFor(item: PlanItemRow): RevenueStream {
+  const acct = (item.account_code ?? "").trim();
+  const code = (item.service_code ?? "").toLowerCase();
+  const name = (item.service_name ?? "").toLowerCase();
+  if (acct === "204" || code.startsWith("nbn") || name.includes("nbn")) return "nbn";
+  if (acct === "207" || code === "sim-card") return "sim";
+  if (
+    acct === "208" ||
+    acct === "209" ||
+    /monitor|alarm|duress|verification|security/.test(code + " " + name)
+  )
+    return "security";
+  return "other";
 }
 
 interface PlanRow {
@@ -53,24 +99,27 @@ export default async function RecurringInvoicesPage() {
       customer_id, site_id,
       customers(id, name),
       customer_sites(id, name),
-      recurring_plan_items(service_name, price_inc_gst, frequency, quantity)
+      recurring_plan_items(service_name, service_code, account_code, price_inc_gst, frequency, quantity)
     `)
     .order("created_at", { ascending: false });
 
   const list = (plans ?? []) as unknown as PlanRow[];
 
-  // Top-line metrics
-  const monthlyMRR = list
-    .filter((p) => p.status === "active")
-    .reduce((sum, p) => {
-      const monthly = (p.recurring_plan_items ?? [])
-        .filter((i) => i.frequency === "monthly")
-        .reduce((s, i) => s + Number(i.price_inc_gst) * (i.quantity ?? 1), 0);
-      const yearly = (p.recurring_plan_items ?? [])
-        .filter((i) => i.frequency === "yearly")
-        .reduce((s, i) => s + Number(i.price_inc_gst) * (i.quantity ?? 1), 0);
-      return sum + monthly + yearly / 12;
-    }, 0);
+  // Top-line metrics. Monthly-equivalent value of one recurring line (yearly
+  // cadences amortised ÷ 12) so everything compares on the same MRR basis.
+  const monthlyValue = (i: PlanItemRow): number => {
+    const v = Number(i.price_inc_gst) * (i.quantity ?? 1);
+    return i.frequency === "yearly" ? v / 12 : v;
+  };
+
+  const streamMRR: Record<RevenueStream, number> = { security: 0, sim: 0, nbn: 0, other: 0 };
+  for (const p of list) {
+    if (p.status !== "active") continue;
+    for (const i of p.recurring_plan_items ?? []) {
+      streamMRR[streamFor(i)] += monthlyValue(i);
+    }
+  }
+  const monthlyMRR = streamMRR.security + streamMRR.sim + streamMRR.nbn + streamMRR.other;
   const activeCount = list.filter((p) => p.status === "active").length;
   const pendingCount = list.filter((p) => p.status === "pending_mandate").length;
 
@@ -102,6 +151,16 @@ export default async function RecurringInvoicesPage() {
           <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Effective MRR</p>
           <p className="num-display num-gradient mt-2 text-2xl font-semibold">${fmt(monthlyMRR)}</p>
           <p className="text-[11px] text-muted-foreground mt-1">Monthly recurring (yearly ÷ 12), incl. GST</p>
+          {monthlyMRR > 0 && (
+            <div className="mt-3 space-y-1 border-t border-border pt-3">
+              <StreamLine label="Security monitoring" value={streamMRR.security} fmt={fmt} colour="#22c55e" />
+              <StreamLine label="SIM cards" value={streamMRR.sim} fmt={fmt} colour="#06b6d4" />
+              <StreamLine label="NBN" value={streamMRR.nbn} fmt={fmt} colour="#8b5cf6" />
+              {streamMRR.other > 0 && (
+                <StreamLine label="Other" value={streamMRR.other} fmt={fmt} colour="#64748b" />
+              )}
+            </div>
+          )}
         </div>
         <div className="surface-card card-hover p-5">
           <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Active plans</p>
