@@ -329,17 +329,20 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
     !selectedType.has_rfid
   );
 
-  // When picking a type, auto-fill manufacturer / model if the type has
-  // defaults and the user hasn't typed their own yet. Doesn't override
-  // user input — also doesn't override what the previous sticky save left
-  // behind unless the field is blank.
+  // When the device type CHANGES, refresh manufacturer / model to the new
+  // type's defaults. We remember the defaults we last auto-filled so we can
+  // tell an auto-filled value apart from one the tech typed by hand: if the
+  // current field still holds the previous type's default (or is blank) we
+  // replace it; if the tech overrode it, we leave their value alone.
+  // (Bug: switching HDD → NVR used to leave the make/model stuck on the HDD
+  // defaults — Michael, 2026-06-04.)
+  const lastDefaults = useRef<{ manufacturer: string; model: string }>({ manufacturer: "", model: "" });
   useEffect(() => {
-    if (selectedType?.default_manufacturer && !manufacturer) {
-      setManufacturer(selectedType.default_manufacturer);
-    }
-    if (selectedType?.default_model && !model) {
-      setModel(selectedType.default_model);
-    }
+    const newMfr = selectedType?.default_manufacturer ?? "";
+    const newModel = selectedType?.default_model ?? "";
+    setManufacturer((cur) => (cur === "" || cur === lastDefaults.current.manufacturer ? newMfr : cur));
+    setModel((cur) => (cur === "" || cur === lastDefaults.current.model ? newModel : cur));
+    lastDefaults.current = { manufacturer: newMfr, model: newModel };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedType]);
 
