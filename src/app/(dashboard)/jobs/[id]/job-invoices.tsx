@@ -65,6 +65,7 @@ interface LineItemDraft {
 interface BillingSettings {
   labour_sell_rate: number;
   callout_fee_sell: number;
+  it_service_labour_rate: number;
 }
 
 interface ProductPrice {
@@ -304,6 +305,13 @@ export function JobInvoices({
 
   function addRow() {
     setRows((prev) => [...prev, newRow()]);
+  }
+
+  function addItServiceRow() {
+    setRows((prev) => [
+      ...prev,
+      { id: `row_it_${Math.random().toString(36).slice(2, 8)}`, description: "IT Service", quantity: "1", unitAmount: billingSettings.it_service_labour_rate.toFixed(2) },
+    ]);
   }
 
   function removeRow(id: string) {
@@ -579,12 +587,21 @@ export function JobInvoices({
                   <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Priced Line Items
                   </label>
-                  <button
-                    onClick={addRow}
-                    className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                  >
-                    + Add line
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={addRow}
+                      className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                    >
+                      + Add line
+                    </button>
+                    <button
+                      onClick={addItServiceRow}
+                      className="rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-[11px] text-primary hover:bg-primary/10 transition-colors"
+                      title={`Add an IT Service line at $${billingSettings.it_service_labour_rate.toFixed(2)}/hr`}
+                    >
+                      + IT Service (${billingSettings.it_service_labour_rate.toFixed(2)}/hr)
+                    </button>
+                  </div>
                 </div>
                 <p className="text-[11px] text-muted-foreground mb-2">
                   Auto-filled at quoted rates: labour @ ${billingSettings.labour_sell_rate.toFixed(2)}/hr, call-out @ ${billingSettings.callout_fee_sell.toFixed(2)}, materials at their sell price. Unit price is ex GST — Xero adds 10% GST.

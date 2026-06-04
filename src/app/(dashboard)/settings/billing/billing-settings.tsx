@@ -11,6 +11,7 @@ interface Settings {
   id: string;
   labour_cost_rate: number;
   labour_sell_rate: number;
+  it_service_labour_rate: number;
   callout_fee_cost: number;
   callout_fee_sell: number;
   callout_hours: number;
@@ -56,7 +57,7 @@ export function BillingSettings({ settings }: { settings: Settings | null }) {
   const [saving, setSaving] = useState(false);
 
   const [s, setS] = useState<Settings>(settings ?? {
-    id: "", labour_cost_rate: 75, labour_sell_rate: 150,
+    id: "", labour_cost_rate: 75, labour_sell_rate: 150, it_service_labour_rate: 120,
     callout_fee_cost: 80, callout_fee_sell: 80, callout_hours: 8,
     admin_rate_cost: 140, admin_rate_sell: 240,
     incidentals_cost: 200, incidentals_sell: 200,
@@ -92,6 +93,9 @@ export function BillingSettings({ settings }: { settings: Settings | null }) {
         </Field>
         <Field label="Labour Margin">
           <div className={`${inputClass} bg-muted text-muted-foreground`}>{margin}%</div>
+        </Field>
+        <Field label="IT Service Rate (per hour)">
+          <input type="number" step="0.01" value={s.it_service_labour_rate} onChange={e => set("it_service_labour_rate", parseFloat(e.target.value) || 0)} className={inputClass} />
         </Field>
       </Section>
 

@@ -76,7 +76,7 @@ export default async function JobDetailPage({
         .eq("job_id", id),
       supabase
         .from("billing_settings")
-        .select("labour_sell_rate, callout_fee_sell")
+        .select("labour_sell_rate, callout_fee_sell, it_service_labour_rate")
         .limit(1)
         .maybeSingle(),
       supabase
@@ -139,6 +139,7 @@ export default async function JobDetailPage({
   const billingSettings = {
     labour_sell_rate: Number(billingResult.data?.labour_sell_rate ?? 150),
     callout_fee_sell: Number(billingResult.data?.callout_fee_sell ?? 80),
+    it_service_labour_rate: Number(billingResult.data?.it_service_labour_rate ?? 120),
   };
 
   return (

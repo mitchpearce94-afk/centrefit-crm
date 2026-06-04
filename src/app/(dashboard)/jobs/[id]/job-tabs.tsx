@@ -64,7 +64,7 @@ export function JobTabs({
   procurementItems: any[];
   suppliers: any[];
   productPrices: Record<string, { sell_price: number; cost_price: number }>;
-  billingSettings: { labour_sell_rate: number; callout_fee_sell: number };
+  billingSettings: { labour_sell_rate: number; callout_fee_sell: number; it_service_labour_rate: number };
   isAdmin: boolean;
 }) {
   const [activeTab, setActiveTab] = useState("job");

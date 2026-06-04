@@ -951,6 +951,7 @@ export function QuoteWizard({
   // and we don't carry a separate margin model the way plan-mode rules do.
   const costRate = billingSettings?.labour_cost_rate ?? 85;
   const sellRate = billingSettings?.labour_sell_rate ?? 150;
+  const itServiceRate = billingSettings?.it_service_labour_rate ?? 120;
 
   const manualLabourData: LabourData = useMemo(() => {
     const sectionsByCategory = new Map<string, { name: string; total: number; lines: ManualLabourLine[] }>();
@@ -2375,13 +2376,23 @@ export function QuoteWizard({
               })}
             </div>
             <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-t border-border">
-              <button
-                type="button"
-                onClick={() => setManualLabourLines((prev) => [...prev, { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "", category: "Labour", quantity: 1, unitAmount: 0 }])}
-                className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              >
-                + Add line
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setManualLabourLines((prev) => [...prev, { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "", category: "Labour", quantity: 1, unitAmount: 0 }])}
+                  className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                >
+                  + Add line
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setManualLabourLines((prev) => [...prev, { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "IT Service", category: "Labour", quantity: 1, unitAmount: itServiceRate }])}
+                  className="rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-[11px] text-primary hover:bg-primary/10 transition-colors"
+                  title={`Add an IT Service labour line at $${fmt(itServiceRate)}/hr`}
+                >
+                  + IT Service (${fmt(itServiceRate)}/hr)
+                </button>
+              </div>
               <div className="text-sm font-mono">
                 <span className="text-muted-foreground text-xs mr-3">Total</span>
                 <span className="font-semibold">${fmt(manualLabourData.grandTotalSell)}</span>
