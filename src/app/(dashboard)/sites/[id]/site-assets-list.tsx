@@ -340,8 +340,13 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
   useEffect(() => {
     const newMfr = selectedType?.default_manufacturer ?? "";
     const newModel = selectedType?.default_model ?? "";
-    setManufacturer((cur) => (cur === "" || cur === lastDefaults.current.manufacturer ? newMfr : cur));
-    setModel((cur) => (cur === "" || cur === lastDefaults.current.model ? newModel : cur));
+    // Capture the previous defaults BEFORE scheduling state updates: the
+    // functional updaters below run after this effect body, so reading
+    // lastDefaults.current inside them would see the already-reassigned new
+    // value and never match (that left the make/model stuck — Michael).
+    const prev = lastDefaults.current;
+    setManufacturer((cur) => (cur === "" || cur === prev.manufacturer ? newMfr : cur));
+    setModel((cur) => (cur === "" || cur === prev.model ? newModel : cur));
     lastDefaults.current = { manufacturer: newMfr, model: newModel };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedType]);
