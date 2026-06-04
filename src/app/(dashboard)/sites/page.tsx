@@ -120,7 +120,7 @@ export default async function SitesPage({
                   colSpan={4}
                   className="px-4 py-12 text-center text-muted-foreground"
                 >
-                  No sites found. Add sites from a customer page.
+                  No sites found. Use “+ Add site” above, or add one from a customer page.
                 </td>
               </tr>
             )}
