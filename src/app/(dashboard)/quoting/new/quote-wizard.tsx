@@ -1014,7 +1014,7 @@ export function QuoteWizard({
     if (!manualBomSearch || manualBomSearch.length < 2) return [];
     const q = manualBomSearch.toLowerCase();
     return products.filter((p) =>
-      p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+      (p.name ?? "").toLowerCase().includes(q) || (p.sku ?? "").toLowerCase().includes(q)
     ).slice(0, 10);
   }, [products, manualBomSearch]);
 
@@ -1342,15 +1342,15 @@ export function QuoteWizard({
     if (!bomAddCategory) return [];
     const q = bomAddSearch.trim().toLowerCase();
     const pool = products.filter((p) => p.is_active);
-    const sameCat = pool.filter((p) => p.category.toLowerCase() === bomAddCategory.toLowerCase());
+    const sameCat = pool.filter((p) => (p.category ?? "").toLowerCase() === bomAddCategory.toLowerCase());
     const base = sameCat.length > 0 ? sameCat : pool;
     if (!q) return base.slice(0, 20);
     return base
       .filter(
         (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.sku.toLowerCase().includes(q) ||
-          p.supplier.toLowerCase().includes(q)
+          (p.name ?? "").toLowerCase().includes(q) ||
+          (p.sku ?? "").toLowerCase().includes(q) ||
+          (p.supplier ?? "").toLowerCase().includes(q)
       )
       .slice(0, 20);
   }, [bomAddCategory, bomAddSearch, products]);
@@ -1986,7 +1986,7 @@ export function QuoteWizard({
                                   <p className="truncate text-[11px] text-muted-foreground">
                                     <span className="font-mono">{p.sku}</span>
                                     {p.supplier && <> · {p.supplier}</>}
-                                    {p.category.toLowerCase() !== category.toLowerCase() && (
+                                    {(p.category ?? "").toLowerCase() !== category.toLowerCase() && (
                                       <span className="ml-1 rounded bg-amber-500/10 px-1 text-[10px] text-amber-400">
                                         {p.category}
                                       </span>

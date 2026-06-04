@@ -10,6 +10,7 @@ import {
 
 interface ItemRow {
   id: string;
+  product_id: string | null;
   product_name: string;
   sku: string | null;
   quantity: number;
@@ -65,7 +66,7 @@ export async function POST(
   const { data: items, error: itemsErr } = await supabase
     .from("job_procurement_items")
     .select(`
-      id, product_name, sku, quantity, actual_supplier_id, quote_line_item_id,
+      id, product_id, product_name, sku, quantity, actual_supplier_id, quote_line_item_id,
       quote_line_items ( cost_price )
     `)
     .eq("job_id", jobId)
@@ -77,6 +78,37 @@ export async function POST(
       { status: 400 },
     );
   }
+
+  // Pull LIVE pricing + Xero sync state from the product catalogue, keyed by
+  // product_id. The PO must reflect the current cost in the products settings
+  // page — NOT the cost snapshotted onto the quote line when the quote was
+  // built (those drift as suppliers update prices). We also need xero_item_id
+  // to decide whether the SKU is safe to send as a Xero ItemCode (see below).
+  const productIds = Array.from(
+    new Set(
+      (items as unknown as ItemRow[])
+        .map((it) => it.product_id)
+        .filter((v): v is string => !!v),
+    ),
+  );
+  const liveProducts = new Map<string, { cost_price: number | null; xero_item_id: string | null }>();
+  if (productIds.length > 0) {
+    const { data: prods } = await supabase
+      .from("quote_products")
+      .select("id, cost_price, xero_item_id")
+      .in("id", productIds);
+    for (const p of (prods ?? []) as { id: string; cost_price: number | null; xero_item_id: string | null }[]) {
+      liveProducts.set(p.id, { cost_price: p.cost_price, xero_item_id: p.xero_item_id });
+    }
+  }
+
+  // Resolve the unit cost for a row: live catalogue price wins, then the
+  // quote-time snapshot, then 0 (surfaced to the UI as zero-priced).
+  const resolveCost = (it: ItemRow): number => {
+    const live = it.product_id ? liveProducts.get(it.product_id)?.cost_price : null;
+    if (live != null && Number(live) > 0) return Number(live);
+    return Number(it.quote_line_items?.cost_price ?? 0);
+  };
 
   // Rows missing a supplier can't be ordered — surface them so staff can fix
   const typedItems = items as unknown as ItemRow[];
@@ -116,9 +148,7 @@ export async function POST(
 
   // Surface lines we're about to push at $0 so the UI can warn — these go to
   // Xero with a zero unit amount for Mitchell to correct before authorising.
-  const zeroPriced = actionable.filter(
-    (it) => Number(it.quote_line_items?.cost_price ?? 0) <= 0,
-  );
+  const zeroPriced = actionable.filter((it) => resolveCost(it) <= 0);
 
   for (const [supplierId, rows] of grouped) {
     const supplier = supplierById.get(supplierId);
@@ -148,12 +178,20 @@ export async function POST(
       // estimated, the PO goes out with best-available numbers and Mitchell
       // can update in Xero before authorising.
       const lineItems: XeroPOLineItem[] = rows.map<XeroPOLineItem>((r) => {
-        const desc = r.sku ? `${r.product_name} (${r.sku})` : r.product_name;
-        const lineCost = Number(r.quote_line_items?.cost_price ?? 0);
+        // Put the SKU in the Xero ItemCode column — but ONLY when the product
+        // has been synced to Xero as an Item (xero_item_id present). Xero
+        // rejects a PO line whose itemCode doesn't match an existing Item, so
+        // for unsynced products we fall back to the old "name (SKU)" in the
+        // description to keep the part number visible without breaking the PO.
+        const synced = r.product_id ? !!liveProducts.get(r.product_id)?.xero_item_id : false;
+        const itemCode = synced && r.sku ? r.sku : undefined;
+        const description =
+          !itemCode && r.sku ? `${r.product_name} (${r.sku})` : r.product_name;
         return {
-          description: desc,
+          description,
+          itemCode,
           quantity: Number(r.quantity),
-          unitAmount: lineCost,
+          unitAmount: resolveCost(r),
         };
       });
 
@@ -171,7 +209,8 @@ export async function POST(
         tenantId: conn.tenant_id,
         supplierContactId: xeroSupplierContactId,
         lineItems,
-        reference: `CFA-${job.number}`,
+        // job.number is already prefixed "CFA…" — don't double it to "CFA-CFA…"
+        reference: job.number,
         deliveryAddress,
         idempotencyKey,
       });

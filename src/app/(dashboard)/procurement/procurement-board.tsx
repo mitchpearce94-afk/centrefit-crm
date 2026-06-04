@@ -52,11 +52,11 @@ export function ProcurementBoard({
   return (
     <div className="mt-6">
       <div className="flex items-center gap-1 border-b border-border">
-        <TabButton active={tab === "needs"} onClick={() => setTab("needs")}>
-          Needs work ({needsWork.length})
-        </TabButton>
         <TabButton active={tab === "ready"} onClick={() => setTab("ready")}>
           Ready to start ({ready.length})
+        </TabButton>
+        <TabButton active={tab === "needs"} onClick={() => setTab("needs")}>
+          Needs work ({needsWork.length})
         </TabButton>
         <TabButton active={tab === "complete"} onClick={() => setTab("complete")}>
           Complete ({complete.length})
