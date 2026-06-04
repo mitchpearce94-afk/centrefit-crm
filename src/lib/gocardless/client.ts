@@ -149,6 +149,10 @@ export interface GcMandate {
   scheme: string;
   reference: string | null;
   created_at: string;
+  // Earliest date GoCardless can take a payment against this mandate. For a
+  // fresh AU BECS mandate this is several business days out — a subscription
+  // start_date before it is rejected with a 422 validation error.
+  next_possible_charge_date: string | null;
   links: { customer: string; creditor: string; customer_bank_account: string };
 }
 

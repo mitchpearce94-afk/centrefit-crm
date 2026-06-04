@@ -3,7 +3,7 @@ import { createServiceRoleClient } from "@/lib/supabase/service";
 import { getAuthedClient } from "@/lib/xero/client";
 import { findOrCreateContact } from "@/lib/xero/contacts";
 import { createRepeatingInvoice, type PlanFrequency } from "@/lib/xero/repeating-invoices";
-import { createSubscription } from "@/lib/gocardless/client";
+import { createSubscription, getMandate } from "@/lib/gocardless/client";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
 
 type ServiceClient = ReturnType<typeof createServiceRoleClient>;
@@ -309,6 +309,21 @@ async function activatePlanInner(
   let monthlySubId: string | null = plan.gc_subscription_id ?? null;
   let yearlySubId: string | null = plan.gc_subscription_secondary_id ?? null;
 
+  // A subscription start_date earlier than the mandate's next_possible_charge_date
+  // is rejected by GoCardless with a 422. Fresh AU BECS mandates sit a few
+  // business days out, so floor every subscription start to that date. ISO
+  // YYYY-MM-DD strings compare correctly lexicographically.
+  let earliestCharge: string | null = null;
+  try {
+    earliestCharge = (await getMandate(mandateId)).next_possible_charge_date;
+  } catch {
+    // Non-fatal: if we can't read the mandate, fall through with the plan
+    // dates. GoCardless will still reject an impossible date and the retry
+    // cron will pick it up — same as before this guard existed.
+  }
+  const floorToCharge = (d: string): string =>
+    earliestCharge && earliestCharge > d ? earliestCharge : d;
+
   for (const [frequency, group] of byFreq.entries()) {
     if (frequency === "monthly" && monthlySubId) continue;
     if (frequency === "yearly" && yearlySubId) continue;
@@ -319,11 +334,13 @@ async function activatePlanInner(
     if (amountCents <= 0) continue;
 
     // Yearly cadence can bill on its own date (e.g. a MyAlarm yearly sub
-    // migrated in mid-cycle); monthly uses the plan start date.
-    const subStart =
+    // migrated in mid-cycle); monthly uses the plan start date. Either way the
+    // start can't precede the mandate's next possible charge date.
+    const subStart = floorToCharge(
       frequency === "yearly" && plan.yearly_first_invoice_date && plan.yearly_first_invoice_date >= todayStr
         ? plan.yearly_first_invoice_date
-        : startDate;
+        : startDate,
+    );
 
     const sub = await createSubscription(
       {
