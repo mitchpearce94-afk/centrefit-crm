@@ -37,6 +37,11 @@ const SECTIONS: { name: string; href: string; description: string }[] = [
     description: "Product catalogue, suppliers, and RFQ pricing.",
   },
   {
+    name: "Product Sub-categories",
+    href: "/settings/product-subcategories",
+    description: "Group products within each infrastructure (Cameras, NVRs, etc).",
+  },
+  {
     name: "Recurring Services",
     href: "/settings/recurring-services",
     description: "Templates for recurring billing plans.",

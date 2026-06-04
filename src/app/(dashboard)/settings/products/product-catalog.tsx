@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { Fragment, useEffect, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -8,11 +8,20 @@ import { useToast } from "@/components/ui/toast";
 import { PRODUCT_CATEGORIES, DEVICE_TYPES } from "@/lib/quote-engine";
 import { RowXeroSyncButton } from "./row-xero-sync-button";
 
+export interface ProductSubcategory {
+  id: string;
+  category: string;
+  name: string;
+  sort_order: number;
+  is_active: boolean;
+}
+
 interface Product {
   id: string;
   name: string;
   sku: string;
   category: string;
+  subcategory: string | null;
   supplier: string;
   supplier_id: string | null;
   cost_price: number;
@@ -69,12 +78,14 @@ export function ProductCatalog({
   scopeRoles,
   labourTimings,
   assetTypes,
+  subcategories,
 }: {
   products: Product[];
   suppliers: Supplier[];
   scopeRoles: ScopeRoleOption[];
   labourTimings: LabourTimingOption[];
   assetTypes: AssetTypeOption[];
+  subcategories: ProductSubcategory[];
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -172,6 +183,30 @@ export function ProductCatalog({
     }
     return map;
   }, [filtered]);
+
+  // category → (subcategory name lowercased → sort_order), for ordering the
+  // sub-group headings within each infrastructure table.
+  const subOrderByCat = useMemo(() => {
+    const m = new Map<string, Map<string, number>>();
+    for (const s of subcategories) {
+      if (!m.has(s.category)) m.set(s.category, new Map());
+      m.get(s.category)!.set(s.name.toLowerCase(), s.sort_order);
+    }
+    return m;
+  }, [subcategories]);
+
+  // Active sub-categories for a given infrastructure, for the form dropdown.
+  const activeSubsByCat = useMemo(() => {
+    const m = new Map<string, ProductSubcategory[]>();
+    for (const s of subcategories) {
+      if (!s.is_active) continue;
+      const list = m.get(s.category) ?? [];
+      list.push(s);
+      m.set(s.category, list);
+    }
+    for (const [, list] of m) list.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    return m;
+  }, [subcategories]);
 
   const supplierGrouped = useMemo(() => {
     type Group = { supplierId: string | null; supplierName: string; items: Product[] };
@@ -447,6 +482,12 @@ export function ProductCatalog({
         >
           {seedingSuppliers ? "Seeding..." : "Sync Suppliers"}
         </button>
+        <button
+          onClick={() => setAddingToCategory("")}
+          className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          <span className="text-base leading-none">+</span> Add Product
+        </button>
       </div>
 
       <p className="text-xs text-muted-foreground mb-4">{filtered.length} products{taggingFilter ? ` (filtered to untagged)` : ""}</p>
@@ -455,16 +496,37 @@ export function ProductCatalog({
       {groupMode === "category" && Array.from(grouped).map(([category, items]) => {
         if (!categoryFilter && items.length === 0) return null;
 
+        // Sub-group the table by subcategory when any product in this
+        // infrastructure is tagged. Untagged categories stay a flat list.
+        const orderMap = subOrderByCat.get(category);
+        const hasSubs = items.some((p) => p.subcategory);
+        const sortedItems = hasSubs
+          ? [...items].sort((a, b) => {
+              const ra = a.subcategory ? (orderMap?.get(a.subcategory.toLowerCase()) ?? 500) : 9999;
+              const rb = b.subcategory ? (orderMap?.get(b.subcategory.toLowerCase()) ?? 500) : 9999;
+              return (
+                ra - rb ||
+                (a.subcategory ?? "").localeCompare(b.subcategory ?? "") ||
+                a.name.localeCompare(b.name)
+              );
+            })
+          : items;
+        const subLeaders = new Set<string>();
+        if (hasSubs) {
+          let last: string | undefined;
+          for (const p of sortedItems) {
+            const sub = p.subcategory || "Uncategorised";
+            if (sub !== last) {
+              subLeaders.add(p.id);
+              last = sub;
+            }
+          }
+        }
+
         return (
           <div key={category} className="mb-6">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{category} ({items.length})</h3>
-              <button
-                onClick={() => setAddingToCategory(category)}
-                className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
-              >
-                <span className="text-sm leading-none">+</span> Add Product
-              </button>
             </div>
 
             {items.length > 0 && (
@@ -483,8 +545,16 @@ export function ProductCatalog({
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((p) => (
-                        <tr key={p.id} className={`border-b border-border last:border-0 ${!p.is_active ? "opacity-40" : ""}`}>
+                    {sortedItems.map((p) => (
+                      <Fragment key={p.id}>
+                        {subLeaders.has(p.id) && (
+                          <tr className="bg-muted/20">
+                            <td colSpan={8} className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                              {p.subcategory || "Uncategorised"}
+                            </td>
+                          </tr>
+                        )}
+                        <tr className={`border-b border-border last:border-0 ${!p.is_active ? "opacity-40" : ""}`}>
                           <td className="px-3 py-2">
                             <div className="flex items-start gap-2">
                               {p.image_url ? (
@@ -532,6 +602,7 @@ export function ProductCatalog({
                             </button>
                           </td>
                         </tr>
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -715,6 +786,7 @@ export function ProductCatalog({
           scopeRoles={sortedScopeRoles}
           labourTimings={sortedLabourTimings}
           assetTypes={assetTypes}
+          subcategories={subcategories}
           onScopeRoleCreated={handleScopeRoleCreated}
           onLabourTimingCreated={handleLabourTimingCreated}
           onClose={() => setAddingToCategory(null)}
@@ -734,6 +806,7 @@ export function ProductCatalog({
             scopeRoles={sortedScopeRoles}
             labourTimings={sortedLabourTimings}
             assetTypes={assetTypes}
+            subcategories={subcategories}
             onScopeRoleCreated={handleScopeRoleCreated}
             onLabourTimingCreated={handleLabourTimingCreated}
             onClose={() => setEditingId(null)}
@@ -758,6 +831,7 @@ type ProductFormModalProps =
       scopeRoles: ScopeRoleOption[];
       labourTimings: LabourTimingOption[];
       assetTypes: AssetTypeOption[];
+      subcategories: ProductSubcategory[];
       onScopeRoleCreated: (role: ScopeRoleOption) => void;
       onLabourTimingCreated: (timing: LabourTimingOption) => void;
       onClose: () => void;
@@ -772,6 +846,7 @@ type ProductFormModalProps =
       scopeRoles: ScopeRoleOption[];
       labourTimings: LabourTimingOption[];
       assetTypes: AssetTypeOption[];
+      subcategories: ProductSubcategory[];
       onScopeRoleCreated: (role: ScopeRoleOption) => void;
       onLabourTimingCreated: (timing: LabourTimingOption) => void;
       onClose: () => void;
@@ -784,8 +859,14 @@ function ProductFormModal(props: ProductFormModalProps) {
   const supabase = createClient();
   const { toast } = useToast();
   const isEditing = props.mode === "edit";
-  const category = isEditing ? props.product.category : props.category;
+  const [category, setCategory] = useState(isEditing ? props.product.category : props.category);
+  const [subcategory, setSubcategory] = useState(isEditing ? (props.product.subcategory ?? "") : "");
   const headerTitle = isEditing ? "Edit product" : "Add product";
+
+  // Active sub-categories for the currently-selected infrastructure.
+  const subOptions = props.subcategories
+    .filter((s) => s.is_active && s.category === category)
+    .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
 
   const [name, setName] = useState(isEditing ? props.product.name : "");
   const [sku, setSku] = useState(isEditing ? (props.product.sku || "") : "");
@@ -851,6 +932,10 @@ function ProductFormModal(props: ProductFormModalProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !costPrice) return;
+    if (!category) {
+      toast("Pick a category (infrastructure) for this product", "error");
+      return;
+    }
     if (!scopeRole) {
       toast("Pick a scope role (use 'None / consumable' for accessories or items with no SoW representation)", "error");
       return;
@@ -879,10 +964,11 @@ function ProductFormModal(props: ProductFormModalProps) {
       default_quantity: isNaN(qty) || qty < 1 ? 1 : qty,
       internal_notes: internalNotes.trim() || null,
       is_default: isDefault,
+      subcategory: subcategory || null,
     };
 
     if (isEditing) {
-      props.onSave(props.product.id, payload as Partial<Product>);
+      props.onSave(props.product.id, { ...payload, category } as Partial<Product>);
       return;
     }
 
@@ -917,7 +1003,7 @@ function ProductFormModal(props: ProductFormModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{category}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{category || "Select category"}</p>
             <h2 className="text-base font-semibold text-foreground truncate">{headerTitle}</h2>
           </div>
           <button
@@ -931,6 +1017,41 @@ function ProductFormModal(props: ProductFormModalProps) {
 
         {/* Body */}
         <div className="px-6 py-5 space-y-4">
+          {/* Category + Sub-category */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Category (infrastructure)</label>
+              <select
+                value={category}
+                onChange={(e) => { setCategory(e.target.value); setSubcategory(""); }}
+                className={inputClass}
+              >
+                <option value="">— Select category —</option>
+                {PRODUCT_CATEGORIES.map((c) => (<option key={c} value={c}>{c}</option>))}
+                {/* Surface any legacy category not in the constant so edits don't lose it */}
+                {category && !PRODUCT_CATEGORIES.includes(category) && (
+                  <option value={category}>{category}</option>
+                )}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Sub-category</label>
+              <select
+                value={subcategory}
+                onChange={(e) => setSubcategory(e.target.value)}
+                disabled={!category}
+                className={inputClass + (category ? "" : " opacity-50")}
+              >
+                <option value="">— None —</option>
+                {subOptions.map((s) => (<option key={s.id} value={s.name}>{s.name}</option>))}
+                {/* Keep a previously-set value visible even if it was since removed */}
+                {subcategory && !subOptions.some((s) => s.name === subcategory) && (
+                  <option value={subcategory}>{subcategory}</option>
+                )}
+              </select>
+            </div>
+          </div>
+
           {/* Image + Name + SKU */}
           <div className="flex gap-3">
             {/* Image thumbnail + upload */}
