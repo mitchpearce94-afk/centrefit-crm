@@ -54,25 +54,48 @@ interface PlanItemRow {
 }
 
 type RevenueStream = "security" | "sim" | "nbn" | "other";
+type StreamSplit = Record<RevenueStream, number>;
 
-// Bucket a recurring line into a revenue stream. We lead with the Xero
-// account code (the financial truth: NBN=204, SIM=207, security monitoring=
-// 208/209) and fall back to the service code / name so newly-added services
-// still land somewhere sensible. The "Security Monitoring + SIM Card" combo
-// books to the security GL (209), so it counts as security — matching Xero.
-function streamFor(item: PlanItemRow): RevenueStream {
+// Allocate one recurring line's monthly value across the revenue streams.
+// Combo services (e.g. "Security Monitoring + SIM Card") bundle a SIM, so we
+// peel the standard SIM rate off into the SIM stream and leave the remainder
+// in the base stream — letting Mitchell gauge the true value of each service
+// even though Xero books the whole combo to one GL. Stream of the base part
+// leads with the Xero account code (NBN=204, SIM=207, security=208/209) and
+// falls back to the code/name so new services still land sensibly.
+function allocate(item: PlanItemRow, simRate: number): StreamSplit {
+  const out: StreamSplit = { security: 0, sim: 0, nbn: 0, other: 0 };
+  const monthly = Number(item.price_inc_gst) * (item.quantity ?? 1) * (item.frequency === "yearly" ? 1 / 12 : 1);
   const acct = (item.account_code ?? "").trim();
   const code = (item.service_code ?? "").toLowerCase();
   const name = (item.service_name ?? "").toLowerCase();
-  if (acct === "204" || code.startsWith("nbn") || name.includes("nbn")) return "nbn";
-  if (acct === "207" || code === "sim-card") return "sim";
-  if (
-    acct === "208" ||
-    acct === "209" ||
-    /monitor|alarm|duress|verification|security/.test(code + " " + name)
-  )
-    return "security";
-  return "other";
+
+  if (acct === "204" || code.startsWith("nbn") || name.includes("nbn")) {
+    out.nbn = monthly;
+    return out;
+  }
+  if (acct === "207" || code === "sim-card") {
+    out.sim = monthly;
+    return out;
+  }
+
+  const baseStream: RevenueStream =
+    acct === "208" || acct === "209" || /monitor|alarm|duress|verification|security/.test(`${code} ${name}`)
+      ? "security"
+      : "other";
+
+  // Combo line bundling a SIM (code like "*-sim" or "+ SIM Card" in the name)?
+  const bundlesSim = /(^|[-_ ])sim($|[-_ ])/.test(code) || name.includes("sim card");
+  if (bundlesSim) {
+    const simMonthly = simRate * (item.quantity ?? 1) * (item.frequency === "yearly" ? 1 / 12 : 1);
+    const simPart = Math.min(simMonthly, monthly);
+    out.sim += simPart;
+    out[baseStream] += monthly - simPart;
+    return out;
+  }
+
+  out[baseStream] += monthly;
+  return out;
 }
 
 interface PlanRow {
@@ -105,18 +128,26 @@ export default async function RecurringInvoicesPage() {
 
   const list = (plans ?? []) as unknown as PlanRow[];
 
-  // Top-line metrics. Monthly-equivalent value of one recurring line (yearly
-  // cadences amortised ÷ 12) so everything compares on the same MRR basis.
-  const monthlyValue = (i: PlanItemRow): number => {
-    const v = Number(i.price_inc_gst) * (i.quantity ?? 1);
-    return i.frequency === "yearly" ? v / 12 : v;
-  };
+  // Standard SIM rate, used to peel the SIM portion out of combo lines. Read
+  // live from the service template so a price change flows through; falls back
+  // to the known $24.75 rate if the template ever goes missing.
+  const { data: simSvc } = await supabase
+    .from("recurring_services")
+    .select("price_inc_gst")
+    .eq("code", "sim-card")
+    .maybeSingle();
+  const simRate = Number(simSvc?.price_inc_gst ?? 24.75) || 24.75;
 
-  const streamMRR: Record<RevenueStream, number> = { security: 0, sim: 0, nbn: 0, other: 0 };
+  // Top-line metrics, split across revenue streams (yearly cadences ÷ 12).
+  const streamMRR: StreamSplit = { security: 0, sim: 0, nbn: 0, other: 0 };
   for (const p of list) {
     if (p.status !== "active") continue;
     for (const i of p.recurring_plan_items ?? []) {
-      streamMRR[streamFor(i)] += monthlyValue(i);
+      const a = allocate(i, simRate);
+      streamMRR.security += a.security;
+      streamMRR.sim += a.sim;
+      streamMRR.nbn += a.nbn;
+      streamMRR.other += a.other;
     }
   }
   const monthlyMRR = streamMRR.security + streamMRR.sim + streamMRR.nbn + streamMRR.other;
