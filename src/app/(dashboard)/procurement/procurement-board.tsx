@@ -72,7 +72,7 @@ export function ProcurementBoard({
         )}
         {tab === "ready" && (
           ready.length === 0 ? (
-            <Empty text="No jobs waiting to start. Accept a quote and hit “Start from quote”." />
+            <Empty text="No jobs waiting to start. Full quotes appear on acceptance; progress (PP1/PP2) jobs appear once PP1 is paid." />
           ) : (
             <div className="rounded-lg border border-border bg-card overflow-x-auto">
               <table className="w-full text-xs">

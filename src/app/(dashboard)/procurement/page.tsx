@@ -20,12 +20,19 @@ type QuoteRow = {
   ref: string;
   job_id: string;
   accepted_at: string | null;
+  quote_type: string | null;
+  pricing_snapshot: { totalExGST?: number } | null;
 };
+
+// Progress (PP1/PP2) jobs under this value still go straight to procurement on
+// acceptance rather than waiting for the PP1 payment — small jobs aren't worth
+// stalling. Mitchell's call, 2026-06-04.
+const STRAIGHT_THROUGH_UNDER = 1000;
 
 export default async function ProcurementIndexPage() {
   const supabase = await createClient();
 
-  const [itemsRes, jobsRes, acceptedQuotesRes] = await Promise.all([
+  const [itemsRes, jobsRes, acceptedQuotesRes, paidPp1Res] = await Promise.all([
     supabase
       .from("job_procurement_items")
       .select("job_id, status, xero_po_number"),
@@ -34,14 +41,25 @@ export default async function ProcurementIndexPage() {
       .select("id, number, description, customer:customers(id, name), site:customer_sites(id, name)"),
     supabase
       .from("quotes")
-      .select("id, ref, job_id, accepted_at")
+      .select("id, ref, job_id, accepted_at, quote_type, pricing_snapshot")
       .eq("status", "accepted")
       .order("accepted_at", { ascending: false }),
+    // Progress jobs only enter procurement once PP1 is actually paid.
+    supabase
+      .from("invoices")
+      .select("quote_id")
+      .eq("invoice_type", "progress_pp1")
+      .eq("status", "paid"),
   ]);
 
   const items = (itemsRes.data ?? []) as ItemRow[];
   const jobs = (jobsRes.data ?? []) as unknown as JobRow[];
   const acceptedQuotes = (acceptedQuotesRes.data ?? []) as QuoteRow[];
+  const pp1PaidQuoteIds = new Set(
+    ((paidPp1Res.data ?? []) as { quote_id: string | null }[])
+      .map((r) => r.quote_id)
+      .filter((v): v is string => !!v),
+  );
 
   const jobsById = new Map<string, JobRow>();
   for (const j of jobs) jobsById.set(j.id, j);
@@ -109,12 +127,22 @@ export default async function ProcurementIndexPage() {
     .filter(({ stats }) => stats.total > 0 && stats.pending + stats.order + stats.ordered === 0)
     .map(({ job }) => entryById.get(job.id)!);
 
-  // Jobs with accepted quote but NO procurement rows — ready to start
+  // Jobs with accepted quote but NO procurement rows — ready to start.
+  // Progress (PP1/PP2) jobs are held back until PP1 is paid; everything else
+  // (full quotes, service jobs, and small progress jobs) goes straight through.
   const jobsWithProcurement = new Set(statsByJob.keys());
   const readyByJobId = new Map<string, QuoteRow>();
   for (const q of acceptedQuotes) {
     if (!q.job_id || jobsWithProcurement.has(q.job_id)) continue;
-    if (!readyByJobId.has(q.job_id)) readyByJobId.set(q.job_id, q);
+    if (readyByJobId.has(q.job_id)) continue;
+
+    const isProgress = q.quote_type === "progress";
+    if (isProgress) {
+      const total = Number(q.pricing_snapshot?.totalExGST ?? 0);
+      const straightThrough = total > 0 && total < STRAIGHT_THROUGH_UNDER;
+      if (!straightThrough && !pp1PaidQuoteIds.has(q.id)) continue; // waiting on PP1
+    }
+    readyByJobId.set(q.job_id, q);
   }
   const readyEntries: ReadyEntry[] = Array.from(readyByJobId.entries())
     .map(([jobId, quote]) => ({ job: jobsById.get(jobId)!, quote }))
