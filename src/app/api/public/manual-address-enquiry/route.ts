@@ -4,7 +4,10 @@ import { createServiceRoleClient } from "@/lib/supabase/service";
 import { checkRateLimit, clientIp } from "@/lib/recurring/rate-limit";
 
 const FROM_ADDRESS = "Centrefit NBN Orders <orders@centrefit.com.au>";
-const NOTIFICATION_EMAIL = process.env.NOTIFICATION_EMAIL ?? "sales@centrefit.com.au";
+// NBN enquiries are handled by the Communications team, not Sales (Lily, 29/5).
+// Override via NBN_NOTIFICATION_EMAIL if the mailbox name ever changes.
+const NOTIFICATION_EMAIL =
+  process.env.NBN_NOTIFICATION_EMAIL ?? "communications@centrefit.com.au";
 
 function escapeHtml(s: string): string {
   return s
