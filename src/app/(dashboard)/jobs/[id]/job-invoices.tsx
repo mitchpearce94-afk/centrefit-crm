@@ -311,17 +311,12 @@ export function JobInvoices({
   }
 
   function openModal() {
-    if (isVarianceMode) {
-      // Variance invoices start blank — auto-pulling work-log entries on a
-      // job that's already been quoted will double-bill anything covered by
-      // the original quote. Admin types variance lines from scratch (the
-      // "Rebuild from job" link is still there as an escape hatch). Linked
-      // receipts still come through — they're extras by definition.
-      setDescription("");
-      setRows([...receiptRows, newRow()]);
-    } else {
-      rebuildFromJob();
-    }
+    // Mitchell's call (2026-06-05): always pull EVERYTHING — quote scope (synced
+    // into the job description on accept) + job completion (checklist + work log)
+    // in the narrative, and labour/call-out/materials + receipts as lines. On a
+    // quoted job that double-counts the quoted install, so the admin trims the
+    // already-billed lines on the Xero DRAFT before authorising.
+    rebuildFromJob();
     setShowModal(true);
   }
 
@@ -588,7 +583,7 @@ export function JobInvoices({
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   Job {jobNumber ?? ""} —{" "}
                   {isVarianceMode
-                    ? `extras on top of quote ${primaryQuote?.ref ?? ""}. Pushed to Xero as DRAFT — set account codes and authorise on the next screen.`
+                    ? `quote ${primaryQuote?.ref ?? ""} scope + job completion + receipts. Pushed to Xero as DRAFT — remove anything already billed on the quote, set account codes, then authorise.`
                     : "pushed to Xero as DRAFT — set account codes and authorise on the next screen."}
                 </p>
               </div>
