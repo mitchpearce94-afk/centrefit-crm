@@ -12,6 +12,7 @@ import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.serv
 import { sendDDRecurringInvoiceEmail } from "@/lib/emails/dd-recurring-invoice";
 import { logDocumentActivity } from "@/lib/activity/log";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
+import { notifyProcurementReadyIfEligible } from "@/lib/notifications/procurement-ready";
 
 /**
  * Xero webhook receiver.
@@ -225,6 +226,10 @@ async function processInvoiceEvent(
       await autoTransitionJobStatusServer(invoice.job_id, action, supabase);
     } catch (err) {
       console.error(`[xero-webhook] auto-transition failed for job ${invoice.job_id}:`, err);
+    }
+    // PP1 paid unlocks the job for procurement — ping whoever raises POs.
+    if (invoice.invoice_type === "progress_pp1") {
+      await notifyProcurementReadyIfEligible(supabase, invoice.job_id);
     }
   }
 

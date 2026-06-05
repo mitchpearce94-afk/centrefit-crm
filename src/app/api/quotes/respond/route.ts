@@ -5,6 +5,8 @@ import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.serv
 import { createInvoiceFromAcceptedQuote } from "@/lib/invoices/create-from-quote";
 import { logDocumentActivity } from "@/lib/activity/log";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
+import { notifyProcurementReadyIfEligible } from "@/lib/notifications/procurement-ready";
+import { createServiceRoleClient } from "@/lib/supabase/service";
 import { syncQuoteScopeToJob } from "@/lib/quotes/sync-job-scope";
 
 export async function POST(req: NextRequest) {
@@ -102,6 +104,11 @@ export async function POST(req: NextRequest) {
       await syncQuoteScopeToJob(supabase, quote.id);
     } catch {
       // Best-effort — don't block the customer's response on a sync hiccup.
+    }
+    // Straight-through jobs (non-progress / small) become procurement-ready on
+    // accept — ping whoever raises POs. Progress jobs notify later on PP1 paid.
+    if (action === "accept") {
+      await notifyProcurementReadyIfEligible(createServiceRoleClient(), quote.job_id);
     }
   }
 

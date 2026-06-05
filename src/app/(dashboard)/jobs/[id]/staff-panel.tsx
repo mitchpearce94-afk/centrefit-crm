@@ -4,7 +4,6 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
-import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 
 interface StaffOption {
   id: string;
@@ -32,15 +31,17 @@ export function StaffPanel({
 
   async function addStaff(staffId: string) {
     setAdding(true);
-    const { error } = await supabase.from("job_staff").insert({
-      job_id: jobId,
-      staff_id: staffId,
+    // Server route does the insert + status transition AND notifies the tagged
+    // staffer (job.assigned) — a raw client insert can't fire notifications.
+    const res = await fetch(`/api/jobs/${jobId}/assign-staff`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ staffId }),
     });
-
-    if (error) {
-      toast(error.message, "error");
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast(json.error ?? "Couldn't add staff", "error");
     } else {
-      await autoTransitionJobStatus(jobId, "staff_assigned", supabase);
       router.refresh();
     }
     setAdding(false);

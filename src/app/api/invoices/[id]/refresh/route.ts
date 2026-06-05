@@ -17,7 +17,7 @@ export async function POST(
 
   const { data: invoice, error } = await supabase
     .from("invoices")
-    .select("id, xero_invoice_id, total, status")
+    .select("id, xero_invoice_id, total, status, invoice_type, job_id")
     .eq("id", id)
     .single();
   if (error || !invoice) {
@@ -112,6 +112,18 @@ export async function POST(
         via: "manual refresh",
       },
     });
+  }
+
+  // A progress PP1 invoice going paid is what unlocks the job for procurement.
+  if (
+    invoice.status !== "paid" &&
+    normalisedStatus === "paid" &&
+    invoice.invoice_type === "progress_pp1" &&
+    invoice.job_id
+  ) {
+    const { createServiceRoleClient } = await import("@/lib/supabase/service");
+    const { notifyProcurementReadyIfEligible } = await import("@/lib/notifications/procurement-ready");
+    await notifyProcurementReadyIfEligible(createServiceRoleClient(), invoice.job_id);
   }
 
   return NextResponse.json({ invoice: updated });
