@@ -25,6 +25,7 @@ interface Settings {
   uplift_percent: number;
   default_payment_terms: string;
   progress_payment_enabled: boolean;
+  receipt_forward_email: string;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -65,6 +66,7 @@ export function BillingSettings({ settings }: { settings: Settings | null }) {
     quote_validity_days: 30, uplift_percent: 5,
     default_payment_terms: "Due on completion",
     progress_payment_enabled: true,
+    receipt_forward_email: "accounts@centrefit.com.au",
   });
 
   function set(field: keyof Settings, value: number | string | boolean) {
@@ -119,6 +121,9 @@ export function BillingSettings({ settings }: { settings: Settings | null }) {
         </Field>
         <Field label="Default Payment Terms">
           <input type="text" value={s.default_payment_terms} onChange={e => set("default_payment_terms", e.target.value)} className={inputClass} />
+        </Field>
+        <Field label="Receipt forwarding email">
+          <input type="text" value={s.receipt_forward_email} onChange={e => set("receipt_forward_email", e.target.value)} placeholder="accounts@centrefit.com.au" className={inputClass} />
         </Field>
         <div className="flex items-center gap-2 pt-5">
           <button

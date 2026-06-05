@@ -27,6 +27,7 @@ const navigation: {
   { name: "Suppliers", href: "/suppliers", icon: PackageIcon, flag: "suppliers.view" },
   { name: "Quoting", href: "/quoting", icon: FileTextIcon, flag: "quoting.view" },
   { name: "Invoices", href: "/invoices", icon: InvoiceIcon, flag: "invoices.view" },
+  { name: "Receipts", href: "/receipts", icon: ReceiptIcon, flag: null },
   { name: "Procurement", href: "/procurement", icon: TruckIcon, flag: "procurement.view" },
   { name: "Plans", href: "/plans", icon: PlanIcon, flag: "plans.view" },
   { name: "Reports", href: "/reports", icon: BarChartIcon, flag: null, anyOf: ["reports.view_operational", "reports.view_financial"] },
@@ -168,6 +169,14 @@ export function Sidebar({
 }
 
 // Minimal inline SVG icons — keeps bundle small, no icon library needed
+
+function ReceiptIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 2v20l2-1.5L8 22l2-1.5L12 22l2-1.5L16 22l2-1.5L20 22V2l-2 1.5L16 2l-2 1.5L12 2l-2 1.5L8 2 6 3.5 4 2z" /><path d="M8 7h8" /><path d="M8 11h8" /><path d="M8 15h5" />
+    </svg>
+  );
+}
 
 function LayoutIcon({ className }: { className?: string }) {
   return (
