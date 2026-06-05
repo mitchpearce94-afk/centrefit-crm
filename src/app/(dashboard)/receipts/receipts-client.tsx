@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useToast } from "@/components/ui/toast";
@@ -158,6 +158,24 @@ function LinkPanel({
   const [amount, setAmount] = useState(receipt.amount != null ? String(receipt.amount) : "");
   const [vendor, setVendor] = useState(receipt.vendor ?? "");
   const [saving, setSaving] = useState(false);
+  const [reading, setReading] = useState(false);
+
+  // Auto-read the amount/vendor with Claude vision when the panel opens.
+  // Silently no-ops if the API key isn't configured — you just type it in.
+  useEffect(() => {
+    let cancelled = false;
+    setReading(true);
+    fetch(`/api/receipts/${receipt.id}/read`, { method: "POST" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled || !j?.available) return;
+        if (j.amount != null) setAmount((cur) => (cur ? cur : String(j.amount)));
+        if (j.vendor) setVendor((cur) => (cur ? cur : j.vendor));
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setReading(false); });
+    return () => { cancelled = true; };
+  }, [receipt.id]);
 
   const selectedJob = jobs.find((j) => j.id === jobId) ?? null;
   const matches = useMemo(() => {
@@ -219,7 +237,9 @@ function LinkPanel({
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Amount (inc GST)</label>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
+            Amount (inc GST){reading && <span className="ml-1.5 text-primary">· reading receipt…</span>}
+          </label>
           <input
             type="number"
             inputMode="decimal"
