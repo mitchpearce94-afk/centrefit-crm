@@ -68,6 +68,28 @@ interface BillingSettings {
   it_service_labour_rate: number;
 }
 
+export interface ReceiptForInvoice {
+  id: string;
+  vendor: string | null;
+  amount: number; // inc GST as captured
+}
+
+// Receipt line ids carry the receipt id so we can mark them invoiced on submit,
+// and start with "row_mat_" so they fold into the combined "Parts Used" line.
+const RECEIPT_ROW_PREFIX = "row_mat_receipt_";
+
+function receiptToRow(r: ReceiptForInvoice): LineItemDraft {
+  // Captured amount is GST-inclusive; the invoice line is ex-GST (Xero re-adds
+  // 10%), so back the GST out.
+  const exGst = r.amount / 1.1;
+  return {
+    id: `${RECEIPT_ROW_PREFIX}${r.id}`,
+    description: r.vendor ? `Receipt — ${r.vendor}` : "Receipt — materials",
+    quantity: "1",
+    unitAmount: exGst.toFixed(2),
+  };
+}
+
 interface ProductPrice {
   sell_price: number;
   cost_price: number;
@@ -85,6 +107,8 @@ interface Props {
   workEntries: WorkEntry[];
   productPrices: Record<string, ProductPrice>;
   billingSettings: BillingSettings;
+  /** Linked receipts not yet pushed onto an invoice (amount inc GST). */
+  receipts: ReceiptForInvoice[];
   /** Admins see the Variance Invoice button on already-quoted jobs. */
   isAdmin: boolean;
 }
@@ -245,7 +269,7 @@ function buildAutoLineItems(
 export function JobInvoices({
   jobId, customerId, siteId, jobDescription, jobNumber,
   invoices, linkedQuotes, checklistItems, workEntries,
-  productPrices, billingSettings, isAdmin,
+  productPrices, billingSettings, receipts, isAdmin,
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -275,9 +299,15 @@ export function JobInvoices({
     return { subtotal, gst, total: subtotal + gst };
   }, [rows]);
 
+  // Receipt lines go on every invoice from this job (variance or not) — they're
+  // real out-of-pocket costs captured against the job. Inserted before the
+  // trailing blank row.
+  const receiptRows = receipts.map(receiptToRow);
+
   function rebuildFromJob() {
     setDescription(buildNarrative(jobDescription, checklistItems, workEntries));
-    setRows(buildAutoLineItems(workEntries, productPrices, billingSettings));
+    const base = buildAutoLineItems(workEntries, productPrices, billingSettings);
+    setRows([...base.slice(0, -1), ...receiptRows, base[base.length - 1]]);
   }
 
   function openModal() {
@@ -285,9 +315,10 @@ export function JobInvoices({
       // Variance invoices start blank — auto-pulling work-log entries on a
       // job that's already been quoted will double-bill anything covered by
       // the original quote. Admin types variance lines from scratch (the
-      // "Rebuild from job" link is still there as an escape hatch).
+      // "Rebuild from job" link is still there as an escape hatch). Linked
+      // receipts still come through — they're extras by definition.
       setDescription("");
-      setRows([newRow()]);
+      setRows([...receiptRows, newRow()]);
     } else {
       rebuildFromJob();
     }
@@ -367,6 +398,20 @@ export function JobInvoices({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create invoice");
+
+      // Mark any receipts that made it onto this invoice as invoiced so they
+      // don't get re-added next time.
+      const receiptIds = priced
+        .filter((r) => r.id.startsWith(RECEIPT_ROW_PREFIX))
+        .map((r) => r.id.slice(RECEIPT_ROW_PREFIX.length));
+      if (receiptIds.length > 0) {
+        await fetch("/api/receipts/mark-invoiced", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: receiptIds }),
+        }).catch(() => {});
+      }
+
       toast(`Draft invoice ${data.invoice?.xero_invoice_number ?? "created"} — set account codes and authorise`);
       setShowModal(false);
       // Drop the admin straight into the line-item editor on the new draft.

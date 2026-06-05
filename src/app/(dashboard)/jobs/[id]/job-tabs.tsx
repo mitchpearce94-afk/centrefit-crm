@@ -43,6 +43,7 @@ export function JobTabs({
   suppliers,
   productPrices,
   billingSettings,
+  receipts,
   isAdmin,
 }: {
   jobId: string;
@@ -65,6 +66,7 @@ export function JobTabs({
   suppliers: any[];
   productPrices: Record<string, { sell_price: number; cost_price: number }>;
   billingSettings: { labour_sell_rate: number; callout_fee_sell: number; it_service_labour_rate: number };
+  receipts: { id: string; vendor: string | null; amount: number }[];
   isAdmin: boolean;
 }) {
   const [activeTab, setActiveTab] = useState("job");
@@ -191,6 +193,7 @@ export function JobTabs({
             workEntries={workEntries}
             productPrices={productPrices}
             billingSettings={billingSettings}
+            receipts={receipts}
             isAdmin={isAdmin}
           />
         )}

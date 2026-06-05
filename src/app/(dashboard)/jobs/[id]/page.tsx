@@ -12,7 +12,7 @@ export default async function JobDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [jobResult, statusesResult, staffResult, workResult, notesResult, timeResult, nbnResult, checklistResult, templatesResult, scheduleResult, invoicesResult, linkedQuotesResult, billingResult, procurementResult, suppliersResult] =
+  const [jobResult, statusesResult, staffResult, workResult, notesResult, timeResult, nbnResult, checklistResult, templatesResult, scheduleResult, invoicesResult, linkedQuotesResult, billingResult, procurementResult, suppliersResult, receiptsResult] =
     await Promise.all([
       supabase
         .from("jobs")
@@ -90,6 +90,13 @@ export default async function JobDetailPage({
         .select("id, name")
         .eq("is_active", true)
         .order("name"),
+      supabase
+        .from("receipts")
+        .select("id, vendor, amount")
+        .eq("job_id", id)
+        .eq("added_to_invoice", false)
+        .not("amount", "is", null)
+        .order("created_at", { ascending: true }),
     ]);
 
   if (jobResult.error || !jobResult.data) {
@@ -142,6 +149,10 @@ export default async function JobDetailPage({
     it_service_labour_rate: Number(billingResult.data?.it_service_labour_rate ?? 120),
   };
 
+  const receipts = ((receiptsResult.data ?? []) as { id: string; vendor: string | null; amount: number | null }[])
+    .filter((r) => r.amount != null)
+    .map((r) => ({ id: r.id, vendor: r.vendor, amount: Number(r.amount) }));
+
   return (
     <div>
       {/* ── Compact header ── */}
@@ -189,6 +200,7 @@ export default async function JobDetailPage({
           suppliers={(suppliersResult.data ?? []) as any[]}
           productPrices={productPrices}
           billingSettings={billingSettings}
+          receipts={receipts}
           isAdmin={isAdmin}
         />
       </div>
