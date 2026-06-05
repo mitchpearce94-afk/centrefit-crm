@@ -182,6 +182,12 @@ export function QuoteResponseView(props: Props) {
         .qr-scope > div, .qr-scope > div > div {
           box-sizing: border-box;
         }
+        /* Manual scope-of-works is authored in a rich-text editor; preserve the
+           paragraph spacing + blank lines the author added (Tailwind preflight
+           zeroes <p> margins, which collapsed it all together). */
+        .qr-scope p { margin: 0 0 0.7em; }
+        .qr-scope p:empty { min-height: 0.9em; }
+        .qr-scope p:last-child { margin-bottom: 0; }
 
         @media (max-width: 640px) {
           .qr-page { padding: 12px 8px calc(150px + env(safe-area-inset-bottom)); }

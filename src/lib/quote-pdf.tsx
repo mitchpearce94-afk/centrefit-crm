@@ -172,7 +172,7 @@ function RichScope({ html }: { html: string }) {
           });
         }
         const segs = inlineSegments(b.text ?? "");
-        if (segs.length === 0) return <View key={i} style={{ height: 6 }} />;
+        if (segs.length === 0) return <View key={i} style={{ height: 12 }} />;
         if (b.type === "h") {
           return <Text key={i} style={styles.scopeHeading}><RichSegments segs={segs} /></Text>;
         }

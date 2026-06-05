@@ -406,7 +406,11 @@ export function QuoteActions({
               <div style={{ padding: "32px 48px" }}>
 
                 {/* ── SCOPE OF WORKS — system-card layout ── */}
-                <div style={{ marginBottom: "32px" }} dangerouslySetInnerHTML={{ __html: renderScopeAsHtml(scope) }} />
+                {/* Tailwind preflight zeroes <p> margins, which collapsed the
+                    paragraph spacing/blank lines authored in the manual scope
+                    editor. Restore them just inside the rendered scope. */}
+                <style>{`.scope-render p{margin:0 0 0.7em}.scope-render p:empty{min-height:0.9em}.scope-render p:last-child{margin-bottom:0}`}</style>
+                <div className="scope-render" style={{ marginBottom: "32px" }} dangerouslySetInnerHTML={{ __html: renderScopeAsHtml(scope) }} />
 
                 {/* ── PRICING ── */}
                 <div className="pricing-block" style={{ marginBottom: "32px" }}>
