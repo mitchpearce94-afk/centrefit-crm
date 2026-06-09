@@ -1,43 +1,45 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
- * Hands-free vertical auto-scroll for the TV. When enabled and the content is
- * taller than the viewport it creeps down, pauses at the bottom, snaps back to
- * the top and repeats — so staff never have to touch it. A floating toggle
- * lets anyone pause it (e.g. to read a row); the choice is remembered.
+ * Hands-free auto-scroll for the TV. Scrolls ITS OWN container (so the page
+ * header + column labels stay put and only the job list moves). When enabled
+ * and the list overflows, it drifts down, pauses at the bottom, snaps back to
+ * the top and repeats. A floating toggle pauses/resumes it; the choice sticks.
  */
 const STORAGE_KEY = "cf-board-autoscroll";
 
 export function AutoScroll({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
   const [enabled, setEnabled] = useState(true);
 
-  // Restore the saved preference on mount.
   useEffect(() => {
     if (localStorage.getItem(STORAGE_KEY) === "off") setEnabled(false);
   }, []);
 
   useEffect(() => {
     if (!enabled) return;
-    const SPEED = 0.2; // px/frame (~12px/s) — slow, gentle drift
+    const el = ref.current;
+    if (!el) return;
+
+    const SPEED = 0.35; // px/frame (~21px/s) — gentle but visible
     const BOTTOM_PAUSE = 3000;
     const TOP_PAUSE = 2000;
     let raf = 0;
     let paused = false;
-    let acc = 0; // sub-pixel accumulator so the slow speed stays smooth
+    let acc = 0; // sub-pixel accumulator so slow speeds stay smooth
 
-    const maxScroll = () =>
-      Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    const maxScroll = () => Math.max(0, el.scrollHeight - el.clientHeight);
 
     const tick = () => {
       const max = maxScroll();
       if (max > 4 && !paused) {
-        if (window.scrollY >= max - 1) {
+        if (el.scrollTop >= max - 1) {
           paused = true;
           acc = 0;
           setTimeout(() => {
-            window.scrollTo({ top: 0, behavior: "smooth" });
+            el.scrollTo({ top: 0, behavior: "smooth" });
             setTimeout(() => {
               paused = false;
             }, TOP_PAUSE);
@@ -46,7 +48,7 @@ export function AutoScroll({ children }: { children: React.ReactNode }) {
           acc += SPEED;
           const px = Math.floor(acc);
           if (px >= 1) {
-            window.scrollBy(0, px);
+            el.scrollBy(0, px);
             acc -= px;
           }
         }
@@ -68,7 +70,9 @@ export function AutoScroll({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      {children}
+      <div ref={ref} className="min-h-0 flex-1 overflow-y-auto scrollbar-hide">
+        {children}
+      </div>
       <button
         type="button"
         onClick={toggle}

@@ -229,9 +229,9 @@ export default async function StatusBoardPage({
   const cols = "grid grid-cols-[6px_minmax(0,1fr)_280px_280px_280px] items-center gap-6";
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_#1e1b4b_0%,_#0b1020_45%,_#05070d_100%)] px-10 py-8 text-white">
-      {/* Header */}
-      <header className="flex items-end justify-between gap-6 border-b border-white/10 pb-6">
+    <div className="flex h-screen flex-col overflow-hidden bg-[radial-gradient(ellipse_at_top,_#1e1b4b_0%,_#0b1020_45%,_#05070d_100%)] px-10 py-8 text-white">
+      {/* Header — fixed, doesn't scroll */}
+      <header className="flex flex-none items-end justify-between gap-6 border-b border-white/10 pb-6">
         <div>
           <Image
             src="/centrefit-logo.png"
@@ -258,7 +258,7 @@ export default async function StatusBoardPage({
       ) : (
         <>
           {/* Column headers — fixed, don't scroll */}
-          <div className={`${cols} mt-6 px-7 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/30`}>
+          <div className={`${cols} mt-6 flex-none px-7 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/30`}>
             <span />
             <span>Site</span>
             <span>Rough In</span>
