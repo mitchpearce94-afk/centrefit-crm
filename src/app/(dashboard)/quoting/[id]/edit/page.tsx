@@ -73,6 +73,15 @@ export default async function EditQuotePage({
     manualLabourLines: Array.isArray(quote.labour_data?.manual_labour_lines)
       ? quote.labour_data.manual_labour_lines
       : undefined,
+    // Round-trip the entered PP1/PP2 amounts for manual progress quotes.
+    manualPp1:
+      quote.quote_mode === "manual" && quote.quote_type === "progress"
+        ? quote.pricing_snapshot?.pp1?.total ?? undefined
+        : undefined,
+    manualPp2:
+      quote.quote_mode === "manual" && quote.quote_type === "progress"
+        ? quote.pricing_snapshot?.pp2?.total ?? undefined
+        : undefined,
   };
 
   // Merge plans: include the one linked to this quote so the dropdown can show it

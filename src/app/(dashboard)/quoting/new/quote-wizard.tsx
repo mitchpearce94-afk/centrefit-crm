@@ -245,6 +245,9 @@ interface ExistingQuote {
   isInterstate?: boolean;
   manualScope?: string;
   manualLabourLines?: ManualLabourLine[];
+  // Manually-entered PP1/PP2 amounts (manual progress quotes from the old system).
+  manualPp1?: number;
+  manualPp2?: number;
 }
 
 export function QuoteWizard({
@@ -280,6 +283,15 @@ export function QuoteWizard({
   const [selectedPlanId, setSelectedPlanId] = useState(existingQuote?.planId || "");
   const [quoteType, setQuoteType] = useState<"full" | "progress">(
     (existingQuote?.quoteType as "full" | "progress") || "full"
+  );
+  // Manual progress quotes (from the old system) let the operator type the PP1
+  // and PP2 dollar amounts directly instead of deriving them from a cost/sell
+  // split. Stored as strings for the inputs; parsed on save.
+  const [manualPp1, setManualPp1] = useState<string>(
+    existingQuote?.manualPp1 != null ? String(existingQuote.manualPp1) : ""
+  );
+  const [manualPp2, setManualPp2] = useState<string>(
+    existingQuote?.manualPp2 != null ? String(existingQuote.manualPp2) : ""
   );
 
   // Job linking. Accept either ?job= (from /plans CompletePlanModal) or
@@ -627,6 +639,8 @@ export function QuoteWizard({
       if (d.manualLabourAmount != null) setManualLabourAmount(d.manualLabourAmount);
       if (d.manualCalloutDays != null) setManualCalloutDays(d.manualCalloutDays);
       if (Array.isArray(d.manualLabourLines)) setManualLabourLines(d.manualLabourLines);
+      if (d.manualPp1 != null) setManualPp1(d.manualPp1);
+      if (d.manualPp2 != null) setManualPp2(d.manualPp2);
       if (d.electricianCost != null) setElectricianCost(d.electricianCost);
       if (d.elecDoingRoughIn != null) setElecDoingRoughIn(d.elecDoingRoughIn);
       if (d.elecDoingFitOff != null) setElecDoingFitOff(d.elecDoingFitOff);
@@ -648,6 +662,7 @@ export function QuoteWizard({
           step, quoteMode, customerId, siteId, clientName, siteName, siteAddress, siteInfo,
           deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
           linkedJobId, selectedPlanId, manualScope, manualBomItems, manualLabourLines,
+          manualPp1, manualPp2,
           electricianCost,
           elecDoingRoughIn, elecDoingFitOff,
         }));
@@ -657,6 +672,7 @@ export function QuoteWizard({
   }, [step, quoteMode, customerId, siteId, clientName, siteName, siteAddress, siteInfo,
     deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
     linkedJobId, selectedPlanId, manualScope, manualBomItems, manualLabourLines,
+    manualPp1, manualPp2,
     electricianCost,
     elecDoingRoughIn, elecDoingFitOff]);
 
@@ -1031,6 +1047,14 @@ export function QuoteWizard({
     return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent, electricianCost, isInterstate });
   }, [quoteMode, bomItems, labourData, extras, discountPercent, electricianCost, isInterstate, manualBomAsBomItems, manualLabourData]);
 
+  // Manual progress quotes use directly-entered PP1/PP2 amounts; everything
+  // else derives the split from the cost/sell breakdown in `summary`.
+  const isManualProgress = quoteMode === "manual" && quoteType === "progress";
+  const manualPp1Num = parseFloat(manualPp1) || 0;
+  const manualPp2Num = parseFloat(manualPp2) || 0;
+  const effPp1 = isManualProgress ? manualPp1Num : (summary?.pp1.total ?? 0);
+  const effPp2 = isManualProgress ? manualPp2Num : (summary?.pp2.total ?? 0);
+
   const labourWarnings = useMemo(() => {
     if (quoteMode === "manual") return [];
     return labourData ? checkMandatoryLabour(labourData) : [];
@@ -1124,6 +1148,14 @@ export function QuoteWizard({
     // legacy manualLabourData saved as a fallback.
     const effectiveLabourData = labourData ?? (quoteMode === "manual" ? manualLabourData : null);
     if (!summary || !effectiveLabourData) return;
+
+    // Manual progress quotes bill the entered PP1/PP2 amounts — at least one
+    // must be set or there's nothing to invoice.
+    if (isManualProgress && manualPp1Num + manualPp2Num <= 0) {
+      toast("Enter the PP1 and/or PP2 amount for this progress quote", "error");
+      return;
+    }
+
     setSaving(true);
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -1172,6 +1204,18 @@ export function QuoteWizard({
       pricing_snapshot: {
         ...summary,
         ...(quoteMode === "manual" ? { scope_of_works: manualScope, quote_mode: "manual" } : { quote_mode: "plan" }),
+        // Manual progress quotes: the entered PP1/PP2 amounts drive the PP1
+        // (on accept) and PP2 (on completion) invoices — override the
+        // cost/sell-derived split so create-from-quote + auto-pp2 bill these.
+        ...(isManualProgress
+          ? {
+              pp1: { ...(summary.pp1 ?? {}), total: manualPp1Num },
+              pp2: { ...(summary.pp2 ?? {}), total: manualPp2Num },
+              totalExGST: manualPp1Num + manualPp2Num,
+              gst: (manualPp1Num + manualPp2Num) * 0.1,
+              totalIncGST: (manualPp1Num + manualPp2Num) * 1.1,
+            }
+          : {}),
       },
       expires_at: new Date(Date.now() + (billingSettings?.quote_validity_days ?? 30) * 86400000).toISOString(),
     };
@@ -2702,7 +2746,49 @@ export function QuoteWizard({
           </div>
 
           {/* Progress Payment breakdown — only for progress quotes */}
-          {quoteType === "progress" && (
+          {quoteType === "progress" && isManualProgress && (
+            <div className="rounded-lg border border-border bg-card p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Progress Payment Split</h3>
+              <p className="text-[11px] text-muted-foreground mb-3">
+                Enter the PP1 and PP2 amounts (ex GST). PP1 is invoiced on acceptance; PP2 auto-generates on job completion. Line-item total for reference: <span className="font-mono text-foreground">${fmt(summary.totalExGST)}</span>.
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">PP1 — Due on Acceptance (ex GST)</label>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground">$</span>
+                    <input
+                      type="number" step="0.01" min="0" inputMode="decimal"
+                      value={manualPp1}
+                      onChange={(e) => setManualPp1(e.target.value)}
+                      placeholder="0.00"
+                      className="block w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  <p className="mt-1 text-[10px] text-muted-foreground">inc GST ${fmt(manualPp1Num * 1.1)}</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">PP2 — Due on Completion (ex GST)</label>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground">$</span>
+                    <input
+                      type="number" step="0.01" min="0" inputMode="decimal"
+                      value={manualPp2}
+                      onChange={(e) => setManualPp2(e.target.value)}
+                      placeholder="0.00"
+                      className="block w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  <p className="mt-1 text-[10px] text-muted-foreground">inc GST ${fmt(manualPp2Num * 1.1)}</p>
+                </div>
+              </div>
+              <div className="mt-3 flex justify-between border-t border-border pt-2 text-sm font-medium">
+                <span>PP1 + PP2 (ex GST)</span>
+                <span className="font-mono">${fmt(manualPp1Num + manualPp2Num)}</span>
+              </div>
+            </div>
+          )}
+          {quoteType === "progress" && !isManualProgress && (
             <div className="grid gap-4 lg:grid-cols-2">
               <div className="rounded-lg border border-border bg-card p-4">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">PP1 — Due on Acceptance</h3>
@@ -2731,14 +2817,14 @@ export function QuoteWizard({
 
           {/* Totals */}
           <div className="rounded-lg border-2 border-primary/30 bg-card p-6 text-center space-y-3">
-            <div><p className="text-xs text-muted-foreground uppercase">Total Price (ex GST)</p><p className="text-2xl font-bold font-mono">${fmt(summary.totalExGST)}</p></div>
-            <div><p className="text-xs text-muted-foreground">GST (10%)</p><p className="text-lg font-mono">${fmt(summary.gst)}</p></div>
-            <div className="border-t border-border pt-3"><p className="text-xs text-muted-foreground uppercase">Total (inc GST)</p><p className="text-3xl font-bold font-mono">${fmt(summary.totalIncGST)}</p></div>
+            <div><p className="text-xs text-muted-foreground uppercase">Total Price (ex GST)</p><p className="text-2xl font-bold font-mono">${fmt(isManualProgress ? effPp1 + effPp2 : summary.totalExGST)}</p></div>
+            <div><p className="text-xs text-muted-foreground">GST (10%)</p><p className="text-lg font-mono">${fmt(isManualProgress ? (effPp1 + effPp2) * 0.1 : summary.gst)}</p></div>
+            <div className="border-t border-border pt-3"><p className="text-xs text-muted-foreground uppercase">Total (inc GST)</p><p className="text-3xl font-bold font-mono">${fmt(isManualProgress ? (effPp1 + effPp2) * 1.1 : summary.totalIncGST)}</p></div>
 
             {quoteType === "progress" && (
               <div className="grid grid-cols-2 gap-4 pt-3 border-t border-border">
-                <div><p className="text-[10px] text-muted-foreground uppercase">PP1 (inc GST)</p><p className="text-lg font-bold font-mono">${fmt(summary.pp1.total * 1.1)}</p></div>
-                <div><p className="text-[10px] text-muted-foreground uppercase">PP2 (inc GST)</p><p className="text-lg font-bold font-mono">${fmt(summary.pp2.total * 1.1)}</p></div>
+                <div><p className="text-[10px] text-muted-foreground uppercase">PP1 (inc GST)</p><p className="text-lg font-bold font-mono">${fmt(effPp1 * 1.1)}</p></div>
+                <div><p className="text-[10px] text-muted-foreground uppercase">PP2 (inc GST)</p><p className="text-lg font-bold font-mono">${fmt(effPp2 * 1.1)}</p></div>
               </div>
             )}
 
