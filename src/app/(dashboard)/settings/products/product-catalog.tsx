@@ -778,7 +778,7 @@ export function ProductCatalog({
       )}
 
       {/* Add modal */}
-      {addingToCategory && (
+      {addingToCategory !== null && (
         <ProductFormModal
           mode="create"
           category={addingToCategory}
