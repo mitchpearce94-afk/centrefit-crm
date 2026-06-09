@@ -50,13 +50,19 @@ function fmtRange(start: string, end: string | null): string {
   return `${fmtShort(start)} – ${fmtShort(end)}`;
 }
 
-function relative(start: string): { label: string; tone: "today" | "soon" | "past" | "none" } {
+// Tag for a phase's date range: Completed once the whole range has passed,
+// In progress while we're inside it, otherwise a countdown to the start.
+function phaseTag(
+  start: string,
+  end: string | null,
+): { label: string; tone: "today" | "soon" | "none" | "done" } {
   const today = new Date(todayISO() + "T00:00:00").getTime();
-  const target = new Date(start + "T00:00:00").getTime();
-  const days = Math.round((target - today) / 86_400_000);
-  if (days === 0) return { label: "Today", tone: "today" };
+  const startT = new Date(start + "T00:00:00").getTime();
+  const endT = new Date((end || start) + "T00:00:00").getTime();
+  if (today > endT) return { label: "Completed", tone: "done" };
+  if (today >= startT) return { label: "In progress", tone: "today" };
+  const days = Math.round((startT - today) / 86_400_000);
   if (days === 1) return { label: "Tomorrow", tone: "soon" };
-  if (days < 0) return { label: `${Math.abs(days)}d ago`, tone: "past" };
   return { label: `in ${days}d`, tone: "none" };
 }
 
@@ -127,14 +133,14 @@ function PhaseBlock({
   end: string | null;
   crew: StaffLite[];
 }) {
-  const rel = start ? relative(start) : null;
+  const rel = start ? phaseTag(start, end) : null;
   const toneClass =
     rel?.tone === "today"
       ? "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30"
       : rel?.tone === "soon"
       ? "bg-amber-500/15 text-amber-300 ring-amber-500/30"
-      : rel?.tone === "past"
-      ? "bg-rose-500/15 text-rose-300 ring-rose-500/30"
+      : rel?.tone === "done"
+      ? "bg-white/5 text-white/40 ring-white/10"
       : "bg-white/5 text-white/70 ring-white/10";
   return (
     <div className="min-w-[200px]">
@@ -180,18 +186,21 @@ export default async function StatusBoardPage({
     .map((j) => {
       const _status = one(j.status);
       const stage = deriveStage(j, today);
-      // No fit-out dates yet → fall back to the real CRM status, parked after
-      // all date-driven jobs (group 3) and ordered by the status sort_order.
-      const group = stage ? stage.group : 3;
+      // One chronological timeline: rough-in and fit-off dates compete directly,
+      // so jobs interleave by whichever milestone comes next (a sooner fit-off
+      // can sit above a later rough-in). Finished-but-not-closed builds park at
+      // the bottom; jobs with no dates yet fall back to their real CRM status,
+      // last of all.
+      const rank = !stage ? 2 : stage.label === "Awaiting Job Completion" ? 1 : 0;
       const sortDate = stage
         ? stage.sortDate
         : `9999-${String(_status?.sort_order ?? 999).padStart(4, "0")}`;
-      return { ...j, _status, _site: one(j.site), _customer: one(j.customer), stage, group, sortDate };
+      return { ...j, _status, _site: one(j.site), _customer: one(j.customer), stage, rank, sortDate };
     })
     .filter((j) => j._status?.name !== "Cancelled")
     .sort(
       (a, b) =>
-        a.group - b.group ||
+        a.rank - b.rank ||
         a.sortDate.localeCompare(b.sortDate) ||
         (a._site?.name ?? a._customer?.name ?? "").localeCompare(b._site?.name ?? b._customer?.name ?? ""),
     );
