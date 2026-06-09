@@ -6,42 +6,52 @@ import { BoardLive } from "./board-live";
 // Always render fresh — this is a live board, never cache it.
 export const dynamic = "force-dynamic";
 
+interface StaffLite {
+  id: string;
+  display_name: string;
+  initials: string;
+  colour: string | null;
+}
+
 interface BoardJob {
   id: string;
   number: string | null;
   reference: string | null;
   rough_in_date: string | null;
+  rough_in_end_date: string | null;
   fit_off_date: string | null;
+  fit_off_end_date: string | null;
+  rough_in_staff_ids: string[] | null;
+  fit_off_staff_ids: string[] | null;
   customer: { name: string } | { name: string }[] | null;
   site: { name: string } | { name: string }[] | null;
-  status: { name: string; colour: string | null; phase: string | null; sort_order: number | null }
-    | { name: string; colour: string | null; phase: string | null; sort_order: number | null }[]
+  status:
+    | { name: string; colour: string | null; sort_order: number | null }
+    | { name: string; colour: string | null; sort_order: number | null }[]
     | null;
 }
 
 function one<T>(v: T | T[] | null): T | null {
-  if (Array.isArray(v)) return v[0] ?? null;
-  return v ?? null;
+  return Array.isArray(v) ? v[0] ?? null : v ?? null;
 }
 
 function todayISO(): string {
-  // Brisbane local date (TZ set in instrumentation.ts). en-CA gives YYYY-MM-DD.
+  // Brisbane local date (TZ set in instrumentation.ts). en-CA → YYYY-MM-DD.
   return new Date().toLocaleDateString("en-CA");
 }
 
-function fmtDate(d: string): string {
-  return new Date(d + "T00:00:00").toLocaleDateString("en-AU", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
+function fmtShort(d: string): string {
+  return new Date(d + "T00:00:00").toLocaleDateString("en-AU", { day: "numeric", month: "short" });
 }
 
-// Returns { label, tone } describing a rough-in / fit-off date relative to today.
-function relative(d: string | null): { label: string; tone: "none" | "today" | "soon" | "past" } | null {
-  if (!d) return null;
+function fmtRange(start: string, end: string | null): string {
+  if (!end || end === start) return fmtShort(start);
+  return `${fmtShort(start)} – ${fmtShort(end)}`;
+}
+
+function relative(start: string): { label: string; tone: "today" | "soon" | "past" | "none" } {
   const today = new Date(todayISO() + "T00:00:00").getTime();
-  const target = new Date(d + "T00:00:00").getTime();
+  const target = new Date(start + "T00:00:00").getTime();
   const days = Math.round((target - today) / 86_400_000);
   if (days === 0) return { label: "Today", tone: "today" };
   if (days === 1) return { label: "Tomorrow", tone: "soon" };
@@ -49,8 +59,38 @@ function relative(d: string | null): { label: string; tone: "none" | "today" | "
   return { label: `in ${days}d`, tone: "none" };
 }
 
-function DateChip({ heading, date }: { heading: string; date: string | null }) {
-  const rel = relative(date);
+function CrewAvatars({ crew }: { crew: StaffLite[] }) {
+  if (crew.length === 0) {
+    return <span className="text-sm text-white/25">Unassigned</span>;
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {crew.map((s) => (
+        <span
+          key={s.id}
+          title={s.display_name}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white ring-1 ring-white/15"
+          style={{ backgroundColor: s.colour ?? "#3b82f6" }}
+        >
+          {s.initials}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function PhaseBlock({
+  heading,
+  start,
+  end,
+  crew,
+}: {
+  heading: string;
+  start: string | null;
+  end: string | null;
+  crew: StaffLite[];
+}) {
+  const rel = start ? relative(start) : null;
   const toneClass =
     rel?.tone === "today"
       ? "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30"
@@ -60,20 +100,21 @@ function DateChip({ heading, date }: { heading: string; date: string | null }) {
       ? "bg-rose-500/15 text-rose-300 ring-rose-500/30"
       : "bg-white/5 text-white/70 ring-white/10";
   return (
-    <div className="min-w-[150px]">
+    <div className="min-w-[200px]">
       <div className="text-[11px] font-semibold uppercase tracking-[0.15em] text-white/35">{heading}</div>
-      {date ? (
+      {start ? (
         <div className="mt-1 flex items-center gap-2">
-          <span className="text-xl font-medium text-white/90">{fmtDate(date)}</span>
+          <span className="text-xl font-medium text-white/90">{fmtRange(start, end)}</span>
           {rel && (
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${toneClass}`}>
-              {rel.label}
-            </span>
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${toneClass}`}>{rel.label}</span>
           )}
         </div>
       ) : (
         <div className="mt-1 text-xl font-medium text-white/25">—</div>
       )}
+      <div className="mt-2">
+        <CrewAvatars crew={crew} />
+      </div>
     </div>
   );
 }
@@ -93,21 +134,34 @@ export default async function StatusBoardPage({
   const { data } = await supabase
     .from("jobs")
     .select(
-      "id, number, reference, rough_in_date, fit_off_date, customer:customers(name), site:customer_sites(name), status:statuses(name, colour, phase, sort_order)",
+      "id, number, reference, rough_in_date, rough_in_end_date, fit_off_date, fit_off_end_date, rough_in_staff_ids, fit_off_staff_ids, customer:customers(name), site:customer_sites(name), status:statuses(name, colour, sort_order)",
     )
     .eq("is_new_build", true);
 
-  const jobs = ((data ?? []) as BoardJob[])
+  const rows = ((data ?? []) as BoardJob[])
     .map((j) => ({
       ...j,
       _status: one(j.status),
       _site: one(j.site),
       _customer: one(j.customer),
     }))
-    // Drop cancelled builds from the board.
     .filter((j) => j._status?.name !== "Cancelled")
-    // Earlier pipeline stages first, completed builds drift to the bottom.
     .sort((a, b) => (a._status?.sort_order ?? 999) - (b._status?.sort_order ?? 999));
+
+  // Resolve every assigned crew member in one query, then map per phase.
+  const staffIds = Array.from(
+    new Set(rows.flatMap((j) => [...(j.rough_in_staff_ids ?? []), ...(j.fit_off_staff_ids ?? [])])),
+  );
+  const staffById = new Map<string, StaffLite>();
+  if (staffIds.length > 0) {
+    const { data: staff } = await supabase
+      .from("staff")
+      .select("id, display_name, initials, colour")
+      .in("id", staffIds);
+    for (const s of (staff ?? []) as StaffLite[]) staffById.set(s.id, s);
+  }
+  const crewOf = (idList: string[] | null): StaffLite[] =>
+    (idList ?? []).map((id) => staffById.get(id)).filter((s): s is StaffLite => !!s);
 
   const updated = new Date().toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" });
 
@@ -129,55 +183,40 @@ export default async function StatusBoardPage({
             New Build Status Board
           </h1>
           <p className="mt-2 text-sm text-white/40">
-            {jobs.length} active build{jobs.length === 1 ? "" : "s"} · updated {updated}
+            {rows.length} active build{rows.length === 1 ? "" : "s"} · updated {updated}
           </p>
         </div>
         <BoardLive />
       </header>
 
       {/* Board */}
-      {jobs.length === 0 ? (
-        <div className="mt-24 text-center text-2xl font-medium text-white/30">
-          No active new builds right now.
-        </div>
+      {rows.length === 0 ? (
+        <div className="mt-24 text-center text-2xl font-medium text-white/30">No active new builds right now.</div>
       ) : (
         <div className="mt-6 space-y-3">
-          {jobs.map((j) => {
+          {rows.map((j) => {
             const colour = j._status?.colour ?? "#8b5cf6";
             const title = j._site?.name ?? j._customer?.name ?? j.reference ?? j.number ?? "—";
             const subtitle = j._site?.name ? j._customer?.name : j.reference;
             return (
               <div
                 key={j.id}
-                className="flex items-center gap-6 rounded-2xl border border-white/10 bg-white/[0.04] px-7 py-5 shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset] backdrop-blur-sm"
+                className="flex items-center gap-6 rounded-2xl border border-white/10 bg-white/[0.04] px-7 py-5 backdrop-blur-sm"
               >
-                {/* Status colour rail */}
-                <span
-                  className="h-12 w-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: colour }}
-                />
+                <span className="h-14 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: colour }} />
 
-                {/* Site / customer */}
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-3xl font-bold tracking-tight text-white">{title}</div>
-                  {subtitle && (
-                    <div className="mt-0.5 truncate text-base text-white/45">{subtitle}</div>
-                  )}
+                  {subtitle && <div className="mt-0.5 truncate text-base text-white/45">{subtitle}</div>}
                 </div>
 
-                {/* Dates */}
-                <DateChip heading="Rough In" date={j.rough_in_date} />
-                <DateChip heading="Fit Off" date={j.fit_off_date} />
+                <PhaseBlock heading="Rough In" start={j.rough_in_date} end={j.rough_in_end_date} crew={crewOf(j.rough_in_staff_ids)} />
+                <PhaseBlock heading="Fit Off" start={j.fit_off_date} end={j.fit_off_end_date} crew={crewOf(j.fit_off_staff_ids)} />
 
-                {/* Status pill */}
                 <div className="w-[230px] shrink-0 text-right">
                   <span
                     className="inline-flex items-center gap-2.5 rounded-full border px-5 py-2.5 text-xl font-semibold"
-                    style={{
-                      backgroundColor: `${colour}22`,
-                      color: colour,
-                      borderColor: `${colour}55`,
-                    }}
+                    style={{ backgroundColor: `${colour}22`, color: colour, borderColor: `${colour}55` }}
                   >
                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colour }} />
                     {j._status?.name ?? "—"}

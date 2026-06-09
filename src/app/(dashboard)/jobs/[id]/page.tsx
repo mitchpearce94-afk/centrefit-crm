@@ -181,9 +181,14 @@ export default async function JobDetailPage({
       <div className="mt-2">
         <StatusBoardControls
           jobId={id}
+          allStaff={staffResult.data ?? []}
           isNewBuild={job.is_new_build ?? false}
           roughInDate={job.rough_in_date ?? null}
+          roughInEndDate={job.rough_in_end_date ?? null}
+          roughInStaffIds={job.rough_in_staff_ids ?? []}
           fitOffDate={job.fit_off_date ?? null}
+          fitOffEndDate={job.fit_off_end_date ?? null}
+          fitOffStaffIds={job.fit_off_staff_ids ?? []}
         />
       </div>
 
