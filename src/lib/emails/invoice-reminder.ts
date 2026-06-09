@@ -42,10 +42,15 @@ export async function sendInvoiceReminderEmail(
   const amountStr = `$${fmt(input.amountDue)}`;
   const dueStr = formatDate(input.dueDate);
 
+  // Same template serves the pre-due "due soon" nudge and the overdue chase —
+  // tense and headline switch on where the due date sits relative to now.
+  const dueInFuture = input.dueDate ? new Date(input.dueDate).getTime() > Date.now() : false;
   const headline =
     input.daysOverdue > 0
       ? `Invoice ${input.invoiceRef} is ${input.daysOverdue} day${input.daysOverdue === 1 ? "" : "s"} overdue`
-      : `Invoice ${input.invoiceRef} — payment reminder`;
+      : dueInFuture
+        ? `Invoice ${input.invoiceRef} is due soon`
+        : `Invoice ${input.invoiceRef} — payment reminder`;
 
   const payButton = input.payUrl
     ? `
@@ -66,7 +71,7 @@ export async function sendInvoiceReminderEmail(
       <h1 style="font-size:20px;font-weight:600;color:#0f172a;margin:0 0 4px;letter-spacing:-0.3px">${headline}</h1>
       <p style="font-size:13px;color:#475569;margin:14px 0 0;line-height:1.6">${greeting}</p>
       <p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">
-        This is a friendly reminder that <strong>${amountStr}</strong> remains outstanding on invoice <strong>${input.invoiceRef}</strong>${input.dueDate ? `, which was due <strong>${dueStr}</strong>` : ""}.
+        This is a friendly reminder that <strong>${amountStr}</strong> remains outstanding on invoice <strong>${input.invoiceRef}</strong>${input.dueDate ? `, which ${dueInFuture ? "is due" : "was due"} <strong>${dueStr}</strong>` : ""}.
       </p>
       <p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">
         <em>If you&rsquo;ve already paid this invoice in the last few business days, please disregard this reminder — our records may not have caught up yet.</em>
