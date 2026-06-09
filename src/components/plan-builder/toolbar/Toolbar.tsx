@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { getPdfPages, renderPdfToImage, renderPdfPageWithElements, PdfPageInfo } from '@/lib/plan-builder/pdfUtils';
 import { generateQuoteExport } from '@/lib/plan-builder/quoteExport';
 import { exportToPdf } from '@/lib/plan-builder/exportUtils';
+import { supportsFilePicker, pickSaveFile, writeToHandle, downloadBlob, type SaveFileHandle } from '@/lib/plan-builder/fileSave';
 import PageSelector from '@/components/plan-builder/PageSelector';
 import CompletePlanModal from '@/components/plan-builder/CompletePlanModal';
 
@@ -250,31 +251,61 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
     return pdfBlob;
   };
 
-  const handleSave = async () => {
-    // Save = cloud-only. No browser downloads. Save to Supabase storage
-    // (.cfp + regenerated PDF + plan_files row). Use Export when you
-    // explicitly want the PDF on your machine.
-    await saveToCloud();
+  const cfqFilename = () => {
+    const tb = usePlanStore.getState().titleBlock;
+    const parts = [tb.client, tb.projectName].filter(Boolean);
+    return `${parts.join(' - ') || 'centrefit-plan'}.cfq`;
+  };
+  const pdfFilename = () => {
+    const tb = usePlanStore.getState().titleBlock;
+    const parts = [tb.state, tb.client, tb.projectName, tb.revision, tb.date].filter(Boolean);
+    return parts.length > 0
+      ? `${parts.join(' - ').replace(/[^a-zA-Z0-9\-_ \/]/g, '')}.pdf`
+      : 'centrefit-plan.pdf';
   };
 
-  const handleExport = async () => {
-    // saveToCloud already renders + uploads the fresh PDF. We just need to
-    // also surface it as a browser download for the user.
-    const pdfBlob = await saveToCloud();
-    if (!pdfBlob) return;
+  // Save Plan: persist to the CRM (cloud) as before, AND drop the .cfq quote
+  // file into a folder the user picks (e.g. their OneDrive folder). The save
+  // dialog must open before the cloud save (user-gesture rule).
+  const handleSavePlan = async () => {
+    const name = cfqFilename();
+    let handle: SaveFileHandle | null = null;
+    let cancelled = false;
+    if (supportsFilePicker()) {
+      const res = await pickSaveFile(name, 'Centrefit Quote File', 'application/octet-stream', '.cfq');
+      if (res === 'cancelled') cancelled = true;
+      else handle = res;
+    }
+    await saveToCloud(); // always keep the CRM copy in sync
+    if (cancelled) return;
+    const data = generateQuoteExport();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     try {
-      const tb = usePlanStore.getState().titleBlock;
-      const url = URL.createObjectURL(pdfBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      const filenameParts = [tb.state, tb.client, tb.projectName, tb.revision, tb.date].filter(Boolean);
-      a.download = filenameParts.length > 0
-        ? `${filenameParts.join(' - ').replace(/[^a-zA-Z0-9\-_ \/]/g, '')}.pdf`
-        : 'centrefit-plan.pdf';
-      a.click();
-      URL.revokeObjectURL(url);
+      if (handle) await writeToHandle(handle, blob);
+      else downloadBlob(blob, name);
     } catch (err) {
-      console.error('[Plan Builder] PDF download failed:', err);
+      console.error('[Plan Builder] Save Plan (.cfq) failed:', err);
+    }
+  };
+
+  // Save PDF: cloud save (renders + uploads the fresh PDF), then write it to a
+  // folder the user picks instead of dumping to Downloads.
+  const handleSavePdf = async () => {
+    const name = pdfFilename();
+    let handle: SaveFileHandle | null = null;
+    let cancelled = false;
+    if (supportsFilePicker()) {
+      const res = await pickSaveFile(name, 'PDF Document', 'application/pdf', '.pdf');
+      if (res === 'cancelled') cancelled = true;
+      else handle = res;
+    }
+    const pdfBlob = await saveToCloud();
+    if (cancelled || !pdfBlob) return;
+    try {
+      if (handle) await writeToHandle(handle, pdfBlob);
+      else downloadBlob(pdfBlob, name);
+    } catch (err) {
+      console.error('[Plan Builder] Save PDF failed:', err);
     }
   };
 
@@ -404,10 +435,10 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
       </div>
 
       <div className="flex items-center gap-1 pr-3 border-r border-gray-700">
-        <button className="px-2.5 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded disabled:opacity-50" onClick={handleSave} disabled={saving} title="Saves the .cfp AND regenerates the PDF so the stored copy matches what you've drawn">
+        <button className="px-2.5 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded disabled:opacity-50" onClick={handleSavePlan} disabled={saving} title="Saves to the CRM AND lets you save the .cfq quote file to a folder you choose (e.g. OneDrive)">
           {saving
             ? (savingPhase === 'rendering' ? 'Generating PDF…' : 'Saving…')
-            : 'Save'}
+            : 'Save Plan'}
         </button>
         <input ref={projectInputRef} type="file" accept=".cfp,.json" className="hidden" onChange={handleProjectLoad} />
         <button className="px-2.5 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded"
@@ -449,7 +480,7 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
       {/* Export + Complete */}
       <div className="flex items-center gap-1">
         <button className="px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white text-xs rounded font-medium transition-colors"
-          onClick={handleExport}>Export PDF</button>
+          onClick={handleSavePdf} title="Saves to the CRM AND lets you save the PDF to a folder you choose (e.g. OneDrive)">Save PDF</button>
         <button className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded font-medium transition-colors"
           onClick={handleCompletePlan}>Complete Plan</button>
       </div>
