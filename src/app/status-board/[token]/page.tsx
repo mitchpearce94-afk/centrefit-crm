@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { notFound } from "next/navigation";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { BoardLive } from "./board-live";
@@ -115,10 +116,16 @@ export default async function StatusBoardPage({
       {/* Header */}
       <header className="flex items-end justify-between gap-6 border-b border-white/10 pb-6">
         <div>
-          <div className="text-sm font-semibold uppercase tracking-[0.3em] text-violet-300/80">
-            Centrefit
-          </div>
-          <h1 className="mt-1 bg-gradient-to-r from-white via-white to-violet-300 bg-clip-text text-5xl font-bold tracking-tight text-transparent">
+          <Image
+            src="/centrefit-logo.png"
+            alt="Centrefit Group"
+            width={240}
+            height={60}
+            priority
+            className="h-9 w-auto"
+            style={{ filter: "brightness(0) invert(1)" }}
+          />
+          <h1 className="mt-3 bg-gradient-to-r from-white via-white to-violet-300 bg-clip-text text-5xl font-bold tracking-tight text-transparent">
             New Build Status Board
           </h1>
           <p className="mt-2 text-sm text-white/40">
