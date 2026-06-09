@@ -34,11 +34,13 @@ export async function POST(
     .eq("id", id)
     .maybeSingle();
   if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  // 'ordered' (via Xero PO) and 'ordered_online' (bought directly online, no PO)
-  // are both awaiting-delivery states that can be received.
-  if (current.status !== "ordered" && current.status !== "ordered_online") {
+  // All three awaiting-delivery states can be received: 'ordered' (Xero PO),
+  // 'ordered_online' (bought online, no PO), and 'in_stock' (pulled from our
+  // own stock). Nothing is complete until it's been received.
+  const receivable = ["ordered", "ordered_online", "in_stock"];
+  if (!receivable.includes(current.status)) {
     return NextResponse.json(
-      { error: `Can only receive an ordered item (currently ${current.status})` },
+      { error: `Can only receive an awaiting-delivery item (currently ${current.status})` },
       { status: 400 },
     );
   }

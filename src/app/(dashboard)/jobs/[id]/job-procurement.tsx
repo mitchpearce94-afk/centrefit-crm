@@ -68,7 +68,7 @@ export function JobProcurement({
   const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
-  const [tab, setTab] = useState<"active" | "received">("active");
+  const [tab, setTab] = useState<"to_order" | "awaiting" | "complete">("to_order");
   const [splitTarget, setSplitTarget] = useState<ProcurementItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProcurementItem | null>(null);
   // Ad-hoc parts picker (service jobs with no quote BOM).
@@ -99,10 +99,24 @@ export function JobProcurement({
     [items],
   );
 
-  const activeItems = useMemo(
+  // Three stages: To Order (still being triaged / queued) → Awaiting Delivery
+  // (ordered or in-stock, not yet received) → Complete (received). Nothing
+  // reaches Complete until it's been received.
+  const toOrderItems = useMemo(
     () =>
       items
-        .filter((i) => i.status !== "received")
+        .filter((i) => i.status === "pending" || i.status === "order")
+        .sort(
+          (a, b) =>
+            STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
+            a.product_name.localeCompare(b.product_name),
+        ),
+    [items],
+  );
+  const awaitingItems = useMemo(
+    () =>
+      items
+        .filter((i) => i.status === "in_stock" || i.status === "ordered" || i.status === "ordered_online")
         .sort(
           (a, b) =>
             STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
@@ -558,7 +572,7 @@ export function JobProcurement({
     );
   }
 
-  const rowsToShow = tab === "active" ? activeItems : receivedItems;
+  const rowsToShow = tab === "to_order" ? toOrderItems : tab === "awaiting" ? awaitingItems : receivedItems;
 
   return (
     <>
@@ -568,8 +582,7 @@ export function JobProcurement({
         <div>
           <h2 className="text-sm font-semibold">Procurement</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {items.length} line{items.length === 1 ? "" : "s"} · {orderCount} to order
-            {receivedItems.length > 0 && ` · ${receivedItems.length} received`}
+            {items.length} line{items.length === 1 ? "" : "s"} · {toOrderItems.length} to order · {awaitingItems.length} awaiting delivery · {receivedItems.length} received
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -607,31 +620,32 @@ export function JobProcurement({
 
       {/* Tabs */}
       <div className="mb-3 flex items-center gap-1 border-b border-border">
-        <button
-          onClick={() => setTab("active")}
-          className={`-mb-px border-b-2 px-3 py-1.5 text-xs font-medium transition-colors ${
-            tab === "active"
-              ? "border-primary text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          Active ({activeItems.length})
-        </button>
-        <button
-          onClick={() => setTab("received")}
-          className={`-mb-px border-b-2 px-3 py-1.5 text-xs font-medium transition-colors ${
-            tab === "received"
-              ? "border-primary text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          Received ({receivedItems.length})
-        </button>
+        {([
+          { key: "to_order" as const, label: "To Order", count: toOrderItems.length },
+          { key: "awaiting" as const, label: "Awaiting Delivery", count: awaitingItems.length },
+          { key: "complete" as const, label: "Complete", count: receivedItems.length },
+        ]).map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`-mb-px border-b-2 px-3 py-1.5 text-xs font-medium transition-colors ${
+              tab === t.key
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t.label} ({t.count})
+          </button>
+        ))}
       </div>
 
       {rowsToShow.length === 0 ? (
         <p className="py-6 text-center text-xs text-muted-foreground">
-          {tab === "active" ? "Everything's been received — nothing active." : "Nothing received yet."}
+          {tab === "to_order"
+            ? "Nothing left to order — everything's been actioned."
+            : tab === "awaiting"
+            ? "Nothing awaiting delivery."
+            : "Nothing received yet."}
         </p>
       ) : (
       <div className="overflow-x-auto">
@@ -642,16 +656,18 @@ export function JobProcurement({
               <th className="px-2 py-2 font-medium w-20 text-right">Qty</th>
               <th className="px-2 py-2 font-medium">Supplier</th>
               <th className="px-2 py-2 font-medium">Status</th>
-              {tab === "active" && <th className="px-2 py-2 font-medium">Notes</th>}
+              {tab !== "complete" && <th className="px-2 py-2 font-medium">Notes</th>}
               <th className="px-2 py-2 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {rowsToShow.map((item) => {
-              const isLocked =
-                item.status === "ordered" ||
-                item.status === "ordered_online" ||
-                item.status === "received";
+              // Only pending/order lines are still being triaged (editable qty,
+              // supplier, In Stock/Order/Online buttons, notes). Everything else
+              // (in_stock, ordered, ordered_online, received) is "actioned" —
+              // shown as a status badge with Receive / undo actions.
+              const editable = item.status === "pending" || item.status === "order";
+              const isLocked = !editable;
               const rowBusy = busy === item.id;
               const noCost =
                 item.status === "order" && Number(item.line?.cost_price ?? 0) <= 0;
@@ -760,7 +776,7 @@ export function JobProcurement({
                       </div>
                     )}
                   </td>
-                  {tab === "active" && (
+                  {tab !== "complete" && (
                     <td className="px-2 py-2">
                       {isLocked ? (
                         <span className="text-muted-foreground">{item.backorder_note ?? ""}</span>
@@ -802,7 +818,7 @@ export function JobProcurement({
                           </button>
                         </>
                       )}
-                      {item.status === "ordered_online" && (
+                      {(item.status === "ordered_online" || item.status === "in_stock") && (
                         <>
                           <button
                             onClick={() => receiveItem(item.id)}
@@ -812,10 +828,10 @@ export function JobProcurement({
                             Receive
                           </button>
                           <button
-                            onClick={() => patchItem(item.id, { status: "order" })}
+                            onClick={() => patchItem(item.id, { status: "pending" })}
                             disabled={rowBusy}
                             className="text-xs text-muted-foreground hover:text-red-400 disabled:opacity-50"
-                            title="Undo — put this line back to Order triage"
+                            title="Undo — put this line back to triage"
                           >
                             Undo
                           </button>
