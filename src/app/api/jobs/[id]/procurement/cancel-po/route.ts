@@ -70,12 +70,22 @@ export async function POST(
       purchaseOrderID: xeroPoId,
     });
   } catch (err) {
-    return NextResponse.json(
-      {
-        error: `Couldn't delete the PO in Xero: ${err instanceof Error ? err.message : String(err)}. It may have been billed or already deleted — check Xero.`,
-      },
-      { status: 502 },
-    );
+    // If the PO is already DELETED in Xero (deleted by hand, or a prior reset
+    // that half-completed), Xero rejects the re-delete with "Deleted
+    // PurchaseOrders cannot be updated". That's exactly the end state we want —
+    // treat it as success and fall through to revert the local rows so they
+    // don't stay stuck as 'ordered' against a PO that no longer exists.
+    const alreadyGone = JSON.stringify(err)
+      .toLowerCase()
+      .includes("deleted purchaseorders cannot be updated");
+    if (!alreadyGone) {
+      return NextResponse.json(
+        {
+          error: `Couldn't delete the PO in Xero: ${err instanceof Error ? err.message : String(err)}. It may have been billed — check Xero.`,
+        },
+        { status: 502 },
+      );
+    }
   }
 
   // Revert rows to 'order' and clear the Xero linkage so they can regenerate
