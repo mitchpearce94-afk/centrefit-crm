@@ -1,17 +1,26 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 
 /**
- * Hands-free vertical auto-scroll for the TV. If the content is taller than the
- * viewport it creeps down slowly, pauses at the bottom, snaps back to the top
- * and repeats — so staff never have to touch it. No-op when everything fits.
+ * Hands-free vertical auto-scroll for the TV. When enabled and the content is
+ * taller than the viewport it creeps down, pauses at the bottom, snaps back to
+ * the top and repeats — so staff never have to touch it. A floating toggle
+ * lets anyone pause it (e.g. to read a row); the choice is remembered.
  */
+const STORAGE_KEY = "cf-board-autoscroll";
+
 export function AutoScroll({ children }: { children: React.ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const [enabled, setEnabled] = useState(true);
+
+  // Restore the saved preference on mount.
+  useEffect(() => {
+    if (localStorage.getItem(STORAGE_KEY) === "off") setEnabled(false);
+  }, []);
 
   useEffect(() => {
-    const SPEED = 0.5; // px per frame (~30px/s at 60fps) — readable
+    if (!enabled) return;
+    const SPEED = 0.7; // px/frame (~42px/s) — readable
     const BOTTOM_PAUSE = 3000;
     const TOP_PAUSE = 2000;
     let raf = 0;
@@ -24,7 +33,6 @@ export function AutoScroll({ children }: { children: React.ReactNode }) {
       const max = maxScroll();
       if (max > 4 && !paused) {
         if (window.scrollY >= max - 1) {
-          // Reached the bottom — hold, jump back up, hold, resume.
           paused = true;
           setTimeout(() => {
             window.scrollTo({ top: 0, behavior: "smooth" });
@@ -41,7 +49,27 @@ export function AutoScroll({ children }: { children: React.ReactNode }) {
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [enabled]);
 
-  return <div ref={ref}>{children}</div>;
+  function toggle() {
+    setEnabled((v) => {
+      const next = !v;
+      localStorage.setItem(STORAGE_KEY, next ? "on" : "off");
+      return next;
+    });
+  }
+
+  return (
+    <>
+      {children}
+      <button
+        type="button"
+        onClick={toggle}
+        className="fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-medium text-white/80 backdrop-blur transition-colors hover:bg-white/20"
+      >
+        <span className={`h-2 w-2 rounded-full ${enabled ? "bg-emerald-400" : "bg-white/30"}`} />
+        Auto-scroll: {enabled ? "On" : "Off"}
+      </button>
+    </>
+  );
 }
