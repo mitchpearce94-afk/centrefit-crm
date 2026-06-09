@@ -123,12 +123,10 @@ function CrewAvatars({ crew }: { crew: StaffLite[] }) {
 }
 
 function PhaseBlock({
-  heading,
   start,
   end,
   crew,
 }: {
-  heading: string;
   start: string | null;
   end: string | null;
   crew: StaffLite[];
@@ -143,17 +141,16 @@ function PhaseBlock({
       ? "bg-white/5 text-white/40 ring-white/10"
       : "bg-white/5 text-white/70 ring-white/10";
   return (
-    <div className="min-w-[200px]">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.15em] text-white/35">{heading}</div>
+    <div>
       {start ? (
-        <div className="mt-1 flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <span className="text-xl font-medium text-white/90">{fmtRange(start, end)}</span>
           {rel && (
             <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${toneClass}`}>{rel.label}</span>
           )}
         </div>
       ) : (
-        <div className="mt-1 text-xl font-medium text-white/25">—</div>
+        <div className="text-xl font-medium text-white/25">—</div>
       )}
       <div className="mt-2">
         <CrewAvatars crew={crew} />
@@ -222,6 +219,9 @@ export default async function StatusBoardPage({
 
   const updated = new Date().toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" });
 
+  // Shared column template so the header and every row line up exactly.
+  const cols = "grid grid-cols-[6px_minmax(0,1fr)_280px_280px_280px] items-center gap-6";
+
   return (
     <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_#1e1b4b_0%,_#0b1020_45%,_#05070d_100%)] px-10 py-8 text-white">
       {/* Header */}
@@ -250,43 +250,54 @@ export default async function StatusBoardPage({
       {rows.length === 0 ? (
         <div className="mt-24 text-center text-2xl font-medium text-white/30">No active new builds right now.</div>
       ) : (
-        <AutoScroll>
-          <div className="mt-6 space-y-3 pb-10">
-            {rows.map((j) => {
-              // Date-driven stage wins; otherwise show the real CRM status.
-              const statusLabel = j.stage?.label ?? j._status?.name ?? "—";
-              const colour = j.stage?.colour ?? j._status?.colour ?? "#8b5cf6";
-              const title = j._site?.name ?? j._customer?.name ?? j.reference ?? j.number ?? "—";
-              const subtitle = j._site?.name ? j._customer?.name : j.reference;
-              return (
-                <div
-                  key={j.id}
-                  className="flex items-center gap-6 rounded-2xl border border-white/10 bg-white/[0.04] px-7 py-5 backdrop-blur-sm"
-                >
-                  <span className="h-14 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: colour }} />
-
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-3xl font-bold tracking-tight text-white">{title}</div>
-                    {subtitle && <div className="mt-0.5 truncate text-base text-white/45">{subtitle}</div>}
-                  </div>
-
-                  <PhaseBlock heading="Rough In" start={j.rough_in_date} end={j.rough_in_end_date} crew={crewOf(j.rough_in_staff_ids)} />
-                  <PhaseBlock heading="Fit Off" start={j.fit_off_date} end={j.fit_off_end_date} crew={crewOf(j.fit_off_staff_ids)} />
-
-                  <div className="shrink-0 text-right">
-                    <span
-                      className={`inline-flex items-center gap-2.5 whitespace-nowrap rounded-full border px-5 py-2.5 font-semibold ${pillSize(statusLabel)}`}
-                      style={{ backgroundColor: `${colour}22`, color: colour, borderColor: `${colour}55` }}
-                    >
-                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: colour }} />
-                      {statusLabel}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
+        <>
+          {/* Column headers — fixed, don't scroll */}
+          <div className={`${cols} mt-6 px-7 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/30`}>
+            <span />
+            <span>Site</span>
+            <span>Rough In</span>
+            <span>Fit Off</span>
+            <span className="text-right">Status</span>
           </div>
-        </AutoScroll>
+
+          <AutoScroll>
+            <div className="space-y-3 pb-10">
+              {rows.map((j) => {
+                // Date-driven stage wins; otherwise show the real CRM status.
+                const statusLabel = j.stage?.label ?? j._status?.name ?? "—";
+                const colour = j.stage?.colour ?? j._status?.colour ?? "#8b5cf6";
+                const title = j._site?.name ?? j._customer?.name ?? j.reference ?? j.number ?? "—";
+                const subtitle = j._site?.name ? j._customer?.name : j.reference;
+                return (
+                  <div
+                    key={j.id}
+                    className={`${cols} rounded-2xl border border-white/10 bg-white/[0.04] px-7 py-5 backdrop-blur-sm`}
+                  >
+                    <span className="h-14 w-1.5 rounded-full" style={{ backgroundColor: colour }} />
+
+                    <div className="min-w-0">
+                      <div className="truncate text-3xl font-bold tracking-tight text-white">{title}</div>
+                      {subtitle && <div className="mt-0.5 truncate text-base text-white/45">{subtitle}</div>}
+                    </div>
+
+                    <PhaseBlock start={j.rough_in_date} end={j.rough_in_end_date} crew={crewOf(j.rough_in_staff_ids)} />
+                    <PhaseBlock start={j.fit_off_date} end={j.fit_off_end_date} crew={crewOf(j.fit_off_staff_ids)} />
+
+                    <div className="text-right">
+                      <span
+                        className={`inline-flex items-center gap-2.5 whitespace-nowrap rounded-full border px-5 py-2.5 font-semibold ${pillSize(statusLabel)}`}
+                        style={{ backgroundColor: `${colour}22`, color: colour, borderColor: `${colour}55` }}
+                      >
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: colour }} />
+                        {statusLabel}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </AutoScroll>
+        </>
       )}
     </div>
   );
