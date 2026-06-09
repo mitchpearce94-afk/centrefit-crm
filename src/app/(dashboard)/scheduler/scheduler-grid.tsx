@@ -181,35 +181,21 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i);
 
   const { allDayByDate, timedByDate } = useMemo(() => {
+    // No "all day" strip anymore (Mitchell's call): every entry renders in the
+    // time grid. Entries with no explicit times default to a standard 6am–4pm
+    // day. Multi-day entries repeat their block on each day of the span.
     const allDay = new Map<string, ScheduleEntry[]>();
     const timed = new Map<string, ScheduleEntry[]>();
     for (const e of entries) {
-      // Routing rules:
-      //   - Has start_time AND end_time → render in the time grid. If it
-      //     also spans multiple days, repeat the timed block on every day
-      //     of the span (Mitchell wants a 9-5 Mon-Wed job to show 9-5 on
-      //     each of those columns, not pinned to the all-day strip).
-      //   - No times → all-day bar, on every day spanned.
       const isMultiDay = !!e.end_date && e.end_date > e.schedule_date;
-      const hasTimes = !!e.start_time && !!e.end_time;
-      if (hasTimes) {
-        let cursor = e.schedule_date;
-        const lastDay = isMultiDay ? e.end_date! : e.schedule_date;
-        while (cursor <= lastDay) {
-          if (!timed.has(cursor)) timed.set(cursor, []);
-          timed.get(cursor)!.push(e);
-          cursor = addDaysStr(cursor, 1);
-        }
-      } else if (isMultiDay) {
-        let cursor = e.schedule_date;
-        while (cursor <= e.end_date!) {
-          if (!allDay.has(cursor)) allDay.set(cursor, []);
-          allDay.get(cursor)!.push(e);
-          cursor = addDaysStr(cursor, 1);
-        }
-      } else {
-        if (!allDay.has(e.schedule_date)) allDay.set(e.schedule_date, []);
-        allDay.get(e.schedule_date)!.push(e);
+      const norm: ScheduleEntry =
+        e.start_time && e.end_time ? e : { ...e, start_time: "06:00:00", end_time: "16:00:00" };
+      let cursor = e.schedule_date;
+      const lastDay = isMultiDay ? e.end_date! : e.schedule_date;
+      while (cursor <= lastDay) {
+        if (!timed.has(cursor)) timed.set(cursor, []);
+        timed.get(cursor)!.push(norm);
+        cursor = addDaysStr(cursor, 1);
       }
     }
     return { allDayByDate: allDay, timedByDate: timed };

@@ -124,8 +124,10 @@ export function StatusBoardControls({
             staffIds={riStaff}
             allStaff={allStaff}
             busy={busy}
-            onStart={(v) => { setRiStart(v); sync({ riStart: v }); }}
-            onEnd={(v) => { setRiEnd(v); sync({ riEnd: v }); }}
+            onStartChange={setRiStart}
+            onStartCommit={(v) => sync({ riStart: v })}
+            onEndChange={setRiEnd}
+            onEndCommit={(v) => sync({ riEnd: v })}
             onStaff={(v) => { setRiStaff(v); sync({ riStaff: v }); }}
           />
           <PhaseEditor
@@ -136,8 +138,10 @@ export function StatusBoardControls({
             staffIds={foStaff}
             allStaff={allStaff}
             busy={busy}
-            onStart={(v) => { setFoStart(v); sync({ foStart: v }); }}
-            onEnd={(v) => { setFoEnd(v); sync({ foEnd: v }); }}
+            onStartChange={setFoStart}
+            onStartCommit={(v) => sync({ foStart: v })}
+            onEndChange={setFoEnd}
+            onEndCommit={(v) => sync({ foEnd: v })}
             onStaff={(v) => { setFoStaff(v); sync({ foStaff: v }); }}
           />
           <p className="sm:col-span-2 text-[11px] text-muted-foreground">
@@ -150,7 +154,7 @@ export function StatusBoardControls({
 }
 
 const dateInput =
-  "rounded-md border border-border bg-input px-2 py-1 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50";
+  "rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
 
 function PhaseEditor({
   label,
@@ -160,8 +164,10 @@ function PhaseEditor({
   staffIds,
   allStaff,
   busy,
-  onStart,
-  onEnd,
+  onStartChange,
+  onStartCommit,
+  onEndChange,
+  onEndCommit,
   onStaff,
 }: {
   label: string;
@@ -171,8 +177,10 @@ function PhaseEditor({
   staffIds: string[];
   allStaff: StaffOption[];
   busy: boolean;
-  onStart: (v: string) => void;
-  onEnd: (v: string) => void;
+  onStartChange: (v: string) => void;
+  onStartCommit: (v: string) => void;
+  onEndChange: (v: string) => void;
+  onEndCommit: (v: string) => void;
   onStaff: (v: string[]) => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -191,11 +199,24 @@ function PhaseEditor({
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
         <label className="inline-flex items-center gap-1">
           From
-          <input type="date" value={start} disabled={busy} onChange={(e) => onStart(e.target.value)} className={dateInput} />
+          <input
+            type="date"
+            value={start}
+            onChange={(e) => onStartChange(e.target.value)}
+            onBlur={(e) => onStartCommit(e.target.value)}
+            className={dateInput}
+          />
         </label>
         <label className="inline-flex items-center gap-1">
           To
-          <input type="date" value={end} min={start || undefined} disabled={busy} onChange={(e) => onEnd(e.target.value)} className={dateInput} />
+          <input
+            type="date"
+            value={end}
+            min={start || undefined}
+            onChange={(e) => onEndChange(e.target.value)}
+            onBlur={(e) => onEndCommit(e.target.value)}
+            className={dateInput}
+          />
         </label>
       </div>
 
@@ -235,7 +256,7 @@ function PhaseEditor({
             {pickerOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setPickerOpen(false)} />
-                <div className="absolute left-0 top-full z-50 mt-1 max-h-56 w-52 overflow-y-auto rounded-lg border border-border bg-popover shadow-xl">
+                <div className="absolute left-0 top-full z-50 mt-1 max-h-56 w-52 overflow-y-auto rounded-lg border border-border bg-card shadow-xl">
                   {available.map((s) => (
                     <button
                       key={s.id}

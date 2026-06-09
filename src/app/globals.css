@@ -160,6 +160,15 @@ h1, h2, h3 {
   display: none;
 }
 
+/* Render native date/time pickers in the dark CRM theme (icon + popup) so
+   they don't look like a stray light-mode browser control. */
+.dark input[type="date"],
+.dark input[type="time"],
+.dark input[type="datetime-local"],
+.dark input[type="month"] {
+  color-scheme: dark;
+}
+
 @media (max-width: 640px) {
   .sm-scrollbar-hide::-webkit-scrollbar { display: none; }
   .sm-scrollbar-hide {

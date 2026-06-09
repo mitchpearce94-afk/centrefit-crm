@@ -86,8 +86,9 @@ export async function POST(
         staff_id: staffId,
         schedule_date: start,
         end_date: endDate,
-        start_time: null,
-        end_time: null,
+        // Standard install day — no "all day" entries on the scheduler.
+        start_time: "06:00:00",
+        end_time: "16:00:00",
         notes: label,
         board_phase: phase,
         created_by: user.id,
