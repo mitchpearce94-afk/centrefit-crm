@@ -265,6 +265,13 @@ export function JobProcurement({
         toast(`All ${failCount} PO attempt(s) failed — see console`, "error");
         console.error("PO generation failures:", json.failures);
       }
+      if (json.itemSyncWarnings?.length) {
+        toast(
+          `${json.itemSyncWarnings.length} product(s) couldn't sync to Xero — their SKU stayed in the line description. See console.`,
+          "error",
+        );
+        console.warn("Xero item sync warnings:", json.itemSyncWarnings);
+      }
       router.refresh();
     } finally {
       setGenerating(false);

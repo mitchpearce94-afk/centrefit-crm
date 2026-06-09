@@ -7,6 +7,7 @@ import {
   createXeroPurchaseOrder,
   type XeroPOLineItem,
 } from "@/lib/xero/purchase-orders";
+import { ensureXeroItem, type SyncableProduct } from "@/lib/xero/items";
 
 interface ItemRow {
   id: string;
@@ -91,14 +92,14 @@ export async function POST(
         .filter((v): v is string => !!v),
     ),
   );
-  const liveProducts = new Map<string, { cost_price: number | null; xero_item_id: string | null }>();
+  const liveProducts = new Map<string, SyncableProduct>();
   if (productIds.length > 0) {
     const { data: prods } = await supabase
       .from("quote_products")
-      .select("id, cost_price, xero_item_id")
+      .select("id, name, sku, category, supplier, cost_price, sell_price, xero_item_id")
       .in("id", productIds);
-    for (const p of (prods ?? []) as { id: string; cost_price: number | null; xero_item_id: string | null }[]) {
-      liveProducts.set(p.id, { cost_price: p.cost_price, xero_item_id: p.xero_item_id });
+    for (const p of (prods ?? []) as SyncableProduct[]) {
+      liveProducts.set(p.id, p);
     }
   }
 
@@ -136,6 +137,36 @@ export async function POST(
   for (const s of (suppliers ?? []) as SupplierRow[]) supplierById.set(s.id, s);
 
   const { client: xero, conn } = await getAuthedClient();
+
+  // Ensure every distinct product on this PO run exists as a Xero Item with its
+  // CURRENT catalogue cost, so (a) the SKU can go in the Xero ItemCode column
+  // rather than the description, and (b) the Item master price never lags the
+  // catalogue. Create-or-update is idempotent; failures degrade that line to a
+  // description-only PO line rather than aborting the whole generation.
+  const ensuredItemMap = new Map<string, string>(); // product_id → xero ItemID
+  const itemSyncWarnings: string[] = [];
+  {
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    for (const pid of productIds) {
+      const prod = liveProducts.get(pid);
+      if (!prod || !prod.sku || prod.sku.trim() === "") continue;
+      try {
+        const xeroItemId = await ensureXeroItem(xero, conn.tenant_id, prod);
+        if (xeroItemId) {
+          ensuredItemMap.set(pid, xeroItemId);
+          if (xeroItemId !== prod.xero_item_id) {
+            await supabase
+              .from("quote_products")
+              .update({ xero_item_id: xeroItemId, xero_synced_at: new Date().toISOString() })
+              .eq("id", pid);
+          }
+        }
+      } catch (err) {
+        itemSyncWarnings.push(`${prod.name}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      await sleep(75); // stay well under Xero's 60 calls/min limit
+    }
+  }
 
   const created: {
     supplierId: string;
@@ -178,13 +209,13 @@ export async function POST(
       // estimated, the PO goes out with best-available numbers and Mitchell
       // can update in Xero before authorising.
       const lineItems: XeroPOLineItem[] = rows.map<XeroPOLineItem>((r) => {
-        // Put the SKU in the Xero ItemCode column — but ONLY when the product
-        // has been synced to Xero as an Item (xero_item_id present). Xero
-        // rejects a PO line whose itemCode doesn't match an existing Item, so
-        // for unsynced products we fall back to the old "name (SKU)" in the
-        // description to keep the part number visible without breaking the PO.
-        const synced = r.product_id ? !!liveProducts.get(r.product_id)?.xero_item_id : false;
-        const itemCode = synced && r.sku ? r.sku : undefined;
+        // Put the SKU in the Xero ItemCode column. We just ensured every
+        // SKU'd product exists as a Xero Item above, so this is safe; products
+        // with no SKU (or whose Item sync failed) fall back to "name (SKU)" in
+        // the description so the part number stays visible without breaking the
+        // PO (Xero rejects an itemCode that doesn't match an existing Item).
+        const synced = r.product_id ? ensuredItemMap.has(r.product_id) : false;
+        const itemCode = synced && r.sku ? r.sku.slice(0, 30) : undefined;
         const description =
           !itemCode && r.sku ? `${r.product_name} (${r.sku})` : r.product_name;
         return {
@@ -252,5 +283,6 @@ export async function POST(
     unassignedCount: orphans.length,
     unassignedItemIds: orphans.map((o) => o.id),
     zeroPricedCount: zeroPriced.length,
+    itemSyncWarnings,
   });
 }
