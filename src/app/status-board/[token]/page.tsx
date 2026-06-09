@@ -105,7 +105,7 @@ function CrewAvatars({ crew }: { crew: StaffLite[] }) {
         <span
           key={s.id}
           title={s.display_name}
-          className="flex h-7 w-7 lg:h-8 lg:w-8 items-center justify-center rounded-full text-[11px] font-bold text-white ring-1 ring-white/15"
+          className="flex h-6 w-6 md:h-7 md:w-7 items-center justify-center rounded-full text-[10px] font-bold text-white ring-1 ring-white/15"
           style={{ backgroundColor: s.colour ?? "#3b82f6" }}
         >
           {s.initials}
@@ -116,7 +116,7 @@ function CrewAvatars({ crew }: { crew: StaffLite[] }) {
 }
 
 // Fluid type scale so the board fills any screen — phone through big TV.
-const DATE_FONT = "text-[clamp(1rem,1.3vw,1.6rem)]";
+const DATE_FONT = "text-[clamp(0.9rem,1vw,1.25rem)]";
 
 function PhaseBlock({
   start,
@@ -223,7 +223,7 @@ export default async function StatusBoardPage({
 
   // Fluid column template (fr units) so the grid fills any screen width; on
   // mobile the rows stack into a single column instead.
-  const cols = "lg:grid-cols-[2fr_1.4fr_1.4fr_1.5fr] lg:gap-x-6 lg:items-center";
+  const cols = "md:grid-cols-[2fr_1.4fr_1.4fr_1.5fr] md:gap-x-6 md:items-center";
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[radial-gradient(ellipse_at_top,_#1e1b4b_0%,_#0b1020_45%,_#05070d_100%)] px-4 py-5 sm:px-6 lg:px-10 lg:py-8 text-white">
@@ -239,7 +239,7 @@ export default async function StatusBoardPage({
             className="h-7 lg:h-9 w-auto"
             style={{ filter: "brightness(0) invert(1)" }}
           />
-          <h1 className="mt-2 lg:mt-3 bg-gradient-to-r from-white via-white to-violet-300 bg-clip-text text-[clamp(1.75rem,4vw,4rem)] font-bold leading-tight tracking-tight text-transparent">
+          <h1 className="mt-2 lg:mt-3 bg-gradient-to-r from-white via-white to-violet-300 bg-clip-text text-[clamp(1.5rem,2.6vw,2.75rem)] font-bold leading-tight tracking-tight text-transparent">
             New Build Status Board
           </h1>
           <p className="mt-1 lg:mt-2 text-xs lg:text-sm text-white/40">
@@ -255,7 +255,7 @@ export default async function StatusBoardPage({
       ) : (
         <>
           {/* Column headers — desktop only; rows carry their own labels on mobile */}
-          <div className={`hidden lg:grid ${cols} mt-4 lg:mt-6 flex-none pl-8 pr-7 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/30`}>
+          <div className={`hidden md:grid ${cols} mt-4 lg:mt-6 flex-none pl-8 pr-7 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/30`}>
             <span>Site</span>
             <span>Rough In</span>
             <span>Fit Off</span>
@@ -263,7 +263,7 @@ export default async function StatusBoardPage({
           </div>
 
           <AutoScroll>
-            <div className="space-y-2 lg:space-y-3 pb-10">
+            <div className="space-y-2 pb-10">
               {rows.map((j) => {
                 // Date-driven stage wins; otherwise show the real CRM status.
                 const statusLabel = j.stage?.label ?? j._status?.name ?? "—";
@@ -276,29 +276,29 @@ export default async function StatusBoardPage({
                     className="rounded-2xl border border-white/10 border-l-4 bg-white/[0.04] backdrop-blur-sm"
                     style={{ borderLeftColor: colour }}
                   >
-                    <div className={`grid grid-cols-1 gap-y-3 px-5 py-4 lg:px-7 lg:py-5 ${cols}`}>
+                    <div className={`grid grid-cols-1 gap-y-3 px-5 py-3.5 md:px-6 md:py-3.5 ${cols}`}>
                       {/* Site */}
                       <div className="min-w-0">
-                        <div className="truncate font-bold tracking-tight text-white text-[clamp(1.25rem,1.8vw,2.25rem)]">{title}</div>
-                        {subtitle && <div className="truncate text-white/45 text-[clamp(0.8rem,1vw,1rem)]">{subtitle}</div>}
+                        <div className="truncate font-bold tracking-tight text-white text-[clamp(1.05rem,1.35vw,1.6rem)]">{title}</div>
+                        {subtitle && <div className="truncate text-white/45 text-[clamp(0.75rem,0.9vw,0.95rem)]">{subtitle}</div>}
                       </div>
 
                       {/* Rough In */}
                       <div>
-                        <div className="lg:hidden mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-white/35">Rough In</div>
+                        <div className="md:hidden mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-white/35">Rough In</div>
                         <PhaseBlock start={j.rough_in_date} end={j.rough_in_end_date} crew={crewOf(j.rough_in_staff_ids)} />
                       </div>
 
                       {/* Fit Off */}
                       <div>
-                        <div className="lg:hidden mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-white/35">Fit Off</div>
+                        <div className="md:hidden mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-white/35">Fit Off</div>
                         <PhaseBlock start={j.fit_off_date} end={j.fit_off_end_date} crew={crewOf(j.fit_off_staff_ids)} />
                       </div>
 
                       {/* Status */}
-                      <div className="lg:text-right">
+                      <div className="md:text-right">
                         <span
-                          className="inline-flex items-center gap-2.5 whitespace-nowrap rounded-full border px-4 py-2 lg:px-5 lg:py-2.5 font-semibold text-[clamp(0.9rem,1.1vw,1.35rem)]"
+                          className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-3.5 py-1.5 md:px-4 md:py-2 font-semibold text-[clamp(0.8rem,0.95vw,1.15rem)]"
                           style={{ backgroundColor: `${colour}22`, color: colour, borderColor: `${colour}55` }}
                         >
                           <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: colour }} />
