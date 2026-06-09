@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createServiceRoleClient } from "@/lib/supabase/service";
 import { sendNotificationEmail } from "@/lib/emails/notification-email";
 
 /**
@@ -19,7 +20,6 @@ import { sendNotificationEmail } from "@/lib/emails/notification-email";
  *
  * Usage:
  *   await enqueueNotification({
- *     supabase,
  *     typeCode: "quote.accepted",
  *     refType: "quote",
  *     refId: quote.id,
@@ -39,7 +39,15 @@ export type Audience =
   | { allActive: true };
 
 export interface EnqueueNotificationInput {
-  supabase: SupabaseClient;
+  /**
+   * Ignored — fan-out always runs on the service-role client. The
+   * `notifications` table has no INSERT policy (read/update-own only), so a
+   * user-context client fails RLS and, because supabase-js returns rather
+   * than throws, used to fail SILENTLY — invoice.authorised, invoice.sent,
+   * staff.mention and job.scheduled bells were lost for weeks. Callers have
+   * already authenticated the actor; the fan-out itself is a system write.
+   */
+  supabase?: SupabaseClient;
   typeCode: string;
   refType: NotificationRefType;
   refId: string;
@@ -87,8 +95,9 @@ async function resolveAudience(
 }
 
 export async function enqueueNotification(input: EnqueueNotificationInput): Promise<void> {
-  const { supabase, typeCode, refType, refId, audience, title, body, href, metadata, attachments } = input;
+  const { typeCode, refType, refId, audience, title, body, href, metadata, attachments } = input;
   try {
+    const supabase = createServiceRoleClient();
     const targets = await resolveAudience(supabase, audience);
     if (targets.length === 0) return;
 
@@ -135,7 +144,10 @@ export async function enqueueNotification(input: EnqueueNotificationInput): Prom
         href: href ?? null,
         metadata: metadata ?? null,
       }));
-      await supabase.from("notifications").insert(rows);
+      const { error: insertError } = await supabase.from("notifications").insert(rows);
+      if (insertError) {
+        console.error("[notifications] bell insert failed", { typeCode, error: insertError });
+      }
     }
 
     // Email — independent of bell. Send only when the type AND the staff

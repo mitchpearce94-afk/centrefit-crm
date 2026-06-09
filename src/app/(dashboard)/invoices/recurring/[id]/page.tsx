@@ -9,6 +9,7 @@ import { RetryActivationButton } from "./retry-activation-button";
 import { accountCodeLabel } from "@/lib/xero/account-codes";
 import { getAuthedClient } from "@/lib/xero/client";
 import { getRepeatingInvoice, type RepeatingInvoiceState } from "@/lib/xero/repeating-invoices";
+import { nextMonthlyOccurrence } from "@/lib/recurring/next-occurrence";
 
 const STATUS_LABEL: Record<string, string> = {
   pending_mandate: "Awaiting Mandate",
@@ -176,7 +177,11 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
           <dt className="text-muted-foreground">Mandate state</dt>
           <dd className="font-medium">{STATUS_LABEL[plan.status] ?? plan.status}</dd>
           <dt className="text-muted-foreground">Next invoice date</dt>
-          <dd className="font-mono">{plan.next_invoice_date ? new Date(plan.next_invoice_date).toLocaleDateString("en-AU") : "—"}</dd>
+          <dd className="font-mono">{plan.next_invoice_date
+            ? (plan.status === "active"
+                ? nextMonthlyOccurrence(plan.next_invoice_date)
+                : new Date(plan.next_invoice_date)).toLocaleDateString("en-AU")
+            : "—"}</dd>
           <dt className="text-muted-foreground">Billing starts</dt>
           <dd className="font-mono flex items-center gap-2">
             {plan.first_invoice_date

@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isCurrentUserAdmin } from "@/lib/auth/current-staff";
 import Link from "next/link";
 import { BackfillSubscriptionsButton } from "./backfill-subscriptions-button";
+import { nextMonthlyOccurrence } from "@/lib/recurring/next-occurrence";
 
 const STATUS_LABEL: Record<string, string> = {
   pending_mandate: "Awaiting Mandate",
@@ -266,7 +267,9 @@ export default async function RecurringInvoicesPage() {
                   </td>
                   <td className="px-4 py-2.5 text-xs">
                     {p.next_invoice_date
-                      ? <span className="text-muted-foreground">{new Date(p.next_invoice_date).toLocaleDateString("en-AU")}</span>
+                      ? <span className="text-muted-foreground">{(p.status === "active"
+                          ? nextMonthlyOccurrence(p.next_invoice_date)
+                          : new Date(p.next_invoice_date)).toLocaleDateString("en-AU")}</span>
                       : <span className="text-muted-foreground">—</span>}
                   </td>
                 </tr>
