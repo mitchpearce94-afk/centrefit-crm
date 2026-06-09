@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
@@ -93,7 +93,6 @@ export function WorkLog({
         <WorkEntryForm
           jobId={jobId}
           entry={editingEntry}
-          onClose={closeForm}
           onSaved={() => {
             closeForm();
             router.refresh();
@@ -238,12 +237,10 @@ export function WorkLog({
 function WorkEntryForm({
   jobId,
   entry,
-  onClose,
   onSaved,
 }: {
   jobId: string;
   entry: any | null;
-  onClose: () => void;
   onSaved: () => void;
 }) {
   const isEditing = !!entry;
@@ -264,8 +261,16 @@ function WorkEntryForm({
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [showQuickLines, setShowQuickLines] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
+  // Auto-save bookkeeping. entryIdRef lets a new entry flip to update mode after
+  // its first create; savingRef serialises saves; dirtyRef re-runs if a change
+  // landed mid-save; mountedRef skips the initial render of an existing entry.
+  const entryIdRef = useRef<string | null>(entry?.id ?? null);
+  const savedImageUrlsRef = useRef<string[]>(entry?.image_urls ?? []);
+  const savingRef = useRef(false);
+  const dirtyRef = useRef(false);
+  const mountedRef = useRef(false);
 
   // Material management — product catalog selector
   const [productCatalog, setProductCatalog] = useState<{ id: string; name: string; sku: string; category: string }[]>([]);
@@ -357,65 +362,106 @@ function WorkEntryForm({
     }, 0);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!content.trim()) return;
-    setSaving(true);
+  // Keep the latest field values in a ref so the auto-save always reads current
+  // state — timers/promises fire after re-renders, so a closure would be stale.
+  const latest = useRef({ content, workDate, callOut, labourHours, materials, selectedFiles });
+  latest.current = { content, workDate, callOut, labourHours, materials, selectedFiles };
 
-    const { data: { user } } = await supabase.auth.getUser();
+  async function persist() {
+    if (savingRef.current) return; // a save is in flight; dirtyRef will re-run it
+    const v = latest.current;
+    if (!v.content.trim() && !entryIdRef.current) return; // never create an empty entry
+    savingRef.current = true;
+    dirtyRef.current = false;
+    setSaveState("saving");
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
 
-    // Compress + upload 4-in-parallel. See lib/images/compress.ts.
-    let done = 0;
-    if (selectedFiles.length > 0) {
-      setUploadProgress({ done: 0, total: selectedFiles.length });
+      // Upload any pending photos (the photo button is disabled while saving,
+      // so nothing new arrives mid-upload).
+      let newUrls: string[] = [];
+      if (v.selectedFiles.length > 0) {
+        let done = 0;
+        setUploadProgress({ done: 0, total: v.selectedFiles.length });
+        const uploaded = await mapWithConcurrency(v.selectedFiles, 4, async (file) => {
+          const prepped = await compressImage(file);
+          const ext = prepped.name.split(".").pop();
+          const path = `${jobId}/work/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+          const { data, error } = await supabase.storage.from("job-attachments").upload(path, prepped);
+          done++;
+          setUploadProgress({ done, total: v.selectedFiles.length });
+          if (error || !data) return null;
+          const { data: urlData } = supabase.storage.from("job-attachments").getPublicUrl(data.path);
+          return urlData.publicUrl;
+        });
+        newUrls = uploaded.filter((u): u is string => !!u);
+        setUploadProgress(null);
+        setSelectedFiles([]);
+        setPreviews([]);
+      }
+
+      const allImages = [...savedImageUrlsRef.current, ...newUrls];
+      savedImageUrlsRef.current = allImages;
+
+      const payload = {
+        content: v.content.trim(),
+        work_date: v.workDate,
+        call_out: v.callOut,
+        labour_hours: v.labourHours ? parseFloat(v.labourHours) : null,
+        materials: v.materials,
+        image_urls: allImages,
+      };
+
+      if (entryIdRef.current) {
+        const { error } = await supabase.from("job_work_entries").update(payload).eq("id", entryIdRef.current);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase
+          .from("job_work_entries")
+          .insert({ ...payload, job_id: jobId, staff_id: user?.id ?? null })
+          .select("id")
+          .single();
+        if (error) throw error;
+        entryIdRef.current = data.id;
+        await autoTransitionJobStatus(jobId, "work_started", supabase);
+      }
+      setSaveState("saved");
+    } catch (err) {
+      setSaveState("error");
+      toast(err instanceof Error ? err.message : "Auto-save failed", "error");
+    } finally {
+      savingRef.current = false;
+      if (dirtyRef.current) void persist(); // a change landed during the save — flush it
     }
-    const uploaded = await mapWithConcurrency(selectedFiles, 4, async (file) => {
-      const prepped = await compressImage(file);
-      const ext = prepped.name.split(".").pop();
-      const path = `${jobId}/work/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-      const { data, error } = await supabase.storage.from("job-attachments").upload(path, prepped);
-      done++;
-      setUploadProgress({ done, total: selectedFiles.length });
-      if (error || !data) return null;
-      const { data: urlData } = supabase.storage.from("job-attachments").getPublicUrl(data.path);
-      return urlData.publicUrl;
-    });
-    const newImageUrls: string[] = uploaded.filter((u): u is string => !!u);
-    setUploadProgress(null);
+  }
 
-    const payload = {
-      content: content.trim(),
-      work_date: workDate,
-      call_out: callOut,
-      labour_hours: labourHours ? parseFloat(labourHours) : null,
-      materials,
-      image_urls: isEditing
-        ? [...(entry.image_urls ?? []), ...newImageUrls]
-        : newImageUrls,
-    };
+  // Debounced auto-save on any field change. Skips the first render so opening
+  // an existing entry doesn't immediately re-save it.
+  useEffect(() => {
+    if (!mountedRef.current) { mountedRef.current = true; return; }
+    if (!content.trim() && !entryIdRef.current) return;
+    const t = setTimeout(() => { dirtyRef.current = true; void persist(); }, 800);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content, workDate, callOut, labourHours, materials]);
 
-    if (isEditing) {
-      const { error } = await supabase.from("job_work_entries").update(payload).eq("id", entry.id);
-      if (error) { toast(error.message, "error"); setSaving(false); return; }
-      toast("Entry updated");
-    } else {
-      const { error } = await supabase.from("job_work_entries").insert({
-        ...payload,
-        job_id: jobId,
-        staff_id: user?.id ?? null,
-      });
-      if (error) { toast(error.message, "error"); setSaving(false); return; }
-      toast("Entry saved");
-      await autoTransitionJobStatus(jobId, "work_started", supabase);
-    }
+  // Photos: upload + save shortly after they're added.
+  useEffect(() => {
+    if (selectedFiles.length === 0) return;
+    const t = setTimeout(() => { dirtyRef.current = true; void persist(); }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFiles]);
 
+  async function handleDone() {
+    await persist();
     onSaved();
   }
 
   const inputClass = "block w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
 
   return (
-    <form onSubmit={handleSubmit} className="mb-5 rounded-lg border border-primary/30 bg-card p-4 space-y-3">
+    <div className="mb-5 rounded-lg border border-primary/30 bg-card p-4 space-y-3">
       {/* Date — iOS Safari date inputs have an intrinsic min-width that
           can overflow the parent. min-w-0 + max-w-full clamps it. */}
       <div className="min-w-0">
@@ -563,24 +609,29 @@ function WorkEntryForm({
           button never gets pushed off-screen when the form is wide. */}
       <div className="pt-1">
         <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileSelect} className="hidden" />
-        <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-foreground transition-colors">
+        <button type="button" disabled={saveState === "saving"} onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-foreground disabled:opacity-50 transition-colors">
           <CameraIcon className="h-3.5 w-3.5" /> Photos
         </button>
       </div>
-      {/* Actions — Save full-width on mobile, side-by-side on desktop. */}
-      <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 pt-2 border-t border-border">
-        <button type="button" onClick={onClose} className="w-full sm:w-auto rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent transition-colors">Cancel</button>
-        <button type="submit" disabled={saving || !content.trim()} className="w-full sm:w-auto rounded-md bg-primary px-5 py-2.5 sm:py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
+      {/* Actions — entry auto-saves; the status shows where it's at and Done
+          closes the form (flushing any final save first). */}
+      <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2 pt-2 border-t border-border">
+        <span className="text-xs text-muted-foreground">
           {uploadProgress
             ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
-            : saving
-              ? "Saving..."
-              : isEditing
-                ? "Save Changes"
-                : "Save Entry"}
+            : saveState === "saving"
+              ? "Saving…"
+              : saveState === "saved"
+                ? "Saved ✓"
+                : saveState === "error"
+                  ? "Save failed — will retry on next change"
+                  : "Saves automatically"}
+        </span>
+        <button type="button" onClick={handleDone} className="w-full sm:w-auto rounded-md bg-primary px-5 py-2.5 sm:py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
+          Done
         </button>
       </div>
-    </form>
+    </div>
   );
 }
 
