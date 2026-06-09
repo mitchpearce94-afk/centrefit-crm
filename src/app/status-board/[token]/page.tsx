@@ -2,6 +2,7 @@ import Image from "next/image";
 import { notFound } from "next/navigation";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { BoardLive } from "./board-live";
+import { AutoScroll } from "./auto-scroll";
 
 // Always render fresh — this is a live board, never cache it.
 export const dynamic = "force-dynamic";
@@ -57,6 +58,42 @@ function relative(start: string): { label: string; tone: "today" | "soon" | "pas
   if (days === 1) return { label: "Tomorrow", tone: "soon" };
   if (days < 0) return { label: `${Math.abs(days)}d ago`, tone: "past" };
   return { label: `in ${days}d`, tone: "none" };
+}
+
+// Date-driven lifecycle stage for a fit-out, computed from today vs the
+// rough-in / fit-off ranges. Returns null when no dates are set yet (board
+// then falls back to the job's real CRM status). `group` drives sort phase:
+// 0 = rough-in world (sort by rough-in date), 1 = fit-off world (sort by
+// fit-off date), 2 = completion.
+interface Stage {
+  label: string;
+  colour: string;
+  group: number;
+  sortDate: string;
+}
+function deriveStage(
+  j: { rough_in_date: string | null; rough_in_end_date: string | null; fit_off_date: string | null; fit_off_end_date: string | null },
+  today: string,
+): Stage | null {
+  const riS = j.rough_in_date;
+  const riE = j.rough_in_end_date || j.rough_in_date;
+  const foS = j.fit_off_date;
+  const foE = j.fit_off_end_date || j.fit_off_date;
+
+  if (foE && today > foE) return { label: "Awaiting Job Completion", colour: "#84cc16", group: 2, sortDate: foE };
+  if (foS && foE && today >= foS && today <= foE) return { label: "Fit Off", colour: "#8b5cf6", group: 1, sortDate: foS };
+  if (riE && today > riE) return { label: "Awaiting Fit Off", colour: "#fb923c", group: 1, sortDate: foS || riE };
+  if (riS && riE && today >= riS && today <= riE) return { label: "Rough In", colour: "#a855f7", group: 0, sortDate: riS };
+  if (riS && today < riS) return { label: "Awaiting Rough In", colour: "#f59e0b", group: 0, sortDate: riS };
+  if (foS && today < foS) return { label: "Awaiting Fit Off", colour: "#fb923c", group: 1, sortDate: foS };
+  return null;
+}
+
+// Keep the status pill on a single line by shrinking the font for long labels.
+function pillSize(label: string): string {
+  if (label.length <= 11) return "text-xl";
+  if (label.length <= 18) return "text-lg";
+  return "text-base";
 }
 
 function CrewAvatars({ crew }: { crew: StaffLite[] }) {
@@ -138,15 +175,26 @@ export default async function StatusBoardPage({
     )
     .eq("is_new_build", true);
 
+  const today = todayISO();
   const rows = ((data ?? []) as BoardJob[])
-    .map((j) => ({
-      ...j,
-      _status: one(j.status),
-      _site: one(j.site),
-      _customer: one(j.customer),
-    }))
+    .map((j) => {
+      const _status = one(j.status);
+      const stage = deriveStage(j, today);
+      // No fit-out dates yet → fall back to the real CRM status, parked after
+      // all date-driven jobs (group 3) and ordered by the status sort_order.
+      const group = stage ? stage.group : 3;
+      const sortDate = stage
+        ? stage.sortDate
+        : `9999-${String(_status?.sort_order ?? 999).padStart(4, "0")}`;
+      return { ...j, _status, _site: one(j.site), _customer: one(j.customer), stage, group, sortDate };
+    })
     .filter((j) => j._status?.name !== "Cancelled")
-    .sort((a, b) => (a._status?.sort_order ?? 999) - (b._status?.sort_order ?? 999));
+    .sort(
+      (a, b) =>
+        a.group - b.group ||
+        a.sortDate.localeCompare(b.sortDate) ||
+        (a._site?.name ?? a._customer?.name ?? "").localeCompare(b._site?.name ?? b._customer?.name ?? ""),
+    );
 
   // Resolve every assigned crew member in one query, then map per phase.
   const staffIds = Array.from(
@@ -193,39 +241,43 @@ export default async function StatusBoardPage({
       {rows.length === 0 ? (
         <div className="mt-24 text-center text-2xl font-medium text-white/30">No active new builds right now.</div>
       ) : (
-        <div className="mt-6 space-y-3">
-          {rows.map((j) => {
-            const colour = j._status?.colour ?? "#8b5cf6";
-            const title = j._site?.name ?? j._customer?.name ?? j.reference ?? j.number ?? "—";
-            const subtitle = j._site?.name ? j._customer?.name : j.reference;
-            return (
-              <div
-                key={j.id}
-                className="flex items-center gap-6 rounded-2xl border border-white/10 bg-white/[0.04] px-7 py-5 backdrop-blur-sm"
-              >
-                <span className="h-14 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: colour }} />
+        <AutoScroll>
+          <div className="mt-6 space-y-3 pb-10">
+            {rows.map((j) => {
+              // Date-driven stage wins; otherwise show the real CRM status.
+              const statusLabel = j.stage?.label ?? j._status?.name ?? "—";
+              const colour = j.stage?.colour ?? j._status?.colour ?? "#8b5cf6";
+              const title = j._site?.name ?? j._customer?.name ?? j.reference ?? j.number ?? "—";
+              const subtitle = j._site?.name ? j._customer?.name : j.reference;
+              return (
+                <div
+                  key={j.id}
+                  className="flex items-center gap-6 rounded-2xl border border-white/10 bg-white/[0.04] px-7 py-5 backdrop-blur-sm"
+                >
+                  <span className="h-14 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: colour }} />
 
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-3xl font-bold tracking-tight text-white">{title}</div>
-                  {subtitle && <div className="mt-0.5 truncate text-base text-white/45">{subtitle}</div>}
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-3xl font-bold tracking-tight text-white">{title}</div>
+                    {subtitle && <div className="mt-0.5 truncate text-base text-white/45">{subtitle}</div>}
+                  </div>
+
+                  <PhaseBlock heading="Rough In" start={j.rough_in_date} end={j.rough_in_end_date} crew={crewOf(j.rough_in_staff_ids)} />
+                  <PhaseBlock heading="Fit Off" start={j.fit_off_date} end={j.fit_off_end_date} crew={crewOf(j.fit_off_staff_ids)} />
+
+                  <div className="shrink-0 text-right">
+                    <span
+                      className={`inline-flex items-center gap-2.5 whitespace-nowrap rounded-full border px-5 py-2.5 font-semibold ${pillSize(statusLabel)}`}
+                      style={{ backgroundColor: `${colour}22`, color: colour, borderColor: `${colour}55` }}
+                    >
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: colour }} />
+                      {statusLabel}
+                    </span>
+                  </div>
                 </div>
-
-                <PhaseBlock heading="Rough In" start={j.rough_in_date} end={j.rough_in_end_date} crew={crewOf(j.rough_in_staff_ids)} />
-                <PhaseBlock heading="Fit Off" start={j.fit_off_date} end={j.fit_off_end_date} crew={crewOf(j.fit_off_staff_ids)} />
-
-                <div className="w-[230px] shrink-0 text-right">
-                  <span
-                    className="inline-flex items-center gap-2.5 rounded-full border px-5 py-2.5 text-xl font-semibold"
-                    style={{ backgroundColor: `${colour}22`, color: colour, borderColor: `${colour}55` }}
-                  >
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colour }} />
-                    {j._status?.name ?? "—"}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </AutoScroll>
       )}
     </div>
   );
