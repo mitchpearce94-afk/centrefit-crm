@@ -142,15 +142,21 @@ function PhaseBlock({
       : "bg-white/5 text-white/70 ring-white/10";
   return (
     <div>
-      {start ? (
+      {!start ? (
+        <div className="text-xl font-medium text-white/25">—</div>
+      ) : rel?.tone === "done" ? (
+        // Completed reads as the headline, with the date small underneath.
+        <div>
+          <div className="text-xl font-semibold text-emerald-300/80">Completed</div>
+          <div className="text-xs text-white/35">{fmtRange(start, end)}</div>
+        </div>
+      ) : (
         <div className="flex items-center gap-2">
           <span className="text-xl font-medium text-white/90">{fmtRange(start, end)}</span>
           {rel && (
             <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${toneClass}`}>{rel.label}</span>
           )}
         </div>
-      ) : (
-        <div className="text-xl font-medium text-white/25">—</div>
       )}
       <div className="mt-2">
         <CrewAvatars crew={crew} />
