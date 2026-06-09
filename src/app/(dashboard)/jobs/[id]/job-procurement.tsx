@@ -9,7 +9,7 @@ export interface ProcurementItem {
   product_name: string;
   sku: string | null;
   quantity: number;
-  status: "pending" | "in_stock" | "order" | "ordered" | "received";
+  status: "pending" | "in_stock" | "order" | "ordered" | "ordered_online" | "received";
   actual_supplier_id: string | null;
   default_supplier_id: string | null;
   backorder_note: string | null;
@@ -35,7 +35,8 @@ const STATUS_ORDER: Record<ProcurementItem["status"], number> = {
   order: 1,
   in_stock: 2,
   ordered: 3,
-  received: 4,
+  ordered_online: 4,
+  received: 5,
 };
 
 function StatusBadge({ status }: { status: ProcurementItem["status"] }) {
@@ -44,6 +45,7 @@ function StatusBadge({ status }: { status: ProcurementItem["status"] }) {
     in_stock: { label: "In Stock", color: "bg-sky-500/10 text-sky-400 border border-sky-500/20" },
     order: { label: "Order", color: "bg-amber-500/10 text-amber-400 border border-amber-500/20" },
     ordered: { label: "Ordered", color: "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" },
+    ordered_online: { label: "Ordered Online", color: "bg-violet-500/10 text-violet-400 border border-violet-500/20" },
     received: { label: "Received", color: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" },
   }[status];
   return (
@@ -639,7 +641,10 @@ export function JobProcurement({
           </thead>
           <tbody>
             {rowsToShow.map((item) => {
-              const isLocked = item.status === "ordered" || item.status === "received";
+              const isLocked =
+                item.status === "ordered" ||
+                item.status === "ordered_online" ||
+                item.status === "received";
               const rowBusy = busy === item.id;
               const noCost =
                 item.status === "order" && Number(item.line?.cost_price ?? 0) <= 0;
@@ -731,6 +736,14 @@ export function JobProcurement({
                           >
                             Order
                           </button>
+                          <button
+                            onClick={() => patchItem(item.id, { status: "ordered_online" })}
+                            disabled={rowBusy}
+                            title="Bought directly online — no Xero PO. Jumps straight to awaiting delivery so you can mark it Received."
+                            className="rounded px-2 py-0.5 text-[10px] font-medium transition-colors border border-border text-muted-foreground hover:bg-accent"
+                          >
+                            Order Online
+                          </button>
                         </div>
                         {noCost && (
                           <span className="text-[10px] text-amber-400" title="No cost price — PO will go to Xero at $0">
@@ -779,6 +792,25 @@ export function JobProcurement({
                             title="Delete the draft PO in Xero and revert these lines to Order"
                           >
                             Reset PO
+                          </button>
+                        </>
+                      )}
+                      {item.status === "ordered_online" && (
+                        <>
+                          <button
+                            onClick={() => receiveItem(item.id)}
+                            disabled={rowBusy}
+                            className="text-xs text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
+                          >
+                            Receive
+                          </button>
+                          <button
+                            onClick={() => patchItem(item.id, { status: "order" })}
+                            disabled={rowBusy}
+                            className="text-xs text-muted-foreground hover:text-red-400 disabled:opacity-50"
+                            title="Undo — put this line back to Order triage"
+                          >
+                            Undo
                           </button>
                         </>
                       )}

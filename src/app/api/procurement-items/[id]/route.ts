@@ -3,7 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 
 /**
  * Patch a single procurement item. Allowed mutations:
- *   - status: in_stock | order | pending (can't manually jump to ordered/received)
+ *   - status: in_stock | order | pending | ordered_online (can't manually jump
+ *     to ordered/received — those are PO/receipt driven). ordered_online is the
+ *     "bought directly online, no Xero PO" path straight to awaiting-delivery.
  *   - actual_supplier_id: staff supplier override
  *   - quantity: edit qty (usually via /split, but raw edits are OK too)
  *   - backorder_note: freeform text
@@ -40,7 +42,7 @@ export async function PATCH(
   const update: Record<string, unknown> = {};
 
   if (body.status !== undefined) {
-    const allowed = ["pending", "in_stock", "order"];
+    const allowed = ["pending", "in_stock", "order", "ordered_online"];
     if (!allowed.includes(body.status)) {
       return NextResponse.json(
         { error: `status must be one of ${allowed.join(", ")} — ordered/received are set by other endpoints` },

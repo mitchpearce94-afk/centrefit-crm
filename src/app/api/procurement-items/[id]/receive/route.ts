@@ -34,9 +34,11 @@ export async function POST(
     .eq("id", id)
     .maybeSingle();
   if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (current.status !== "ordered") {
+  // 'ordered' (via Xero PO) and 'ordered_online' (bought directly online, no PO)
+  // are both awaiting-delivery states that can be received.
+  if (current.status !== "ordered" && current.status !== "ordered_online") {
     return NextResponse.json(
-      { error: `Can only receive an 'ordered' item (currently ${current.status})` },
+      { error: `Can only receive an ordered item (currently ${current.status})` },
       { status: 400 },
     );
   }
