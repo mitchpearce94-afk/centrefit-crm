@@ -20,11 +20,12 @@ export function AutoScroll({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!enabled) return;
-    const SPEED = 0.7; // px/frame (~42px/s) — readable
+    const SPEED = 0.2; // px/frame (~12px/s) — slow, gentle drift
     const BOTTOM_PAUSE = 3000;
     const TOP_PAUSE = 2000;
     let raf = 0;
     let paused = false;
+    let acc = 0; // sub-pixel accumulator so the slow speed stays smooth
 
     const maxScroll = () =>
       Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
@@ -34,6 +35,7 @@ export function AutoScroll({ children }: { children: React.ReactNode }) {
       if (max > 4 && !paused) {
         if (window.scrollY >= max - 1) {
           paused = true;
+          acc = 0;
           setTimeout(() => {
             window.scrollTo({ top: 0, behavior: "smooth" });
             setTimeout(() => {
@@ -41,7 +43,12 @@ export function AutoScroll({ children }: { children: React.ReactNode }) {
             }, TOP_PAUSE);
           }, BOTTOM_PAUSE);
         } else {
-          window.scrollBy(0, SPEED);
+          acc += SPEED;
+          const px = Math.floor(acc);
+          if (px >= 1) {
+            window.scrollBy(0, px);
+            acc -= px;
+          }
         }
       }
       raf = requestAnimationFrame(tick);
