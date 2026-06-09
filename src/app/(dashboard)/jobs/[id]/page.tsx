@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { StatusTransition } from "./status-transition";
+import { StatusBoardControls } from "./status-board-controls";
 import { JobTabs } from "./job-tabs";
 
 export default async function JobDetailPage({
@@ -174,6 +175,15 @@ export default async function JobDetailPage({
           jobId={id}
           currentStatus={job.status as any}
           allStatuses={statusesResult.data ?? []}
+        />
+      </div>
+
+      <div className="mt-2">
+        <StatusBoardControls
+          jobId={id}
+          isNewBuild={job.is_new_build ?? false}
+          roughInDate={job.rough_in_date ?? null}
+          fitOffDate={job.fit_off_date ?? null}
         />
       </div>
 

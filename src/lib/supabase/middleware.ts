@@ -49,6 +49,7 @@ const PUBLIC_PATH_PREFIXES = [
   "/api/public/",
   "/quote-response",
   "/recurring-thanks",
+  "/status-board",
 ];
 
 function isPublicPath(pathname: string): boolean {
