@@ -215,7 +215,11 @@ export async function POST(
         // the description so the part number stays visible without breaking the
         // PO (Xero rejects an itemCode that doesn't match an existing Item).
         const synced = r.product_id ? ensuredItemMap.has(r.product_id) : false;
-        const itemCode = synced && r.sku ? r.sku.slice(0, 30) : undefined;
+        // The Xero Item was ensured under the CATALOGUE SKU — use that for the
+        // ItemCode, not the procurement row's snapshot, which drifts if the
+        // SKU was edited in settings after the quote was built.
+        const catalogueSku = r.product_id ? liveProducts.get(r.product_id)?.sku : null;
+        const itemCode = synced && catalogueSku ? catalogueSku.slice(0, 30) : undefined;
         const description =
           !itemCode && r.sku ? `${r.product_name} (${r.sku})` : r.product_name;
         return {

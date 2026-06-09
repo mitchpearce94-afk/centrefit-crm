@@ -47,29 +47,62 @@ export async function ensureXeroItem(
   };
 
   if (product.xero_item_id) {
-    await client.accountingApi.updateItem(tenantId, product.xero_item_id, { items: [item] });
-    return product.xero_item_id;
+    try {
+      await client.accountingApi.updateItem(tenantId, product.xero_item_id, { items: [item] });
+      return product.xero_item_id;
+    } catch {
+      // Stale ID — the item was deleted or merged in Xero after we stored it.
+      // Fall through to create-or-adopt below rather than failing the line.
+    }
   }
 
   try {
-    const res = await client.accountingApi.createItems(tenantId, { items: [item] });
-    return res.body.items?.[0]?.itemID ?? null;
+    // summarizeErrors=true so validation failures THROW instead of coming back
+    // as a 200 with hasValidationErrors — otherwise a duplicate code returns
+    // no ItemID and the product silently never syncs.
+    const res = await client.accountingApi.createItems(tenantId, { items: [item] }, true);
+    const created = res.body.items?.[0]?.itemID;
+    if (created) return created;
+    throw new Error("Xero accepted the item but returned no ItemID");
   } catch (createErr: unknown) {
-    const isDuplicate =
-      createErr &&
-      typeof createErr === "object" &&
-      "response" in createErr &&
-      JSON.stringify(createErr).toLowerCase().includes("already");
-    if (!isDuplicate) throw createErr;
-
+    // Whatever the create failure was, an item with this Code may already
+    // exist in Xero (e.g. made by hand — Xero's message is "Code must be
+    // unique", NOT "already exists", which the old check missed). Adopt it.
     const existing = await client.accountingApi.getItems(
       tenantId,
       undefined,
-      `Code=="${item.code}"`,
+      `Code=="${(item.code ?? "").replace(/"/g, '\\"')}"`,
     );
     const found = existing.body.items?.[0];
-    if (!found?.itemID) throw createErr;
+    if (!found?.itemID) throw new Error(xeroItemErrorMessage(createErr));
     await client.accountingApi.updateItem(tenantId, found.itemID, { items: [item] });
     return found.itemID;
   }
+}
+
+/**
+ * xero-node failures stringify to useless generic text ("Request failed…").
+ * Dig the actual validation messages out of the response body so the PO
+ * generation warning tells staff what to fix instead of "see console".
+ */
+function xeroItemErrorMessage(err: unknown): string {
+  try {
+    const anyErr = err as { response?: { body?: unknown }; body?: unknown };
+    const body = (anyErr.response?.body ?? anyErr.body) as {
+      Elements?: { ValidationErrors?: { Message?: string }[] }[];
+      elements?: { validationErrors?: { message?: string }[] }[];
+      Message?: string;
+    } | undefined;
+    const element = body?.Elements?.[0] ?? body?.elements?.[0];
+    const validation = (element as { ValidationErrors?: { Message?: string }[] })?.ValidationErrors
+      ?? (element as { validationErrors?: { message?: string }[] })?.validationErrors;
+    const messages = (validation ?? [])
+      .map((v) => (v as { Message?: string; message?: string }).Message ?? (v as { message?: string }).message)
+      .filter((m): m is string => !!m);
+    if (messages.length) return messages.join("; ");
+    if (typeof body?.Message === "string") return body.Message;
+  } catch {
+    // fall through to the generic message
+  }
+  return err instanceof Error ? err.message : String(err);
 }
