@@ -95,13 +95,6 @@ function deriveStage(
   return null;
 }
 
-// Keep the status pill on a single line by shrinking the font for long labels.
-function pillSize(label: string): string {
-  if (label.length <= 11) return "text-xl";
-  if (label.length <= 18) return "text-lg";
-  return "text-base";
-}
-
 function CrewAvatars({ crew }: { crew: StaffLite[] }) {
   if (crew.length === 0) {
     return <span className="text-sm text-white/25">Unassigned</span>;
@@ -112,7 +105,7 @@ function CrewAvatars({ crew }: { crew: StaffLite[] }) {
         <span
           key={s.id}
           title={s.display_name}
-          className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white ring-1 ring-white/15"
+          className="flex h-7 w-7 lg:h-8 lg:w-8 items-center justify-center rounded-full text-[11px] font-bold text-white ring-1 ring-white/15"
           style={{ backgroundColor: s.colour ?? "#3b82f6" }}
         >
           {s.initials}
@@ -121,6 +114,9 @@ function CrewAvatars({ crew }: { crew: StaffLite[] }) {
     </div>
   );
 }
+
+// Fluid type scale so the board fills any screen — phone through big TV.
+const DATE_FONT = "text-[clamp(1rem,1.3vw,1.6rem)]";
 
 function PhaseBlock({
   start,
@@ -143,16 +139,16 @@ function PhaseBlock({
   return (
     <div>
       {!start ? (
-        <div className="text-xl font-medium text-white/25">—</div>
+        <div className={`${DATE_FONT} font-medium text-white/25`}>—</div>
       ) : rel?.tone === "done" ? (
         // Completed reads as the headline, with the date small underneath.
         <div>
-          <div className="text-xl font-semibold text-emerald-300/80">Completed</div>
+          <div className={`${DATE_FONT} font-semibold text-emerald-300/80`}>Completed</div>
           <div className="text-xs text-white/35">{fmtRange(start, end)}</div>
         </div>
       ) : (
-        <div className="flex items-center gap-2">
-          <span className="text-xl font-medium text-white/90">{fmtRange(start, end)}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`${DATE_FONT} font-medium text-white/90`}>{fmtRange(start, end)}</span>
           {rel && (
             <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${toneClass}`}>{rel.label}</span>
           )}
@@ -225,27 +221,28 @@ export default async function StatusBoardPage({
 
   const updated = new Date().toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" });
 
-  // Shared column template so the header and every row line up exactly.
-  const cols = "grid grid-cols-[6px_minmax(0,1fr)_280px_280px_280px] items-center gap-6";
+  // Fluid column template (fr units) so the grid fills any screen width; on
+  // mobile the rows stack into a single column instead.
+  const cols = "lg:grid-cols-[2fr_1.4fr_1.4fr_1.5fr] lg:gap-x-6 lg:items-center";
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[radial-gradient(ellipse_at_top,_#1e1b4b_0%,_#0b1020_45%,_#05070d_100%)] px-10 py-8 text-white">
+    <div className="flex h-screen flex-col overflow-hidden bg-[radial-gradient(ellipse_at_top,_#1e1b4b_0%,_#0b1020_45%,_#05070d_100%)] px-4 py-5 sm:px-6 lg:px-10 lg:py-8 text-white">
       {/* Header — fixed, doesn't scroll */}
-      <header className="flex flex-none items-end justify-between gap-6 border-b border-white/10 pb-6">
-        <div>
+      <header className="flex flex-none flex-wrap items-end justify-between gap-4 border-b border-white/10 pb-4 lg:pb-6">
+        <div className="min-w-0">
           <Image
             src="/centrefit-logo.png"
             alt="Centrefit Group"
             width={240}
             height={60}
             priority
-            className="h-9 w-auto"
+            className="h-7 lg:h-9 w-auto"
             style={{ filter: "brightness(0) invert(1)" }}
           />
-          <h1 className="mt-3 bg-gradient-to-r from-white via-white to-violet-300 bg-clip-text text-5xl font-bold tracking-tight text-transparent">
+          <h1 className="mt-2 lg:mt-3 bg-gradient-to-r from-white via-white to-violet-300 bg-clip-text text-[clamp(1.75rem,4vw,4rem)] font-bold leading-tight tracking-tight text-transparent">
             New Build Status Board
           </h1>
-          <p className="mt-2 text-sm text-white/40">
+          <p className="mt-1 lg:mt-2 text-xs lg:text-sm text-white/40">
             {rows.length} active build{rows.length === 1 ? "" : "s"} · updated {updated}
           </p>
         </div>
@@ -257,9 +254,8 @@ export default async function StatusBoardPage({
         <div className="mt-24 text-center text-2xl font-medium text-white/30">No active new builds right now.</div>
       ) : (
         <>
-          {/* Column headers — fixed, don't scroll */}
-          <div className={`${cols} mt-6 flex-none px-7 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/30`}>
-            <span />
+          {/* Column headers — desktop only; rows carry their own labels on mobile */}
+          <div className={`hidden lg:grid ${cols} mt-4 lg:mt-6 flex-none pl-8 pr-7 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/30`}>
             <span>Site</span>
             <span>Rough In</span>
             <span>Fit Off</span>
@@ -267,7 +263,7 @@ export default async function StatusBoardPage({
           </div>
 
           <AutoScroll>
-            <div className="space-y-3 pb-10">
+            <div className="space-y-2 lg:space-y-3 pb-10">
               {rows.map((j) => {
                 // Date-driven stage wins; otherwise show the real CRM status.
                 const statusLabel = j.stage?.label ?? j._status?.name ?? "—";
@@ -277,26 +273,38 @@ export default async function StatusBoardPage({
                 return (
                   <div
                     key={j.id}
-                    className={`${cols} rounded-2xl border border-white/10 bg-white/[0.04] px-7 py-5 backdrop-blur-sm`}
+                    className="rounded-2xl border border-white/10 border-l-4 bg-white/[0.04] backdrop-blur-sm"
+                    style={{ borderLeftColor: colour }}
                   >
-                    <span className="h-14 w-1.5 rounded-full" style={{ backgroundColor: colour }} />
+                    <div className={`grid grid-cols-1 gap-y-3 px-5 py-4 lg:px-7 lg:py-5 ${cols}`}>
+                      {/* Site */}
+                      <div className="min-w-0">
+                        <div className="truncate font-bold tracking-tight text-white text-[clamp(1.25rem,1.8vw,2.25rem)]">{title}</div>
+                        {subtitle && <div className="truncate text-white/45 text-[clamp(0.8rem,1vw,1rem)]">{subtitle}</div>}
+                      </div>
 
-                    <div className="min-w-0">
-                      <div className="truncate text-3xl font-bold tracking-tight text-white">{title}</div>
-                      {subtitle && <div className="mt-0.5 truncate text-base text-white/45">{subtitle}</div>}
-                    </div>
+                      {/* Rough In */}
+                      <div>
+                        <div className="lg:hidden mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-white/35">Rough In</div>
+                        <PhaseBlock start={j.rough_in_date} end={j.rough_in_end_date} crew={crewOf(j.rough_in_staff_ids)} />
+                      </div>
 
-                    <PhaseBlock start={j.rough_in_date} end={j.rough_in_end_date} crew={crewOf(j.rough_in_staff_ids)} />
-                    <PhaseBlock start={j.fit_off_date} end={j.fit_off_end_date} crew={crewOf(j.fit_off_staff_ids)} />
+                      {/* Fit Off */}
+                      <div>
+                        <div className="lg:hidden mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-white/35">Fit Off</div>
+                        <PhaseBlock start={j.fit_off_date} end={j.fit_off_end_date} crew={crewOf(j.fit_off_staff_ids)} />
+                      </div>
 
-                    <div className="text-right">
-                      <span
-                        className={`inline-flex items-center gap-2.5 whitespace-nowrap rounded-full border px-5 py-2.5 font-semibold ${pillSize(statusLabel)}`}
-                        style={{ backgroundColor: `${colour}22`, color: colour, borderColor: `${colour}55` }}
-                      >
-                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: colour }} />
-                        {statusLabel}
-                      </span>
+                      {/* Status */}
+                      <div className="lg:text-right">
+                        <span
+                          className="inline-flex items-center gap-2.5 whitespace-nowrap rounded-full border px-4 py-2 lg:px-5 lg:py-2.5 font-semibold text-[clamp(0.9rem,1.1vw,1.35rem)]"
+                          style={{ backgroundColor: `${colour}22`, color: colour, borderColor: `${colour}55` }}
+                        >
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: colour }} />
+                          {statusLabel}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 );

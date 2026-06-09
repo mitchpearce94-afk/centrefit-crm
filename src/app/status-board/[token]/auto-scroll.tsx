@@ -12,10 +12,11 @@ const STORAGE_KEY = "cf-board-autoscroll";
 
 export function AutoScroll({ children }: { children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [enabled, setEnabled] = useState(true);
+  const [enabled, setEnabled] = useState(false);
 
+  // Off by default; restore an explicit "on" preference on mount.
   useEffect(() => {
-    if (localStorage.getItem(STORAGE_KEY) === "off") setEnabled(false);
+    if (localStorage.getItem(STORAGE_KEY) === "on") setEnabled(true);
   }, []);
 
   useEffect(() => {
