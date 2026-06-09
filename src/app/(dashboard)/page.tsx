@@ -320,7 +320,7 @@ export default async function DashboardPage({
                 value={String(acct.awaitingSendCount)}
                 warning={acct.awaitingSendCount > 0}
                 sublabel={acct.awaitingSendCount > 0 ? "customer never received these" : "all sent"}
-                href="/invoices"
+                href="/invoices?tab=unsent"
               />
               <StatCard
                 label="Ready to invoice"

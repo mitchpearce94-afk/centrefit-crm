@@ -21,7 +21,7 @@ const TYPE_LABEL: Record<string, string> = {
   recurring: "Recurring",
 };
 
-type Tab = "active" | "overdue" | "drafts" | "paid" | "voided";
+type Tab = "active" | "unsent" | "overdue" | "drafts" | "paid" | "voided";
 
 export default async function InvoicesPage({
   searchParams,
@@ -35,7 +35,7 @@ export default async function InvoicesPage({
   const { data: invoices } = await supabase
     .from("invoices")
     .select(
-      "id, xero_invoice_number, invoice_type, status, total, amount_due, due_date, paid_at, created_at, last_reminder_sent_at, reminder_count, auto_remind_enabled, customer:customers(id, name), quote:quotes(id, ref, site:customer_sites(id, name)), job:jobs(id, number, site:customer_sites(id, name))",
+      "id, xero_invoice_number, invoice_type, status, total, amount_due, due_date, paid_at, created_at, sent_at, sent_to_email, last_reminder_sent_at, reminder_count, auto_remind_enabled, customer:customers(id, name), quote:quotes(id, ref, site:customer_sites(id, name)), job:jobs(id, number, site:customer_sites(id, name))",
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -53,13 +53,17 @@ export default async function InvoicesPage({
   });
 
   const activeList = enriched.filter((i) => i.status === "authorised" && Number(i.amount_due) > 0);
+  // Authorised in Xero but never emailed to the customer — they literally never
+  // received it. Matches the dashboard "Authorised, not emailed" tile exactly.
+  const unsentList = enriched.filter((i) => i.status === "authorised" && !i.sent_at);
   const overdueList = enriched.filter((i) => i._isOverdue);
   const draftsList = enriched.filter((i) => i.status === "draft");
   const paidList = enriched.filter((i) => i.status === "paid");
   const voidedList = enriched.filter((i) => i.status === "void");
 
   const filtered =
-    tab === "overdue" ? overdueList
+    tab === "unsent" ? unsentList
+    : tab === "overdue" ? overdueList
     : tab === "drafts" ? draftsList
     : tab === "paid" ? paidList
     : tab === "voided" ? voidedList
@@ -108,6 +112,7 @@ export default async function InvoicesPage({
       <div className="mt-5 flex flex-nowrap items-center gap-1 border-b border-border overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
         {[
           { key: "active", label: "Active", count: activeList.length },
+          { key: "unsent", label: "Needs sending", count: unsentList.length, accent: unsentList.length > 0 },
           { key: "overdue", label: "Overdue", count: overdueList.length, accent: overdueList.length > 0 },
           { key: "drafts", label: "Drafts", count: draftsList.length },
           { key: "paid", label: "Paid", count: paidList.length },
@@ -153,6 +158,7 @@ export default async function InvoicesPage({
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Site</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider hidden md:table-cell">Customer</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Status</th>
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Sent</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider text-right">Total</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider text-right">Due</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider hidden md:table-cell">Due date</th>
@@ -162,9 +168,11 @@ export default async function InvoicesPage({
           <tbody className="divide-y divide-border">
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground text-sm">
+                <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">
                   {tab === "active"
                     ? "Nothing outstanding — sent invoices awaiting payment appear here."
+                    : tab === "unsent"
+                    ? "All authorised invoices have been emailed — nothing waiting to send."
                     : tab === "overdue"
                     ? "No overdue invoices."
                     : `No ${tab} invoices.`}
@@ -214,6 +222,26 @@ export default async function InvoicesPage({
                         </span>
                       )}
                     </div>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {inv.sent_at ? (
+                      <span
+                        className="inline-flex items-center gap-1.5 text-[11px] text-emerald-400"
+                        title={`Emailed ${new Date(inv.sent_at).toLocaleString("en-AU")}${inv.sent_to_email ? ` to ${inv.sent_to_email}` : ""}`}
+                      >
+                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                        {new Date(inv.sent_at).toLocaleDateString("en-AU")}
+                      </span>
+                    ) : inv.status === "authorised" ? (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium text-destructive uppercase tracking-wide"
+                        title="Authorised in Xero but never emailed — the customer hasn't received this"
+                      >
+                        Not sent
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-sm">${fmt(Number(inv.total))}</td>
                   <td className="px-4 py-2.5 text-right font-mono text-sm">
