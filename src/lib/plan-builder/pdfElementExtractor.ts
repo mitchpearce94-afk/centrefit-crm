@@ -1,7 +1,8 @@
-import { PdfElement } from '@/types/plan-builder';
+import { PdfElement, PdfElementGeometry } from '@/types/plan-builder';
 
 // pdf.js OPS constants — exact values from pdfjs-dist v5.5.207
 const OPS = {
+  setLineWidth: 2,
   save: 10,
   restore: 11,
   transform: 12,
@@ -35,35 +36,61 @@ const OPS = {
   showSpacedText: 45,
   nextLineShowText: 46,
   nextLineSetSpacingShowText: 47,
+  setStrokeColor: 52,
+  setStrokeColorN: 53,
+  setFillColor: 54,
+  setFillColorN: 55,
+  setStrokeGray: 56,
+  setFillGray: 57,
+  setStrokeRGBColor: 58,
+  setFillRGBColor: 59,
+  setStrokeCMYKColor: 60,
+  setFillCMYKColor: 61,
   paintXObject: 66,
+  paintFormXObjectBegin: 74,
+  paintFormXObjectEnd: 75,
   paintImageMaskXObject: 83,
   paintImageXObject: 85,
   paintInlineImageXObject: 86,
-  paintFormXObjectBegin: 74,
-  paintFormXObjectEnd: 75,
   constructPath: 91,
 };
 
-// Operators that actually render pixels (non-empty bbox expected)
-const RENDERING_OPS = new Set([
-  OPS.stroke, OPS.closeStroke, OPS.fill, OPS.eoFill,
-  OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke,
-  OPS.showText, OPS.showSpacedText, OPS.nextLineShowText, OPS.nextLineSetSpacingShowText,
-  OPS.paintXObject, OPS.paintImageXObject, OPS.paintImageMaskXObject,
-  OPS.paintInlineImageXObject,
-]);
+// pdf.js DrawOPS — the packed path encoding used in constructPath args
+const DRAW = { moveTo: 0, lineTo: 1, curveTo: 2, quadraticCurveTo: 3, closePath: 4 };
 
-// Path-starting operators (NOT constructPath — that's self-contained)
-const PATH_START_OPS = new Set([
-  OPS.moveTo, OPS.rectangle,
-]);
+const STROKE_OPS = new Set([OPS.stroke, OPS.closeStroke, OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke]);
+const FILL_OPS = new Set([OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke]);
+const PATH_RENDER_OPS = new Set([...STROKE_OPS, ...FILL_OPS, OPS.endPath]);
+const LEGACY_PATH_OPS = new Set([OPS.moveTo, OPS.lineTo, OPS.curveTo, OPS.curveTo2, OPS.curveTo3, OPS.closePath, OPS.rectangle]);
+const SHOW_TEXT_OPS = new Set([OPS.showText, OPS.showSpacedText, OPS.nextLineShowText, OPS.nextLineSetSpacingShowText]);
+const IMAGE_OPS = new Set([OPS.paintXObject, OPS.paintImageXObject, OPS.paintImageMaskXObject, OPS.paintInlineImageXObject]);
+const STROKE_COLOR_OPS = new Set([OPS.setStrokeColor, OPS.setStrokeColorN, OPS.setStrokeGray, OPS.setStrokeRGBColor, OPS.setStrokeCMYKColor]);
+const FILL_COLOR_OPS = new Set([OPS.setFillColor, OPS.setFillColorN, OPS.setFillGray, OPS.setFillRGBColor, OPS.setFillCMYKColor]);
 
-// Path-ending (rendering) operators
-const PATH_RENDER_OPS = new Set([
-  OPS.stroke, OPS.closeStroke, OPS.fill, OPS.eoFill,
-  OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke,
-  OPS.endPath,
-]);
+type Mat = [number, number, number, number, number, number];
+
+function matMul(m1: Mat, m2: ArrayLike<number>): Mat {
+  // Row-vector convention as used by PDF / canvas: result = m2 ∘ m1
+  return [
+    m2[0] * m1[0] + m2[1] * m1[2],
+    m2[0] * m1[1] + m2[1] * m1[3],
+    m2[2] * m1[0] + m2[3] * m1[2],
+    m2[2] * m1[1] + m2[3] * m1[3],
+    m2[4] * m1[0] + m2[5] * m1[2] + m1[4],
+    m2[4] * m1[1] + m2[5] * m1[3] + m1[5],
+  ];
+}
+
+function applyMat(m: Mat, x: number, y: number): [number, number] {
+  return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+}
+
+interface GfxState {
+  ctm: Mat;
+  lineWidth: number;
+  strokeColor: string;
+  fillColor: string;
+}
 
 interface BBoxReader {
   length: number;
@@ -76,15 +103,15 @@ interface BBoxReader {
 
 interface TextContentItem {
   str: string;
-  transform: number[];
-  width: number;
-  height: number;
 }
 
 /**
- * Extract selectable elements from a PDF page's operator list.
- * Groups sequential operators into logical elements (text blocks, paths, images)
- * and computes bounding boxes from the recorded bbox data.
+ * Extract selectable elements from a PDF page's operator list — Serif/Affinity
+ * model: one element per AUTHORED object (a multi-subpath path is ONE thing),
+ * form XObjects become groups you can drill into, and runs of small adjacent
+ * paths (flattened CAD symbols — a door, a toilet) are clustered into pseudo-
+ * groups. Each path leaf carries its exact geometry + CTM so hit-testing and
+ * highlighting work against the real ink, not the bounding box.
  */
 export function extractElements(
   operatorList: { fnArray: number[]; argsArray: any[] },
@@ -92,57 +119,132 @@ export function extractElements(
   textContent: { items: any[] },
   canvasWidth: number,
   canvasHeight: number,
+  viewportTransform: ArrayLike<number>,
 ): PdfElement[] {
-  const { fnArray } = operatorList;
-  const elements: PdfElement[] = [];
-  let elementCounter = 0;
+  const { fnArray, argsArray } = operatorList;
   const pageArea = canvasWidth * canvasHeight;
+  const maxDim = Math.max(canvasWidth, canvasHeight);
+  let elementCounter = 0;
+  const nextId = () => `el-${elementCounter++}`;
 
-  // Debug: log operator type distribution
-  const opCounts: Record<number, number> = {};
-  for (const op of fnArray) opCounts[op] = (opCounts[op] || 0) + 1;
-  console.log('[Plan Builder] Operator distribution:', JSON.stringify(opCounts));
-
-  // Debug: count non-empty bboxes
-  let nonEmptyBboxes = 0;
-  for (let idx = 0; idx < Math.min(fnArray.length, bboxReader.length); idx++) {
-    if (!bboxReader.isEmpty(idx)) nonEmptyBboxes++;
-  }
-  console.log(`[Plan Builder] Non-empty bboxes: ${nonEmptyBboxes} / ${fnArray.length}`);
-
-  // Track text content items for labeling
   const textItems: TextContentItem[] = textContent.items.filter(
-    (item: any) => typeof item.str === 'string' && item.str.trim().length > 0
+    (item: any) => typeof item.str === 'string' && item.str.trim().length > 0,
   );
   let textItemIndex = 0;
 
-  let skippedOps = 0;
-  let textBlocks = 0;
-  let pathBlocks = 0;
-  let imageBlocks = 0;
-  let filteredOut = 0;
+  // Graphics state walk — mirrors what the renderer does so each element's
+  // geometry can be mapped from path space to canvas device pixels.
+  let gfx: GfxState = {
+    ctm: [
+      viewportTransform[0], viewportTransform[1], viewportTransform[2],
+      viewportTransform[3], viewportTransform[4], viewportTransform[5],
+    ],
+    lineWidth: 1,
+    strokeColor: 'k',
+    fillColor: 'k',
+  };
+  const gfxStack: GfxState[] = [];
+
+  // Collector frames: the root list, plus one frame per open form XObject.
+  interface Frame { elements: PdfElement[]; startIdx: number }
+  const root: Frame = { elements: [], startIdx: 0 };
+  const frames: Frame[] = [root];
+  const top = () => frames[frames.length - 1];
+
+  const recordedBBox = (indices: number[]) => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let hasAny = false;
+    for (const idx of indices) {
+      if (idx >= bboxReader.length || bboxReader.isEmpty(idx)) continue;
+      hasAny = true;
+      minX = Math.min(minX, bboxReader.minX(idx) * canvasWidth);
+      minY = Math.min(minY, bboxReader.minY(idx) * canvasHeight);
+      maxX = Math.max(maxX, bboxReader.maxX(idx) * canvasWidth);
+      maxY = Math.max(maxY, bboxReader.maxY(idx) * canvasHeight);
+    }
+    if (!hasAny) return null;
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  };
+
+  const keepBBox = (bbox: { x: number; y: number; width: number; height: number } | null) => {
+    if (!bbox) return false;
+    if (bbox.width * bbox.height > pageArea * 0.85) return false; // background fill
+    if (bbox.width < 0.5 && bbox.height < 0.5) return false;      // sub-pixel noise
+    if (bbox.width * bbox.height < 1) return false;
+    return true;
+  };
+
+  /** Device-space bbox from path-space minMax via the current CTM (fallback when no recorded bbox). */
+  const bboxFromMinMax = (minMax: ArrayLike<number>, ctm: Mat, strokePad: number) => {
+    const corners = [
+      applyMat(ctm, minMax[0], minMax[1]),
+      applyMat(ctm, minMax[2], minMax[1]),
+      applyMat(ctm, minMax[0], minMax[3]),
+      applyMat(ctm, minMax[2], minMax[3]),
+    ];
+    const xs = corners.map(c => c[0]);
+    const ys = corners.map(c => c[1]);
+    const minX = Math.min(...xs) - strokePad;
+    const minY = Math.min(...ys) - strokePad;
+    return {
+      x: minX,
+      y: minY,
+      width: Math.max(...xs) + strokePad - minX,
+      height: Math.max(...ys) + strokePad - minY,
+    };
+  };
+
+  const ctmScale = (m: Mat) => Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2])) || 1;
+
+  const makePathLeaf = (
+    opIndices: number[],
+    drawOps: number[] | null,
+    renderOp: number,
+    ctm: Mat,
+    minMax: ArrayLike<number> | null,
+  ): PdfElement | null => {
+    if (renderOp === OPS.endPath) return null; // clip-only path, no ink
+    const strokes = STROKE_OPS.has(renderOp);
+    const fills = FILL_OPS.has(renderOp);
+    if (!strokes && !fills) return null;
+
+    const strokePad = strokes ? (gfx.lineWidth * ctmScale(ctm)) / 2 : 0;
+    const bbox = recordedBBox(opIndices)
+      ?? (minMax ? bboxFromMinMax(minMax, ctm, strokePad) : null);
+    if (!keepBBox(bbox)) return null;
+
+    const geometry: PdfElementGeometry | undefined = drawOps && drawOps.length > 0
+      ? {
+          drawOps,
+          ctm,
+          lineWidth: gfx.lineWidth,
+          strokes,
+          fills,
+          styleKey: `${strokes ? gfx.strokeColor : ''}|${fills ? gfx.fillColor : ''}|${gfx.lineWidth.toFixed(3)}|${strokes ? 's' : ''}${fills ? 'f' : ''}`,
+        }
+      : undefined;
+
+    return { id: nextId(), type: 'path', label: 'Shape', opIndices, bbox: bbox!, geometry };
+  };
 
   let i = 0;
-  const SHOW_TEXT_OPS = new Set([
-    OPS.showText, OPS.showSpacedText, OPS.nextLineShowText, OPS.nextLineSetSpacingShowText,
-  ]);
   while (i < fnArray.length) {
     const op = fnArray[i];
+    const args = argsArray[i];
 
-    // TEXT BLOCK: BT ... ET — emit ONE element per text block so the whole
-    // paragraph is selectable and deletes cleanly as a unit. The bbox
-    // is built from show-text ops only (the actual rendered glyph
-    // extents). State ops like moveText / setTextMatrix have recorded
-    // bboxes that span "where the cursor moved to" and unioning them
-    // inflates the highlight to half the page — exactly the symptom
-    // you saw before. The opIndices still cover the whole block so
-    // deletion strips everything cleanly.
+    // ── Graphics state ──────────────────────────────────────────────
+    if (op === OPS.save) { gfxStack.push({ ...gfx, ctm: [...gfx.ctm] as Mat }); i++; continue; }
+    if (op === OPS.restore) { gfx = gfxStack.pop() ?? gfx; i++; continue; }
+    if (op === OPS.transform) { gfx.ctm = matMul(gfx.ctm, args as number[]); i++; continue; }
+    if (op === OPS.setLineWidth) { gfx.lineWidth = Number(args?.[0]) || 1; i++; continue; }
+    if (STROKE_COLOR_OPS.has(op)) { gfx.strokeColor = safeStyle(args); i++; continue; }
+    if (FILL_COLOR_OPS.has(op)) { gfx.fillColor = safeStyle(args); i++; continue; }
+
+    // ── Text block: BT … ET → one element ──────────────────────────
     if (op === OPS.beginText) {
-      textBlocks++;
       const opIndices: number[] = [];
       const showTextIndices: number[] = [];
       let textLabel = '';
-
       while (i < fnArray.length && fnArray[i] !== OPS.endText) {
         opIndices.push(i);
         if (SHOW_TEXT_OPS.has(fnArray[i])) {
@@ -155,260 +257,241 @@ export function extractElements(
         }
         i++;
       }
-      if (i < fnArray.length) {
-        opIndices.push(i); // ET
-        i++;
-      }
-
-      // Tight bbox: only the show-text ops, not the state ops.
-      const bbox = showTextIndices.length > 0
-        ? computeUnionBBox(showTextIndices, bboxReader, canvasWidth, canvasHeight)
-        : computeUnionBBox(opIndices, bboxReader, canvasWidth, canvasHeight);
-      if (!bbox) { filteredOut++; }
-      else if (isFullPage(bbox, canvasWidth, canvasHeight, pageArea)) { filteredOut++; }
-      else if (isTiny(bbox)) { filteredOut++; }
-      else {
-        elements.push({
-          id: `el-${elementCounter++}`,
+      if (i < fnArray.length) { opIndices.push(i); i++; } // ET
+      // Tight bbox from the show-text ops only — state ops (moveText etc.)
+      // have recorded bboxes spanning "where the cursor moved", which would
+      // inflate the highlight to half the page.
+      const bbox = showTextIndices.length > 0 ? recordedBBox(showTextIndices) : recordedBBox(opIndices);
+      if (keepBBox(bbox)) {
+        top().elements.push({
+          id: nextId(),
           type: 'text',
           label: textLabel.trim().substring(0, 80) || 'Text',
           opIndices,
-          bbox,
+          bbox: bbox!,
         });
       }
       continue;
     }
 
-    // IMAGE: paintXObject, paintImageXObject, etc.
-    if (op === OPS.paintXObject || op === OPS.paintImageXObject ||
-        op === OPS.paintImageMaskXObject || op === OPS.paintInlineImageXObject) {
-      imageBlocks++;
-      const opIndices = [i];
-      const bbox = computeUnionBBox(opIndices, bboxReader, canvasWidth, canvasHeight);
-      if (bbox && !isFullPage(bbox, canvasWidth, canvasHeight, pageArea) && !isTiny(bbox)) {
-        elements.push({
-          id: `el-${elementCounter++}`,
-          type: 'image',
-          label: 'Image',
-          opIndices,
-          bbox,
-        });
+    // ── Images ──────────────────────────────────────────────────────
+    if (IMAGE_OPS.has(op)) {
+      const bbox = recordedBBox([i]);
+      if (keepBBox(bbox)) {
+        top().elements.push({ id: nextId(), type: 'image', label: 'Image', opIndices: [i], bbox: bbox! });
       }
       i++;
       continue;
     }
 
-    // CONSTRUCT PATH: self-contained path+fill/stroke bundled in one operator
+    // ── constructPath: one authored object, geometry included ───────
     if (op === OPS.constructPath) {
-      pathBlocks++;
-      const opIndices = [i];
-      const bbox = computeUnionBBox(opIndices, bboxReader, canvasWidth, canvasHeight);
-      if (bbox && !isFullPage(bbox, canvasWidth, canvasHeight, pageArea) && !isTiny(bbox)) {
-        elements.push({ id: `el-${elementCounter++}`, type: 'path', label: 'Shape', opIndices, bbox });
-      } else { filteredOut++; }
+      // args = [renderOp, data, minMax]; data[0] is the packed DrawOPS array
+      // (or a Path2D if this operator list was already consumed by a render —
+      // in that case we keep bbox-only behaviour for the element).
+      const renderOp: number = args?.[0];
+      const data = args?.[1];
+      const minMax = args?.[2] ?? null;
+      const raw = data?.[0];
+      const drawOps: number[] | null =
+        raw && typeof (raw as any).length === 'number' && !(typeof Path2D !== 'undefined' && raw instanceof Path2D)
+          ? Array.from(raw as ArrayLike<number>)
+          : null;
+      const leaf = makePathLeaf([i], drawOps, renderOp, [...gfx.ctm] as Mat, minMax);
+      if (leaf) top().elements.push(leaf);
       i++;
       continue;
     }
 
-    // PATH: moveTo/rectangle ... stroke/fill — split into one element per
-    // SUB-path (each moveTo / rectangle starts a new sub-path) so a single
-    // multi-subpath path doesn't become one giant unselectable blob.
-    // The rendering op (stroke/fill) is shared across all subpaths and
-    // included in every emitted element so filtering one out leaves the
-    // others rendering correctly.
-    if (PATH_START_OPS.has(op) || op === OPS.lineTo || op === OPS.curveTo) {
-      pathBlocks++;
-      const subpaths: number[][] = [];
-      let current: number[] = [];
-
+    // ── Legacy path run: moveTo/rectangle/… → stroke/fill ───────────
+    // One element for the WHOLE painted path (multi-subpath = one authored
+    // object — the old per-subpath split is what shattered symbols into
+    // dozens of slivers).
+    if (LEGACY_PATH_OPS.has(op)) {
+      const opIndices: number[] = [];
+      const drawOps: number[] = [];
+      let cx = 0, cy = 0; // current point, for curveTo2/curveTo3 expansion
+      let renderOp = OPS.endPath;
       while (i < fnArray.length) {
         const cur = fnArray[i];
-        if (current.length > 0 && (cur === OPS.moveTo || cur === OPS.rectangle)) {
-          // Sub-path boundary — close the previous one
-          subpaths.push(current);
-          current = [];
-        }
-        current.push(i);
-        if (PATH_RENDER_OPS.has(cur)) {
+        const a = argsArray[i];
+        if (LEGACY_PATH_OPS.has(cur)) {
+          opIndices.push(i);
+          switch (cur) {
+            case OPS.moveTo: drawOps.push(DRAW.moveTo, a[0], a[1]); cx = a[0]; cy = a[1]; break;
+            case OPS.lineTo: drawOps.push(DRAW.lineTo, a[0], a[1]); cx = a[0]; cy = a[1]; break;
+            case OPS.curveTo: drawOps.push(DRAW.curveTo, a[0], a[1], a[2], a[3], a[4], a[5]); cx = a[4]; cy = a[5]; break;
+            case OPS.curveTo2: drawOps.push(DRAW.curveTo, cx, cy, a[0], a[1], a[2], a[3]); cx = a[2]; cy = a[3]; break;
+            case OPS.curveTo3: drawOps.push(DRAW.curveTo, a[0], a[1], a[2], a[3], a[2], a[3]); cx = a[2]; cy = a[3]; break;
+            case OPS.closePath: drawOps.push(DRAW.closePath); break;
+            case OPS.rectangle:
+              drawOps.push(
+                DRAW.moveTo, a[0], a[1],
+                DRAW.lineTo, a[0] + a[2], a[1],
+                DRAW.lineTo, a[0] + a[2], a[1] + a[3],
+                DRAW.lineTo, a[0], a[1] + a[3],
+                DRAW.closePath,
+              );
+              cx = a[0]; cy = a[1];
+              break;
+          }
           i++;
-          break;
+          continue;
         }
-        i++;
-      }
-      if (current.length > 0) subpaths.push(current);
-
-      // Identify the shared rendering op (last index of the last subpath
-      // if it's a render op) — every emitted element keeps it so deletion
-      // doesn't break the surviving subpaths' rendering.
-      let renderOpIdx: number | null = null;
-      const lastGroup = subpaths[subpaths.length - 1];
-      if (lastGroup) {
-        const tail = lastGroup[lastGroup.length - 1];
-        if (PATH_RENDER_OPS.has(fnArray[tail])) renderOpIdx = tail;
-      }
-
-      for (const sub of subpaths) {
-        const indicesForElement = renderOpIdx !== null && !sub.includes(renderOpIdx)
-          ? [...sub, renderOpIdx]
-          : sub;
-        const bbox = computeUnionBBox(indicesForElement, bboxReader, canvasWidth, canvasHeight);
-        if (bbox && !isFullPage(bbox, canvasWidth, canvasHeight, pageArea) && !isTiny(bbox)) {
-          elements.push({
-            id: `el-${elementCounter++}`,
-            type: 'path',
-            label: 'Shape',
-            opIndices: indicesForElement,
-            bbox,
-          });
-        } else {
-          filteredOut++;
+        if (PATH_RENDER_OPS.has(cur)) {
+          opIndices.push(i);
+          renderOp = cur;
+          i++;
         }
+        break;
       }
+      const leaf = makePathLeaf(opIndices, drawOps, renderOp, [...gfx.ctm] as Mat, null);
+      if (leaf) top().elements.push(leaf);
       continue;
     }
 
-    // FORM XOBJECT: paintFormXObjectBegin ... paintFormXObjectEnd
+    // ── Form XObject: a real authored group ─────────────────────────
     if (op === OPS.paintFormXObjectBegin) {
-      const opIndices: number[] = [];
-      let depth = 1;
-      opIndices.push(i);
+      gfxStack.push({ ...gfx, ctm: [...gfx.ctm] as Mat });
+      const matrix = args?.[0];
+      if (matrix && matrix.length === 6) gfx.ctm = matMul(gfx.ctm, matrix);
+      frames.push({ elements: [], startIdx: i });
       i++;
-
-      while (i < fnArray.length && depth > 0) {
-        opIndices.push(i);
-        if (fnArray[i] === OPS.paintFormXObjectBegin) depth++;
-        if (fnArray[i] === OPS.paintFormXObjectEnd) depth--;
-        i++;
+      continue;
+    }
+    if (op === OPS.paintFormXObjectEnd) {
+      gfx = gfxStack.pop() ?? gfx;
+      if (frames.length > 1) {
+        const frame = frames.pop()!;
+        const children = frame.elements;
+        const parent = top();
+        if (children.length === 1) {
+          // A group of one is just that thing.
+          parent.elements.push(children[0]);
+        } else if (children.length > 1) {
+          const bbox = unionBBox(children.map(c => c.bbox));
+          // Full op range so deletion removes the group's state ops too.
+          const opIndices: number[] = [];
+          for (let k = frame.startIdx; k <= i; k++) opIndices.push(k);
+          parent.elements.push({
+            id: nextId(),
+            type: 'group',
+            label: `Group (${children.length})`,
+            opIndices,
+            bbox,
+            children,
+          });
+        }
       }
-
-      const bbox = computeUnionBBox(opIndices, bboxReader, canvasWidth, canvasHeight);
-      if (bbox && !isFullPage(bbox, canvasWidth, canvasHeight, pageArea) && !isTiny(bbox)) {
-        elements.push({
-          id: `el-${elementCounter++}`,
-          type: 'group',
-          label: 'Group',
-          opIndices,
-          bbox,
-        });
-      }
+      i++;
       continue;
     }
 
-    // Skip non-rendering operators (state changes, save/restore, etc.)
-    i++;
+    i++; // anything else: state we don't track
   }
 
-  console.log(`[Plan Builder] Grouping: ${textBlocks} text, ${pathBlocks} path, ${imageBlocks} image blocks found. ${elements.length} kept, ${filteredOut} filtered out.`);
+  // Unclosed XObject frames (malformed PDF) — fold children back into root.
+  while (frames.length > 1) {
+    const frame = frames.pop()!;
+    root.elements.push(...frame.elements);
+  }
 
-  return elements;
+  // ── Cluster flattened CAD symbols into pseudo-groups ──────────────
+  const result = clusterSymbols(root.elements, maxDim, pageArea, nextId);
+
+  const leafCount = result.reduce((n, el) => n + (el.children?.length ?? 1), 0);
+  console.log(`[Plan Builder] Extracted ${result.length} top-level elements (${leafCount} leaves)`);
+  return result;
 }
 
 /**
- * Compute the union bounding box of multiple operators.
- * Returns null if all operators have empty bboxes.
+ * CAD exports usually flatten everything — a door symbol arrives as 12
+ * consecutive tiny paths, not a group. Cluster runs of stream-adjacent small
+ * elements whose bboxes touch into a pseudo-group so one click selects the
+ * symbol (double-click drills into the pieces).
+ *
+ * Guards keep walls/borders out of clusters: long elements never join, and a
+ * cluster stops growing past a bbox-area cap so proximity chains can't swallow
+ * the whole drawing.
  */
-function computeUnionBBox(
-  opIndices: number[],
-  bboxReader: BBoxReader,
-  canvasWidth: number,
-  canvasHeight: number,
-): { x: number; y: number; width: number; height: number } | null {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  let hasAny = false;
+function clusterSymbols(
+  elements: PdfElement[],
+  maxDim: number,
+  pageArea: number,
+  nextId: () => string,
+): PdfElement[] {
+  const PAD = maxDim * 0.004;            // "touching" tolerance
+  const LONG_SIDE_LIMIT = maxDim * 0.22; // walls/borders never join clusters
+  const CLUSTER_AREA_CAP = pageArea * 0.06;
+  const MEMBER_CAP = 400;
 
-  for (const idx of opIndices) {
-    if (idx >= bboxReader.length || bboxReader.isEmpty(idx)) continue;
-    hasAny = true;
-    const x1 = bboxReader.minX(idx) * canvasWidth;
-    const y1 = bboxReader.minY(idx) * canvasHeight;
-    const x2 = bboxReader.maxX(idx) * canvasWidth;
-    const y2 = bboxReader.maxY(idx) * canvasHeight;
-    minX = Math.min(minX, x1);
-    minY = Math.min(minY, y1);
-    maxX = Math.max(maxX, x2);
-    maxY = Math.max(maxY, y2);
+  const canJoin = (el: PdfElement) =>
+    el.type === 'path' && Math.max(el.bbox.width, el.bbox.height) < LONG_SIDE_LIMIT;
+
+  const near = (a: PdfElement['bbox'], b: PdfElement['bbox']) =>
+    a.x - PAD <= b.x + b.width && a.x + a.width + PAD >= b.x &&
+    a.y - PAD <= b.y + b.height && a.y + a.height + PAD >= b.y;
+
+  const out: PdfElement[] = [];
+  let cluster: PdfElement[] = [];
+  let clusterBBox: PdfElement['bbox'] | null = null;
+
+  const flush = () => {
+    if (cluster.length >= 2) {
+      out.push({
+        id: nextId(),
+        type: 'group',
+        label: `Symbol (${cluster.length} parts)`,
+        opIndices: cluster.flatMap(c => c.opIndices),
+        bbox: clusterBBox!,
+        children: cluster,
+      });
+    } else if (cluster.length === 1) {
+      out.push(cluster[0]);
+    }
+    cluster = [];
+    clusterBBox = null;
+  };
+
+  for (const el of elements) {
+    if (!canJoin(el)) { flush(); out.push(el); continue; }
+    if (cluster.length === 0) { cluster.push(el); clusterBBox = { ...el.bbox }; continue; }
+
+    const candidate = unionBBox([clusterBBox!, el.bbox]);
+    if (
+      near(clusterBBox!, el.bbox) &&
+      candidate.width * candidate.height <= CLUSTER_AREA_CAP &&
+      cluster.length < MEMBER_CAP
+    ) {
+      cluster.push(el);
+      clusterBBox = candidate;
+    } else {
+      flush();
+      cluster = [el];
+      clusterBBox = { ...el.bbox };
+    }
   }
+  flush();
+  return out;
+}
 
-  if (!hasAny) return null;
+function unionBBox(boxes: { x: number; y: number; width: number; height: number }[]) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const b of boxes) {
+    minX = Math.min(minX, b.x);
+    minY = Math.min(minY, b.y);
+    maxX = Math.max(maxX, b.x + b.width);
+    maxY = Math.max(maxY, b.y + b.height);
+  }
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
-/** Check if bbox covers >85% of the page (likely a background fill) */
-function isFullPage(
-  bbox: { width: number; height: number },
-  canvasWidth: number,
-  canvasHeight: number,
-  pageArea: number,
-): boolean {
-  return (bbox.width * bbox.height) > pageArea * 0.85;
-}
-
-/**
- * Check if bbox is too small to be worth selecting. Filters genuine
- * sub-pixel artefacts (single-point ops, render-empty shapes) while
- * keeping legitimate thin elements like wall lines (long but 1px tall)
- * and dimension ticks.
- */
-function isTiny(bbox: { width: number; height: number }): boolean {
-  // Both dimensions sub-pixel → noise.
-  if (bbox.width < 0.5 && bbox.height < 0.5) return true;
-  // Or area is microscopic (handles cases where a tiny non-zero bbox
-  // slips through but represents nothing visible).
-  if (bbox.width * bbox.height < 1) return true;
-  return false;
-}
-
-/**
- * Merge elements of the same type whose bboxes overlap significantly.
- * This reduces clutter from operators that form a single visual unit
- * but were split across multiple operator sequences.
- */
-function mergeNearbyElements(elements: PdfElement[]): PdfElement[] {
-  if (elements.length < 2) return elements;
-
-  const merged: PdfElement[] = [];
-  const used = new Set<number>();
-
-  for (let i = 0; i < elements.length; i++) {
-    if (used.has(i)) continue;
-
-    let current = { ...elements[i], opIndices: [...elements[i].opIndices] };
-    let currentBbox = { ...current.bbox };
-    let didMerge = true;
-
-    // Keep merging until no more merges happen
-    while (didMerge) {
-      didMerge = false;
-      for (let j = i + 1; j < elements.length; j++) {
-        if (used.has(j)) continue;
-        if (elements[j].type !== current.type) continue;
-
-        const other = elements[j];
-        // Check if bboxes overlap or are very close (within 5px)
-        const pad = 5;
-        if (currentBbox.x - pad <= other.bbox.x + other.bbox.width &&
-            currentBbox.x + currentBbox.width + pad >= other.bbox.x &&
-            currentBbox.y - pad <= other.bbox.y + other.bbox.height &&
-            currentBbox.y + currentBbox.height + pad >= other.bbox.y) {
-          // Merge
-          current.opIndices.push(...other.opIndices);
-          if (current.type === 'text' && other.label && other.label !== 'Text') {
-            current.label = (current.label + ' ' + other.label).substring(0, 80);
-          }
-          const newMinX = Math.min(currentBbox.x, other.bbox.x);
-          const newMinY = Math.min(currentBbox.y, other.bbox.y);
-          const newMaxX = Math.max(currentBbox.x + currentBbox.width, other.bbox.x + other.bbox.width);
-          const newMaxY = Math.max(currentBbox.y + currentBbox.height, other.bbox.y + other.bbox.height);
-          currentBbox = { x: newMinX, y: newMinY, width: newMaxX - newMinX, height: newMaxY - newMinY };
-          current.bbox = currentBbox;
-          used.add(j);
-          didMerge = true;
-        }
-      }
-    }
-
-    merged.push(current);
+/** Stable fingerprint of a colour op's args, for select-similar matching. */
+function safeStyle(args: unknown): string {
+  try {
+    if (args == null) return '?';
+    return JSON.stringify(Array.from(args as ArrayLike<number>)).slice(0, 40);
+  } catch {
+    return '?';
   }
-
-  return merged;
 }

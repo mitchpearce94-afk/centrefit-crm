@@ -251,18 +251,18 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
     return pdfBlob;
   };
 
-  const cfqFilename = () => {
-    const tb = usePlanStore.getState().titleBlock;
-    const parts = [tb.client, tb.projectName].filter(Boolean);
-    return `${parts.join(' - ') || 'centrefit-plan'}.cfq`;
-  };
-  const pdfFilename = () => {
+  // Both save flavours share ONE naming policy (state - client - project -
+  // revision - date) so the .cfq and the exported .pdf sort together in the
+  // job folder.
+  const planBaseName = () => {
     const tb = usePlanStore.getState().titleBlock;
     const parts = [tb.state, tb.client, tb.projectName, tb.revision, tb.date].filter(Boolean);
     return parts.length > 0
-      ? `${parts.join(' - ').replace(/[^a-zA-Z0-9\-_ \/]/g, '')}.pdf`
-      : 'centrefit-plan.pdf';
+      ? parts.join(' - ').replace(/[^a-zA-Z0-9\-_ \/]/g, '')
+      : 'centrefit-plan';
   };
+  const cfqFilename = () => `${planBaseName()}.cfq`;
+  const pdfFilename = () => `${planBaseName()}.pdf`;
 
   // Save Plan: persist to the CRM (cloud) as before, AND drop the .cfq quote
   // file into a folder the user picks (e.g. their OneDrive folder). The save

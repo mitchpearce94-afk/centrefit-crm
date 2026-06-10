@@ -153,6 +153,7 @@ export async function renderPdfPageWithElements(
         textContent,
         viewport.width,
         viewport.height,
+        viewport.transform,
       );
       console.log(`[Plan Builder] Extracted ${elements.length} elements`);
     } catch (extractErr) {

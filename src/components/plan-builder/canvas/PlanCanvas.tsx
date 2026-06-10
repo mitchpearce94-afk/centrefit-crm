@@ -7,7 +7,8 @@ import { getDeviceById } from '@/lib/plan-builder/devices';
 import { NUMBERED_GROUPS } from '@/types/plan-builder';
 import DeviceSymbol from './DeviceSymbol';
 import CableLines from './CableLines';
-import PdfElementOverlay, { hitTestElements } from './PdfElementOverlay';
+import PdfElementOverlay from './PdfElementOverlay';
+import { hitTest } from '@/lib/plan-builder/pdfHitTest';
 
 
 export default function PlanCanvas() {
@@ -15,6 +16,8 @@ export default function PlanCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
   const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
+  // Alt-click cycling through stacked elements under the cursor
+  const cycleRef = useRef<{ x: number; y: number; idx: number } | null>(null);
 
   const {
     backgroundImage, backgroundWidth, backgroundHeight,
@@ -131,6 +134,9 @@ export default function PlanCanvas() {
       if (e.key === 'Escape') {
         const store = usePlanStore.getState();
         if (store.activeTool === 'place') store.setActiveTool('select');
+        // Element-select: Esc walks back out — leaf level → group level → nothing.
+        if (store.drilledGroupId) store.setDrilledGroup(null);
+        else if (store.selectedElementIds.length > 0) store.setSelectedElements([]);
         setSelectedGuideId(null);
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'r') { e.preventDefault(); setShowRulers(prev => !prev); }
@@ -169,15 +175,29 @@ export default function PlanCanvas() {
       const coords = toCanvasCoords(e);
       if (coords) {
         const store = usePlanStore.getState();
-        const hitId = hitTestElements(coords.x, coords.y, store.pdfElements);
+        const tol = 5 / stageScale; // ~5 screen px grab distance at any zoom
+        const candidates = hitTest(coords.x, coords.y, store.pdfElements, tol, store.drilledGroupId);
         const evt = e.evt as MouseEvent;
-        if (hitId) {
-          if (evt.shiftKey) {
-            store.toggleElementSelection(hitId);
+
+        if (candidates.length > 0) {
+          // Alt-click cycles through overlapping candidates under the cursor
+          // (Serif convention for stacked objects).
+          let pick = candidates[0];
+          if (evt.altKey && candidates.length > 1) {
+            const c = cycleRef.current;
+            const samePlace = c && Math.abs(c.x - coords.x) < tol * 2 && Math.abs(c.y - coords.y) < tol * 2;
+            const idx = samePlace ? (c!.idx + 1) % candidates.length : 0;
+            cycleRef.current = { x: coords.x, y: coords.y, idx };
+            pick = candidates[idx];
           } else {
-            store.setSelectedElements([hitId]);
+            cycleRef.current = { x: coords.x, y: coords.y, idx: 0 };
           }
+          if (evt.shiftKey) store.toggleElementSelection(pick.selectId);
+          else store.setSelectedElements([pick.selectId]);
         } else if (!evt.shiftKey) {
+          // Click on empty space: step out of the drilled group first,
+          // then clear the selection.
+          if (store.drilledGroupId) store.setDrilledGroup(null);
           store.setSelectedElements([]);
         }
       }
@@ -195,11 +215,12 @@ export default function PlanCanvas() {
     if (activeTool === 'elementSelect' && !eraseStart) {
       const coords = toCanvasCoords(e);
       if (coords) {
-        const elements = usePlanStore.getState().pdfElements;
-        const hitId = hitTestElements(coords.x, coords.y, elements);
-        const currentHover = usePlanStore.getState().hoveredElementId;
-        if (hitId !== currentHover) {
-          usePlanStore.getState().setHoveredElement(hitId);
+        const store = usePlanStore.getState();
+        const tol = 5 / stageScale;
+        const candidates = hitTest(coords.x, coords.y, store.pdfElements, tol, store.drilledGroupId);
+        const hitId = candidates[0]?.selectId ?? null;
+        if (hitId !== store.hoveredElementId) {
+          store.setHoveredElement(hitId);
         }
       }
       return;
@@ -215,18 +236,23 @@ export default function PlanCanvas() {
     if (erasePreview.w > 5 && erasePreview.h > 5) {
       if (activeTool === 'crop') cropBackground(erasePreview.x, erasePreview.y, erasePreview.w, erasePreview.h);
       else if (activeTool === 'elementSelect') {
-        // Box-select: find all elements whose bboxes intersect the drag rectangle
-        const pdfElements = usePlanStore.getState().pdfElements;
-        const selected = pdfElements.filter(el => {
+        // Box-select at the current level: top-level elements/groups normally,
+        // or the drilled group's members when you're inside one.
+        const store = usePlanStore.getState();
+        const drilled = store.drilledGroupId
+          ? store.pdfElements.find(el => el.id === store.drilledGroupId)
+          : null;
+        const pool = drilled?.children?.length ? drilled.children : store.pdfElements;
+        const selected = pool.filter(el => {
           return el.bbox.x < erasePreview.x + erasePreview.w &&
                  el.bbox.x + el.bbox.width > erasePreview.x &&
                  el.bbox.y < erasePreview.y + erasePreview.h &&
                  el.bbox.y + el.bbox.height > erasePreview.y;
         }).map(el => el.id);
         if (selected.length > 0) {
-          const current = usePlanStore.getState().selectedElementIds;
+          const current = store.selectedElementIds;
           const merged = [...new Set([...current, ...selected])];
-          usePlanStore.getState().setSelectedElements(merged);
+          store.setSelectedElements(merged);
         }
       }
       else addWhitewashRect(erasePreview.x, erasePreview.y, erasePreview.w, erasePreview.h);
@@ -236,6 +262,23 @@ export default function PlanCanvas() {
   }, [activeTool, eraseStart, erasePreview, addWhitewashRect, cropBackground]);
 
   const handleStageDblClick = (e: any) => {
+    // Element-select: double-click a group to drill into it and pick the
+    // exact piece under the cursor (Serif's enter-group convention).
+    if (activeTool === 'elementSelect') {
+      const coords = toCanvasCoords(e);
+      if (coords) {
+        const store = usePlanStore.getState();
+        const tol = 5 / stageScale;
+        const candidates = hitTest(coords.x, coords.y, store.pdfElements, tol, store.drilledGroupId);
+        const hit = candidates[0];
+        if (hit?.parent) {
+          store.setDrilledGroup(hit.parent.id);
+          store.setSelectedElements([hit.leaf.id]);
+          store.setHoveredElement(null);
+        }
+      }
+      return;
+    }
     if (e.target === e.target.getStage() || e.target.getClassName() === 'Image') { selectDevice(null); setSelectedWhitewashId(null); }
   };
 
@@ -472,6 +515,8 @@ export default function PlanCanvas() {
         )}
       </Stage>
 
+      <ElementSelectChip />
+
       {showRulers && (
         <>
           <div className="absolute left-0 top-0 h-6 bg-gray-800 border-b border-gray-600 select-none overflow-hidden"
@@ -568,6 +613,62 @@ export default function PlanCanvas() {
           </>
         );
       })()}
+    </div>
+  );
+}
+
+/**
+ * Floating action chip for the element-select (clean-up) tool — shows what's
+ * selected and offers the bulk actions. Self-subscribed so selection churn
+ * doesn't re-render the whole canvas.
+ */
+function ElementSelectChip() {
+  const activeTool = usePlanStore(s => s.activeTool);
+  const selectedElementIds = usePlanStore(s => s.selectedElementIds);
+  const drilledGroupId = usePlanStore(s => s.drilledGroupId);
+  const selectSimilar = usePlanStore(s => s.selectSimilar);
+  const deleteSelectedElements = usePlanStore(s => s.deleteSelectedElements);
+  const setDrilledGroup = usePlanStore(s => s.setDrilledGroup);
+  const setSelectedElements = usePlanStore(s => s.setSelectedElements);
+
+  if (activeTool !== 'elementSelect') return null;
+  if (selectedElementIds.length === 0 && !drilledGroupId) return null;
+
+  return (
+    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-full bg-gray-900/90 border border-gray-700 px-4 py-2 text-xs text-gray-200 shadow-lg backdrop-blur">
+      {drilledGroupId && (
+        <button
+          className="rounded-full bg-gray-700 hover:bg-gray-600 px-2.5 py-1"
+          onClick={() => { setDrilledGroup(null); setSelectedElements([]); }}
+          title="Back out of the group (Esc)"
+        >
+          ↩ Exit group
+        </button>
+      )}
+      <span className="font-medium">
+        {selectedElementIds.length} selected
+      </span>
+      {selectedElementIds.length === 1 && (
+        <button
+          className="rounded-full bg-blue-600/80 hover:bg-blue-500 px-2.5 py-1 text-white"
+          onClick={selectSimilar}
+          title="Select everything drawn in the same style (same colour + line weight, or all text)"
+        >
+          Select similar
+        </button>
+      )}
+      {selectedElementIds.length > 0 && (
+        <button
+          className="rounded-full bg-red-600/80 hover:bg-red-500 px-2.5 py-1 text-white"
+          onClick={() => deleteSelectedElements()}
+          title="Delete selection (Del)"
+        >
+          Delete
+        </button>
+      )}
+      <span className="text-gray-400 hidden sm:inline">
+        dbl-click = enter group · alt-click = cycle stacked · shift = add
+      </span>
     </div>
   );
 }

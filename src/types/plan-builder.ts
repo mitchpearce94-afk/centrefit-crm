@@ -89,12 +89,35 @@ export interface LayerVisibility {
 
 export type ActiveTool = 'select' | 'place' | 'pan' | 'erase' | 'crop' | 'elementSelect' | 'moveBackground';
 
+/**
+ * Exact ink geometry for a path element — lets hit-testing and highlights use
+ * the browser's native isPointInStroke/isPointInPath against the real shape
+ * instead of an axis-aligned bbox (a diagonal line's bbox is mostly empty
+ * space, which is why bbox-only selection felt random).
+ */
+export interface PdfElementGeometry {
+  /** Packed pdf.js DrawOPS stream (moveTo=0,lineTo=1,curveTo=2,quad=3,close=4) in path space. */
+  drawOps: number[];
+  /** Path space → canvas device px (viewport transform composed with the CTM at execution). */
+  ctm: [number, number, number, number, number, number];
+  /** Stroke width in path-space units (0 if fill-only). */
+  lineWidth: number;
+  strokes: boolean;
+  fills: boolean;
+  /** Style fingerprint (stroke colour | fill colour | line width) for select-similar. */
+  styleKey: string;
+}
+
 export interface PdfElement {
   id: string;
   type: 'text' | 'path' | 'image' | 'group';
   label: string;
   opIndices: number[];
   bbox: { x: number; y: number; width: number; height: number };
+  /** Present on path leaves — enables ink-accurate hit testing. */
+  geometry?: PdfElementGeometry;
+  /** Present on groups (PDF form XObjects + clustered CAD symbols). */
+  children?: PdfElement[];
 }
 
 export type NumberedDeviceGroup = 'cameras' | 'pir' | 'speakers' | 'data' | 'access_points';

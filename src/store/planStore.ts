@@ -56,6 +56,8 @@ interface PlanState {
   deletedOpIndices: number[];
   selectedElementIds: string[];
   hoveredElementId: string | null;
+  /** Group the user has double-clicked into — selection works at leaf level inside it. */
+  drilledGroupId: string | null;
 
   customDevices: CustomDevice[];
   revisions: RevisionEntry[];
@@ -70,6 +72,9 @@ interface PlanState {
   setSelectedElements: (ids: string[]) => void;
   toggleElementSelection: (id: string) => void;
   setHoveredElement: (id: string | null) => void;
+  setDrilledGroup: (id: string | null) => void;
+  /** Select every element sharing the single selected element's visual style (or all text). */
+  selectSimilar: () => void;
   deleteSelectedElements: () => Promise<void>;
   setBackground: (image: string, width: number, height: number, fileName: string) => void;
   setBackgroundOffset: (x: number, y: number) => void;
@@ -274,6 +279,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   deletedOpIndices: [],
   selectedElementIds: [],
   hoveredElementId: null,
+  drilledGroupId: null,
   floors: [{ id: 'floor-1', name: 'Ground Floor', backgroundImage: null, backgroundWidth: 1200, backgroundHeight: 800, backgroundOffsetX: 0, backgroundOffsetY: 0, backgroundScale: 1, backgroundLocked: true, pdfFileName: '', devices: [], commsRackId: null, whitewashRects: [] }],
   activeFloorId: 'floor-1',
   customDevices: [],
@@ -362,7 +368,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   setLinkedJob: (jobId, jobNumber) => set({ linkedJobId: jobId, linkedJobNumber: jobNumber }),
 
   setPdfSource: (file, pageNumber) => set({ pdfFile: file, pdfPageNumber: pageNumber }),
-  setPdfElements: (elements) => set({ pdfElements: elements, selectedElementIds: [], hoveredElementId: null }),
+  setPdfElements: (elements) => set({ pdfElements: elements, selectedElementIds: [], hoveredElementId: null, drilledGroupId: null }),
   setSelectedElements: (ids) => set({ selectedElementIds: ids }),
   toggleElementSelection: (id) => {
     const state = get();
@@ -374,25 +380,81 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     }
   },
   setHoveredElement: (id) => set({ hoveredElementId: id }),
+  setDrilledGroup: (id) => set({ drilledGroupId: id }),
+
+  selectSimilar: () => {
+    const state = get();
+    if (state.selectedElementIds.length !== 1) return;
+    const targetId = state.selectedElementIds[0];
+
+    // Find the reference element (top-level or a leaf inside a group).
+    let target: PdfElement | null = null;
+    for (const el of state.pdfElements) {
+      if (el.id === targetId) { target = el; break; }
+      const child = el.children?.find(c => c.id === targetId);
+      if (child) { target = child; break; }
+    }
+    if (!target) return;
+
+    const matches: string[] = [];
+    const visit = (el: PdfElement) => {
+      if (el.children?.length) { el.children.forEach(visit); return; }
+      if (target!.type === 'text') {
+        if (el.type === 'text') matches.push(el.id);
+      } else if (target!.geometry?.styleKey) {
+        if (el.geometry?.styleKey === target!.geometry.styleKey) matches.push(el.id);
+      }
+    };
+    state.pdfElements.forEach(visit);
+    if (matches.length > 0) set({ selectedElementIds: matches });
+  },
 
   deleteSelectedElements: async () => {
     const state = get();
     if (state.selectedElementIds.length === 0 || !state.pdfFile) return;
+    const selectedIds = new Set(state.selectedElementIds);
 
-    // Collect all operator indices from selected elements
+    // Collect operator indices from selected elements AND prune the tree —
+    // a selection can be a top-level element, a whole group, or a leaf
+    // inside a group (drill-down / select-similar).
     const newDeletedIndices = new Set(state.deletedOpIndices);
-    const selectedElements = state.pdfElements.filter(el => state.selectedElementIds.includes(el.id));
-    for (const el of selectedElements) {
-      for (const idx of el.opIndices) {
-        newDeletedIndices.add(idx);
+    const collect = (el: PdfElement) => { for (const idx of el.opIndices) newDeletedIndices.add(idx); };
+
+    const remainingElements: PdfElement[] = [];
+    for (const el of state.pdfElements) {
+      if (selectedIds.has(el.id)) { collect(el); continue; }
+      if (el.children?.length) {
+        const survivors = el.children.filter(c => {
+          if (selectedIds.has(c.id)) { collect(c); return false; }
+          return true;
+        });
+        if (survivors.length === 0) {
+          // Group emptied — strip its wrapper ops too so nothing dangles.
+          collect(el);
+        } else if (survivors.length !== el.children.length) {
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          for (const c of survivors) {
+            minX = Math.min(minX, c.bbox.x);
+            minY = Math.min(minY, c.bbox.y);
+            maxX = Math.max(maxX, c.bbox.x + c.bbox.width);
+            maxY = Math.max(maxY, c.bbox.y + c.bbox.height);
+          }
+          remainingElements.push({
+            ...el,
+            children: survivors,
+            bbox: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+          });
+        } else {
+          remainingElements.push(el);
+        }
+      } else {
+        remainingElements.push(el);
       }
     }
 
     // Re-render the PDF without the deleted operators
     const result = await renderPdfPageFiltered(state.pdfFile, state.pdfPageNumber, newDeletedIndices);
 
-    // Remove deleted elements from the list
-    const remainingElements = state.pdfElements.filter(el => !state.selectedElementIds.includes(el.id));
     const newDeletedArray = Array.from(newDeletedIndices);
 
     // Push to history so Ctrl+Z restores the deleted ops. We store only the
@@ -415,6 +477,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
       pdfElements: remainingElements,
       selectedElementIds: [],
       hoveredElementId: null,
+      drilledGroupId: null,
       history: newHistory,
       historyIndex: newHistory.length - 1,
       isDirty: true,
