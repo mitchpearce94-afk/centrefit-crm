@@ -14,7 +14,7 @@ export default async function CustomerDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [customerResult, jobsResult, notesResult] = await Promise.all([
+  const [customerResult, jobsResult, notesResult, plansResult] = await Promise.all([
     supabase
       .from("customers")
       .select(
@@ -34,6 +34,11 @@ export default async function CustomerDetailPage({
       .eq("job.customer_id", id)
       .order("created_at", { ascending: false })
       .limit(50),
+    supabase
+      .from("recurring_plans")
+      .select("id, status, source, next_invoice_date, customer_sites(name), recurring_plan_items(service_name, price_inc_gst, frequency, quantity)")
+      .eq("customer_id", id)
+      .order("created_at", { ascending: false }),
   ]);
 
   if (customerResult.error || !customerResult.data) {
@@ -43,6 +48,7 @@ export default async function CustomerDetailPage({
   const customer = customerResult.data;
   const jobs = jobsResult.data ?? [];
   const notes = notesResult.data ?? [];
+  const plans = plansResult.data ?? [];
 
   return (
     <div>
@@ -93,6 +99,7 @@ export default async function CustomerDetailPage({
           sites={customer.customer_sites ?? []}
           jobs={jobs as any}
           notes={notes as any}
+          plans={plans as any}
         />
       </div>
     </div>

@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { SiteDetail } from "./site-detail";
+import { TransferSiteButton } from "./transfer-site-button";
 import type { CustomerSite, CustomerContact, SiteAsset, AssetType } from "@/lib/types";
 import { currentUserHasPermission } from "@/lib/auth/permissions";
 
@@ -151,6 +152,14 @@ export default async function SiteDetailPage({
               .join(", ") || "No address on file"}
           </div>
         </div>
+        {isAdmin && site.customer && (
+          <TransferSiteButton
+            siteId={site.id}
+            siteName={site.name}
+            currentCustomerId={site.customer.id}
+            currentCustomerName={site.customer.name}
+          />
+        )}
       </div>
 
       <div className="mt-6">

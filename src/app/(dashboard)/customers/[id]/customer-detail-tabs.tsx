@@ -25,6 +25,30 @@ interface NoteRow {
   staff: { display_name: string; initials: string } | null;
 }
 
+interface PlanRow {
+  id: string;
+  status: string;
+  source: string;
+  next_invoice_date: string | null;
+  customer_sites: { name: string } | { name: string }[] | null;
+  recurring_plan_items: { service_name: string; price_inc_gst: number | string; frequency: string; quantity: number }[];
+}
+
+const PLAN_STATUS_COLOURS: Record<string, string> = {
+  pending_mandate: "#fb923c",
+  active: "#22c55e",
+  paused: "#94a3b8",
+  cancelled: "#64748b",
+  failed: "#ef4444",
+};
+
+function planMonthly(items: PlanRow["recurring_plan_items"]): number {
+  return items.reduce((s, i) => {
+    const f = i.frequency === "yearly" ? 1 / 12 : i.frequency === "quarterly" ? 1 / 3 : 1;
+    return s + Number(i.price_inc_gst) * (i.quantity ?? 1) * f;
+  }, 0);
+}
+
 export function CustomerDetailTabs({
   customerId,
   customer,
@@ -32,6 +56,7 @@ export function CustomerDetailTabs({
   sites,
   jobs,
   notes,
+  plans = [],
 }: {
   customerId: string;
   customer: { notes: string | null };
@@ -39,11 +64,14 @@ export function CustomerDetailTabs({
   sites: CustomerSite[];
   jobs: JobRow[];
   notes: NoteRow[];
+  plans?: PlanRow[];
 }) {
+  const livePlans = plans.filter((p) => p.status !== "cancelled");
   const tabs = [
     { id: "info", label: "Information" },
     { id: "contacts", label: "Contacts", count: contacts.length },
     { id: "sites", label: "Sites", count: sites.length },
+    { id: "dd", label: "Direct Debits", count: livePlans.length },
     { id: "jobs", label: "Jobs", count: jobs.length },
     { id: "notes", label: "Notes", count: notes.length },
   ];
@@ -89,6 +117,9 @@ export function CustomerDetailTabs({
               </div>
             );
 
+          case "dd":
+            return <DirectDebitsTab plans={plans} />;
+
           case "jobs":
             return <JobsTab jobs={jobs} />;
 
@@ -100,6 +131,92 @@ export function CustomerDetailTabs({
         }
       }}
     </Tabs>
+  );
+}
+
+function DirectDebitsTab({ plans }: { plans: PlanRow[] }) {
+  if (plans.length === 0) {
+    return (
+      <div className="py-4">
+        <p className="text-sm text-muted-foreground">No direct debits for this customer.</p>
+        <Link href="/invoices/recurring/new" className="mt-2 inline-block text-sm text-primary hover:underline">
+          Set up a recurring plan →
+        </Link>
+      </div>
+    );
+  }
+
+  const live = plans.filter((p) => p.status !== "cancelled");
+  const totalMonthly = live.reduce((s, p) => s + planMonthly(p.recurring_plan_items ?? []), 0);
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
+        <p className="text-sm text-muted-foreground">
+          {live.length} plan{live.length === 1 ? "" : "s"} ·{" "}
+          <span className="font-mono font-medium text-foreground">
+            ${totalMonthly.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mo
+          </span>{" "}
+          total recurring (incl. GST, yearly ÷ 12)
+        </p>
+        <Link href="/invoices/recurring/new" className="text-sm text-primary hover:underline">
+          New plan →
+        </Link>
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-muted/50">
+              <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Site</th>
+              <th className="px-4 py-2.5 text-left font-medium text-muted-foreground hidden sm:table-cell">Services</th>
+              <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">$/mo</th>
+              <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Status</th>
+              <th className="px-4 py-2.5 text-left font-medium text-muted-foreground hidden sm:table-cell">Next charge</th>
+            </tr>
+          </thead>
+          <tbody>
+            {plans.map((p) => {
+              const site = Array.isArray(p.customer_sites) ? p.customer_sites[0] : p.customer_sites;
+              const items = p.recurring_plan_items ?? [];
+              const colour = PLAN_STATUS_COLOURS[p.status] ?? "#6b7280";
+              return (
+                <tr key={p.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
+                  <td className="px-4 py-2.5">
+                    <Link href={`/invoices/recurring/${p.id}`} className="font-medium hover:text-primary transition-colors">
+                      {site?.name ?? "—"}
+                    </Link>
+                    {p.source === "imported" && (
+                      <span className="ml-2 rounded-full border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[9px] font-medium text-sky-400">GC</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-muted-foreground hidden sm:table-cell max-w-[280px] truncate">
+                    {items.slice(0, 3).map((i) => i.service_name).join(", ")}
+                    {items.length > 3 ? ` +${items.length - 3} more` : ""}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono">
+                    ${planMonthly(items).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize"
+                      style={{ backgroundColor: `${colour}20`, color: colour }}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colour }} />
+                      {p.status.replace("_", " ")}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-muted-foreground hidden sm:table-cell">
+                    {p.status === "active" && p.next_invoice_date
+                      ? new Date(p.next_invoice_date).toLocaleDateString("en-AU")
+                      : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
