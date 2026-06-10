@@ -83,6 +83,25 @@ export async function kinetixSend<T = unknown>(
   return handle<T>(res, `${method} ${path}`);
 }
 
+/**
+ * Write helper for the Rev3 quirk that ALL mutations take QUERY PARAMETERS,
+ * not JSON bodies (confirmed by the full swagger 2026-06-10). Booleans are
+ * serialised lowercase. Pass `TESTING_MODE: true` to have Revolution simulate
+ * without forwarding to NBN.
+ */
+export async function kinetixSendQ<T = unknown>(
+  method: "POST" | "PATCH" | "DELETE",
+  path: string,
+  params?: Record<string, string | number | boolean | undefined>,
+): Promise<T> {
+  const url = new URL(`${BASE_URL}${path}`);
+  for (const [k, v] of Object.entries(params ?? {})) {
+    if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
+  }
+  const res = await fetch(url.toString(), { method, headers: authHeaders(), cache: "no-store" });
+  return handle<T>(res, `${method} ${path}`);
+}
+
 /** Paginated list helper — loops page/limit until a short batch. */
 export async function kinetixGetAll<T = unknown>(
   path: string,

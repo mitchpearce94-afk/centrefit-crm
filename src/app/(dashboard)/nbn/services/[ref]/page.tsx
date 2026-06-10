@@ -8,6 +8,7 @@ import {
   fetchDiagnosticsTestTypes,
   fetchServiceHealthLatest,
 } from "@/lib/kinetix/client";
+import { RunTest } from "./run-test";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,17 @@ export default async function NbnServiceDetailPage({
         <Link href="/nbn/services" className="text-xs text-muted-foreground hover:text-foreground">← All services</Link>
         <h2 className="text-sm font-semibold mt-1 font-mono">{serviceRef}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">Live service cockpit — product, outages, appointments, diagnostics and health from Kinetix.</p>
+      </div>
+
+      <div className="mb-4">
+        <RunTest
+          serviceRef={serviceRef}
+          testTypes={
+            testTypes.status === "fulfilled"
+              ? (((testTypes.value as { testTypes?: string[] })?.testTypes) ?? [])
+              : []
+          }
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
