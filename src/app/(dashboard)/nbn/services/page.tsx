@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { fetchProductsByStatus, type ActiveProduct, type ProductStatusBucket } from "@/lib/kinetix/client";
+import { ServicesTable, type ServiceRow } from "./services-table";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +19,19 @@ export default async function NbnServicesPage({
   const bucket = (BUCKETS.find((b) => b.key === status)?.key ?? "active") as ProductStatusBucket;
   const active = BUCKETS.find((b) => b.key === bucket)!;
 
-  let products: ActiveProduct[] = [];
+  let rows: ServiceRow[] = [];
   let error: string | null = null;
   try {
-    products = await fetchProductsByStatus(bucket);
+    const products = await fetchProductsByStatus(bucket);
+    rows = products.map((p: ActiveProduct) => {
+      const services = (p as { services?: Array<{ id?: string }> }).services ?? [];
+      const avc = services.find((s) => typeof s?.id === "string" && s.id.startsWith("AVC"));
+      return {
+        productId: String(p.id ?? ""),
+        serviceRef: avc?.id ?? null,
+        productType: ((p as Record<string, unknown>).productType as string) ?? null,
+      };
+    }).filter((r) => r.productId);
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error";
   }
@@ -32,7 +42,7 @@ export default async function NbnServicesPage({
         <div>
           <h2 className="text-sm font-semibold">NBN services</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {error ? "Couldn't fetch live data from Kinetix." : `${products.length} ${active.label.toLowerCase()} service${products.length === 1 ? "" : "s"} — live from Kinetix.`}
+            {error ? "Couldn't fetch live data from Kinetix." : `${rows.length} ${active.label.toLowerCase()} service${rows.length === 1 ? "" : "s"} — live from Kinetix.`}
           </p>
         </div>
         <div className="flex gap-1">
@@ -58,54 +68,13 @@ export default async function NbnServicesPage({
         </div>
       )}
 
-      {products.length === 0 && !error && (
+      {rows.length === 0 && !error && (
         <div className="rounded-lg border border-dashed border-border p-8 text-center text-xs text-muted-foreground">
           No {active.label.toLowerCase()} services returned by Kinetix.
         </div>
       )}
 
-      {products.length > 0 && (
-        <div className="rounded-lg border border-border bg-card overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border text-left bg-muted/30 text-muted-foreground">
-                <th className="px-3 py-2 font-medium">Service Ref</th>
-                <th className="px-3 py-2 font-medium">Location</th>
-                <th className="px-3 py-2 font-medium">Technology</th>
-                <th className="px-3 py-2 font-medium">RSP Reference</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map((p, i) => {
-                const r = p as Record<string, unknown>;
-                const serviceRef = String(p.serviceRef ?? r.avcId ?? p.id ?? "—");
-                const address = String(p.formattedAddress ?? r.address ?? p.locationId ?? "—");
-                const tech = String(p.technology ?? r.primaryAccessTechnology ?? "—");
-                const rspRef = String(p.rspReferenceId ?? r.rspRef ?? "—");
-                const status = String(p.status ?? r.productStatus ?? active.label);
-                return (
-                  <tr key={serviceRef + i} className="border-b border-border last:border-0 hover:bg-muted/20">
-                    <td className="px-3 py-2 font-mono">
-                      {serviceRef !== "—" ? (
-                        <Link href={`/nbn/services/${encodeURIComponent(serviceRef)}`} className="text-primary hover:underline">
-                          {serviceRef}
-                        </Link>
-                      ) : serviceRef}
-                    </td>
-                    <td className="px-3 py-2 max-w-[280px] truncate" title={address}>{address}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{tech}</td>
-                    <td className="px-3 py-2 font-mono text-muted-foreground">{rspRef}</td>
-                    <td className="px-3 py-2">
-                      <span className={`rounded px-2 py-0.5 text-[10px] font-medium border ${active.badge}`}>{status}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {rows.length > 0 && <ServicesTable rows={rows} badge={active.badge} />}
 
       <p className="mt-3 text-[10px] text-subtle">Live data from Kinetix. Click a service ref for diagnostics, outages and order history.</p>
     </div>

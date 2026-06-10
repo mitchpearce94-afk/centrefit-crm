@@ -112,13 +112,33 @@ export async function kinetixGetAll<T = unknown>(
   const all: T[] = [];
   for (let page = 1; page <= maxPages; page++) {
     const data = await kinetixGet<unknown>(path, { ...params, page, limit: pageSize });
+    const wrapper = data as { results?: T[]; items?: T[]; products?: T[]; count?: number };
     const items = Array.isArray(data)
       ? (data as T[])
-      : ((data as { results?: T[]; items?: T[] })?.results ?? (data as { items?: T[] })?.items ?? []);
+      : (wrapper?.results ?? wrapper?.items ?? wrapper?.products ?? []);
     all.push(...items);
     if (items.length < pageSize) break;
+    // Some Rev3 endpoints (/products/*) ignore page/limit and return the
+    // full set every time — without this guard we'd loop duplicates.
+    if (typeof wrapper?.count === "number" && all.length >= wrapper.count) break;
   }
   return all;
+}
+
+/**
+ * Cached GET for slow-changing reference data (product details, addresses).
+ * Uses the Next.js data cache so 100+ per-row lookups only hit Kinetix once
+ * per revalidate window.
+ */
+export async function kinetixGetCached<T = unknown>(
+  path: string,
+  revalidateSecs = 1800,
+): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: authHeaders(),
+    next: { revalidate: revalidateSecs },
+  });
+  return handle<T>(res, `GET ${path}`);
 }
 
 /* ── Domain reads (Rev3 parity, read-only) ─────────────────────────── */
@@ -131,6 +151,19 @@ export function fetchProductsByStatus(bucket: ProductStatusBucket) {
 
 export function fetchProduct(productId: string) {
   return kinetixGet(`/products/${encodeURIComponent(productId)}`);
+}
+
+/** Cached product detail — used to enrich the bare-ID rows from /products/{bucket}. */
+export function fetchProductDetailCached(productId: string) {
+  return kinetixGetCached<Record<string, unknown>>(`/products/${encodeURIComponent(productId)}`);
+}
+
+/** Cached address record for a LOC id (formattedAddress lives here). */
+export function fetchAddressCached(locId: string) {
+  return kinetixGetCached<{ formattedAddress?: string; [k: string]: unknown }>(
+    `/address/${encodeURIComponent(locId)}`,
+    86400,
+  );
 }
 
 export function fetchProductByServiceRef(serviceRef: string) {
