@@ -1,7 +1,158 @@
 // Server-side Kinetix Rev3 NBN API client.
 // Base URL + auth headers. Credentials come from env vars — never expose.
+//
+// Quirks (hard-won): `.fullText` has a literal leading dot; qualification
+// takes `loc_id`; ValidationException errors can arrive inside HTTP 200 as
+// `[{code, reason, type: "ValidationException"}]`; other errors are either
+// that array shape or `{message}` — normalise everything via kinetixGet/Send.
 
 const BASE_URL = "https://rev3.kinetix.net.au/api/v2/nbn";
+
+export class KinetixError extends Error {
+  status: number;
+  detail: unknown;
+  constructor(message: string, status: number, detail?: unknown) {
+    super(message);
+    this.name = "KinetixError";
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+function extractError(parsed: unknown): string | null {
+  if (Array.isArray(parsed)) {
+    const errs = (parsed as Array<{ code?: string; reason?: string; type?: string }>).filter(
+      (e) => e && typeof e === "object" && e.type === "ValidationException",
+    );
+    if (errs.length > 0) return errs.map((e) => e.reason ?? e.code ?? "Validation error").join("; ");
+    return null;
+  }
+  return null;
+}
+
+async function handle<T>(res: Response, label: string): Promise<T> {
+  const text = await res.text();
+  let parsed: unknown = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    throw new KinetixError(`Kinetix ${label}: non-JSON response: ${text.slice(0, 200)}`, res.status || 502);
+  }
+  if (!res.ok) {
+    const arrMsg = Array.isArray(parsed)
+      ? (parsed as Array<{ reason?: string; code?: string }>).map((e) => e?.reason ?? e?.code).filter(Boolean).join("; ")
+      : null;
+    const objMsg = parsed && typeof parsed === "object" && "message" in (parsed as object)
+      ? String((parsed as { message: unknown }).message)
+      : null;
+    throw new KinetixError(arrMsg || objMsg || `Kinetix ${label} failed (HTTP ${res.status})`, res.status, parsed);
+  }
+  const validationMsg = extractError(parsed);
+  if (validationMsg) throw new KinetixError(validationMsg, 400, parsed);
+  return parsed as T;
+}
+
+/** Generic GET with query params. */
+export async function kinetixGet<T = unknown>(
+  path: string,
+  params?: Record<string, string | number | boolean | undefined>,
+): Promise<T> {
+  const url = new URL(`${BASE_URL}${path}`);
+  for (const [k, v] of Object.entries(params ?? {})) {
+    if (v !== undefined) url.searchParams.set(k, String(v));
+  }
+  const res = await fetch(url.toString(), { headers: authHeaders(), cache: "no-store" });
+  return handle<T>(res, `GET ${path}`);
+}
+
+/** Generic POST/PATCH/DELETE with JSON body. */
+export async function kinetixSend<T = unknown>(
+  method: "POST" | "PATCH" | "DELETE",
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method,
+    headers: {
+      ...authHeaders(),
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    cache: "no-store",
+  });
+  return handle<T>(res, `${method} ${path}`);
+}
+
+/** Paginated list helper — loops page/limit until a short batch. */
+export async function kinetixGetAll<T = unknown>(
+  path: string,
+  params?: Record<string, string | number | boolean | undefined>,
+  pageSize = 100,
+  maxPages = 50,
+): Promise<T[]> {
+  const all: T[] = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const data = await kinetixGet<unknown>(path, { ...params, page, limit: pageSize });
+    const items = Array.isArray(data)
+      ? (data as T[])
+      : ((data as { results?: T[]; items?: T[] })?.results ?? (data as { items?: T[] })?.items ?? []);
+    all.push(...items);
+    if (items.length < pageSize) break;
+  }
+  return all;
+}
+
+/* ── Domain reads (Rev3 parity, read-only) ─────────────────────────── */
+
+export type ProductStatusBucket = "active" | "in_progress" | "recently_disconnected";
+
+export function fetchProductsByStatus(bucket: ProductStatusBucket) {
+  return kinetixGetAll<ActiveProduct>(`/products/${bucket}`);
+}
+
+export function fetchProduct(productId: string) {
+  return kinetixGet(`/products/${encodeURIComponent(productId)}`);
+}
+
+export function fetchProductByServiceRef(serviceRef: string) {
+  return kinetixGet(`/products/service/${encodeURIComponent(serviceRef)}`);
+}
+
+export function fetchRelatedOrders(reference: string) {
+  return kinetixGet(`/products/related/${encodeURIComponent(reference)}/orders`);
+}
+
+export function fetchServiceOutages(serviceRef: string) {
+  return kinetixGet(`/outage/service/${encodeURIComponent(serviceRef)}`);
+}
+
+export function fetchServiceAppointments(serviceRef: string) {
+  return kinetixGet(`/appointments/service/${encodeURIComponent(serviceRef)}`);
+}
+
+export function fetchDiagnosticsRecent(serviceRef: string) {
+  return kinetixGet(`/diagnostics/service/${encodeURIComponent(serviceRef)}`);
+}
+
+export function fetchDiagnosticsLatest(serviceRef: string) {
+  return kinetixGet(`/diagnostics/service/${encodeURIComponent(serviceRef)}/latest`);
+}
+
+export function fetchDiagnosticsTestTypes(serviceRef: string) {
+  return kinetixGet(`/diagnostics/service/${encodeURIComponent(serviceRef)}/test_types`);
+}
+
+export function fetchServiceHealthLatest(serviceRef: string) {
+  return kinetixGet(`/service_health/service/${encodeURIComponent(serviceRef)}/latest`);
+}
+
+export function fetchFibreUpliftLocations() {
+  return kinetixGetAll(`/fibre_uplift/locations`);
+}
+
+export function qualifyLocation(locId: string) {
+  return kinetixGet(`/service_qualification/single_site`, { loc_id: locId });
+}
 
 function requireEnv(name: string): string {
   const v = process.env[name];
