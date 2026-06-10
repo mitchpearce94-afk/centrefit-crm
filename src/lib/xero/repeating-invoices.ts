@@ -197,6 +197,34 @@ export interface RepeatingInvoiceState {
   total: number | null;
 }
 
+export interface RepeatingInvoiceSummary {
+  repeatingInvoiceID: string;
+  contactName: string;
+  status: string;
+  total: number | null;
+  /** All line descriptions joined — used for service-keyword matching. */
+  lineText: string;
+}
+
+/**
+ * List ALL repeating invoice templates for the tenant (Xero returns the full
+ * set in one response — no pagination on this endpoint). Used by the billing
+ * watchdog to know who's invoiced outside the DD plans.
+ */
+export async function listRepeatingInvoices(
+  xero: XeroClient,
+  tenantId: string,
+): Promise<RepeatingInvoiceSummary[]> {
+  const res = await xero.accountingApi.getRepeatingInvoices(tenantId);
+  return (res.body.repeatingInvoices ?? []).map((ri) => ({
+    repeatingInvoiceID: ri.repeatingInvoiceID ?? "",
+    contactName: ri.contact?.name ?? "",
+    status: String(ri.status ?? "UNKNOWN"),
+    total: (ri.total ?? null) as number | null,
+    lineText: (ri.lineItems ?? []).map((l) => l.description ?? "").join(" || "),
+  }));
+}
+
 export async function getRepeatingInvoice(
   xero: XeroClient,
   tenantId: string,

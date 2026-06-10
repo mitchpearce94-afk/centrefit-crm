@@ -10,7 +10,9 @@ const md = readFileSync(new URL("./recon-report.md", import.meta.url), "utf8");
 function parseSection(heading) {
   const idx = md.indexOf(heading);
   if (idx === -1) return [];
-  const after = md.slice(idx);
+  let after = md.slice(idx);
+  const next = after.indexOf("\n## ", 4);
+  if (next !== -1) after = after.slice(0, next);
   const lines = after.split("\n").filter((l) => l.startsWith("|"));
   if (lines.length < 2) return [];
   const headers = lines[0].split("|").map((s) => s.trim()).filter(Boolean);
