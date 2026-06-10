@@ -75,6 +75,8 @@ interface PlanState {
   setDrilledGroup: (id: string | null) => void;
   /** Select every element sharing the single selected element's visual style (or all text). */
   selectSimilar: () => void;
+  /** Merge the current selection into one pseudo-group so a single click grabs it from then on. */
+  groupSelectedElements: () => void;
   deleteSelectedElements: () => Promise<void>;
   setBackground: (image: string, width: number, height: number, fileName: string) => void;
   setBackgroundOffset: (x: number, y: number) => void;
@@ -407,6 +409,66 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     };
     state.pdfElements.forEach(visit);
     if (matches.length > 0) set({ selectedElementIds: matches });
+  },
+
+  groupSelectedElements: () => {
+    const state = get();
+    const selectedIds = new Set(state.selectedElementIds);
+    if (selectedIds.size < 2) return;
+
+    // Gather selected TOP-LEVEL elements (marquee selects at top level).
+    // Selected groups are absorbed — their children flatten into the new
+    // group rather than nesting.
+    const members: PdfElement[] = [];
+    const rest: PdfElement[] = [];
+    let insertAt = -1;
+    state.pdfElements.forEach((el, idx) => {
+      if (selectedIds.has(el.id)) {
+        if (insertAt === -1) insertAt = idx;
+        if (el.children?.length) members.push(...el.children);
+        else members.push(el);
+      } else {
+        rest.push(el);
+      }
+    });
+    if (members.length < 2 || insertAt === -1) return;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const m of members) {
+      minX = Math.min(minX, m.bbox.x);
+      minY = Math.min(minY, m.bbox.y);
+      maxX = Math.max(maxX, m.bbox.x + m.bbox.width);
+      maxY = Math.max(maxY, m.bbox.y + m.bbox.height);
+    }
+    const group: PdfElement = {
+      id: `grp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+      type: 'group',
+      label: `Group (${members.length})`,
+      opIndices: members.flatMap(m => m.opIndices),
+      bbox: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+      children: members,
+    };
+    const newElements = [...rest.slice(0, insertAt), group, ...rest.slice(insertAt)];
+
+    // History entry so Ctrl+Z ungroups (same deleted ops, new element tree).
+    const newHistory = state.history.slice(0, state.historyIndex + 1);
+    newHistory.push({
+      devices: state.devices,
+      commsRackId: state.commsRackId,
+      whitewashRects: state.whitewashRects,
+      pdfElements: newElements,
+      deletedOpIndices: [...state.deletedOpIndices],
+    });
+
+    set({
+      pdfElements: newElements,
+      selectedElementIds: [group.id],
+      hoveredElementId: null,
+      drilledGroupId: null,
+      history: newHistory,
+      historyIndex: newHistory.length - 1,
+      isDirty: true,
+    });
   },
 
   deleteSelectedElements: async () => {

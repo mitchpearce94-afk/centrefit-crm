@@ -18,6 +18,10 @@ export default function PlanCanvas() {
   const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
   // Alt-click cycling through stacked elements under the cursor
   const cycleRef = useRef<{ x: number; y: number; idx: number } | null>(null);
+  // Konva fires click on mouse-up even after a marquee drag — without this
+  // guard the click handler immediately clears the selection the drag just
+  // captured (release over empty space = "deselect").
+  const didMarqueeRef = useRef(false);
 
   const {
     backgroundImage, backgroundWidth, backgroundHeight,
@@ -172,6 +176,9 @@ export default function PlanCanvas() {
       if (coords) placeDevice(deviceToPlace, coords.x, coords.y);
     }
     if (activeTool === 'elementSelect') {
+      // A marquee drag just ended — swallow the synthetic click so it can't
+      // clear or replace the selection the drag captured.
+      if (didMarqueeRef.current) { didMarqueeRef.current = false; return; }
       const coords = toCanvasCoords(e);
       if (coords) {
         const store = usePlanStore.getState();
@@ -254,6 +261,7 @@ export default function PlanCanvas() {
           const merged = [...new Set([...current, ...selected])];
           store.setSelectedElements(merged);
         }
+        didMarqueeRef.current = true;
       }
       else addWhitewashRect(erasePreview.x, erasePreview.y, erasePreview.w, erasePreview.h);
     }
@@ -627,6 +635,7 @@ function ElementSelectChip() {
   const selectedElementIds = usePlanStore(s => s.selectedElementIds);
   const drilledGroupId = usePlanStore(s => s.drilledGroupId);
   const selectSimilar = usePlanStore(s => s.selectSimilar);
+  const groupSelectedElements = usePlanStore(s => s.groupSelectedElements);
   const deleteSelectedElements = usePlanStore(s => s.deleteSelectedElements);
   const setDrilledGroup = usePlanStore(s => s.setDrilledGroup);
   const setSelectedElements = usePlanStore(s => s.setSelectedElements);
@@ -655,6 +664,15 @@ function ElementSelectChip() {
           title="Select everything drawn in the same style (same colour + line weight, or all text)"
         >
           Select similar
+        </button>
+      )}
+      {selectedElementIds.length >= 2 && !drilledGroupId && (
+        <button
+          className="rounded-full bg-blue-600/80 hover:bg-blue-500 px-2.5 py-1 text-white"
+          onClick={groupSelectedElements}
+          title="Merge the selection into one group — a single click selects it from then on (Ctrl+Z ungroups)"
+        >
+          Group
         </button>
       )}
       {selectedElementIds.length > 0 && (
