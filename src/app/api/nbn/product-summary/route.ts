@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchProductDetailCached, fetchAddressCached, KinetixError } from "@/lib/kinetix/client";
+import { fetchProductDetailCached, fetchAddressCached, fetchEndUserByBizRefCached, KinetixError } from "@/lib/kinetix/client";
 
 /**
  * Row-enrichment lookup for the NBN services list (auth enforced by
@@ -21,20 +21,26 @@ export async function GET(req: NextRequest) {
     ) as Record<string, unknown> | undefined;
 
     const locId = (detail.relatedPlace as { id?: string } | undefined)?.id;
-    let formattedAddress: string | null = null;
-    if (locId) {
-      try {
-        formattedAddress = (await fetchAddressCached(locId)).formattedAddress ?? null;
-      } catch {
-        // address lookup is best-effort — row still renders without it
-      }
-    }
+    const bizRef = (detail.relatedParty as { id?: string } | undefined)?.id;
+
+    // Address + end-user lookups are best-effort — row still renders without them
+    const [formattedAddress, endUser] = await Promise.all([
+      locId
+        ? fetchAddressCached(locId).then((a) => a.formattedAddress ?? null).catch(() => null)
+        : Promise.resolve(null),
+      bizRef?.startsWith("BIZ")
+        ? fetchEndUserByBizRefCached(bizRef).then((list) => list?.[0] ?? null).catch(() => null)
+        : Promise.resolve(null),
+    ]);
 
     return NextResponse.json({
       summary: {
         productId: id,
         serviceRef: avc?.id ?? null,
         customerRef: detail.customerRef ?? null,
+        customerName: endUser?.tradingName ?? endUser?.name ?? null,
+        customerLegalName: endUser?.name ?? null,
+        contactName: endUser?.contact?.contactName ?? null,
         formattedAddress,
         locId: locId ?? null,
         technology: detail.accessServiceTechnologyType ?? null,

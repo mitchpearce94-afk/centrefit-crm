@@ -11,6 +11,9 @@ export interface ServiceRow {
 
 interface Summary {
   customerRef: string | null;
+  customerName: string | null;
+  customerLegalName: string | null;
+  contactName: string | null;
   formattedAddress: string | null;
   technology: string | null;
   speedTier: string | null;
@@ -59,7 +62,9 @@ export function ServicesTable({ rows, badge }: { rows: ServiceRow[]; badge: stri
         const hay = [
           r.serviceRef,
           r.productId,
-          ...(s && s !== "error" ? [s.customerRef, s.formattedAddress, s.technology, s.speedTier] : []),
+          ...(s && s !== "error"
+            ? [s.customerRef, s.customerName, s.customerLegalName, s.contactName, s.formattedAddress, s.technology, s.speedTier]
+            : []),
         ].filter(Boolean).join(" ").toLowerCase();
         return hay.includes(q);
       })
@@ -72,7 +77,7 @@ export function ServicesTable({ rows, badge }: { rows: ServiceRow[]; badge: stri
           type="search"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter by address, customer ref, AVC…"
+          placeholder="Filter by customer, address, ref, AVC…"
           className="w-full max-w-sm rounded-md border border-border bg-card px-3 py-1.5 text-xs outline-none focus:border-primary/50"
         />
         {loaded < rows.length && (
@@ -86,9 +91,9 @@ export function ServicesTable({ rows, badge }: { rows: ServiceRow[]; badge: stri
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-border text-left bg-muted/30 text-muted-foreground">
-              <th className="px-3 py-2 font-medium">Service Ref</th>
-              <th className="px-3 py-2 font-medium">Customer Ref</th>
+              <th className="px-3 py-2 font-medium">Customer</th>
               <th className="px-3 py-2 font-medium">Address</th>
+              <th className="px-3 py-2 font-medium">Service Ref</th>
               <th className="px-3 py-2 font-medium">Technology</th>
               <th className="px-3 py-2 font-medium">Speed Tier</th>
               <th className="px-3 py-2 font-medium">Status</th>
@@ -102,16 +107,28 @@ export function ServicesTable({ rows, badge }: { rows: ServiceRow[]; badge: stri
               const sum = !pending && !failed ? (s as Summary) : null;
               const serviceRef = r.serviceRef ?? r.productId;
               const dim = pending ? "text-muted-foreground/50" : "text-muted-foreground";
+              const custTitle = [sum?.customerLegalName, sum?.contactName].filter(Boolean).join(" · ") || undefined;
               return (
                 <tr key={r.productId} className="border-b border-border last:border-0 hover:bg-muted/20">
+                  <td className="px-3 py-2" title={custTitle}>
+                    {sum?.customerName ? (
+                      <div>
+                        <div className="font-medium">{sum.customerName}</div>
+                        {sum.customerRef && <div className="font-mono text-[10px] text-muted-foreground">{sum.customerRef}</div>}
+                      </div>
+                    ) : sum?.customerRef ? (
+                      <span className="font-mono">{sum.customerRef}</span>
+                    ) : pending ? (
+                      <span className="text-muted-foreground/50">Loading…</span>
+                    ) : "—"}
+                  </td>
+                  <td className={`px-3 py-2 max-w-[300px] truncate ${pending ? "text-muted-foreground/50" : ""}`} title={sum?.formattedAddress ?? undefined}>
+                    {sum?.formattedAddress ?? (pending ? "Loading…" : failed ? "Lookup failed" : "—")}
+                  </td>
                   <td className="px-3 py-2 font-mono">
                     <Link href={`/nbn/services/${encodeURIComponent(serviceRef)}`} className="text-primary hover:underline">
                       {serviceRef}
                     </Link>
-                  </td>
-                  <td className="px-3 py-2 font-mono">{sum?.customerRef ?? (pending ? "…" : "—")}</td>
-                  <td className={`px-3 py-2 max-w-[300px] truncate ${pending ? "text-muted-foreground/50" : ""}`} title={sum?.formattedAddress ?? undefined}>
-                    {sum?.formattedAddress ?? (pending ? "Loading…" : failed ? "Lookup failed" : "—")}
                   </td>
                   <td className={`px-3 py-2 ${dim}`}>{sum?.technology ?? (pending ? "…" : "—")}</td>
                   <td className={`px-3 py-2 ${dim}`}>{sum?.speedTier ?? (pending ? "…" : "—")}</td>

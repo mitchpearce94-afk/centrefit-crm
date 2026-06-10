@@ -166,6 +166,20 @@ export function fetchAddressCached(locId: string) {
   );
 }
 
+/**
+ * Cached end-user lookup by the NBN business ref found on a product's
+ * relatedParty (BIZ…). Returns name/tradingName/contact — the only way the
+ * Rev3 API exposes who a connection belongs to.
+ */
+export function fetchEndUserByBizRefCached(bizRef: string) {
+  return kinetixGetCached<Array<{
+    name?: string;
+    tradingName?: string;
+    contact?: { contactName?: string; emailAddress?: string };
+    [k: string]: unknown;
+  }>>(`/party/end_users?nbn_biz_ref=${encodeURIComponent(bizRef)}`, 86400);
+}
+
 export function fetchProductByServiceRef(serviceRef: string) {
   return kinetixGet(`/products/service/${encodeURIComponent(serviceRef)}`);
 }
