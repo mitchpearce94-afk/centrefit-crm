@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { CancelButton } from "./cancel-button";
 import { EditServicesButton } from "./edit-services-button";
+import { AddServiceButton } from "./add-service-button";
 import { EditStartDateButton } from "./edit-start-date-button";
 import { AuthoriseXeroButton } from "./authorise-xero-button";
 import { RetryActivationButton } from "./retry-activation-button";
@@ -50,7 +51,7 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
       .maybeSingle(),
     supabase
       .from("recurring_services")
-      .select("id, code, name, description, price_inc_gst, frequency")
+      .select("id, code, name, description, price_inc_gst, frequency, account_code")
       .eq("active", true)
       .order("sort_order"),
   ]);
@@ -123,7 +124,14 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: colour }} />
             {STATUS_LABEL[plan.status] ?? plan.status}
           </span>
-          {plan.status !== "cancelled" && (
+          {plan.status === "active" && isImported && plan.gc_mandate_id && (
+            <AddServiceButton
+              planId={plan.id}
+              customerName={customer?.name ?? "customer"}
+              catalogue={(catalogue ?? []) as never}
+            />
+          )}
+          {plan.status !== "cancelled" && !isImported && (
             <EditServicesButton
               planId={plan.id}
               catalogue={(catalogue ?? []) as never}
