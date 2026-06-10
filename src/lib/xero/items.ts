@@ -74,7 +74,7 @@ export async function ensureXeroItem(
       `Code=="${(item.code ?? "").replace(/"/g, '\\"')}"`,
     );
     const found = existing.body.items?.[0];
-    if (!found?.itemID) throw new Error(xeroItemErrorMessage(createErr));
+    if (!found?.itemID) throw new Error(xeroErrorMessage(createErr));
     await client.accountingApi.updateItem(tenantId, found.itemID, { items: [item] });
     return found.itemID;
   }
@@ -85,7 +85,7 @@ export async function ensureXeroItem(
  * Dig the actual validation messages out of the response body so the PO
  * generation warning tells staff what to fix instead of "see console".
  */
-function xeroItemErrorMessage(err: unknown): string {
+export function xeroErrorMessage(err: unknown): string {
   try {
     const anyErr = err as { response?: { body?: unknown }; body?: unknown };
     const body = (anyErr.response?.body ?? anyErr.body) as {

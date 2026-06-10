@@ -7,7 +7,7 @@ import {
   createXeroPurchaseOrder,
   type XeroPOLineItem,
 } from "@/lib/xero/purchase-orders";
-import { ensureXeroItem, type SyncableProduct } from "@/lib/xero/items";
+import { ensureXeroItem, xeroErrorMessage, type SyncableProduct } from "@/lib/xero/items";
 
 interface ItemRow {
   id: string;
@@ -230,11 +230,13 @@ export async function POST(
         };
       });
 
-      // Idempotency key derived from the exact row set so a double-click or
-      // retry can't create a duplicate PO in Xero (24h dedupe window). Stable
-      // for the same supplier + same rows; changes if the triage changes.
+      // Idempotency key derived from the exact row set AND line content so a
+      // double-click or network retry can't duplicate the PO (24h window at
+      // Xero), but a regenerate after prices/SKUs/triage change gets a fresh
+      // key. Keying on row ids alone broke the reset→regenerate flow: same
+      // key + different body is an idempotency conflict Xero rejects outright.
       const rowFingerprint = createHash("sha1")
-        .update(rows.map((r) => r.id).sort().join(","))
+        .update(rows.map((r) => r.id).sort().join(",") + "|" + JSON.stringify(lineItems))
         .digest("hex")
         .slice(0, 16);
       const idempotencyKey = `po-${jobId}-${supplierId}-${rowFingerprint}`.slice(0, 128);
@@ -275,7 +277,7 @@ export async function POST(
       failures.push({
         supplierId,
         supplierName: supplier.name,
-        message: err instanceof Error ? err.message : String(err),
+        message: xeroErrorMessage(err),
       });
     }
   }

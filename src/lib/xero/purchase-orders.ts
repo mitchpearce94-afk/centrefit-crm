@@ -85,9 +85,30 @@ export async function createXeroPurchaseOrder({
     true, // summarizeErrors
     idempotencyKey,
   );
-  const po = res.body.purchaseOrders?.[0];
+  let po = res.body.purchaseOrders?.[0];
   if (!po?.purchaseOrderID) {
     throw new Error("Xero did not return a PurchaseOrderID for the new PO");
+  }
+
+  // Xero idempotency replays the ORIGINAL response for 24h. If the earlier PO
+  // was deleted since (the reset flow), the replay hands back a dead PO with a
+  // healthy-looking DRAFT status — verify live state and retry once with a
+  // fresh key so the rows never get linked to a deleted PO.
+  if (idempotencyKey) {
+    const live = await xero.accountingApi.getPurchaseOrder(tenantId, po.purchaseOrderID);
+    const liveStatus = String(live.body.purchaseOrders?.[0]?.status ?? "");
+    if (liveStatus === "DELETED") {
+      const retry = await xero.accountingApi.createPurchaseOrders(
+        tenantId,
+        { purchaseOrders: [poPayload] },
+        true,
+        `${idempotencyKey}-${Date.now().toString(36)}`,
+      );
+      po = retry.body.purchaseOrders?.[0];
+      if (!po?.purchaseOrderID) {
+        throw new Error("Xero did not return a PurchaseOrderID on the post-delete retry");
+      }
+    }
   }
 
   return {
