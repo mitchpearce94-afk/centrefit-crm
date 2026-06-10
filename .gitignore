@@ -51,3 +51,5 @@ next-env.d.ts
 
 # Brainstorming visual companion — local-only mockups
 .superpowers/
+
+scripts/gc-discovery-output.json

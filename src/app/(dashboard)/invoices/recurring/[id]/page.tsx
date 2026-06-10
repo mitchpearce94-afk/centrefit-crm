@@ -38,7 +38,7 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
     supabase
       .from("recurring_plans")
       .select(`
-        id, status, next_invoice_date, first_invoice_date, alias_email, signup_link_url, signup_emailed_at,
+        id, status, source, next_invoice_date, first_invoice_date, alias_email, signup_link_url, signup_emailed_at,
         gc_customer_id, gc_mandate_id, xero_repeating_invoice_id, xero_contact_id,
         activation_error, activation_attempts, last_activation_attempt_at,
         created_at, notes,
@@ -56,6 +56,14 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
   ]);
 
   if (!plan) notFound();
+
+  // GC subscription linkage — for imported legacy plans this is the actual
+  // set of GoCardless subscriptions doing the charging.
+  const { data: gcSubs } = await supabase
+    .from("recurring_plan_gc_subscriptions")
+    .select("gc_subscription_id, name, amount_cents, interval_unit, interval, start_date, gc_status, source")
+    .eq("plan_id", id)
+    .order("amount_cents", { ascending: false });
 
   // Pull live Xero state for the template(s). Fetched sequentially to avoid
   // tripping Xero's concurrent-request limiter, with a small per-template
@@ -83,10 +91,11 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
   }
 
   const items = plan.recurring_plan_items ?? [];
-  const monthly = items.filter((i) => i.frequency === "monthly")
-    .reduce((s, i) => s + Number(i.price_inc_gst) * (i.quantity ?? 1), 0);
+  const monthly = items.filter((i) => i.frequency !== "yearly")
+    .reduce((s, i) => s + Number(i.price_inc_gst) * (i.quantity ?? 1) * (i.frequency === "quarterly" ? 1 / 3 : 1), 0);
   const yearly = items.filter((i) => i.frequency === "yearly")
     .reduce((s, i) => s + Number(i.price_inc_gst) * (i.quantity ?? 1), 0);
+  const isImported = (plan as { source?: string }).source === "imported";
   const colour = STATUS_COLOURS[plan.status] ?? "#6b7280";
   const customer = Array.isArray(plan.customers) ? plan.customers[0] : plan.customers;
   const site = Array.isArray(plan.customer_sites) ? plan.customer_sites[0] : plan.customer_sites;
@@ -102,6 +111,11 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
           {site?.name && <p className="text-sm text-muted-foreground mt-0.5">{site.name}</p>}
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
+          {isImported && (
+            <span className="inline-flex items-center rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-400" title="Imported from GoCardless — legacy subscriptions charge as-is; no CRM-issued Xero invoice yet">
+              Imported from GC
+            </span>
+          )}
           <span
             className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
             style={{ backgroundColor: `${colour}20`, color: colour }}
@@ -264,6 +278,42 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
           </tbody>
         </table>
       </div>
+
+      {/* GC subscriptions actually charging this mandate */}
+      {(gcSubs ?? []).length > 0 && (
+        <div className="surface-card p-5">
+          <h2 className="text-sm font-semibold text-foreground mb-3">GoCardless subscriptions</h2>
+          <table className="w-full text-sm">
+            <thead className="text-muted-foreground text-[10px] uppercase tracking-wider">
+              <tr className="text-left border-b border-border">
+                <th className="pb-2">Name</th>
+                <th className="pb-2 text-right">Amount</th>
+                <th className="pb-2 text-right">Cadence</th>
+                <th className="pb-2 text-right">Started</th>
+                <th className="pb-2 text-right">Subscription</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {(gcSubs ?? []).map((s) => (
+                <tr key={s.gc_subscription_id}>
+                  <td className="py-2">{s.name ?? "—"}</td>
+                  <td className="py-2 text-right font-mono">${fmt(s.amount_cents / 100)}</td>
+                  <td className="py-2 text-right text-xs text-muted-foreground">
+                    {s.interval > 1 ? `every ${s.interval} ${s.interval_unit.replace(/ly$/, "s")}` : s.interval_unit}
+                  </td>
+                  <td className="py-2 text-right text-xs text-muted-foreground">{s.start_date ?? "—"}</td>
+                  <td className="py-2 text-right font-mono text-[10px] text-muted-foreground">{s.gc_subscription_id}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {isImported && (
+            <p className="mt-3 text-[11px] text-muted-foreground">
+              Legacy subscriptions imported from GoCardless — these keep charging exactly as before. The Services list above is the CRM's read of what they cover.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Linkage */}
       <div className="surface-card p-5">

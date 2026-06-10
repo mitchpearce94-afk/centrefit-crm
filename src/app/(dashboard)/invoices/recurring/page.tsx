@@ -50,8 +50,13 @@ interface PlanItemRow {
   service_code: string | null;
   account_code: string | null;
   price_inc_gst: number | string;
-  frequency: "monthly" | "yearly";
+  frequency: "monthly" | "yearly" | "quarterly";
   quantity: number;
+}
+
+/** Convert a line's cadence to its monthly-equivalent factor. */
+function monthlyFactor(frequency: string): number {
+  return frequency === "yearly" ? 1 / 12 : frequency === "quarterly" ? 1 / 3 : 1;
 }
 
 type RevenueStream = "security" | "sim" | "nbn" | "other";
@@ -66,7 +71,7 @@ type StreamSplit = Record<RevenueStream, number>;
 // falls back to the code/name so new services still land sensibly.
 function allocate(item: PlanItemRow, simRate: number): StreamSplit {
   const out: StreamSplit = { security: 0, sim: 0, nbn: 0, other: 0 };
-  const monthly = Number(item.price_inc_gst) * (item.quantity ?? 1) * (item.frequency === "yearly" ? 1 / 12 : 1);
+  const monthly = Number(item.price_inc_gst) * (item.quantity ?? 1) * monthlyFactor(item.frequency);
   const acct = (item.account_code ?? "").trim();
   const code = (item.service_code ?? "").toLowerCase();
   const name = (item.service_name ?? "").toLowerCase();
@@ -88,7 +93,7 @@ function allocate(item: PlanItemRow, simRate: number): StreamSplit {
   // Combo line bundling a SIM (code like "*-sim" or "+ SIM Card" in the name)?
   const bundlesSim = /(^|[-_ ])sim($|[-_ ])/.test(code) || name.includes("sim card");
   if (bundlesSim) {
-    const simMonthly = simRate * (item.quantity ?? 1) * (item.frequency === "yearly" ? 1 / 12 : 1);
+    const simMonthly = simRate * (item.quantity ?? 1) * monthlyFactor(item.frequency);
     const simPart = Math.min(simMonthly, monthly);
     out.sim += simPart;
     out[baseStream] += monthly - simPart;
@@ -226,8 +231,9 @@ export default async function RecurringInvoicesPage() {
             )}
             {list.map((p) => {
               const items = p.recurring_plan_items ?? [];
-              const monthly = items.filter((i) => i.frequency === "monthly")
-                .reduce((s, i) => s + Number(i.price_inc_gst) * (i.quantity ?? 1), 0);
+              // Monthly column = monthly-equivalent of monthly + quarterly lines
+              const monthly = items.filter((i) => i.frequency !== "yearly")
+                .reduce((s, i) => s + Number(i.price_inc_gst) * (i.quantity ?? 1) * monthlyFactor(i.frequency), 0);
               const yearly = items.filter((i) => i.frequency === "yearly")
                 .reduce((s, i) => s + Number(i.price_inc_gst) * (i.quantity ?? 1), 0);
               const colour = STATUS_COLOURS[p.status] ?? "#6b7280";
