@@ -111,7 +111,13 @@ export function OrderWizard() {
     try {
       await fn();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed");
+      let msg = err instanceof Error ? err.message : "Failed";
+      // Kinetix's per-endpoint ACL rejection (Werkzeug 403) — not actionable
+      // from our side, so say what it actually means.
+      if (/permission to access the requested resource/i.test(msg)) {
+        msg = "Kinetix hasn't enabled this API module for our account (403 from Kinetix). Ask Kinetix support to switch on Product Qualification access for the Centrefit API key.";
+      }
+      setError(msg);
     } finally {
       setBusy(null);
     }
@@ -146,23 +152,37 @@ export function OrderWizard() {
       setQual(json.result);
       setOrderRef(`CF.${m.id.replace("LOC", "")}.${new Date().toISOString().slice(0, 10)}`);
     });
+    // Auto-load product options as soon as the address qualifies — no manual
+    // Load step. Explicit locId arg: `loc` state isn't committed yet here.
+    await loadServiceTypes(m.id);
   }
 
-  const loadServiceTypes = () => run("svctypes", async () => {
-    const data = await rev3("qual.serviceTypes", { location_ref: loc!.id }, testingMode);
+  const loadServiceTypes = (locId: string) => run("svctypes", async () => {
+    const data = await rev3("qual.serviceTypes", { location_ref: locId }, testingMode);
     setServiceTypes(extractOptions(data));
   });
-  const loadBandwidths = () => run("bandwidths", async () => {
+  const loadBandwidths = (svcType: string) => run("bandwidths", async () => {
     const data = await rev3("qual.bandwidths", {
-      location_ref: loc!.id, service_type: serviceType,
+      location_ref: loc!.id, service_type: svcType,
       cpi_ref: productClass === "ncas" && lineRef !== "NEW" ? lineRef : undefined,
     }, testingMode);
     setBandwidths(extractOptions(data));
   });
-  const loadSlas = () => run("slas", async () => {
-    const data = await rev3("qual.slas", { location_ref: loc!.id, bandwidth_product_sku: bandwidthSku }, testingMode);
+  const loadSlas = (bwSku: string) => run("slas", async () => {
+    const data = await rev3("qual.slas", { location_ref: loc!.id, bandwidth_product_sku: bwSku }, testingMode);
     setSlas(extractOptions(data));
   });
+
+  const pickServiceType = (v: string) => {
+    setServiceType(v);
+    setBandwidths([]); setBandwidthSku(""); setSlas([]); setSlaSku("");
+    if (v) void loadBandwidths(v);
+  };
+  const pickBandwidth = (v: string) => {
+    setBandwidthSku(v);
+    setSlas([]); setSlaSku("");
+    if (v) void loadSlas(v);
+  };
 
   const createEndUser = () => run("eu", async () => {
     const data = euType === "business"
@@ -299,33 +319,24 @@ export function OrderWizard() {
               <div className="grid gap-2 md:grid-cols-3">
                 <div>
                   <span className={label}>Service type</span>
-                  <div className="flex gap-2">
-                    <select className={input} value={serviceType} onChange={(e) => setServiceType(e.target.value)}>
-                      <option value="">{serviceTypes.length ? "Select…" : "Load first"}</option>
-                      {serviceTypes.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                    <button className={btn} disabled={busy !== null} onClick={loadServiceTypes}>Load</button>
-                  </div>
+                  <select className={input} value={serviceType} onChange={(e) => pickServiceType(e.target.value)}>
+                    <option value="">{busy === "svctypes" ? "Loading…" : serviceTypes.length ? "Select…" : "—"}</option>
+                    {serviceTypes.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
                 </div>
                 <div>
                   <span className={label}>Bandwidth SKU</span>
-                  <div className="flex gap-2">
-                    <select className={input} value={bandwidthSku} onChange={(e) => setBandwidthSku(e.target.value)}>
-                      <option value="">{bandwidths.length ? "Select…" : "Load first"}</option>
-                      {bandwidths.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                    <button className={btn} disabled={!serviceType || busy !== null} onClick={loadBandwidths}>Load</button>
-                  </div>
+                  <select className={input} value={bandwidthSku} onChange={(e) => pickBandwidth(e.target.value)} disabled={!serviceType}>
+                    <option value="">{busy === "bandwidths" ? "Loading…" : bandwidths.length ? "Select…" : serviceType ? "—" : "Pick service type first"}</option>
+                    {bandwidths.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
                 </div>
                 <div>
                   <span className={label}>Restoration SLA</span>
-                  <div className="flex gap-2">
-                    <select className={input} value={slaSku} onChange={(e) => setSlaSku(e.target.value)}>
-                      <option value="">{slas.length ? "Select…" : "Load first"}</option>
-                      {slas.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                    <button className={btn} disabled={!bandwidthSku || busy !== null} onClick={loadSlas}>Load</button>
-                  </div>
+                  <select className={input} value={slaSku} onChange={(e) => setSlaSku(e.target.value)} disabled={!bandwidthSku}>
+                    <option value="">{busy === "slas" ? "Loading…" : slas.length ? "Select…" : bandwidthSku ? "—" : "Pick bandwidth first"}</option>
+                    {slas.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
                 </div>
               </div>
               <div className="max-w-xs">

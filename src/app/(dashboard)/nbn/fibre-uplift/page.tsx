@@ -1,19 +1,22 @@
 import { fetchFibreUpliftLocations } from "@/lib/kinetix/client";
+import { UpliftChecker } from "./uplift-checker";
 
 export const dynamic = "force-dynamic";
 
 /**
- * NBN fibre-uplift eligibility — addresses Kinetix reports as eligible for a
- * fibre upgrade. Cross-checking these against active connections is a
- * ready-made upsell list.
+ * NBN fibre-uplift eligibility. The account-wide locations list is
+ * permission-gated on our Kinetix API key (403) — until Kinetix enables it,
+ * the per-address checker below covers the same question one site at a time.
  */
 export default async function FibreUpliftPage() {
   let locations: unknown[] = [];
   let error: string | null = null;
+  let permissionGated = false;
   try {
     locations = await fetchFibreUpliftLocations();
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error";
+    permissionGated = /permission to access the requested resource/i.test(error);
   }
 
   return (
@@ -21,13 +24,21 @@ export default async function FibreUpliftPage() {
       <div className="mb-4">
         <h2 className="text-sm font-semibold">Fibre uplift</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {error ? "Couldn't fetch fibre-uplift data from Kinetix." : `${locations.length} location${locations.length === 1 ? "" : "s"} eligible for an NBN fibre upgrade.`}
+          {error ? "Check any address for fibre-upgrade eligibility." : `${locations.length} location${locations.length === 1 ? "" : "s"} eligible for an NBN fibre upgrade.`}
         </p>
       </div>
 
-      {error && (
+      {permissionGated ? (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300 mb-4">
+          The account-wide eligibility list isn&apos;t enabled on our Kinetix API key yet (403 from Kinetix — ask their support to switch on Fibre Uplift API access). Per-address checks below work fine.
+        </div>
+      ) : error ? (
         <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300 mb-4">{error}</div>
-      )}
+      ) : null}
+
+      <div className="mb-4">
+        <UpliftChecker />
+      </div>
 
       {locations.length === 0 && !error && (
         <div className="rounded-lg border border-dashed border-border p-8 text-center text-xs text-muted-foreground">

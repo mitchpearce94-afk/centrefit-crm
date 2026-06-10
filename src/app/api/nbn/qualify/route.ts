@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { searchAddress, qualifyLocation, KinetixError } from "@/lib/kinetix/client";
+import { searchAddress, qualifyLocation, qualifyFibreUplift, KinetixError } from "@/lib/kinetix/client";
 
 /**
  * Staff-side NBN qualification tool (auth enforced by middleware — this is a
@@ -28,6 +28,12 @@ export async function POST(req: NextRequest) {
       const locId = body.locId?.trim();
       if (!locId) return NextResponse.json({ error: "locId required" }, { status: 400 });
       const result = await qualifyLocation(locId);
+      return NextResponse.json({ result });
+    }
+    if (body.mode === "fibreUplift") {
+      const locId = body.locId?.trim();
+      if (!locId) return NextResponse.json({ error: "locId required" }, { status: 400 });
+      const result = await qualifyFibreUplift(locId);
       return NextResponse.json({ result });
     }
     return NextResponse.json({ error: "Unknown mode" }, { status: 400 });

@@ -220,6 +220,11 @@ export function qualifyLocation(locId: string) {
   return kinetixGet(`/service_qualification/single_site`, { loc_id: locId });
 }
 
+/** Per-address fibre-uplift qualification (works on our key, unlike the account-wide /fibre_uplift/locations list). */
+export function qualifyFibreUplift(locId: string) {
+  return kinetixGet(`/service_qualification/fibre_uplift`, { loc_id: locId });
+}
+
 function requireEnv(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
