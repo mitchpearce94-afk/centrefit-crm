@@ -53,3 +53,6 @@ next-env.d.ts
 .superpowers/
 
 scripts/gc-discovery-output.json
+scripts/xero-repeating-output.json
+scripts/dd-sheet-output.json
+scripts/recon-report.md
