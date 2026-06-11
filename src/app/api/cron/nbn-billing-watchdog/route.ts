@@ -22,12 +22,16 @@ import { enqueueNotification } from "@/lib/notifications/enqueue";
 
 export const maxDuration = 300;
 
-// Known personal/internal circuits — deliberately not billed. Reviewed by
-// Mitchell 2026-06-11; amend here if any of these start billing.
+// Known personal/internal/accounted-for circuits — deliberately not billed.
+// Reviewed by Mitchell 2026-06-11; amend here if any of these start billing.
+// NOTE: "just focus" is a blanket exclusion (Mitchell: "all accounted for")
+// — a future NEW Just Focus site would be hidden too; revisit if they expand.
 const IGNORE_END_USERS = [
   /centrefit/i,
   /sue pearce/i,
   /mark pearce/i,
+  /michael murphy/i,
+  /just ?focus/i,
 ];
 
 const CONCURRENCY = 8;

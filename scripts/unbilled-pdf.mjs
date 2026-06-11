@@ -82,3 +82,5 @@ doc.fill("#94a3b8").font("Helvetica").fontSize(8.5).text("Tools: customer page â
 
 doc.end();
 console.log(`Wrote ${OUT} â€” ${rows.length} rows, $${total.toFixed(2)}/mo`);
+
+

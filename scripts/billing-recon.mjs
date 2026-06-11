@@ -39,7 +39,7 @@ const planRecords = plans.map((p) => ({
 
 // ── matching helpers ─────────────────────────────────────────────────────────
 const BRANDS = /\b(snap fitness|snap|sf|9 ?rounds?|core ?plus|coreplus|just focus|fit4eva|planet fitness|total fusion|fitness)\b/g;
-const NOISE = /\b(pty|ltd|atf|t\/?a|trust|group|the|family|nominees|security|myalarm|duress intercom|duress|b2b|monitoring|intercom|homes|24\/?7|247)\b/g;
+const NOISE = /\b(pty|ltd|atf|t\/?a|trust|group|the|family|nominees|security|myalarm|duress intercom|duress|b2b|monitoring|intercom|homes|24\/?7|247|qld|nsw|vic|wa|sa|tas|nt|act)\b/g;
 
 function norm(s) {
   return (s ?? "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
@@ -86,6 +86,10 @@ function findBilling(costName, serviceKind) {
 }
 
 const INTERNAL = /centrefit|cf 4g|cf router|cft\d|warner office|test/i;
+// Mitchell-confirmed dispositions 2026-06-11: Just Focus services are all
+// accounted for (internal arrangement); Michael Murphy, Mark Pearce and Sue
+// Pearce are staff comps. Excluded from the leak list, not counted.
+const CONFIRMED_OK = /just ?focus|michael murphy|mark pearce|sue pearce/i;
 
 // ── build cost rows ──────────────────────────────────────────────────────────
 const PLAN_PRICE = { "100/20": 129, "100/40": 139, "250/100": 149, "500/200": 169, "1000/400": 239, "2000/500": 339, "25/10": 110, "50/20": 110 };
@@ -115,7 +119,7 @@ const sentinelRows = dd["Sentinel "].slice(1)
 // ── reconcile ────────────────────────────────────────────────────────────────
 const buckets = { dd: [], xero: [], unbilled: [], internal: [] };
 for (const row of [...kinetixRows, ...m2mRows, ...sentinelRows]) {
-  if (INTERNAL.test(row.name)) { buckets.internal.push(row); continue; }
+  if (INTERNAL.test(row.name) || CONFIRMED_OK.test(row.name)) { buckets.internal.push(row); continue; }
   const m = findBilling(row.name, row.kind);
   if (m.via === "DD plan") buckets.dd.push({ ...row, ...m });
   else if (m.via === "Xero RI") buckets.xero.push({ ...row, ...m });
