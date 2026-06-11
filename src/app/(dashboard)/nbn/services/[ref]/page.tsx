@@ -7,8 +7,11 @@ import {
   fetchDiagnosticsLatest,
   fetchDiagnosticsTestTypes,
   fetchServiceHealthLatest,
+  fetchEndUserByBizRefCached,
+  fetchAddressCached,
 } from "@/lib/kinetix/client";
 import { RunTest } from "./run-test";
+import { flattenRows } from "./format";
 
 export const dynamic = "force-dynamic";
 
@@ -38,12 +41,52 @@ export default async function NbnServiceDetailPage({
       fetchServiceHealthLatest(serviceRef),
     ]);
 
+  // Resolve who this connection belongs to — same lookups as the services
+  // list (cached): relatedParty BIZ → end user, relatedPlace LOC → address.
+  let who: { name: string; legal: string | null; contact: string | null; email: string | null } | null = null;
+  let address: string | null = null;
+  let customerRef: string | null = null;
+  let speedTier: string | null = null;
+  if (product.status === "fulfilled" && product.value && typeof product.value === "object") {
+    const detail = product.value as Record<string, unknown>;
+    customerRef = (detail.customerRef as string) ?? null;
+    const avc = (Array.isArray(detail.productRef) ? detail.productRef : []).find(
+      (p: Record<string, unknown>) => typeof p?.id === "string" && (p.id as string).startsWith("AVC"),
+    ) as Record<string, unknown> | undefined;
+    speedTier = (avc?.bandwidthProfile as string) ?? null;
+    const bizRef = (detail.relatedParty as { id?: string } | undefined)?.id;
+    const locId = (detail.relatedPlace as { id?: string } | undefined)?.id;
+    const [eu, addr] = await Promise.all([
+      bizRef?.startsWith("BIZ") ? fetchEndUserByBizRefCached(bizRef).then((l) => l?.[0] ?? null).catch(() => null) : null,
+      locId ? fetchAddressCached(locId).then((a) => a.formattedAddress ?? null).catch(() => null) : null,
+    ]);
+    address = addr;
+    if (eu) {
+      who = {
+        name: eu.tradingName ?? eu.name ?? "Unknown",
+        legal: eu.tradingName && eu.name && eu.name !== eu.tradingName ? eu.name : null,
+        contact: eu.contact?.contactName ?? null,
+        email: eu.contact?.emailAddress ?? null,
+      };
+    }
+  }
+
   return (
     <div>
       <div className="mb-4">
         <Link href="/nbn/services" className="text-xs text-muted-foreground hover:text-foreground">← All services</Link>
-        <h2 className="text-sm font-semibold mt-1 font-mono">{serviceRef}</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">Live service cockpit — product, outages, appointments, diagnostics and health from Kinetix.</p>
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h2 className="text-lg font-semibold">{who?.name ?? "Unknown customer"}</h2>
+          <span className="font-mono text-xs text-muted-foreground">{serviceRef}</span>
+          {customerRef && <span className="font-mono text-[11px] text-muted-foreground">{customerRef}</span>}
+          {speedTier && (
+            <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">{speedTier}</span>
+          )}
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {[who?.legal, who?.contact, who?.email, address].filter(Boolean).join(" · ") ||
+            "Live service cockpit — product, outages, appointments, diagnostics and health from Kinetix."}
+        </p>
       </div>
 
       <div className="mb-4">
@@ -119,20 +162,17 @@ function Section({
   );
 }
 
-/** Flatten the first level of useful scalar fields into a readable list. */
+/** Readable rows from the payload — deep-flattened (nested test results show)
+ *  with timestamps in Brisbane time. */
 function KeyValues({ data }: { data: unknown }) {
-  const obj = Array.isArray(data) ? (data[0] as Record<string, unknown> | undefined) : (data as Record<string, unknown>);
-  if (!obj || typeof obj !== "object") return null;
-  const rows = Object.entries(obj)
-    .filter(([, v]) => ["string", "number", "boolean"].includes(typeof v))
-    .slice(0, 12);
+  const rows = flattenRows(data);
   if (rows.length === 0) return null;
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[11px]">
-      {rows.map(([k, v]) => (
-        <div key={k} className="contents">
+      {rows.map(([k, v], i) => (
+        <div key={`${k}-${i}`} className="contents">
           <dt className="text-muted-foreground font-mono">{k}</dt>
-          <dd className="truncate" title={String(v)}>{String(v)}</dd>
+          <dd className="truncate" title={v}>{v}</dd>
         </div>
       ))}
       {Array.isArray(data) && data.length > 1 && (
