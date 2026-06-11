@@ -24,7 +24,8 @@ export function nameMatches(costName: string, billingName: string): boolean {
 }
 
 export const SERVICE_TESTS: Record<string, (t: string) => boolean> = {
-  nbn: (t) => /nbn/i.test(t),
+  // "Bundle 250/100"-style invoice lines are NBN too (TFBL false positive)
+  nbn: (t) => /nbn|bundle\s*\d|internet|\b\d{2,4}\s*\/\s*\d{2,4}\b/i.test(t),
   sim: (t) => /\bsim\b|sim card/i.test(t),
   myalarm: (t) => /my ?alarm|ifob/i.test(t),
   duress: (t) => /duress/i.test(t),
