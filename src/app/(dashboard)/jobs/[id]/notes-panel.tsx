@@ -329,17 +329,24 @@ function NoteDetail({
 
   async function saveEdit() {
     setSaving(true);
-    const { error } = await supabase
+    // .select() so an RLS-filtered update (0 rows) surfaces as a real error
+    // instead of silently "saving" nothing — the exact bug Sue reported.
+    const { data, error } = await supabase
       .from("job_notes")
       .update({
         title: title.trim() || null,
         content: content.trim(),
         type: noteType,
       })
-      .eq("id", note.id);
+      .eq("id", note.id)
+      .select("id");
     setSaving(false);
     if (error) {
       toast(error.message, "error");
+      return;
+    }
+    if (!data || data.length === 0) {
+      toast("Couldn't save — you can only edit your own notes (admins can edit any).", "error");
       return;
     }
     setEditing(false);
