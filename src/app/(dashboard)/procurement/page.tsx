@@ -11,6 +11,7 @@ type JobRow = {
   id: string;
   number: string | number | null;
   description: string | null;
+  procurement_not_required: boolean | null;
   customer: { id: string; name: string } | null;
   site: { id: string; name: string | null } | null;
 };
@@ -38,7 +39,7 @@ export default async function ProcurementIndexPage() {
       .select("job_id, status, xero_po_number"),
     supabase
       .from("jobs")
-      .select("id, number, description, customer:customers(id, name), site:customer_sites(id, name)"),
+      .select("id, number, description, procurement_not_required, customer:customers(id, name), site:customer_sites(id, name)"),
     supabase
       .from("quotes")
       .select("id, ref, job_id, accepted_at, quote_type, pricing_snapshot")
@@ -132,9 +133,17 @@ export default async function ProcurementIndexPage() {
   // (full quotes, service jobs, and small progress jobs) goes straight through.
   const jobsWithProcurement = new Set(statsByJob.keys());
   const readyByJobId = new Map<string, QuoteRow>();
+  // Jobs explicitly marked "no procurement needed" (labour-only / nothing to
+  // order). Kept aside so they leave the Ready list but can still be restored.
+  const dismissedByJobId = new Map<string, QuoteRow>();
   for (const q of acceptedQuotes) {
     if (!q.job_id || jobsWithProcurement.has(q.job_id)) continue;
-    if (readyByJobId.has(q.job_id)) continue;
+    if (readyByJobId.has(q.job_id) || dismissedByJobId.has(q.job_id)) continue;
+
+    if (jobsById.get(q.job_id)?.procurement_not_required) {
+      dismissedByJobId.set(q.job_id, q);
+      continue;
+    }
 
     const isProgress = q.quote_type === "progress";
     if (isProgress) {
@@ -144,17 +153,24 @@ export default async function ProcurementIndexPage() {
     }
     readyByJobId.set(q.job_id, q);
   }
-  const readyEntries: ReadyEntry[] = Array.from(readyByJobId.entries())
-    .map(([jobId, quote]) => ({ job: jobsById.get(jobId)!, quote }))
-    .filter((e) => !!e.job)
-    .map(({ job, quote }) => ({
+  const toReadyEntry = (jobId: string, quote: QuoteRow): ReadyEntry | null => {
+    const job = jobsById.get(jobId);
+    if (!job) return null;
+    return {
       jobId: job.id,
       number: job.number,
       customerName: job.customer?.name ?? "—",
       siteName: job.site?.name ?? null,
       quoteRef: quote.ref,
       acceptedAt: quote.accepted_at,
-    }));
+    };
+  };
+  const readyEntries: ReadyEntry[] = Array.from(readyByJobId.entries())
+    .map(([jobId, quote]) => toReadyEntry(jobId, quote))
+    .filter((e): e is ReadyEntry => !!e);
+  const dismissedEntries: ReadyEntry[] = Array.from(dismissedByJobId.entries())
+    .map(([jobId, quote]) => toReadyEntry(jobId, quote))
+    .filter((e): e is ReadyEntry => !!e);
 
   // Global totals — count only jobs that still need work as "active".
   const totals = {
@@ -185,7 +201,7 @@ export default async function ProcurementIndexPage() {
         <Stat label="Received" value={totals.received} tone="emerald" />
       </div>
 
-      <ProcurementBoard ready={readyEntries} needsWork={needsWork} complete={complete} />
+      <ProcurementBoard ready={readyEntries} needsWork={needsWork} complete={complete} dismissed={dismissedEntries} />
     </div>
   );
 }

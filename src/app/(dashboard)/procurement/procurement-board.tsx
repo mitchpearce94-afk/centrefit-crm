@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { useToast } from "@/components/ui/toast";
 
 export interface ReadyEntry {
   jobId: string;
@@ -39,15 +42,39 @@ export function ProcurementBoard({
   ready,
   needsWork,
   complete,
+  dismissed = [],
 }: {
   ready: ReadyEntry[];
   needsWork: ActiveEntry[];
   complete: ActiveEntry[];
+  dismissed?: ReadyEntry[];
 }) {
   // Default to the tab that actually has work in it.
   const [tab, setTab] = useState<Tab>(
     needsWork.length > 0 ? "needs" : ready.length > 0 ? "ready" : "needs",
   );
+  const router = useRouter();
+  const supabase = createClient();
+  const { toast } = useToast();
+  const [busyJob, setBusyJob] = useState<string | null>(null);
+
+  // Mark a job "no procurement needed" (or restore it). Used for labour-only
+  // jobs that have nothing to order and would otherwise sit in Ready forever.
+  async function setNoProcurement(jobId: string, value: boolean) {
+    setBusyJob(jobId);
+    const { data, error } = await supabase
+      .from("jobs")
+      .update({ procurement_not_required: value })
+      .eq("id", jobId)
+      .select("id");
+    setBusyJob(null);
+    if (error || !data || data.length === 0) {
+      toast(error?.message ?? "Couldn't update — try again", "error");
+      return;
+    }
+    toast(value ? "Marked — no procurement needed" : "Restored to Ready");
+    router.refresh();
+  }
 
   return (
     <div className="mt-6">
@@ -71,40 +98,89 @@ export function ProcurementBoard({
           />
         )}
         {tab === "ready" && (
-          ready.length === 0 ? (
-            <Empty text="No jobs waiting to start. Full quotes appear on acceptance; progress (PP1/PP2) jobs appear once PP1 is paid." />
-          ) : (
-            <div className="rounded-lg border border-border bg-card overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border text-left bg-muted/30 text-muted-foreground">
-                    <th className="px-3 py-2 font-medium">Job</th>
-                    <th className="px-3 py-2 font-medium">Quote</th>
-                    <th className="px-3 py-2 font-medium">Customer</th>
-                    <th className="px-3 py-2 font-medium">Site</th>
-                    <th className="px-3 py-2 font-medium text-right w-32">Accepted</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ready.map((e) => (
-                    <tr key={e.jobId} className="border-b border-border last:border-0 hover:bg-accent/30">
-                      <td className="px-3 py-2 font-mono">
-                        <Link href={`/procurement/${e.jobId}`} className="text-primary hover:underline">
-                          {jobLabel(e.number)}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2 font-mono text-muted-foreground">{e.quoteRef}</td>
-                      <td className="px-3 py-2">{e.customerName}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{e.siteName ?? "—"}</td>
-                      <td className="px-3 py-2 text-right text-muted-foreground">
-                        {e.acceptedAt ? new Date(e.acceptedAt).toLocaleDateString() : "—"}
-                      </td>
+          <div className="space-y-4">
+            {ready.length === 0 ? (
+              <Empty text="No jobs waiting to start. Full quotes appear on acceptance; progress (PP1/PP2) jobs appear once PP1 is paid." />
+            ) : (
+              <div className="rounded-lg border border-border bg-card overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border text-left bg-muted/30 text-muted-foreground">
+                      <th className="px-3 py-2 font-medium">Job</th>
+                      <th className="px-3 py-2 font-medium">Quote</th>
+                      <th className="px-3 py-2 font-medium">Customer</th>
+                      <th className="px-3 py-2 font-medium">Site</th>
+                      <th className="px-3 py-2 font-medium text-right w-32">Accepted</th>
+                      <th className="px-3 py-2 font-medium text-right w-44"></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
+                  </thead>
+                  <tbody>
+                    {ready.map((e) => (
+                      <tr key={e.jobId} className="border-b border-border last:border-0 hover:bg-accent/30">
+                        <td className="px-3 py-2 font-mono">
+                          <Link href={`/procurement/${e.jobId}`} className="text-primary hover:underline">
+                            {jobLabel(e.number)}
+                          </Link>
+                        </td>
+                        <td className="px-3 py-2 font-mono text-muted-foreground">{e.quoteRef}</td>
+                        <td className="px-3 py-2">{e.customerName}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{e.siteName ?? "—"}</td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">
+                          {e.acceptedAt ? new Date(e.acceptedAt).toLocaleDateString() : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setNoProcurement(e.jobId, true)}
+                            disabled={busyJob === e.jobId}
+                            title="No parts to order — clear this job off the board"
+                            className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:border-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                          >
+                            {busyJob === e.jobId ? "…" : "No procurement needed"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {dismissed.length > 0 && (
+              <details className="rounded-lg border border-border bg-card">
+                <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground hover:text-foreground">
+                  No procurement needed ({dismissed.length})
+                </summary>
+                <div className="overflow-x-auto border-t border-border">
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {dismissed.map((e) => (
+                        <tr key={e.jobId} className="border-b border-border last:border-0 hover:bg-accent/30">
+                          <td className="px-3 py-2 font-mono">
+                            <Link href={`/procurement/${e.jobId}`} className="text-primary hover:underline">
+                              {jobLabel(e.number)}
+                            </Link>
+                          </td>
+                          <td className="px-3 py-2">{e.customerName}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{e.siteName ?? "—"}</td>
+                          <td className="px-3 py-2 text-right w-28">
+                            <button
+                              type="button"
+                              onClick={() => setNoProcurement(e.jobId, false)}
+                              disabled={busyJob === e.jobId}
+                              className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:border-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                            >
+                              {busyJob === e.jobId ? "…" : "Restore"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            )}
+          </div>
         )}
         {tab === "complete" && (
           <ActiveTable

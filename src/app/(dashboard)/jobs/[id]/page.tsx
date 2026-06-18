@@ -18,7 +18,7 @@ export default async function JobDetailPage({
       supabase
         .from("jobs")
         .select(
-          "*, customer:customers(id, name), site:customer_sites(id, name, address, suburb, state, postcode), status:statuses(*), category_1:categories!category_1_id(id, name), category_2:categories!category_2_id(id, name), job_staff(id, role, staff:staff(id, display_name, initials, colour, email, phone))"
+          "*, customer:customers(id, name), site:customer_sites(id, name, address, suburb, state, postcode, phone, site_contact:customer_contacts!customer_sites_site_contact_id_fkey(id, name, role, phone, mobile, email)), job_contact:customer_contacts!jobs_job_contact_id_fkey(id, name, role, phone, mobile, email), status:statuses(*), category_1:categories!category_1_id(id, name), category_2:categories!category_2_id(id, name), job_staff(id, role, staff:staff(id, display_name, initials, colour, email, phone))"
         )
         .eq("id", id)
         .single(),
@@ -189,6 +189,13 @@ export default async function JobDetailPage({
           fitOffDate={job.fit_off_date ?? null}
           fitOffEndDate={job.fit_off_end_date ?? null}
           fitOffStaffIds={job.fit_off_staff_ids ?? []}
+          contact={
+            (job as any).job_contact ??
+            (job as any).site?.site_contact ??
+            ((job as any).site?.phone
+              ? { name: (job as any).site?.name ?? "Site", role: null, phone: (job as any).site.phone, mobile: null, email: null }
+              : null)
+          }
         />
       </div>
 

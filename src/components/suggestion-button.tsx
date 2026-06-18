@@ -70,11 +70,11 @@ function SuggestionModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
       <form
         onSubmit={handleSubmit}
-        className="relative w-full max-w-md rounded-t-2xl lg:rounded-2xl border border-border bg-card shadow-2xl max-h-[90dvh] overflow-y-auto"
+        className="relative w-full max-w-md rounded-2xl border border-border bg-card shadow-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto"
       >
         <div className="p-5 space-y-4">
           <div className="flex items-start justify-between gap-3">

@@ -112,8 +112,10 @@ export interface SiteAsset {
   subnet: string | null;
   admin_user: string | null;
   admin_password: string | null;
+  admin_password_prev: string | null;
   staff_user: string | null;
   staff_password: string | null;
+  staff_password_prev: string | null;
   firmware: string | null;
   vlans: { name?: string; id?: string; notes?: string }[];
   wifi_ssids: { ssid?: string; password?: string; notes?: string }[];

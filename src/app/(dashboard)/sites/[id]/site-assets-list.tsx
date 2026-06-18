@@ -72,6 +72,49 @@ function GeneratePasswordButton({
   );
 }
 
+// Reveal the immediately-prior password behind a click (#asset-prev-password).
+// Stays hidden by default; shows the value inline with a copy button.
+function PreviousPasswordReveal({ value }: { value: string }) {
+  const [show, setShow] = useState(false);
+  const { toast } = useToast();
+  if (!show) {
+    return (
+      <button
+        type="button"
+        onClick={() => setShow(true)}
+        className="text-[10px] text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground"
+      >
+        Show previous password
+      </button>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5 rounded border border-border bg-muted/40 px-2 py-1 text-[10px]">
+      <span className="text-muted-foreground">Previous:</span>
+      <code className="min-w-0 break-all font-mono text-foreground">{value}</code>
+      <button
+        type="button"
+        onClick={() => {
+          void navigator.clipboard?.writeText(value);
+          toast("Copied previous password");
+        }}
+        title="Copy"
+        className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
+      >
+        ⧉
+      </button>
+      <button
+        type="button"
+        onClick={() => setShow(false)}
+        title="Hide"
+        className="shrink-0 text-muted-foreground hover:text-foreground"
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
 export function SiteAssetsList({
   siteId,
   assets,
@@ -87,6 +130,16 @@ export function SiteAssetsList({
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  // Collapsed category keys (#collapsible-assets). Empty = all expanded. Lets a
+  // site with 20+ cameras fold a category down to just its header.
+  const [collapsedCats, setCollapsedCats] = useState<Set<string>>(new Set());
+  const toggleCat = (key: string) =>
+    setCollapsedCats((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   const supabase = createClient();
   const { toast } = useToast();
 
@@ -206,10 +259,27 @@ export function SiteAssetsList({
         ) : (
           CATEGORY_ORDER.filter((c) => groupedAssets.has(c.key)).map((cat) => {
             const rows = groupedAssets.get(cat.key)!;
+            const collapsed = collapsedCats.has(cat.key);
             const header = (
-              <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <button
+                type="button"
+                onClick={() => toggleCat(cat.key)}
+                aria-expanded={!collapsed}
+                className="mb-1.5 flex w-full items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <svg
+                  className={`h-3 w-3 shrink-0 transition-transform ${collapsed ? "-rotate-90" : ""}`}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
                 {cat.label} <span className="text-foreground/40">({rows.length})</span>
-              </h3>
+              </button>
             );
 
             // Wi-Fi networks don't have serial/MAC/IP per row — keep the card
@@ -218,6 +288,7 @@ export function SiteAssetsList({
               return (
                 <div key={cat.key}>
                   {header}
+                  {!collapsed && (
                   <div className="space-y-2">
                     {rows.map((a) =>
                       editingId === a.id ? (
@@ -227,6 +298,7 @@ export function SiteAssetsList({
                       )
                     )}
                   </div>
+                  )}
                 </div>
               );
             }
@@ -239,6 +311,7 @@ export function SiteAssetsList({
             return (
               <div key={cat.key}>
                 {header}
+                {!collapsed && (
                 <div className="overflow-x-auto rounded-lg border border-border">
                   <table className="w-full text-xs">
                     <thead>
@@ -276,6 +349,7 @@ export function SiteAssetsList({
                     </tbody>
                   </table>
                 </div>
+                )}
               </div>
             );
           })
@@ -980,6 +1054,21 @@ function SiteAssetEditForm({
   const [warrantyExpiry, setWarrantyExpiry] = useState(asset.warranty_expiry ?? "");
   const [notes, setNotes] = useState(asset.notes ?? "");
 
+  // Previous-password tracking (#asset-prev-password). Seed from the stored
+  // prior value; updated in-session whenever a password is replaced.
+  const [adminPrev, setAdminPrev] = useState(asset.admin_password_prev ?? "");
+  const [staffPrev, setStaffPrev] = useState(asset.staff_password_prev ?? "");
+  const adminPwdAtFocus = useRef("");
+  const staffPwdAtFocus = useRef("");
+
+  // Auto-save (#asset-autosave). Edits to non-password fields persist ~1s after
+  // the last change, so nothing is lost if the page refreshes before "Update"
+  // is pressed. Passwords save on generate / blur (see saveOne) so a generated
+  // password is written immediately and prev is captured cleanly.
+  const [autoSave, setAutoSave] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveMounted = useRef(false);
+
   const selectedType = useMemo(
     () => assetTypes.find((t) => t.id === assetTypeId) ?? null,
     [assetTypes, assetTypeId],
@@ -998,6 +1087,64 @@ function SiteAssetEditForm({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedType]);
+
+  // Persist a small patch immediately — used by the password fields so a
+  // generated/changed password (and its prior value) is written the instant it
+  // happens, not only when "Update" is pressed.
+  async function saveOne(patch: Record<string, unknown>) {
+    setAutoSave("saving");
+    const { error: err } = await supabase
+      .from("site_assets")
+      .update(patch)
+      .eq("id", asset.id);
+    setAutoSave(err ? "error" : "saved");
+  }
+
+  // Debounced auto-save of editable fields (passwords excluded — they save on
+  // generate/blur). Skips the first run so opening the form isn't a write.
+  useEffect(() => {
+    if (!autoSaveMounted.current) {
+      autoSaveMounted.current = true;
+      return;
+    }
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    setAutoSave("saving");
+    autoSaveTimer.current = setTimeout(async () => {
+      const { error: err } = await supabase
+        .from("site_assets")
+        .update({
+          asset_type_id: assetTypeId || null,
+          device_type: selectedType?.name ?? asset.device_type ?? null,
+          device_name: deviceName.trim() || null,
+          manufacturer: manufacturer.trim() || null,
+          model: model.trim() || null,
+          serial: serial.trim() || null,
+          mac_address: macAddress.trim() || null,
+          ip_address: ipAddress.trim() || null,
+          subnet: subnet.trim() || null,
+          admin_user: adminUser.trim() || null,
+          staff_user: staffUser.trim() || null,
+          firmware: firmware.trim() || null,
+          rfid: rfid.trim() || null,
+          vlans,
+          wifi_ssids: wifiSsids,
+          location_note: locationNote.trim() || null,
+          install_date: installDate || null,
+          warranty_expiry: warrantyExpiry || null,
+          notes: notes.trim() || null,
+        })
+        .eq("id", asset.id);
+      setAutoSave(err ? "error" : "saved");
+    }, 1000);
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    assetTypeId, deviceName, manufacturer, model, serial, macAddress, ipAddress,
+    subnet, adminUser, staffUser, firmware, rfid, vlans, wifiSsids, locationNote,
+    installDate, warrantyExpiry, notes,
+  ]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -1170,14 +1317,38 @@ function SiteAssetEditForm({
                 onChange={(e) => setAdminUser(e.target.value)}
                 className={inputClass}
               />
-              <div className="flex gap-1.5">
-                <input
-                  placeholder="Admin password"
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  className={inputClass + " flex-1 min-w-0 font-mono"}
-                />
-                <GeneratePasswordButton onGenerate={setAdminPassword} />
+              <div className="space-y-1">
+                <div className="flex gap-1.5">
+                  <input
+                    placeholder="Admin password"
+                    value={adminPassword}
+                    onFocus={() => {
+                      adminPwdAtFocus.current = adminPassword;
+                    }}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    onBlur={() => {
+                      const before = adminPwdAtFocus.current;
+                      if (adminPassword === before) return;
+                      if (before) setAdminPrev(before);
+                      void saveOne({
+                        admin_password: adminPassword.trim() || null,
+                        ...(before ? { admin_password_prev: before } : {}),
+                      });
+                    }}
+                    className={inputClass + " flex-1 min-w-0 font-mono"}
+                  />
+                  <GeneratePasswordButton
+                    onGenerate={(p) => {
+                      if (adminPassword) setAdminPrev(adminPassword);
+                      setAdminPassword(p);
+                      void saveOne({
+                        admin_password: p,
+                        ...(adminPassword ? { admin_password_prev: adminPassword } : {}),
+                      });
+                    }}
+                  />
+                </div>
+                {adminPrev && <PreviousPasswordReveal value={adminPrev} />}
               </div>
             </div>
           )}
@@ -1189,14 +1360,38 @@ function SiteAssetEditForm({
                 onChange={(e) => setStaffUser(e.target.value)}
                 className={inputClass}
               />
-              <div className="flex gap-1.5">
-                <input
-                  placeholder="Staff password"
-                  value={staffPassword}
-                  onChange={(e) => setStaffPassword(e.target.value)}
-                  className={inputClass + " flex-1 min-w-0 font-mono"}
-                />
-                <GeneratePasswordButton onGenerate={setStaffPassword} />
+              <div className="space-y-1">
+                <div className="flex gap-1.5">
+                  <input
+                    placeholder="Staff password"
+                    value={staffPassword}
+                    onFocus={() => {
+                      staffPwdAtFocus.current = staffPassword;
+                    }}
+                    onChange={(e) => setStaffPassword(e.target.value)}
+                    onBlur={() => {
+                      const before = staffPwdAtFocus.current;
+                      if (staffPassword === before) return;
+                      if (before) setStaffPrev(before);
+                      void saveOne({
+                        staff_password: staffPassword.trim() || null,
+                        ...(before ? { staff_password_prev: before } : {}),
+                      });
+                    }}
+                    className={inputClass + " flex-1 min-w-0 font-mono"}
+                  />
+                  <GeneratePasswordButton
+                    onGenerate={(p) => {
+                      if (staffPassword) setStaffPrev(staffPassword);
+                      setStaffPassword(p);
+                      void saveOne({
+                        staff_password: p,
+                        ...(staffPassword ? { staff_password_prev: staffPassword } : {}),
+                      });
+                    }}
+                  />
+                </div>
+                {staffPrev && <PreviousPasswordReveal value={staffPrev} />}
               </div>
             </div>
           )}
@@ -1305,6 +1500,18 @@ function SiteAssetEditForm({
         >
           Cancel
         </button>
+        <span
+          className={`text-[11px] ${autoSave === "error" ? "text-destructive" : "text-muted-foreground"}`}
+          aria-live="polite"
+        >
+          {autoSave === "saving"
+            ? "Saving…"
+            : autoSave === "saved"
+              ? "Auto-saved ✓"
+              : autoSave === "error"
+                ? "Auto-save failed — press Update"
+                : ""}
+        </span>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {/* Archive (soft) — always available */}

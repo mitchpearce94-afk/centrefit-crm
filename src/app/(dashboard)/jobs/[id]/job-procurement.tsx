@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 
@@ -574,6 +574,19 @@ export function JobProcurement({
 
   const rowsToShow = tab === "to_order" ? toOrderItems : tab === "awaiting" ? awaitingItems : receivedItems;
 
+  // Group the visible rows by category so the list mirrors the warehouse pick
+  // list (e.g. "Access Control", "AV System") instead of one flat list. Within
+  // a category the existing status→name order is preserved.
+  const displayRows = [...rowsToShow].sort((a, b) => {
+    const ca = a.product?.category || "Uncategorised";
+    const cb = b.product?.category || "Uncategorised";
+    return (
+      ca.localeCompare(cb) ||
+      STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
+      a.product_name.localeCompare(b.product_name)
+    );
+  });
+
   return (
     <>
     {addPartsModal}
@@ -661,7 +674,10 @@ export function JobProcurement({
             </tr>
           </thead>
           <tbody>
-            {rowsToShow.map((item) => {
+            {(() => {
+              let prevCat: string | null = null;
+              const headerSpan = tab !== "complete" ? 6 : 5;
+              return displayRows.map((item) => {
               // Only pending/order lines are still being triaged (editable qty,
               // supplier, In Stock/Order/Online buttons, notes). Everything else
               // (in_stock, ordered, ordered_online, received) is "actioned" —
@@ -671,8 +687,22 @@ export function JobProcurement({
               const rowBusy = busy === item.id;
               const noCost =
                 item.status === "order" && Number(item.line?.cost_price ?? 0) <= 0;
+              const cat = item.product?.category || "Uncategorised";
+              const showCatHeader = cat !== prevCat;
+              prevCat = cat;
               return (
-                <tr key={item.id} className="border-b border-border last:border-0 align-top">
+                <Fragment key={item.id}>
+                {showCatHeader && (
+                  <tr className="bg-muted/20">
+                    <td
+                      colSpan={headerSpan}
+                      className="px-2 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+                    >
+                      {cat}
+                    </td>
+                  </tr>
+                )}
+                <tr className="border-b border-border last:border-0 align-top">
                   <td className="px-2 py-2">
                     <div className="font-medium text-foreground">{item.product_name}</div>
                     {item.sku && <div className="font-mono text-[10px] text-muted-foreground">{item.sku}</div>}
@@ -858,8 +888,10 @@ export function JobProcurement({
                     </div>
                   </td>
                 </tr>
+                </Fragment>
               );
-            })}
+              });
+            })()}
           </tbody>
         </table>
       </div>

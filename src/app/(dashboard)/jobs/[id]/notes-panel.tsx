@@ -267,6 +267,7 @@ export function NotesPanel({
       {/* Expanded note detail */}
       {expandedNote && (
         <NoteDetail
+          jobId={jobId}
           note={filtered.find((n) => n.id === expandedNote)}
           onClose={() => setExpandedNote(null)}
           onMutated={() => {
@@ -288,11 +289,13 @@ export function NotesPanel({
 
 /* ── Note Detail (expanded view) ── */
 function NoteDetail({
+  jobId,
   note,
   onClose,
   onMutated,
   onDeleted,
 }: {
+  jobId: string;
   note: any;
   onClose: () => void;
   onMutated: () => void;
@@ -309,6 +312,8 @@ function NoteDetail({
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [confirmingAtt, setConfirmingAtt] = useState<number | null>(null);
+  const [addProgress, setAddProgress] = useState<{ done: number; total: number } | null>(null);
+  const addFileRef = useRef<HTMLInputElement>(null);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -346,10 +351,65 @@ function NoteDetail({
       return;
     }
     if (!data || data.length === 0) {
-      toast("Couldn't save — you can only edit your own notes (admins can edit any).", "error");
+      toast("Couldn't save — please refresh and try again.", "error");
       return;
     }
     setEditing(false);
+    onMutated();
+  }
+
+  // Append photos/files to an existing note. Any staff member can add to any
+  // note (collaborative job notes) — e.g. a second tech dropping their photos
+  // onto the note the first tech created, instead of starting a fresh one.
+  async function handleAddPhotos(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (e.target) e.target.value = ""; // allow re-picking the same file
+    if (files.length === 0) return;
+
+    let done = 0;
+    setAddProgress({ done: 0, total: files.length });
+    const uploaded = await mapWithConcurrency<File, Attachment | null>(files, 4, async (file) => {
+      const prepped = await compressImage(file);
+      const ext = prepped.name.split(".").pop();
+      const path = `${jobId}/notes/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { data, error } = await supabase.storage
+        .from("job-attachments")
+        .upload(path, prepped);
+      done++;
+      setAddProgress({ done, total: files.length });
+      if (error || !data) return null;
+      const { data: urlData } = supabase.storage
+        .from("job-attachments")
+        .getPublicUrl(data.path);
+      return { url: urlData.publicUrl, name: file.name, type: prepped.type, size: prepped.size };
+    });
+    setAddProgress(null);
+
+    const fresh = uploaded.filter((a): a is Attachment => a !== null);
+    if (fresh.length === 0) {
+      toast("Upload failed — please try again.", "error");
+      return;
+    }
+
+    const merged = [...attachments, ...fresh];
+    // .select() so an RLS-filtered update surfaces as a real error.
+    const { data: rows, error } = await supabase
+      .from("job_notes")
+      .update({
+        attachments: merged,
+        image_url: note.image_url ?? merged.find((a) => a.type?.startsWith("image"))?.url ?? null,
+      })
+      .eq("id", note.id)
+      .select("id");
+    if (error) {
+      toast(error.message, "error");
+      return;
+    }
+    if (!rows || rows.length === 0) {
+      toast("Couldn't add photos — please refresh and try again.", "error");
+      return;
+    }
+    toast(`Added ${fresh.length} ${fresh.length === 1 ? "file" : "files"}`, "success");
     onMutated();
   }
 
@@ -599,6 +659,28 @@ function NoteDetail({
           </div>
         </div>
       )}
+
+      {/* Add photos/files to this note — any staff, so a second tech can drop
+          their photos onto an existing note instead of starting a new one. */}
+      <div className="border-t border-border px-4 py-3">
+        <input
+          ref={addFileRef}
+          type="file"
+          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+          multiple
+          onChange={handleAddPhotos}
+          className="hidden"
+        />
+        <button
+          type="button"
+          onClick={() => addFileRef.current?.click()}
+          disabled={addProgress !== null}
+          className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground transition-colors disabled:opacity-50"
+        >
+          <AttachIcon className="h-3.5 w-3.5" />
+          {addProgress ? `Uploading ${addProgress.done}/${addProgress.total}…` : "Add photos / files"}
+        </button>
+      </div>
     </div>
   );
 }

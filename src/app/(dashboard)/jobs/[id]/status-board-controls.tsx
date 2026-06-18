@@ -11,6 +11,14 @@ interface StaffOption {
   colour: string;
 }
 
+interface Contact {
+  name: string | null;
+  role: string | null;
+  phone: string | null;
+  mobile: string | null;
+  email: string | null;
+}
+
 interface Props {
   jobId: string;
   allStaff: StaffOption[];
@@ -21,6 +29,7 @@ interface Props {
   fitOffDate: string | null;
   fitOffEndDate: string | null;
   fitOffStaffIds: string[];
+  contact?: Contact | null;
 }
 
 /**
@@ -41,6 +50,7 @@ export function StatusBoardControls({
   fitOffDate: initFoStart,
   fitOffEndDate: initFoEnd,
   fitOffStaffIds: initFoStaff,
+  contact,
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -115,41 +125,107 @@ export function StatusBoardControls({
       </button>
 
       {isNewBuild && (
-        <div className="mt-3 grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-2 max-w-3xl">
-          <PhaseEditor
-            label="Rough In"
-            accent="#a855f7"
-            start={riStart}
-            end={riEnd}
-            staffIds={riStaff}
-            allStaff={allStaff}
-            busy={busy}
-            onStartChange={setRiStart}
-            onStartCommit={(v) => sync({ riStart: v })}
-            onEndChange={setRiEnd}
-            onEndCommit={(v) => sync({ riEnd: v })}
-            onStaff={(v) => { setRiStaff(v); sync({ riStaff: v }); }}
-          />
-          <PhaseEditor
-            label="Fit Off"
-            accent="#8b5cf6"
-            start={foStart}
-            end={foEnd}
-            staffIds={foStaff}
-            allStaff={allStaff}
-            busy={busy}
-            onStartChange={setFoStart}
-            onStartCommit={(v) => sync({ foStart: v })}
-            onEndChange={setFoEnd}
-            onEndCommit={(v) => sync({ foEnd: v })}
-            onStaff={(v) => { setFoStaff(v); sync({ foStaff: v }); }}
-          />
-          <p className="sm:col-span-2 text-[11px] text-muted-foreground">
-            Assigned crew are auto-booked on the scheduler (all-day) across the date range. Changing dates or crew re-syncs the bookings.
-          </p>
+        <div className="mt-3 grid max-w-4xl gap-3 rounded-lg border border-border bg-card p-4 lg:grid-cols-[1fr_auto]">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <PhaseEditor
+              label="Rough In"
+              accent="#a855f7"
+              start={riStart}
+              end={riEnd}
+              staffIds={riStaff}
+              allStaff={allStaff}
+              busy={busy}
+              onStartChange={setRiStart}
+              onStartCommit={(v) => sync({ riStart: v })}
+              onEndChange={setRiEnd}
+              onEndCommit={(v) => sync({ riEnd: v })}
+              onStaff={(v) => { setRiStaff(v); sync({ riStaff: v }); }}
+            />
+            <PhaseEditor
+              label="Fit Off"
+              accent="#8b5cf6"
+              start={foStart}
+              end={foEnd}
+              staffIds={foStaff}
+              allStaff={allStaff}
+              busy={busy}
+              onStartChange={setFoStart}
+              onStartCommit={(v) => sync({ foStart: v })}
+              onEndChange={setFoEnd}
+              onEndCommit={(v) => sync({ foEnd: v })}
+              onStaff={(v) => { setFoStaff(v); sync({ foStaff: v }); }}
+            />
+            <p className="sm:col-span-2 text-[11px] text-muted-foreground">
+              Assigned crew are auto-booked on the scheduler (all-day) across the date range. Changing dates or crew re-syncs the bookings.
+            </p>
+          </div>
+          {contact && (contact.name || contact.phone || contact.mobile || contact.email) && (
+            <ContactCard contact={contact} />
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+// Site/job contact shown beside the Rough In / Fit Off boxes so the crew can
+// call the site without digging into the customer record.
+function ContactCard({ contact }: { contact: Contact }) {
+  const primaryPhone = contact.mobile || contact.phone;
+  const secondaryPhone =
+    contact.phone && contact.mobile && contact.phone !== contact.mobile ? contact.phone : null;
+  return (
+    <div className="rounded-md border border-border/60 bg-background/40 p-3 lg:w-56">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-emerald-400" />
+        <span className="text-xs font-semibold">Site contact</span>
+      </div>
+      {contact.name && <div className="text-sm font-medium text-foreground">{contact.name}</div>}
+      {contact.role && <div className="text-[11px] text-muted-foreground">{contact.role}</div>}
+      <div className="mt-2 space-y-1.5 text-xs">
+        {primaryPhone && (
+          <a
+            href={`tel:${primaryPhone.replace(/\s+/g, "")}`}
+            className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <PhoneIcon /> <span>{primaryPhone}</span>
+          </a>
+        )}
+        {secondaryPhone && (
+          <a
+            href={`tel:${secondaryPhone.replace(/\s+/g, "")}`}
+            className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <PhoneIcon /> <span>{secondaryPhone}</span>
+          </a>
+        )}
+        {contact.email && (
+          <a
+            href={`mailto:${contact.email}`}
+            className="flex items-center gap-1.5 break-all text-muted-foreground hover:text-foreground"
+          >
+            <MailIcon /> <span>{contact.email}</span>
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PhoneIcon() {
+  return (
+    <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+    </svg>
+  );
+}
+
+function MailIcon() {
+  return (
+    <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="m22 7-10 5L2 7" />
+    </svg>
   );
 }
 
