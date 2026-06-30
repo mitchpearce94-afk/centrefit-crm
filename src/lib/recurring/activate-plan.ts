@@ -227,6 +227,18 @@ async function activatePlanInner(
     ? plan.first_invoice_date
     : todayStr;
 
+  // Per-cadence first-invoice date. Monthly uses first_invoice_date (floored
+  // to today as `startDate`). Yearly bills on its own yearly_first_invoice_date
+  // when set and not in the past (e.g. a MyAlarm yearly sub migrated mid-cycle),
+  // else falls back to the monthly start. This MUST drive both the Xero
+  // RepeatingInvoice and the GC subscription. Before 2026-06-30 only the GC sub
+  // honoured the yearly date, so the Xero yearly invoice fired on the monthly
+  // date — Estella's yearly was set to 9/2/27 but Xero created it for 19/7/26.
+  const cadenceStartDate = (frequency: PlanFrequency): string =>
+    frequency === "yearly" && plan.yearly_first_invoice_date && plan.yearly_first_invoice_date >= todayStr
+      ? plan.yearly_first_invoice_date
+      : startDate;
+
   // ── Xero RepeatingInvoice(s) ──
   // Reuse if already created (e.g. backfilling a subscription onto a plan
   // that was activated before subscriptions existed), otherwise create one
@@ -251,7 +263,7 @@ async function activatePlanInner(
       xeroContactId,
       reference: `Plan ${plan.id.slice(0, 8)}`,
       frequency,
-      startDate,
+      startDate: cadenceStartDate(frequency),
       dueDays: 7,
       // Mitchell's 2026-05-27 call: new plans go live AUTHORISED + auto-send
       // so the customer gets their first invoice automatically on the
@@ -336,11 +348,7 @@ async function activatePlanInner(
     // Yearly cadence can bill on its own date (e.g. a MyAlarm yearly sub
     // migrated in mid-cycle); monthly uses the plan start date. Either way the
     // start can't precede the mandate's next possible charge date.
-    const subStart = floorToCharge(
-      frequency === "yearly" && plan.yearly_first_invoice_date && plan.yearly_first_invoice_date >= todayStr
-        ? plan.yearly_first_invoice_date
-        : startDate,
-    );
+    const subStart = floorToCharge(cadenceStartDate(frequency));
 
     const sub = await createSubscription(
       {

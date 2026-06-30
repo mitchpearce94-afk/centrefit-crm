@@ -295,6 +295,42 @@ export async function cancelRepeatingInvoice(
 }
 
 /**
+ * Reschedule an existing RepeatingInvoice template's first/next run date.
+ * Used to reconcile a yearly RI whose StartDate was wrongly set to the
+ * monthly date (the pre-2026-06-30 activate-plan bug, where the Xero loop
+ * passed the monthly startDate for every cadence). Rescheduling a template
+ * that hasn't generated its next child yet is NOT customer-facing — it only
+ * moves WHEN Xero next generates (and auto-sends) a child; it does not email
+ * or charge anyone now.
+ *
+ * Reads the current schedule and resends it WHOLE (period/unit/dueDate
+ * preserved), overriding only StartDate + NextScheduledDate — a partial
+ * schedule update can blank the fields you omit. Returns the post-update
+ * state so the caller can confirm Xero accepted the new date.
+ */
+export async function updateRepeatingInvoiceSchedule(
+  xero: XeroClient,
+  tenantId: string,
+  repeatingInvoiceId: string,
+  startDate: string,
+): Promise<RepeatingInvoiceState> {
+  const current = await getRepeatingInvoice(xero, tenantId, repeatingInvoiceId);
+  const schedule: Record<string, unknown> = {
+    period: current.schedulePeriod ?? 1,
+    unit: current.scheduleUnit ?? "MONTHLY",
+    startDate,
+    nextScheduledDate: startDate,
+  };
+  if (current.dueDays != null) schedule.dueDate = current.dueDays;
+  if (current.dueDateType) schedule.dueDateType = current.dueDateType;
+  if (current.endDate) schedule.endDate = current.endDate;
+  await xero.accountingApi.updateRepeatingInvoice(tenantId, repeatingInvoiceId, {
+    repeatingInvoices: [{ schedule } as never],
+  });
+  return getRepeatingInvoice(xero, tenantId, repeatingInvoiceId);
+}
+
+/**
  * Update an existing RepeatingInvoice template's line items in place. The
  * schedule (period, unit, nextScheduledDate, dueDays) is preserved by Xero
  * — sending only `lineItems` is a partial update, not a full replace. Used

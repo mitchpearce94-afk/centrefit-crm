@@ -13,9 +13,17 @@ import { enqueueNotification } from "@/lib/notifications/enqueue";
  * as well"), which is the explicit confirmation the manual send-reminder
  * route's no-bulk-sends rule requires.
  *
- * Two reminder kinds, audited separately in invoice_reminders.trigger:
- *   - auto_due_soon: once, when the due date is 1-3 days away.
- *   - auto_overdue:  from 3 days past due, then every 7 days, max 3 sends.
+ * Four fixed milestones relative to the due date, each sent once and audited
+ * separately in invoice_reminders.trigger (Mitchell's 2026-06-30 cadence):
+ *   - auto_due_3:     3 days before due
+ *   - auto_due:       on the due day
+ *   - auto_overdue_3: 3 days after due
+ *   - auto_overdue_7: 7 days after due
+ * The cron only runs weekday mornings, so each run sends the LATEST milestone
+ * an invoice has reached but not yet been sent — a milestone whose exact day
+ * landed on a weekend/holiday is caught up on the next run, never skipped.
+ * After the +7 milestone there are no further auto reminders (manual chase
+ * only), so the old "every 7 days, max 3" repeat is retired.
  *
  * Hard safety rails (the 2026-05-11 incident class):
  *   - Only invoices we actually emailed to the customer (sent_at set), and
@@ -28,14 +36,36 @@ import { enqueueNotification } from "@/lib/notifications/enqueue";
  * Auth: X-Cf-Cron-Secret must match CRON_SECRET (same as quote-followups).
  */
 
-const DUE_SOON_DAYS = 3;
-const OVERDUE_GRACE_DAYS = 3;
-const OVERDUE_REPEAT_DAYS = 7;
-const MAX_AUTO_OVERDUE = 3;
-const SENT_COOLOFF_DAYS = 2;
+// Fixed milestones (calendar days relative to the due date), newest-reached
+// first. Each fires at most once, tracked by its distinct trigger value.
+const MILESTONES = [
+  { offset: 7, trigger: "auto_overdue_7" },
+  { offset: 3, trigger: "auto_overdue_3" },
+  { offset: 0, trigger: "auto_due" },
+  { offset: -3, trigger: "auto_due_3" },
+] as const;
+type ReminderTrigger = (typeof MILESTONES)[number]["trigger"];
+
+const EARLIEST_OFFSET = -3;     // first milestone: 3 days before due
+const MIN_GAP_DAYS = 2;         // never stack a reminder within 2 days of any prior one (incl. manual)
+const SENT_COOLOFF_DAYS = 2;    // never remind within 2 days of sending the invoice
 const BATCH_CAP = 15;
 
 const DAY_MS = 86_400_000;
+// Brisbane is UTC+10 year-round (no DST). The cron fires at 23:00 UTC = 09:00
+// AEST, so the UTC calendar date lags Brisbane by a day at run time — compute
+// the civil "today" in Brisbane so the milestone day-maths lands on the right
+// day (notably the due-day reminder).
+const BRISBANE_OFFSET_MS = 10 * 60 * 60 * 1000;
+
+function reminderLabel(kind: ReminderTrigger): string {
+  switch (kind) {
+    case "auto_due_3": return "Due-soon reminder";
+    case "auto_due": return "Due-today reminder";
+    case "auto_overdue_3": return "Overdue reminder";
+    case "auto_overdue_7": return "Final overdue reminder";
+  }
+}
 
 interface CandidateInvoice {
   id: string;
@@ -76,9 +106,11 @@ export async function GET(req: NextRequest) {
 
   const svc = createServiceRoleClient();
   const now = Date.now();
-  const today = new Date(now).toISOString().slice(0, 10);
-  const dueSoonHorizon = new Date(now + DUE_SOON_DAYS * DAY_MS).toISOString().slice(0, 10);
-  const overdueCutoff = new Date(now - OVERDUE_GRACE_DAYS * DAY_MS).toISOString().slice(0, 10);
+  const today = new Date(now + BRISBANE_OFFSET_MS).toISOString().slice(0, 10);
+  const todayMs = Date.parse(`${today}T00:00:00Z`);
+  // Widest net: anything due on/after the earliest milestone (due − 3) through
+  // everything already overdue. (today − EARLIEST_OFFSET = today + 3.)
+  const dueHorizon = new Date(todayMs - EARLIEST_OFFSET * DAY_MS).toISOString().slice(0, 10);
   const sentCooloff = new Date(now - SENT_COOLOFF_DAYS * DAY_MS).toISOString();
 
   const { data: candidates, error } = await svc
@@ -98,7 +130,7 @@ export async function GET(req: NextRequest) {
     .not("due_date", "is", null)
     .not("xero_invoice_id", "is", null)
     .lte("sent_at", sentCooloff)
-    .lte("due_date", dueSoonHorizon)
+    .lte("due_date", dueHorizon)
     .order("due_date", { ascending: true })
     .limit(200);
 
@@ -106,46 +138,44 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Per-invoice auto-send history so the caps survive restarts and manual
-  // sends don't get double-counted.
+  // Which milestones each invoice has already been sent, so each fires once.
+  // Keyed `${invoice_id}:${trigger}`; errored sends are excluded so a failed
+  // attempt is retried next run.
   const ids = (candidates ?? []).map((c) => c.id);
   const { data: history } = ids.length
     ? await svc
         .from("invoice_reminders")
-        .select("invoice_id, trigger, sent_at, error")
+        .select("invoice_id, trigger, error")
         .in("invoice_id", ids)
         .is("error", null)
-    : { data: [] as { invoice_id: string; trigger: string; sent_at: string | null }[] };
-  const dueSoonSent = new Set((history ?? []).filter((h) => h.trigger === "auto_due_soon").map((h) => h.invoice_id));
-  const overdueCount = new Map<string, number>();
-  for (const h of history ?? []) {
-    if (h.trigger === "auto_overdue") {
-      overdueCount.set(h.invoice_id, (overdueCount.get(h.invoice_id) ?? 0) + 1);
-    }
-  }
+    : { data: [] as { invoice_id: string; trigger: string }[] };
+  const sentMilestones = new Set(
+    (history ?? []).map((h) => `${h.invoice_id}:${h.trigger}`),
+  );
 
-  type Planned = { invoice: CandidateInvoice; kind: "auto_due_soon" | "auto_overdue" };
+  type Planned = { invoice: CandidateInvoice; kind: ReminderTrigger; daysOverdue: number };
   const planned: Planned[] = [];
   for (const raw of (candidates ?? []) as CandidateInvoice[]) {
-    const due = raw.due_date!;
-    if (due > today) {
-      // Due in the next 1-3 days — one nudge, ever.
-      if (!dueSoonSent.has(raw.id)) planned.push({ invoice: raw, kind: "auto_due_soon" });
-    } else if (due <= overdueCutoff) {
-      const sends = overdueCount.get(raw.id) ?? 0;
-      if (sends >= MAX_AUTO_OVERDUE) continue;
-      // Respect spacing against ANY reminder (manual included) so a chase
-      // Mitchell sent by hand yesterday isn't followed by ours today.
-      const last = raw.last_reminder_sent_at ? new Date(raw.last_reminder_sent_at).getTime() : null;
-      if (last !== null && now - last < OVERDUE_REPEAT_DAYS * DAY_MS) continue;
-      planned.push({ invoice: raw, kind: "auto_overdue" });
-    }
+    const dueMs = Date.parse(`${raw.due_date}T00:00:00Z`);
+    const dRel = Math.round((todayMs - dueMs) / DAY_MS); // +ve = days past due
+
+    // Latest milestone this invoice has reached (MILESTONES is newest-first).
+    const milestone = MILESTONES.find((m) => dRel >= m.offset);
+    if (!milestone) continue; // earlier than 3 days before due — nothing yet
+    if (sentMilestones.has(`${raw.id}:${milestone.trigger}`)) continue; // already sent
+
+    // Never stack on a recent reminder — a manual chase, or a milestone we
+    // just caught up — so two reminders can't land within MIN_GAP_DAYS.
+    const last = raw.last_reminder_sent_at ? new Date(raw.last_reminder_sent_at).getTime() : null;
+    if (last !== null && now - last < MIN_GAP_DAYS * DAY_MS) continue;
+
+    planned.push({ invoice: raw, kind: milestone.trigger, daysOverdue: Math.max(0, dRel) });
     if (planned.length >= BATCH_CAP) break;
   }
 
   const results: Array<{ id: string; ref: string; kind: string; ok: boolean; skipped?: string; error?: string }> = [];
 
-  for (const { invoice, kind } of planned) {
+  for (const { invoice, kind, daysOverdue } of planned) {
     const ref = invoice.xero_invoice_number ?? invoice.id.slice(0, 8);
 
     // Recipient: where we sent the invoice → site billing email → primary
@@ -211,7 +241,6 @@ export async function GET(req: NextRequest) {
       contacts.find((c) => c.is_primary) ??
       contacts[0] ??
       null;
-    const daysOverdue = Math.max(0, Math.floor((now - new Date(invoice.due_date!).getTime()) / DAY_MS));
     const reminderNumber = (invoice.reminder_count ?? 0) + 1;
 
     const sendResult = await sendInvoiceReminderEmail({
@@ -261,7 +290,7 @@ export async function GET(req: NextRequest) {
       refType: "invoice",
       refId: invoice.id,
       audience: { allActive: true },
-      title: `${kind === "auto_due_soon" ? "Due-soon nudge" : "Overdue reminder"} sent — ${ref}`,
+      title: `${reminderLabel(kind)} sent — ${ref}`,
       body: `${customer?.name ?? ""} · $${latest.amountDue.toFixed(2)} due${daysOverdue > 0 ? ` (${daysOverdue}d overdue)` : ""}`,
       href: `/invoices/${invoice.id}`,
     });

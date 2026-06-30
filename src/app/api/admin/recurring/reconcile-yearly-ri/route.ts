@@ -1,0 +1,160 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/service";
+import { getAuthedClient } from "@/lib/xero/client";
+import {
+  getRepeatingInvoice,
+  updateRepeatingInvoiceSchedule,
+} from "@/lib/xero/repeating-invoices";
+
+/**
+ * Reconcile yearly RepeatingInvoice StartDates against the plan's
+ * `yearly_first_invoice_date`.
+ *
+ * Before 2026-06-30, activate-plan passed the MONTHLY start date to every
+ * cadence's Xero RI, so any plan with a yearly cadence got its yearly invoice
+ * scheduled on the monthly date (Estella: set 9/2/27, Xero used 19/7/26). The
+ * GC subscription was always correct, so only the Xero side drifted.
+ *
+ * For each active plan with a yearly date set, this finds the yearly RI (the
+ * one Xero holds as MONTHLY × 12) among the plan's cached RI IDs and, if its
+ * StartDate disagrees with the plan's yearly date, reschedules it.
+ *
+ * Dry-run by default. Pass `?apply=1` to actually patch. Optional `?planId=`
+ * scopes to a single plan. Rescheduling a not-yet-fired RI is NOT
+ * customer-facing (no email/charge now) — it only moves the next run date.
+ */
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+interface PlanRow {
+  id: string;
+  yearly_first_invoice_date: string | null;
+  xero_repeating_invoice_id: string | null;
+  xero_repeating_invoice_secondary_id: string | null;
+}
+
+export async function GET(req: Request) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+
+  const url = new URL(req.url);
+  const apply = url.searchParams.get("apply") === "1";
+  const planId = url.searchParams.get("planId");
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const svc = createServiceRoleClient();
+  let q = svc
+    .from("recurring_plans")
+    .select(
+      "id, yearly_first_invoice_date, xero_repeating_invoice_id, xero_repeating_invoice_secondary_id",
+    )
+    .eq("status", "active")
+    .not("yearly_first_invoice_date", "is", null);
+  if (planId) q = q.eq("id", planId);
+  const { data: plans } = await q;
+
+  const { client: xero, conn } = await getAuthedClient(svc);
+  const results: unknown[] = [];
+  let patched = 0;
+  let first = true;
+
+  for (const plan of (plans ?? []) as PlanRow[]) {
+    const wanted = plan.yearly_first_invoice_date!;
+    const riIds = [
+      plan.xero_repeating_invoice_id,
+      plan.xero_repeating_invoice_secondary_id,
+    ].filter((x): x is string => !!x);
+
+    // Identify the yearly RI by its schedule signature (MONTHLY × 12) rather
+    // than assuming primary/secondary — a yearly-only plan keeps its yearly RI
+    // as the primary.
+    let yearlyRiId: string | null = null;
+    let currentStart: string | null = null;
+    for (const riId of riIds) {
+      try {
+        if (!first) await sleep(500);
+        first = false;
+        const state = await getRepeatingInvoice(xero, conn.tenant_id, riId);
+        if (state.schedulePeriod === 12) {
+          yearlyRiId = riId;
+          currentStart = state.startDate;
+          break;
+        }
+      } catch (err) {
+        results.push({
+          planId: plan.id,
+          riId,
+          action: "fetch_failed",
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    if (!yearlyRiId) {
+      results.push({ planId: plan.id, action: "no_yearly_ri_found" });
+      continue;
+    }
+    if (currentStart === wanted) {
+      results.push({ planId: plan.id, riId: yearlyRiId, action: "ok", date: wanted });
+      continue;
+    }
+    if (wanted < todayStr) {
+      // Can't push a past date into Xero — flag for manual handling.
+      results.push({
+        planId: plan.id,
+        riId: yearlyRiId,
+        action: "skipped_past_date",
+        currentStart,
+        wanted,
+      });
+      continue;
+    }
+
+    if (!apply) {
+      results.push({
+        planId: plan.id,
+        riId: yearlyRiId,
+        action: "would_fix",
+        currentStart,
+        wanted,
+      });
+      continue;
+    }
+
+    try {
+      await sleep(500);
+      const after = await updateRepeatingInvoiceSchedule(
+        xero,
+        conn.tenant_id,
+        yearlyRiId,
+        wanted,
+      );
+      patched++;
+      results.push({
+        planId: plan.id,
+        riId: yearlyRiId,
+        action: "fixed",
+        from: currentStart,
+        to: after.startDate,
+      });
+    } catch (err) {
+      results.push({
+        planId: plan.id,
+        riId: yearlyRiId,
+        action: "patch_failed",
+        currentStart,
+        wanted,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return NextResponse.json({
+    mode: apply ? "apply" : "dry-run",
+    scanned: plans?.length ?? 0,
+    patched,
+    results,
+  });
+}

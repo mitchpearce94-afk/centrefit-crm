@@ -14,6 +14,7 @@ import { JobInvoices } from "./job-invoices";
 import { ImportBomToAssetsButton } from "./import-bom-to-assets-button";
 import { JobProcurement } from "./job-procurement";
 import { ScopeEditor } from "./scope-editor";
+import { UpdatesEditor } from "./updates-editor";
 
 interface StaffOption {
   id: string;
@@ -323,6 +324,9 @@ function JobOverview({
         description={job.description ?? null}
         reference={job.reference ?? null}
       />
+
+      {/* ── Updates (internal-only, not on invoices) ── */}
+      <UpdatesEditor jobId={jobId} updates={job.updates ?? null} />
 
       {/* ── Checklist (scrollable) ── */}
       <JobChecklist
