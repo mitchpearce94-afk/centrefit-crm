@@ -82,7 +82,7 @@ export default async function JobDetailPage({
         .maybeSingle(),
       supabase
         .from("job_procurement_items")
-        .select("*, received_by_staff:staff!job_procurement_items_received_by_fkey(display_name), product:quote_products(category), line:quote_line_items(cost_price)")
+        .select("*, received_by_staff:staff!job_procurement_items_received_by_fkey(display_name), product:quote_products(category, cost_price), line:quote_line_items(cost_price)")
         .eq("job_id", id)
         .order("created_at", { ascending: true })
         .order("id", { ascending: true }),

@@ -19,8 +19,20 @@ export interface ProcurementItem {
   received_at: string | null;
   received_by: string | null;
   received_by_staff?: { display_name: string } | null;
-  product?: { category: string | null } | null;
+  product?: { category: string | null; cost_price?: number | null } | null;
   line?: { cost_price: number | null } | null;
+}
+
+/**
+ * Effective cost for a procurement line: the LIVE catalogue price
+ * (quote_products.cost_price) wins when set, falling back to the quote-time
+ * snapshot (quote_line_items.cost_price). Mirrors resolveCost in the PO
+ * generate route so the screen's "no cost price" warning matches the price
+ * the PO will actually use — and reflects later product-price edits.
+ */
+function effectiveCost(i: ProcurementItem): number {
+  const live = Number(i.product?.cost_price ?? 0);
+  return live > 0 ? live : Number(i.line?.cost_price ?? 0);
 }
 
 interface Supplier {
@@ -91,7 +103,7 @@ export function JobProcurement({
     [items],
   );
   const zeroPricedOrderCount = useMemo(
-    () => items.filter((i) => i.status === "order" && Number(i.line?.cost_price ?? 0) <= 0).length,
+    () => items.filter((i) => i.status === "order" && effectiveCost(i) <= 0).length,
     [items],
   );
   const supplierOrderCount = useMemo(
@@ -686,7 +698,7 @@ export function JobProcurement({
               const isLocked = !editable;
               const rowBusy = busy === item.id;
               const noCost =
-                item.status === "order" && Number(item.line?.cost_price ?? 0) <= 0;
+                item.status === "order" && effectiveCost(item) <= 0;
               const cat = item.product?.category || "Uncategorised";
               const showCatHeader = cat !== prevCat;
               prevCat = cat;
