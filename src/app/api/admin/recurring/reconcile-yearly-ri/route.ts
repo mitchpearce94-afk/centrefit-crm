@@ -45,6 +45,14 @@ function nameOf(v: { name: string | null } | { name: string | null }[] | null): 
   return r?.name ?? null;
 }
 
+// getRepeatingInvoice hands schedule dates back as Date objects (the Xero SDK)
+// or ISO strings depending on the field — normalise either to YYYY-MM-DD.
+function toDateStr(v: unknown): string | null {
+  if (v == null) return null;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v).slice(0, 10);
+}
+
 export async function GET(req: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -120,9 +128,9 @@ export async function GET(req: Request) {
       continue;
     }
 
-    // Xero returns these as full ISO timestamps; compare on the date part only.
-    const sd = currentStart ? currentStart.slice(0, 10) : null;
-    const nd = currentNext ? currentNext.slice(0, 10) : null;
+    // Normalise to YYYY-MM-DD (these arrive as Date objects from the SDK).
+    const sd = toDateStr(currentStart);
+    const nd = toDateStr(currentNext);
     // If next-scheduled has advanced past the start, Xero has already ISSUED
     // the first yearly off this RI — so its next run (start + 1yr) is now the
     // correct anniversary going forward. Rescheduling such an RI to the
@@ -158,7 +166,7 @@ export async function GET(req: Request) {
         wanted,
       );
       patched++;
-      results.push({ ...base, action: "fixed", from: currentStart, to: after.startDate });
+      results.push({ ...base, action: "fixed", from: sd, to: toDateStr(after.startDate) });
     } catch (err) {
       results.push({
         ...base,
