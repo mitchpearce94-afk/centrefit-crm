@@ -32,6 +32,13 @@ interface PlanRow {
   yearly_first_invoice_date: string | null;
   xero_repeating_invoice_id: string | null;
   xero_repeating_invoice_secondary_id: string | null;
+  customers: { name: string | null } | { name: string | null }[] | null;
+  customer_sites: { name: string | null } | { name: string | null }[] | null;
+}
+
+function nameOf(v: { name: string | null } | { name: string | null }[] | null): string | null {
+  const r = Array.isArray(v) ? v[0] : v;
+  return r?.name ?? null;
 }
 
 export async function GET(req: Request) {
@@ -48,7 +55,7 @@ export async function GET(req: Request) {
   let q = svc
     .from("recurring_plans")
     .select(
-      "id, yearly_first_invoice_date, xero_repeating_invoice_id, xero_repeating_invoice_secondary_id",
+      "id, yearly_first_invoice_date, xero_repeating_invoice_id, xero_repeating_invoice_secondary_id, customers(name), customer_sites(name)",
     )
     .eq("status", "active")
     .not("yearly_first_invoice_date", "is", null);
@@ -62,6 +69,7 @@ export async function GET(req: Request) {
 
   for (const plan of (plans ?? []) as PlanRow[]) {
     const wanted = plan.yearly_first_invoice_date!;
+    const label = nameOf(plan.customer_sites) ?? nameOf(plan.customers) ?? plan.id.slice(0, 8);
     const riIds = [
       plan.xero_repeating_invoice_id,
       plan.xero_repeating_invoice_secondary_id,
@@ -72,6 +80,8 @@ export async function GET(req: Request) {
     // as the primary.
     let yearlyRiId: string | null = null;
     let currentStart: string | null = null;
+    let currentNext: string | null = null;
+    let total: number | null = null;
     for (const riId of riIds) {
       try {
         if (!first) await sleep(500);
@@ -80,6 +90,8 @@ export async function GET(req: Request) {
         if (state.schedulePeriod === 12) {
           yearlyRiId = riId;
           currentStart = state.startDate;
+          currentNext = state.nextScheduledDate;
+          total = state.total;
           break;
         }
       } catch (err) {
@@ -93,33 +105,32 @@ export async function GET(req: Request) {
     }
 
     if (!yearlyRiId) {
-      results.push({ planId: plan.id, action: "no_yearly_ri_found" });
+      results.push({ planId: plan.id, label, action: "no_yearly_ri_found" });
       continue;
     }
+
+    // Signal whether Xero may have already generated a yearly child off the
+    // wrong date: either the next-scheduled-date has advanced past the start,
+    // or the start is already in the past. Either warrants a manual Xero check.
+    const firedRisk =
+      currentNext && currentStart && currentNext !== currentStart
+        ? `next-scheduled ${currentNext} ≠ start ${currentStart} — a child may already have generated`
+        : currentStart && currentStart < todayStr
+          ? `start ${currentStart} is in the past — a child may already have generated`
+          : null;
+    const base = { planId: plan.id, label, riId: yearlyRiId, total, currentStart, currentNext, wanted, firedRisk };
+
     if (currentStart === wanted) {
-      results.push({ planId: plan.id, riId: yearlyRiId, action: "ok", date: wanted });
+      results.push({ ...base, action: "ok" });
       continue;
     }
     if (wanted < todayStr) {
       // Can't push a past date into Xero — flag for manual handling.
-      results.push({
-        planId: plan.id,
-        riId: yearlyRiId,
-        action: "skipped_past_date",
-        currentStart,
-        wanted,
-      });
+      results.push({ ...base, action: "skipped_past_date" });
       continue;
     }
-
     if (!apply) {
-      results.push({
-        planId: plan.id,
-        riId: yearlyRiId,
-        action: "would_fix",
-        currentStart,
-        wanted,
-      });
+      results.push({ ...base, action: "would_fix" });
       continue;
     }
 
@@ -132,20 +143,11 @@ export async function GET(req: Request) {
         wanted,
       );
       patched++;
-      results.push({
-        planId: plan.id,
-        riId: yearlyRiId,
-        action: "fixed",
-        from: currentStart,
-        to: after.startDate,
-      });
+      results.push({ ...base, action: "fixed", from: currentStart, to: after.startDate });
     } catch (err) {
       results.push({
-        planId: plan.id,
-        riId: yearlyRiId,
+        ...base,
         action: "patch_failed",
-        currentStart,
-        wanted,
         error: err instanceof Error ? err.message : String(err),
       });
     }
