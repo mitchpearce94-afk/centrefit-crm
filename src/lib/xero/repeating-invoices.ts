@@ -303,10 +303,12 @@ export async function cancelRepeatingInvoice(
  * moves WHEN Xero next generates (and auto-sends) a child; it does not email
  * or charge anyone now.
  *
- * Reads the current schedule and resends it WHOLE (period/unit/dueDate
- * preserved), overriding only StartDate + NextScheduledDate — a partial
- * schedule update can blank the fields you omit. Returns the post-update
- * state so the caller can confirm Xero accepted the new date.
+ * Xero's RepeatingInvoice update is a whole-document upsert — sending only a
+ * `schedule` makes Xero treat it as a NEW doc and fail validation (it then
+ * demands Type/Contact/LineItems/Status, and the body carries a zero GUID).
+ * So we fetch the full RI and resend it verbatim with just the schedule's
+ * StartDate + NextScheduledDate moved. Returns the post-update state so the
+ * caller can confirm Xero accepted the new date.
  */
 export async function updateRepeatingInvoiceSchedule(
   xero: XeroClient,
@@ -314,18 +316,18 @@ export async function updateRepeatingInvoiceSchedule(
   repeatingInvoiceId: string,
   startDate: string,
 ): Promise<RepeatingInvoiceState> {
-  const current = await getRepeatingInvoice(xero, tenantId, repeatingInvoiceId);
-  const schedule: Record<string, unknown> = {
-    period: current.schedulePeriod ?? 1,
-    unit: current.scheduleUnit ?? "MONTHLY",
+  const res = await xero.accountingApi.getRepeatingInvoice(tenantId, repeatingInvoiceId);
+  const ri = res.body.repeatingInvoices?.[0];
+  if (!ri) throw new Error(`Xero returned no RepeatingInvoice for ${repeatingInvoiceId}`);
+  // SDK types schedule dates as string and accepts YYYY-MM-DD (as on create);
+  // keep the rest of the schedule (period/unit/dueDate) as fetched.
+  ri.schedule = {
+    ...(ri.schedule ?? {}),
     startDate,
     nextScheduledDate: startDate,
   };
-  if (current.dueDays != null) schedule.dueDate = current.dueDays;
-  if (current.dueDateType) schedule.dueDateType = current.dueDateType;
-  if (current.endDate) schedule.endDate = current.endDate;
   await xero.accountingApi.updateRepeatingInvoice(tenantId, repeatingInvoiceId, {
-    repeatingInvoices: [{ schedule } as never],
+    repeatingInvoices: [ri],
   });
   return getRepeatingInvoice(xero, tenantId, repeatingInvoiceId);
 }
