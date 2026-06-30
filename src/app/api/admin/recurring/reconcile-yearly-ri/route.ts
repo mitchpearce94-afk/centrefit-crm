@@ -7,6 +7,10 @@ import {
   updateRepeatingInvoiceSchedule,
 } from "@/lib/xero/repeating-invoices";
 
+// Up to ~16 sequential Xero calls with 500ms pacing — give it room so a slow
+// run can't be killed mid-write by the default function timeout.
+export const maxDuration = 60;
+
 /**
  * Reconcile yearly RepeatingInvoice StartDates against the plan's
  * `yearly_first_invoice_date`.
@@ -51,6 +55,12 @@ export async function GET(req: Request) {
   const planId = url.searchParams.get("planId");
   const todayStr = new Date().toISOString().slice(0, 10);
 
+  // Surface any failure (Xero auth/refresh, query, write) as readable JSON
+  // instead of a bare 500, with the stage it died at and whatever completed.
+  const results: unknown[] = [];
+  let patched = 0;
+  let stage = "query";
+  try {
   const svc = createServiceRoleClient();
   let q = svc
     .from("recurring_plans")
@@ -60,11 +70,12 @@ export async function GET(req: Request) {
     .eq("status", "active")
     .not("yearly_first_invoice_date", "is", null);
   if (planId) q = q.eq("id", planId);
-  const { data: plans } = await q;
+  const { data: plans, error: planErr } = await q;
+  if (planErr) throw new Error(`plan query failed: ${planErr.message}`);
 
+  stage = "xero_auth";
   const { client: xero, conn } = await getAuthedClient(svc);
-  const results: unknown[] = [];
-  let patched = 0;
+  stage = "scan";
   let first = true;
 
   for (const plan of (plans ?? []) as PlanRow[]) {
@@ -163,4 +174,15 @@ export async function GET(req: Request) {
     patched,
     results,
   });
+  } catch (err) {
+    // 200 + ok:false so a browser navigation renders the JSON rather than a
+    // generic 500 page — we want to SEE the error and what got done first.
+    return NextResponse.json({
+      ok: false,
+      stage,
+      error: err instanceof Error ? err.message : String(err),
+      patched,
+      partialResults: results,
+    });
+  }
 }
