@@ -109,19 +109,23 @@ export async function GET(req: Request) {
       continue;
     }
 
-    // Signal whether Xero may have already generated a yearly child off the
-    // wrong date: either the next-scheduled-date has advanced past the start,
-    // or the start is already in the past. Either warrants a manual Xero check.
-    const firedRisk =
-      currentNext && currentStart && currentNext !== currentStart
-        ? `next-scheduled ${currentNext} ≠ start ${currentStart} — a child may already have generated`
-        : currentStart && currentStart < todayStr
-          ? `start ${currentStart} is in the past — a child may already have generated`
-          : null;
-    const base = { planId: plan.id, label, riId: yearlyRiId, total, currentStart, currentNext, wanted, firedRisk };
+    // Xero returns these as full ISO timestamps; compare on the date part only.
+    const sd = currentStart ? currentStart.slice(0, 10) : null;
+    const nd = currentNext ? currentNext.slice(0, 10) : null;
+    // If next-scheduled has advanced past the start, Xero has already ISSUED
+    // the first yearly off this RI — so its next run (start + 1yr) is now the
+    // correct anniversary going forward. Rescheduling such an RI to the
+    // originally-intended date could double-issue, so we never auto-touch it;
+    // it only needs a manual Xero check for a stray first invoice.
+    const fired = !!sd && !!nd && nd !== sd;
+    const base = { planId: plan.id, label, riId: yearlyRiId, total, currentStart: sd, currentNext: nd, wanted, fired };
 
-    if (currentStart === wanted) {
+    if (sd === wanted) {
       results.push({ ...base, action: "ok" });
+      continue;
+    }
+    if (fired) {
+      results.push({ ...base, action: "skipped_already_fired" });
       continue;
     }
     if (wanted < todayStr) {
