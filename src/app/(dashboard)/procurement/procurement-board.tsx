@@ -95,12 +95,14 @@ export function ProcurementBoard({
           <ActiveTable
             entries={needsWork}
             empty="Nothing needs work — every started job is fully received or in stock. 🎉"
+            onRemove={(id) => setNoProcurement(id, true)}
+            busyJob={busyJob}
           />
         )}
         {tab === "ready" && (
           <div className="space-y-4">
             {ready.length === 0 ? (
-              <Empty text="No jobs waiting to start. Full quotes appear on acceptance; progress (PP1/PP2) jobs appear once PP1 is paid." />
+              <Empty text="No jobs waiting to start. Full/service quotes and progress jobs under $1000 appear on acceptance; larger progress (PP1/PP2) jobs appear once PP1 is paid." />
             ) : (
               <div className="rounded-lg border border-border bg-card overflow-x-auto">
                 <table className="w-full text-xs">
@@ -133,10 +135,10 @@ export function ProcurementBoard({
                             type="button"
                             onClick={() => setNoProcurement(e.jobId, true)}
                             disabled={busyJob === e.jobId}
-                            title="No parts to order — clear this job off the board"
-                            className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:border-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                            title="Remove this job from procurement (restorable below)"
+                            className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:border-red-500/50 hover:text-red-400 transition-colors disabled:opacity-50"
                           >
-                            {busyJob === e.jobId ? "…" : "No procurement needed"}
+                            {busyJob === e.jobId ? "…" : "Remove from procurement"}
                           </button>
                         </td>
                       </tr>
@@ -149,7 +151,7 @@ export function ProcurementBoard({
             {dismissed.length > 0 && (
               <details className="rounded-lg border border-border bg-card">
                 <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground hover:text-foreground">
-                  No procurement needed ({dismissed.length})
+                  Removed from procurement ({dismissed.length})
                 </summary>
                 <div className="overflow-x-auto border-t border-border">
                   <table className="w-full text-xs">
@@ -186,6 +188,8 @@ export function ProcurementBoard({
           <ActiveTable
             entries={complete}
             empty="No completed procurement yet — finished jobs land here once every line is received or in stock."
+            onRemove={(id) => setNoProcurement(id, true)}
+            busyJob={busyJob}
           />
         )}
       </div>
@@ -220,7 +224,17 @@ function Empty({ text }: { text: string }) {
   return <p className="py-6 text-center text-xs text-muted-foreground">{text}</p>;
 }
 
-function ActiveTable({ entries, empty }: { entries: ActiveEntry[]; empty: string }) {
+function ActiveTable({
+  entries,
+  empty,
+  onRemove,
+  busyJob,
+}: {
+  entries: ActiveEntry[];
+  empty: string;
+  onRemove?: (jobId: string) => void;
+  busyJob?: string | null;
+}) {
   if (entries.length === 0) return <Empty text={empty} />;
   return (
     <div className="rounded-lg border border-border bg-card overflow-hidden">
@@ -235,6 +249,7 @@ function ActiveTable({ entries, empty }: { entries: ActiveEntry[]; empty: string
             <th className="px-3 py-2 font-medium text-right w-20">Ordered</th>
             <th className="px-3 py-2 font-medium text-right w-20">Received</th>
             <th className="px-3 py-2 font-medium text-right w-20">POs</th>
+            {onRemove && <th className="px-3 py-2 font-medium text-right w-24"></th>}
           </tr>
         </thead>
         <tbody>
@@ -257,6 +272,19 @@ function ActiveTable({ entries, empty }: { entries: ActiveEntry[]; empty: string
               <td className="px-3 py-2 text-right font-mono text-indigo-400">{e.ordered || "—"}</td>
               <td className="px-3 py-2 text-right font-mono text-emerald-400">{e.received || "—"}</td>
               <td className="px-3 py-2 text-right font-mono text-muted-foreground">{e.poCount || "—"}</td>
+              {onRemove && (
+                <td className="px-3 py-2 text-right">
+                  <button
+                    type="button"
+                    onClick={() => onRemove(e.jobId)}
+                    disabled={busyJob === e.jobId}
+                    title="Remove this job from procurement (restorable from Ready → removed list)"
+                    className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:border-red-500/50 hover:text-red-400 transition-colors disabled:opacity-50"
+                  >
+                    {busyJob === e.jobId ? "…" : "Remove"}
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

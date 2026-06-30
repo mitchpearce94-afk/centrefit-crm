@@ -101,7 +101,9 @@ export default async function ProcurementIndexPage() {
   // Active jobs with procurement → flat, serializable entries (job number desc)
   const active = Array.from(statsByJob.keys())
     .map((jobId) => ({ job: jobsById.get(jobId)!, stats: statsByJob.get(jobId)! }))
-    .filter((e) => !!e.job)
+    // Honour "removed from procurement" everywhere — a flagged job leaves the
+    // Needs-work / Complete tabs too, not just Ready (it's restorable below).
+    .filter((e) => !!e.job && !e.job.procurement_not_required)
     .sort((a, b) => String(b.job.number ?? "").localeCompare(String(a.job.number ?? "")));
 
   const activeEntries: ActiveEntry[] = active.map(({ job, stats }) => ({
@@ -147,8 +149,12 @@ export default async function ProcurementIndexPage() {
 
     const isProgress = q.quote_type === "progress";
     if (isProgress) {
+      // Hold a progress job back for its PP1 deposit ONLY when we can confirm
+      // it's a big job (total >= $1000). A small job (< $1000) OR one whose
+      // snapshot total is missing/0 goes straight through — Mitchell 2026-06-30:
+      // never hide an under-$1000 (or unknown-total) job behind the deposit gate.
       const total = Number(q.pricing_snapshot?.totalExGST ?? 0);
-      const straightThrough = total > 0 && total < STRAIGHT_THROUGH_UNDER;
+      const straightThrough = total < STRAIGHT_THROUGH_UNDER;
       if (!straightThrough && !pp1PaidQuoteIds.has(q.id)) continue; // waiting on PP1
     }
     readyByJobId.set(q.job_id, q);
@@ -171,6 +177,20 @@ export default async function ProcurementIndexPage() {
   const dismissedEntries: ReadyEntry[] = Array.from(dismissedByJobId.entries())
     .map(([jobId, quote]) => toReadyEntry(jobId, quote))
     .filter((e): e is ReadyEntry => !!e);
+  // Jobs that DO have procurement rows but were removed from the board via the
+  // flag — surface them in the same restorable list so a removal isn't a dead end.
+  const removedWithRows: ReadyEntry[] = Array.from(statsByJob.keys())
+    .map((jobId) => jobsById.get(jobId))
+    .filter((j): j is NonNullable<typeof j> => !!j && !!j.procurement_not_required)
+    .map((j) => ({
+      jobId: j.id,
+      number: j.number,
+      customerName: j.customer?.name ?? "—",
+      siteName: j.site?.name ?? null,
+      quoteRef: "—",
+      acceptedAt: null,
+    }));
+  const allDismissed = [...dismissedEntries, ...removedWithRows];
 
   // Global totals — count only jobs that still need work as "active".
   const totals = {
@@ -201,7 +221,7 @@ export default async function ProcurementIndexPage() {
         <Stat label="Received" value={totals.received} tone="emerald" />
       </div>
 
-      <ProcurementBoard ready={readyEntries} needsWork={needsWork} complete={complete} dismissed={dismissedEntries} />
+      <ProcurementBoard ready={readyEntries} needsWork={needsWork} complete={complete} dismissed={allDismissed} />
     </div>
   );
 }
