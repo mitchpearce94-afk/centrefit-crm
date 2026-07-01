@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
+import { ListSearch } from "@/components/ui/list-search";
 
 function fmt(n: number): string {
   return n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -26,11 +27,12 @@ type Tab = "active" | "unsent" | "overdue" | "drafts" | "paid" | "voided";
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; q?: string }>;
 }) {
   const supabase = await createClient();
   const params = await searchParams;
   const tab = (params.tab ?? "active") as Tab;
+  const q = (params.q ?? "").trim().toLowerCase();
 
   const { data: invoices } = await supabase
     .from("invoices")
@@ -61,13 +63,30 @@ export default async function InvoicesPage({
   const paidList = enriched.filter((i) => i.status === "paid");
   const voidedList = enriched.filter((i) => i.status === "void");
 
+  // Search cuts across every tab — you shouldn't have to know whether the
+  // invoice you're hunting is active, paid or voided to find it.
+  const searchList = q
+    ? enriched.filter((inv) =>
+        [
+          inv.xero_invoice_number,
+          inv.quote?.ref,
+          inv.quote?.site?.name,
+          inv.job?.site?.name,
+          inv.job?.number,
+          inv.customer?.name,
+          inv.sent_to_email,
+        ].some((v) => v && String(v).toLowerCase().includes(q)),
+      )
+    : null;
+
   const filtered =
-    tab === "unsent" ? unsentList
+    searchList ??
+    (tab === "unsent" ? unsentList
     : tab === "overdue" ? overdueList
     : tab === "drafts" ? draftsList
     : tab === "paid" ? paidList
     : tab === "voided" ? voidedList
-    : activeList;
+    : activeList);
 
   // Metrics
   const outstanding = activeList.reduce((s, i) => s + Number(i.amount_due), 0);
@@ -122,7 +141,13 @@ export default async function InvoicesPage({
           return (
             <Link
               key={t.key}
-              href={t.key === "active" ? "/invoices" : `/invoices?tab=${t.key}`}
+              href={(() => {
+                const p = new URLSearchParams();
+                if (t.key !== "active") p.set("tab", t.key);
+                if (q) p.set("q", params.q!.trim());
+                const qs = p.toString();
+                return qs ? `/invoices?${qs}` : "/invoices";
+              })()}
               className={`relative shrink-0 -mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
                 active
                   ? "border-primary text-foreground"
@@ -148,6 +173,16 @@ export default async function InvoicesPage({
         })}
       </div>
 
+      {/* Search — cuts across every tab while active */}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <ListSearch placeholder="Search invoice #, quote ref, site or customer…" defaultValue={params.q ?? ""} />
+        {q && (
+          <p className="text-xs text-muted-foreground">
+            {filtered.length} match{filtered.length === 1 ? "" : "es"} across all tabs
+          </p>
+        )}
+      </div>
+
       {/* List */}
       <div className="surface-card mt-4 overflow-x-auto">
         <table className="w-full text-sm">
@@ -169,7 +204,9 @@ export default async function InvoicesPage({
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">
-                  {tab === "active"
+                  {q
+                    ? "No invoices match your search."
+                    : tab === "active"
                     ? "Nothing outstanding — sent invoices awaiting payment appear here."
                     : tab === "unsent"
                     ? "All authorised invoices have been emailed — nothing waiting to send."

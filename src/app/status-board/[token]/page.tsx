@@ -196,7 +196,10 @@ export default async function StatusBoardPage({
         : `9999-${String(_status?.sort_order ?? 999).padStart(4, "0")}`;
       return { ...j, _status, _site: one(j.site), _customer: one(j.customer), stage, rank, sortDate };
     })
-    .filter((j) => j._status?.name !== "Cancelled")
+    // A build leaves the board only when its CRM status says so — Complete or
+    // Cancelled. Past-dated fit-offs still show as "Awaiting Job Completion"
+    // until someone actually closes the job (Mitchell 2026-07-02).
+    .filter((j) => j._status?.name !== "Cancelled" && j._status?.name !== "Complete")
     .sort(
       (a, b) =>
         a.rank - b.rank ||

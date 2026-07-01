@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
+import { ListSearch } from "@/components/ui/list-search";
 
 const STATUS_COLOURS: Record<string, string> = {
   draft: "#6b7280",
@@ -17,11 +18,12 @@ type Tab = "active" | "followup" | "accepted" | "invoiced" | "declined" | "expir
 export default async function QuotingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; q?: string }>;
 }) {
   const supabase = await createClient();
   const params = await searchParams;
   const tab = (params.tab ?? "active") as Tab;
+  const q = (params.q ?? "").trim().toLowerCase();
 
   const [{ data: quotes, error }, { data: invoiceLinks }] = await Promise.all([
     supabase.from("quotes").select("*, customer:customers(id, name)").order("created_at", { ascending: false }),
@@ -84,13 +86,24 @@ export default async function QuotingPage({
   const expiredCount = allQuotes.filter((q) => q.displayStatus === "expired").length;
   const followupCount = allQuotes.filter((q) => q._needsFollowup).length;
 
+  // Search cuts across every tab — a ref or site name finds its quote no
+  // matter which status bucket it's sitting in.
+  const searchList = q
+    ? allQuotes.filter((quote) =>
+        [quote.ref, quote.site_name, quote.client_name, quote.customer?.name].some(
+          (v) => v && String(v).toLowerCase().includes(q),
+        ),
+      )
+    : null;
+
   const filtered =
-    tab === "followup" ? allQuotes.filter((q) => q._needsFollowup)
+    searchList ??
+    (tab === "followup" ? allQuotes.filter((q) => q._needsFollowup)
     : tab === "accepted" ? allQuotes.filter((q) => q.displayStatus === "accepted")
     : tab === "invoiced" ? allQuotes.filter((q) => q.displayStatus === "invoiced")
     : tab === "declined" ? allQuotes.filter((q) => q.displayStatus === "declined")
     : tab === "expired" ? allQuotes.filter((q) => q.displayStatus === "expired")
-    : activeQuotes;
+    : activeQuotes);
 
   return (
     <div>
@@ -150,7 +163,13 @@ export default async function QuotingPage({
           return (
             <Link
               key={t.key}
-              href={t.key === "active" ? "/quoting" : `/quoting?tab=${t.key}`}
+              href={(() => {
+                const p = new URLSearchParams();
+                if (t.key !== "active") p.set("tab", t.key);
+                if (q) p.set("q", params.q!.trim());
+                const qs = p.toString();
+                return qs ? `/quoting?${qs}` : "/quoting";
+              })()}
               className={`relative shrink-0 -mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
                 active
                   ? "border-primary text-foreground"
@@ -174,6 +193,16 @@ export default async function QuotingPage({
             </Link>
           );
         })}
+      </div>
+
+      {/* Search — cuts across every tab while active */}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <ListSearch placeholder="Search ref, site or client…" defaultValue={params.q ?? ""} />
+        {q && (
+          <p className="text-xs text-muted-foreground">
+            {filtered.length} match{filtered.length === 1 ? "" : "es"} across all tabs
+          </p>
+        )}
       </div>
 
       {/* Quotes table */}
@@ -245,7 +274,9 @@ export default async function QuotingPage({
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
-                  {tab === "followup"
+                  {q
+                    ? "No quotes match your search."
+                    : tab === "followup"
                     ? "No quotes need a follow-up right now — sent quotes appear here once they pass 7 days without a customer response."
                     : tab === "active"
                     ? (allQuotes.length === 0
