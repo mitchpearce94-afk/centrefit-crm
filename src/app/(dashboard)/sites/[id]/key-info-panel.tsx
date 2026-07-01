@@ -157,6 +157,12 @@ function KeyInfoCard({ asset, type }: { asset: SiteAsset; type: AssetType | null
   if (asset.admin_password) rows.push({ label: "Admin password", value: asset.admin_password });
   if (asset.staff_user) rows.push({ label: "Staff user", value: asset.staff_user });
   if (asset.staff_password) rows.push({ label: "Staff password", value: asset.staff_password });
+  if (Array.isArray(asset.extra_staff_users)) {
+    asset.extra_staff_users.forEach((u, i) => {
+      if (u.user) rows.push({ label: `Staff user ${i + 2}`, value: u.user });
+      if (u.password) rows.push({ label: `Staff password ${i + 2}`, value: u.password });
+    });
+  }
   if (asset.firmware) rows.push({ label: "Firmware", value: asset.firmware });
 
   return (

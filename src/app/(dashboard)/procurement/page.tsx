@@ -119,12 +119,17 @@ export default async function ProcurementIndexPage() {
     poCount: stats.poNumbers.size,
   }));
 
-  // "Needs work" = anything still to triage, order or receive. "Complete" =
-  // every line is either received or fulfilled from stock (nothing actionable),
-  // so finished jobs drop out of the working view instead of lingering.
+  // "Needs work" = anything still to triage or order. "Awaiting delivery" =
+  // everything actioned but at least one ordered line hasn't been received yet
+  // (Lily 2026-07-01: ordered ≠ complete until the stock actually arrives).
+  // "Complete" = every line received or fulfilled from stock (nothing
+  // actionable), so finished jobs drop out of the working view.
   const entryById = new Map(activeEntries.map((e) => [e.jobId, e]));
   const needsWork = active
-    .filter(({ stats }) => stats.pending + stats.order + stats.ordered > 0)
+    .filter(({ stats }) => stats.pending + stats.order > 0)
+    .map(({ job }) => entryById.get(job.id)!);
+  const awaitingDelivery = active
+    .filter(({ stats }) => stats.pending + stats.order === 0 && stats.ordered > 0)
     .map(({ job }) => entryById.get(job.id)!);
   const complete = active
     .filter(({ stats }) => stats.total > 0 && stats.pending + stats.order + stats.ordered === 0)
@@ -221,7 +226,13 @@ export default async function ProcurementIndexPage() {
         <Stat label="Received" value={totals.received} tone="emerald" />
       </div>
 
-      <ProcurementBoard ready={readyEntries} needsWork={needsWork} complete={complete} dismissed={allDismissed} />
+      <ProcurementBoard
+        ready={readyEntries}
+        needsWork={needsWork}
+        awaitingDelivery={awaitingDelivery}
+        complete={complete}
+        dismissed={allDismissed}
+      />
     </div>
   );
 }

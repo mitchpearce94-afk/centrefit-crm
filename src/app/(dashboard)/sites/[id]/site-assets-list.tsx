@@ -435,6 +435,7 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
   const [adminPassword, setAdminPassword] = useState("");
   const [staffUser, setStaffUser] = useState("");
   const [staffPassword, setStaffPassword] = useState("");
+  const [extraStaffUsers, setExtraStaffUsers] = useState<{ user?: string; password?: string }[]>([]);
   const [firmware, setFirmware] = useState("");
   const [rfid, setRfid] = useState("");
   const [vlans, setVlans] = useState<{ id?: string; name?: string; notes?: string }[]>([]);
@@ -490,6 +491,7 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
       admin_password: isWifiOnly ? null : adminPassword.trim() || null,
       staff_user: isWifiOnly ? null : staffUser.trim() || null,
       staff_password: isWifiOnly ? null : staffPassword.trim() || null,
+      extra_staff_users: isWifiOnly ? [] : extraStaffUsers,
       firmware: isWifiOnly ? null : firmware.trim() || null,
       rfid: isWifiOnly ? null : rfid.trim() || null,
       vlans: isWifiOnly ? [] : vlans,
@@ -517,6 +519,7 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
     setAdminPassword("");
     setStaffUser("");
     setStaffPassword("");
+    setExtraStaffUsers([]);
     setFirmware("");
     setRfid("");
     setVlans([]);
@@ -732,22 +735,33 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
             </div>
           )}
           {selectedType?.has_staff_credentials && (
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                placeholder="Staff user"
-                value={staffUser}
-                onChange={(e) => setStaffUser(e.target.value)}
-                className={inputClass}
-              />
-              <div className="flex gap-1.5">
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
                 <input
-                  placeholder="Staff password"
-                  value={staffPassword}
-                  onChange={(e) => setStaffPassword(e.target.value)}
-                  className={inputClass + " flex-1 min-w-0 font-mono"}
+                  placeholder="Staff user"
+                  value={staffUser}
+                  onChange={(e) => setStaffUser(e.target.value)}
+                  className={inputClass}
                 />
-                <GeneratePasswordButton onGenerate={setStaffPassword} />
+                <div className="flex gap-1.5">
+                  <input
+                    placeholder="Staff password"
+                    value={staffPassword}
+                    onChange={(e) => setStaffPassword(e.target.value)}
+                    className={inputClass + " flex-1 min-w-0 font-mono"}
+                  />
+                  <GeneratePasswordButton onGenerate={setStaffPassword} />
+                </div>
               </div>
+              <RepeatList
+                title="More staff users"
+                rows={extraStaffUsers.map((u) => ({ user: u.user ?? "", password: u.password ?? "" }))}
+                fields={[
+                  { key: "user", placeholder: "Staff user" },
+                  { key: "password", placeholder: "Password" },
+                ]}
+                onChange={(rows) => setExtraStaffUsers(rows as { user: string; password: string }[])}
+              />
             </div>
           )}
         </div>
@@ -1041,6 +1055,9 @@ function SiteAssetEditForm({
   const [adminPassword, setAdminPassword] = useState(asset.admin_password ?? "");
   const [staffUser, setStaffUser] = useState(asset.staff_user ?? "");
   const [staffPassword, setStaffPassword] = useState(asset.staff_password ?? "");
+  const [extraStaffUsers, setExtraStaffUsers] = useState<{ user?: string; password?: string }[]>(
+    Array.isArray(asset.extra_staff_users) ? asset.extra_staff_users : [],
+  );
   const [firmware, setFirmware] = useState(asset.firmware ?? "");
   const [rfid, setRfid] = useState(asset.rfid ?? "");
   const [vlans, setVlans] = useState<{ name?: string; id?: string; notes?: string }[]>(
@@ -1124,6 +1141,7 @@ function SiteAssetEditForm({
           subnet: subnet.trim() || null,
           admin_user: adminUser.trim() || null,
           staff_user: staffUser.trim() || null,
+          extra_staff_users: extraStaffUsers,
           firmware: firmware.trim() || null,
           rfid: rfid.trim() || null,
           vlans,
@@ -1142,8 +1160,8 @@ function SiteAssetEditForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     assetTypeId, deviceName, manufacturer, model, serial, macAddress, ipAddress,
-    subnet, adminUser, staffUser, firmware, rfid, vlans, wifiSsids, locationNote,
-    installDate, warrantyExpiry, notes,
+    subnet, adminUser, staffUser, extraStaffUsers, firmware, rfid, vlans,
+    wifiSsids, locationNote, installDate, warrantyExpiry, notes,
   ]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -1165,6 +1183,7 @@ function SiteAssetEditForm({
       admin_password: adminPassword.trim() || null,
       staff_user: staffUser.trim() || null,
       staff_password: staffPassword.trim() || null,
+      extra_staff_users: extraStaffUsers,
       firmware: firmware.trim() || null,
       rfid: rfid.trim() || null,
       vlans,
@@ -1353,6 +1372,7 @@ function SiteAssetEditForm({
             </div>
           )}
           {selectedType?.has_staff_credentials && (
+            <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2">
               <input
                 placeholder="Staff user"
@@ -1393,6 +1413,16 @@ function SiteAssetEditForm({
                 </div>
                 {staffPrev && <PreviousPasswordReveal value={staffPrev} />}
               </div>
+            </div>
+            <RepeatList
+              title="More staff users"
+              rows={extraStaffUsers.map((u) => ({ user: u.user ?? "", password: u.password ?? "" }))}
+              fields={[
+                { key: "user", placeholder: "Staff user" },
+                { key: "password", placeholder: "Password" },
+              ]}
+              onChange={(rows) => setExtraStaffUsers(rows as { user: string; password: string }[])}
+            />
             </div>
           )}
         </div>

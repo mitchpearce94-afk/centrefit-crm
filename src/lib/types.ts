@@ -116,6 +116,9 @@ export interface SiteAsset {
   staff_user: string | null;
   staff_password: string | null;
   staff_password_prev: string | null;
+  // Additional staff logins beyond the primary staff_user/staff_password pair
+  // (NVRs commonly carry one login per staff member — Mitchell 2026-07-01).
+  extra_staff_users: { user?: string; password?: string }[];
   firmware: string | null;
   vlans: { name?: string; id?: string; notes?: string }[];
   wifi_ssids: { ssid?: string; password?: string; notes?: string }[];

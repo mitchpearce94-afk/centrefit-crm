@@ -28,7 +28,7 @@ export interface ActiveEntry {
   poCount: number;
 }
 
-type Tab = "needs" | "ready" | "complete";
+type Tab = "needs" | "ready" | "awaiting" | "complete";
 
 // Job numbers are stored already including the "CFA" prefix (e.g. "CFA05030"),
 // so only prepend "CFA-" when it isn't there (defensive for legacy numerics).
@@ -41,17 +41,25 @@ function jobLabel(n: string | number | null): string {
 export function ProcurementBoard({
   ready,
   needsWork,
+  awaitingDelivery,
   complete,
   dismissed = [],
 }: {
   ready: ReadyEntry[];
   needsWork: ActiveEntry[];
+  awaitingDelivery: ActiveEntry[];
   complete: ActiveEntry[];
   dismissed?: ReadyEntry[];
 }) {
   // Default to the tab that actually has work in it.
   const [tab, setTab] = useState<Tab>(
-    needsWork.length > 0 ? "needs" : ready.length > 0 ? "ready" : "needs",
+    needsWork.length > 0
+      ? "needs"
+      : ready.length > 0
+        ? "ready"
+        : awaitingDelivery.length > 0
+          ? "awaiting"
+          : "needs",
   );
   const router = useRouter();
   const supabase = createClient();
@@ -84,6 +92,9 @@ export function ProcurementBoard({
         </TabButton>
         <TabButton active={tab === "needs"} onClick={() => setTab("needs")}>
           Needs work ({needsWork.length})
+        </TabButton>
+        <TabButton active={tab === "awaiting"} onClick={() => setTab("awaiting")}>
+          Awaiting delivery ({awaitingDelivery.length})
         </TabButton>
         <TabButton active={tab === "complete"} onClick={() => setTab("complete")}>
           Complete ({complete.length})
@@ -183,6 +194,14 @@ export function ProcurementBoard({
               </details>
             )}
           </div>
+        )}
+        {tab === "awaiting" && (
+          <ActiveTable
+            entries={awaitingDelivery}
+            empty="Nothing on order — jobs land here once everything is ordered and we're just waiting on stock to arrive."
+            onRemove={(id) => setNoProcurement(id, true)}
+            busyJob={busyJob}
+          />
         )}
         {tab === "complete" && (
           <ActiveTable
