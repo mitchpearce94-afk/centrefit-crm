@@ -1,0 +1,83 @@
+[DRY RUN] 79 templates to swap
+
+would swap Purple Fitness Pty Ltd     $  146.85 12xMONTHLY — flags, date kept 2026-11-24
+would swap Purple Fitness Pty Ltd     $   24.75 1xMONTHLY  — flags, date 2026-06-16→2026-07-15
+would swap Purple Fitness Pty Ltd     $  120.84 13xWEEKLY  — flags, date kept 2026-06-15
+would swap Snap Fitness Caloundra     $   159.5 13xWEEKLY  — flags, date kept 2026-08-17
+would swap Snap Fitness Caloundra     $   24.75 1xMONTHLY  — flags, date 2026-06-16→2026-07-15
+would swap Snap Fitness Caloundra     $  146.85 12xMONTHLY — flags, date kept 2027-02-17
+would swap Snap Fitness Jesmond       $   159.5 13xWEEKLY  — flags, date kept 2026-07-29
+would swap Snap Fitness Jesmond       $  146.85 12xMONTHLY — flags, date kept 2027-02-03
+would swap Snap Fitness Jesmond       $     139 1xMONTHLY  — flags, date kept 2026-06-15
+would swap Snap Fitness Jesmond       $   24.75 1xMONTHLY  — flags, date kept 2026-06-15
+would swap Snap Fitness Lutwyche      $   159.5 13xWEEKLY  — flags, date kept 2026-08-24
+would swap Snap Fitness Maddingley    $   24.75 1xMONTHLY  — flags, date kept 2026-06-20
+would swap Snap Fitness Maddingley    $  146.85 12xMONTHLY — flags, date kept 2026-11-24
+would swap Snap Fitness Maddingley    $  120.84 13xWEEKLY  — flags, date kept 2026-08-20
+would swap Snap Fitness Mt Ommaney    $  146.85 12xMONTHLY — flags, date kept 2026-08-22
+would swap Snap Fitness Mt Ommaney    $     139 1xMONTHLY  — flags, date 2026-06-16→2026-07-15
+would swap Snap Fitness Mt Ommaney    $  120.84 13xWEEKLY  — flags, date kept 2026-07-28
+would swap Snap Fitness Pakenham      $  146.85 12xMONTHLY — flags, date kept 2026-11-24
+would swap Snap Fitness Pakenham      $  195.09 13xWEEKLY  — flags, date kept 2026-06-19
+would swap Snap Fitness Sippy Downs   $     139 1xMONTHLY  — flags, date 2026-06-30→2026-07-15
+would swap Snap Fitness Sippy Downs   $   24.75 1xMONTHLY  — flags, date 2026-06-16→2026-07-15
+would swap Snap Fitness Victoria Poin $   24.75 1xMONTHLY  — flags, date 2026-06-27→2026-07-19
+would swap Snap Fitness Victoria Poin $   159.5 13xWEEKLY  — flags, date kept 2026-08-24
+would swap Snap Fitness Box Hill      $  120.84 13xWEEKLY  — flags, date kept 2026-07-28
+would swap Snap Fitness Box Hill      $     129 1xMONTHLY  — flags, date 2026-06-16→2026-07-15
+would swap Snap Fitness Box Hill      $   24.75 1xMONTHLY  — flags, date kept 2026-07-02
+would swap Snap Fitness Strathpine    $     139 1xMONTHLY  — date 2026-06-19→2026-06-20
+would swap Snap Fitness Nerang        $   24.75 1xMONTHLY  — date 2026-06-27→2026-07-26
+would swap Snap Fitness Strathpine    $   24.75 1xMONTHLY  — date 2026-07-02→2026-07-20
+would swap Snap Fitness Strathpine    $    53.9 1xMONTHLY  — date 2026-07-02→2026-07-20
+would swap SF Browns Plains           $    60.5 1xMONTHLY  — theme→Centrefit Solutions DD, date kept 2026-07-02
+would swap Snap Fitness Meadowbank    $   24.75 1xMONTHLY  — flags, date kept 2026-07-09
+would swap Snap Fitness Meadowbank    $   148.5 13xWEEKLY  — flags, date kept 2026-07-07
+would swap Snap Fitness Oakleigh Sout $    60.5 1xMONTHLY  — flags, date kept 2026-06-23
+would swap Snap Fitness Moorebank     $     139 1xMONTHLY  — flags, date kept 2026-06-23
+would swap Snap Fitness Pakenham      $     139 1xMONTHLY  — flags, date 2026-07-02→2026-08-01
+would swap Snap Fitness Oakleigh Sout $     139 1xMONTHLY  — flags, date 2026-06-16→2026-07-15
+would swap Snap Fitness Plainland     $   159.5 3xMONTHLY  — theme→Centrefit Solutions DD, flags, date kept 2026-07-10
+would swap Snap Fitness Plainland     $   24.75 1xMONTHLY  — theme→Centrefit Solutions DD, flags, date 2026-06-16→2026-07-15
+would swap Snap Fitness Victoria Poin $     139 1xMONTHLY  — theme→Centrefit Communications DD, flags, date kept 2026-06-19
+would swap Snap Fitness Newtown       $    60.5 1xMONTHLY  — flags, date kept 2026-07-08
+would swap Snap Fitness Newtown       $  146.85 12xMONTHLY — theme→Centrefit Solutions DD, date kept 2026-07-01
+would swap Snap Fitness Moorebank     $   24.75 1xMONTHLY  — flags, date 2026-06-16→2026-07-15
+would swap Snap Fitness Moorebank     $     145 3xMONTHLY  — theme→Centrefit Solutions DD, flags, date kept 2026-07-15
+would swap Snap Fitness Plainland     $     139 1xMONTHLY  — flags, date 2026-06-16→2026-07-15
+would swap SF Browns Plains           $     139 1xMONTHLY  — theme→Centrefit Communications DD, date kept 2026-06-15
+would swap SF Glen Waverley           $    60.5 1xMONTHLY  — theme→Centrefit Solutions DD, flags, date kept 2026-06-15
+would swap SF Glen Waverley           $   24.75 1xMONTHLY  — theme→Centrefit Solutions DD, flags, date kept 2026-06-15
+would swap SF Glen Waverley           $  146.85 12xMONTHLY — theme→Centrefit Solutions DD, flags, date kept 2026-11-01
+would swap SF Glen Waverley           $     139 1xMONTHLY  — theme→Centrefit Communications DD, flags, date 2026-06-30→2026-06-30
+would swap Snap Fitness Glendale      $   24.75 1xMONTHLY  — theme→Centrefit Solutions DD, flags, date kept 2026-06-15
+would swap Snap Fitness Glendale      $  146.85 12xMONTHLY — theme→Centrefit Solutions DD, date kept 2026-07-01
+would swap Snap Fitness Newtown       $     379 1xMONTHLY  — flags, date kept 2026-07-11
+would swap Snap Fitness Victoria Poin $  146.85 12xMONTHLY — theme→Centrefit Solutions DD, flags, date kept 2026-09-01
+would swap Snap Fitness Arana Hills   $     139 1xMONTHLY  — theme→Centrefit Communications DD, date kept 2026-07-07
+would swap Puntarungsy Sorbello Co Pt $     129 1xMONTHLY  — theme→Centrefit Communications DD, date 2026-06-19→2026-06-20
+would swap SF Ascot Vale              $  146.85 12xMONTHLY — flags, date kept 2026-08-08
+would swap SF Ascot Vale              $  163.74 13xWEEKLY  — flags, date kept 2026-09-04
+would swap SF Ascot Vale              $   24.75 1xMONTHLY  — flags, date kept 2026-07-06
+would swap Snap Fitness Beecroft      $     139 1xMONTHLY  — flags, date kept 2026-07-16
+would swap Snap Fitness Bellmere      $  146.85 12xMONTHLY — flags, date kept 2026-07-08
+would swap Snap Fitness Bellmere      $     139 1xMONTHLY  — flags, date kept 2026-07-01
+would swap Snap Fitness Bellmere      $  120.84 13xWEEKLY  — flags, date kept 2026-07-16
+would swap Snap Fitness Bellmere      $   24.75 1xMONTHLY  — flags, date kept 2026-07-01
+would swap Snap Fitness Bentleigh Eas $  146.85 12xMONTHLY — flags, date kept 2026-09-08
+would swap Snap Fitness Bentleigh Eas $     139 1xMONTHLY  — flags, date kept 2026-07-01
+would swap Snap Fitness Bentleigh Eas $  120.84 13xWEEKLY  — flags, date kept 2026-08-29
+would swap Snap Fitness Bentleigh Eas $   24.75 1xMONTHLY  — flags, date kept 2026-06-18
+would swap Snap Fitness Caloundra     $     139 1xMONTHLY  — flags, date kept 2026-07-15
+would swap Snap Fitness Lutwyche      $    49.5 1xMONTHLY  — flags, date kept 2026-07-22
+would swap Snap Fitness Meadowbank    $     139 1xMONTHLY  — flags, date kept 2026-07-09
+would swap Snap Fitness Mt Ommaney    $   24.75 1xMONTHLY  — flags, date kept 2026-07-15
+would swap Snap Fitness Moorebank     $  146.85 12xMONTHLY — flags, date kept 2026-07-15
+would swap Snap Fitness Glendale      $    60.5 1xMONTHLY  — flags, date kept 2026-06-15
+would swap Snap Fitness Lutwyche      $  146.85 12xMONTHLY — flags, date kept 2027-03-26
+would swap Snap Fitness Mt Gambier    $     139 1xMONTHLY  — flags, date kept 2026-06-27
+would swap Snap Fitness Mt Gambier    $    71.5 1xMONTHLY  — flags, date kept 2026-06-27
+would swap Snap Fitness Mt Gambier    $   24.75 1xMONTHLY  — flags, date kept 2026-06-27
+would swap Snap Fitness Mt Gambier    $  146.85 12xMONTHLY — flags, date kept 2027-04-20
+
+Done: 0 swapped, 0 failed (dry).
