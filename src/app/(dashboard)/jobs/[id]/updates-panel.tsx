@@ -230,9 +230,10 @@ export function UpdatesPanel({
         {!adding && (
           <button
             onClick={() => setAdding(true)}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
           >
-            + Add entry
+            <span className="text-lg leading-none">+</span>
+            Add Entry
           </button>
         )}
       </div>

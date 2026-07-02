@@ -98,9 +98,11 @@ export default async function JobDetailPage({
         .eq("added_to_invoice", false)
         .not("amount", "is", null)
         .order("created_at", { ascending: true }),
+      // job_updates has two FKs to staff (staff_id, archived_by) — the embed
+      // must name the FK or PostgREST rejects the whole query as ambiguous.
       supabase
         .from("job_updates")
-        .select("*, staff:staff(display_name, initials, colour)")
+        .select("*, staff:staff!job_updates_staff_id_fkey(display_name, initials, colour)")
         .eq("job_id", id)
         .order("created_at", { ascending: false }),
     ]);
