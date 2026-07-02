@@ -14,7 +14,7 @@ import { JobInvoices } from "./job-invoices";
 import { ImportBomToAssetsButton } from "./import-bom-to-assets-button";
 import { JobProcurement } from "./job-procurement";
 import { ScopeEditor } from "./scope-editor";
-import { UpdatesEditor } from "./updates-editor";
+import { UpdatesPanel } from "./updates-panel";
 
 interface StaffOption {
   id: string;
@@ -29,6 +29,7 @@ export function JobTabs({
   allStatuses,
   allStaff,
   notes,
+  jobUpdates,
   timeEntries,
   nbnSteps,
   workEntries,
@@ -52,6 +53,7 @@ export function JobTabs({
   allStatuses: any[];
   allStaff: StaffOption[];
   notes: any[];
+  jobUpdates: any[];
   timeEntries: any[];
   nbnSteps: any[];
   workEntries: any[];
@@ -144,6 +146,7 @@ export function JobTabs({
             templates={templates}
             workEntries={workEntries}
             notes={notes}
+            jobUpdates={jobUpdates}
             timeEntries={timeEntries}
             scheduleEntries={scheduleEntries ?? []}
           />
@@ -262,6 +265,7 @@ function JobOverview({
   templates,
   workEntries,
   notes,
+  jobUpdates,
   timeEntries,
   scheduleEntries,
 }: {
@@ -274,6 +278,7 @@ function JobOverview({
   templates: any[];
   workEntries: any[];
   notes: any[];
+  jobUpdates: any[];
   timeEntries: any[];
   scheduleEntries: any[];
 }) {
@@ -326,7 +331,7 @@ function JobOverview({
       />
 
       {/* ── Updates (internal-only, not on invoices) ── */}
-      <UpdatesEditor jobId={jobId} updates={job.updates ?? null} />
+      <UpdatesPanel jobId={jobId} updates={jobUpdates} />
 
       {/* ── Checklist (scrollable) ── */}
       <JobChecklist

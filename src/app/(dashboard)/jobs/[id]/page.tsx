@@ -13,7 +13,7 @@ export default async function JobDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [jobResult, statusesResult, staffResult, workResult, notesResult, timeResult, nbnResult, checklistResult, templatesResult, scheduleResult, invoicesResult, linkedQuotesResult, billingResult, procurementResult, suppliersResult, receiptsResult] =
+  const [jobResult, statusesResult, staffResult, workResult, notesResult, timeResult, nbnResult, checklistResult, templatesResult, scheduleResult, invoicesResult, linkedQuotesResult, billingResult, procurementResult, suppliersResult, receiptsResult, jobUpdatesResult] =
     await Promise.all([
       supabase
         .from("jobs")
@@ -98,6 +98,11 @@ export default async function JobDetailPage({
         .eq("added_to_invoice", false)
         .not("amount", "is", null)
         .order("created_at", { ascending: true }),
+      supabase
+        .from("job_updates")
+        .select("*, staff:staff(display_name, initials, colour)")
+        .eq("job_id", id)
+        .order("created_at", { ascending: false }),
     ]);
 
   if (jobResult.error || !jobResult.data) {
@@ -207,6 +212,7 @@ export default async function JobDetailPage({
           allStatuses={statusesResult.data ?? []}
           allStaff={staffResult.data ?? []}
           notes={notesResult.data ?? []}
+          jobUpdates={(jobUpdatesResult.data ?? []) as any}
           timeEntries={timeResult.data ?? []}
           nbnSteps={nbnResult.data ?? []}
           workEntries={workResult.data ?? []}
