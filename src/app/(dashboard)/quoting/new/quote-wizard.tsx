@@ -165,7 +165,8 @@ interface ManualLabourLine {
   description: string;
   category: string; // "Labour" | "Shipping" | "Call-out" | custom
   quantity: number;
-  unitAmount: number;
+  unitAmount: number; // sell per unit — what the customer pays (ex GST)
+  unitCost?: number; // cost per unit — what it costs us; absent on lines saved before 2026-07 (backfilled on load)
 }
 
 const MANUAL_LABOUR_CATEGORIES = ["Labour", "Shipping", "Call-out", "Other"] as const;
@@ -191,12 +192,23 @@ function normaliseManualScope(value: string): string {
     .join('');
 }
 
-function defaultManualLabourLines(): ManualLabourLine[] {
+function defaultManualLabourLines(labourCostRate: number): ManualLabourLine[] {
   return [
-    { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "Labour", category: "Labour", quantity: 0, unitAmount: 150 },
-    { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "Call-out", category: "Call-out", quantity: 0, unitAmount: 80 },
-    { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "Shipping", category: "Shipping", quantity: 1, unitAmount: 0 },
+    { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "Labour", category: "Labour", quantity: 0, unitCost: labourCostRate, unitAmount: 150 },
+    { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "Call-out", category: "Call-out", quantity: 0, unitCost: 0, unitAmount: 80 },
+    { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "Shipping", category: "Shipping", quantity: 1, unitCost: 0, unitAmount: 0 },
   ];
+}
+
+// Lines saved before the cost column existed have no unitCost. Backfill:
+// Labour-category lines get the billing-settings cost rate (so reopening an
+// old quote immediately shows the real labour margin); everything else is
+// treated as pass-through (cost == sell), matching the old behaviour.
+function backfillLineCosts(lines: ManualLabourLine[], labourCostRate: number): ManualLabourLine[] {
+  return lines.map((l) => ({
+    ...l,
+    unitCost: l.unitCost ?? (l.category === "Labour" ? labourCostRate : l.unitAmount),
+  }));
 }
 
 const DRAFT_KEY = "centrefit-quote-draft";
@@ -416,8 +428,8 @@ export function QuoteWizard({
   );
   const [manualLabourLines, setManualLabourLines] = useState<ManualLabourLine[]>(
     existingQuote?.manualLabourLines && existingQuote.manualLabourLines.length > 0
-      ? existingQuote.manualLabourLines
-      : defaultManualLabourLines(),
+      ? backfillLineCosts(existingQuote.manualLabourLines, billingSettings?.labour_cost_rate ?? 75)
+      : defaultManualLabourLines(billingSettings?.labour_cost_rate ?? 75),
   );
   const [manualBomItems, setManualBomItems] = useState<ManualBomItem[]>(
     existingQuote?.quoteMode === "manual"
@@ -638,7 +650,7 @@ export function QuoteWizard({
       if (d.manualLabourHours != null) setManualLabourHours(d.manualLabourHours);
       if (d.manualLabourAmount != null) setManualLabourAmount(d.manualLabourAmount);
       if (d.manualCalloutDays != null) setManualCalloutDays(d.manualCalloutDays);
-      if (Array.isArray(d.manualLabourLines)) setManualLabourLines(d.manualLabourLines);
+      if (Array.isArray(d.manualLabourLines)) setManualLabourLines(backfillLineCosts(d.manualLabourLines, billingSettings?.labour_cost_rate ?? 75));
       if (d.manualPp1 != null) setManualPp1(d.manualPp1);
       if (d.manualPp2 != null) setManualPp2(d.manualPp2);
       if (d.electricianCost != null) setElectricianCost(d.electricianCost);
@@ -961,22 +973,26 @@ export function QuoteWizard({
     return { totalCost, totalSell, totalProfit: totalSell - totalCost, itemCount: manualBomItems.reduce((s, i) => s + i.quantity, 0) };
   }, [manualBomItems]);
 
-  // Manual labour data builder. Manual quotes are now driven by an invoice-
-  // style line-item editor (description × qty × unit price). Cost == sell on
-  // manual quotes — the operator's already pricing each line for the customer
-  // and we don't carry a separate margin model the way plan-mode rules do.
-  const costRate = billingSettings?.labour_cost_rate ?? 85;
+  // Manual labour data builder. Manual quotes are driven by an invoice-style
+  // line-item editor (description × qty × cost/sell per unit). Each line
+  // carries its own cost so labour margin flows into profit, same as
+  // plan-mode — lines saved before the cost column existed are backfilled
+  // on load (see backfillLineCosts).
+  const costRate = billingSettings?.labour_cost_rate ?? 75;
   const sellRate = billingSettings?.labour_sell_rate ?? 150;
   const itServiceRate = billingSettings?.it_service_labour_rate ?? 120;
 
   const manualLabourData: LabourData = useMemo(() => {
-    const sectionsByCategory = new Map<string, { name: string; total: number; lines: ManualLabourLine[] }>();
+    const sectionsByCategory = new Map<string, { name: string; totalSell: number; totalCost: number; lines: ManualLabourLine[] }>();
     for (const line of manualLabourLines) {
       const cat = line.category || "Labour";
-      const lineTotal = (Number(line.quantity) || 0) * (Number(line.unitAmount) || 0);
-      if (!sectionsByCategory.has(cat)) sectionsByCategory.set(cat, { name: cat, total: 0, lines: [] });
+      const qty = Number(line.quantity) || 0;
+      const lineSell = qty * (Number(line.unitAmount) || 0);
+      const lineCost = qty * (Number(line.unitCost ?? line.unitAmount) || 0);
+      if (!sectionsByCategory.has(cat)) sectionsByCategory.set(cat, { name: cat, totalSell: 0, totalCost: 0, lines: [] });
       const section = sectionsByCategory.get(cat)!;
-      section.total += lineTotal;
+      section.totalSell += lineSell;
+      section.totalCost += lineCost;
       section.lines.push(line);
     }
     const sections = Array.from(sectionsByCategory.values()).map((s) => ({
@@ -992,16 +1008,15 @@ export function QuoteWizard({
         unitLabel: s.name === "Labour" ? "hrs" : "x",
       })),
       totalHours: s.lines.reduce((sum, l) => sum + (Number(l.quantity) || 0), 0),
-      totalCost: s.total,
-      totalSell: s.total,
+      totalCost: s.totalCost,
+      totalSell: s.totalSell,
     }));
-    const grandTotal = sections.reduce((sum, s) => sum + s.totalSell, 0);
     return {
       sections,
       fixedCosts: [],
       grandTotalHours: sections.reduce((sum, s) => sum + s.totalHours, 0),
-      grandTotalCost: grandTotal,
-      grandTotalSell: grandTotal,
+      grandTotalCost: sections.reduce((sum, s) => sum + s.totalCost, 0),
+      grandTotalSell: sections.reduce((sum, s) => sum + s.totalSell, 0),
       costRate,
       sellRate,
     };
@@ -1037,11 +1052,11 @@ export function QuoteWizard({
 
   const summary: QuoteSummary | null = useMemo(() => {
     if (quoteMode === "manual") {
-      // Manual mode is driven entirely by the line-item editor — no BOM-
-      // derived labour, no extras (electrician / freight live as labour
-      // lines now if the user wants them). Zero out extras + electrician
-      // so the summary reflects only what the user explicitly entered.
-      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, [], { discountPercent, electricianCost: 0, isInterstate: false });
+      // Manual mode is driven by the line-item editor — no BOM-derived
+      // labour and no extras rows, but the electrician quote gets the same
+      // treatment as plan mode (cost + 30% margin, 2x interstate) so its
+      // margin lands in profit.
+      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, [], { discountPercent, electricianCost, isInterstate });
     }
     if (!labourData) return null;
     return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent, electricianCost, isInterstate });
@@ -1461,6 +1476,67 @@ export function QuoteWizard({
   function patchBomItem(target: BOMItem, patch: Partial<BOMItem>) {
     setBomItems((prev) => prev.map((b) => (b === target ? { ...b, ...patch } : b)));
   }
+
+  // Electrician quotation panel — shared by plan mode (Extras step) and
+  // manual mode (Labour step). Cost + 30% margin (2x interstate) flows into
+  // the summary via calculateQuoteSummary in both modes.
+  const electricianPanel = (
+    <div className="mt-6">
+      <div className="flex items-center gap-2 mb-2">
+        <h3 className="text-sm font-semibold text-foreground">Electrician</h3>
+        {isInterstate && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500">REQUIRED — Interstate</span>}
+      </div>
+      <p className="text-xs text-muted-foreground mb-3">
+        {isInterstate
+          ? "Interstate job — electrician quote is mandatory. Cost is doubled (2x). Select what the electrician is covering below."
+          : "Enter the electrician's quoted cost. A 30% margin is applied automatically."}
+      </p>
+
+      {/* Electrician scope toggles — interstate only */}
+      {isInterstate && (
+        <div className="flex gap-4 mb-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={elecDoingRoughIn} onChange={(e) => setElecDoingRoughIn(e.target.checked)}
+              className="rounded border-border text-primary focus:ring-primary" />
+            <span className="text-sm">Electrician doing Rough In</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={elecDoingFitOff} onChange={(e) => setElecDoingFitOff(e.target.checked)}
+              className="rounded border-border text-primary focus:ring-primary" />
+            <span className="text-sm">Electrician doing Fit Off</span>
+          </label>
+        </div>
+      )}
+
+      {isInterstate && electricianCost === 0 && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 mb-3">
+          <p className="text-xs text-amber-500 font-medium">Electrician quote is required for interstate jobs. Enter the cost below.</p>
+        </div>
+      )}
+
+      <div className="rounded-lg border border-border overflow-hidden">
+        <div className="grid grid-cols-[1fr_120px_120px] gap-3 bg-muted/50 px-4 py-2.5 border-b border-border">
+          <span className="text-xs font-medium text-muted-foreground">Item</span>
+          <span className="text-xs font-medium text-muted-foreground text-center">Cost</span>
+          <span className="text-xs font-medium text-muted-foreground text-center">Sell ({isInterstate ? "2x" : "+ 30%"})</span>
+        </div>
+        <div className="grid grid-cols-[1fr_120px_120px] gap-3 items-center px-4 py-2.5">
+          <span className="text-sm">Electrician Quotation</span>
+          <input
+            type="number"
+            min="0"
+            value={electricianCost || ""}
+            onChange={(e) => setElectricianCost(parseFloat(e.target.value) || 0)}
+            placeholder="$0"
+            className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          />
+          <span className="text-sm font-mono text-center text-muted-foreground">
+            ${fmt(Math.round(electricianCost * (isInterstate ? 2 : 1.3) * 100) / 100)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div>
@@ -2349,17 +2425,18 @@ export function QuoteWizard({
 
       {/* STEP 4: LABOUR — manual mode */}
       {/* Invoice-style line-item editor. Users pick a category (Labour /
-          Shipping / Call-out / Other), describe the line, set qty × unit
-          price. Cost == sell on manual quotes — the operator's already
-          decided the price. */}
+          Shipping / Call-out / Other), describe the line, set qty and a
+          cost/sell pair per unit — cost is what it costs us, sell is what
+          the customer pays, and the margin flows into profit. */}
       {step === 3 && quoteMode === "manual" && (
         <div className="space-y-4 max-w-3xl">
           <div className="rounded-lg border border-border overflow-hidden">
-            <div className="grid grid-cols-[140px_1fr_80px_120px_120px_32px] gap-2 bg-muted/50 px-4 py-2.5 border-b border-border text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+            <div className="grid grid-cols-[130px_1fr_64px_104px_104px_104px_28px] gap-2 bg-muted/50 px-4 py-2.5 border-b border-border text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
               <span>Type</span>
               <span>Description</span>
               <span className="text-center">Qty</span>
-              <span className="text-right">Unit $</span>
+              <span className="text-right">Cost $</span>
+              <span className="text-right">Sell $</span>
               <span className="text-right">Total</span>
               <span></span>
             </div>
@@ -2367,7 +2444,7 @@ export function QuoteWizard({
               {manualLabourLines.map((line) => {
                 const lineTotal = (Number(line.quantity) || 0) * (Number(line.unitAmount) || 0);
                 return (
-                  <div key={line.id} className="grid grid-cols-[140px_1fr_80px_120px_120px_32px] gap-2 items-center px-4 py-2">
+                  <div key={line.id} className="grid grid-cols-[130px_1fr_64px_104px_104px_104px_28px] gap-2 items-center px-4 py-2">
                     <select
                       value={MANUAL_LABOUR_CATEGORIES.includes(line.category as typeof MANUAL_LABOUR_CATEGORIES[number]) ? line.category : "Other"}
                       onChange={(e) => {
@@ -2398,9 +2475,20 @@ export function QuoteWizard({
                       type="number"
                       min="0"
                       step="0.01"
+                      value={line.unitCost ?? ""}
+                      onChange={(e) => setManualLabourLines((prev) => prev.map((l) => l.id === line.id ? { ...l, unitCost: parseFloat(e.target.value) || 0 } : l))}
+                      placeholder="0.00"
+                      title="What this line costs us per unit (wages, subbie, freight)"
+                      className="rounded-md border border-border bg-input px-2 py-1 text-xs text-right font-mono text-muted-foreground focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
                       value={line.unitAmount || ""}
                       onChange={(e) => setManualLabourLines((prev) => prev.map((l) => l.id === line.id ? { ...l, unitAmount: parseFloat(e.target.value) || 0 } : l))}
                       placeholder="0.00"
+                      title="What the customer pays per unit (ex GST)"
                       className="rounded-md border border-border bg-input px-2 py-1 text-xs text-right font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                     <span className="text-right text-xs font-mono text-foreground">${fmt(lineTotal)}</span>
@@ -2423,29 +2511,31 @@ export function QuoteWizard({
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setManualLabourLines((prev) => [...prev, { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "", category: "Labour", quantity: 1, unitAmount: 0 }])}
+                  onClick={() => setManualLabourLines((prev) => [...prev, { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "", category: "Labour", quantity: 1, unitCost: costRate, unitAmount: 0 }])}
                   className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                 >
                   + Add line
                 </button>
                 <button
                   type="button"
-                  onClick={() => setManualLabourLines((prev) => [...prev, { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "IT Service", category: "Labour", quantity: 1, unitAmount: itServiceRate }])}
+                  onClick={() => setManualLabourLines((prev) => [...prev, { id: `ml_${Math.random().toString(36).slice(2, 8)}`, description: "IT Service", category: "Labour", quantity: 1, unitCost: costRate, unitAmount: itServiceRate }])}
                   className="rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-[11px] text-primary hover:bg-primary/10 transition-colors"
                   title={`Add an IT Service labour line at $${fmt(itServiceRate)}/hr`}
                 >
                   + IT Service (${fmt(itServiceRate)}/hr)
                 </button>
               </div>
-              <div className="text-sm font-mono">
-                <span className="text-muted-foreground text-xs mr-3">Total</span>
-                <span className="font-semibold">${fmt(manualLabourData.grandTotalSell)}</span>
+              <div className="text-sm font-mono flex items-center gap-4">
+                <span className="text-xs text-muted-foreground">Cost <span className="text-foreground">${fmt(manualLabourData.grandTotalCost)}</span></span>
+                <span className="text-xs text-muted-foreground">Profit <span className="text-emerald-400">${fmt(manualLabourData.grandTotalSell - manualLabourData.grandTotalCost)}</span></span>
+                <span><span className="text-muted-foreground text-xs mr-2">Total</span><span className="font-semibold">${fmt(manualLabourData.grandTotalSell)}</span></span>
               </div>
             </div>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Manual quotes price each line directly — unit price is what the customer pays per unit (ex GST). Cost equals sell here; there's no separate margin like in plan-based quotes.
+            Sell is what the customer pays per unit (ex GST); Cost is what it costs us (wages, subbie, freight). Labour defaults to your billing-settings cost rate (${fmt(costRate)}/hr) — the margin on every line flows into the quote&apos;s profit.
           </p>
+          {electricianPanel}
         </div>
       )}
 
@@ -2650,62 +2740,7 @@ export function QuoteWizard({
             )}
           </div>
 
-          {/* Electrician */}
-          <div className="mt-6">
-            <div className="flex items-center gap-2 mb-2">
-              <h3 className="text-sm font-semibold text-foreground">Electrician</h3>
-              {isInterstate && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500">REQUIRED — Interstate</span>}
-            </div>
-            <p className="text-xs text-muted-foreground mb-3">
-              {isInterstate
-                ? "Interstate job — electrician quote is mandatory. Cost is doubled (2x). Select what the electrician is covering below."
-                : "Enter the electrician's quoted cost. A 30% margin is applied automatically."}
-            </p>
-
-            {/* Electrician scope toggles — interstate only */}
-            {isInterstate && (
-              <div className="flex gap-4 mb-3">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={elecDoingRoughIn} onChange={(e) => setElecDoingRoughIn(e.target.checked)}
-                    className="rounded border-border text-primary focus:ring-primary" />
-                  <span className="text-sm">Electrician doing Rough In</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={elecDoingFitOff} onChange={(e) => setElecDoingFitOff(e.target.checked)}
-                    className="rounded border-border text-primary focus:ring-primary" />
-                  <span className="text-sm">Electrician doing Fit Off</span>
-                </label>
-              </div>
-            )}
-
-            {isInterstate && electricianCost === 0 && (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 mb-3">
-                <p className="text-xs text-amber-500 font-medium">Electrician quote is required for interstate jobs. Enter the cost below.</p>
-              </div>
-            )}
-
-            <div className="rounded-lg border border-border overflow-hidden">
-              <div className="grid grid-cols-[1fr_120px_120px] gap-3 bg-muted/50 px-4 py-2.5 border-b border-border">
-                <span className="text-xs font-medium text-muted-foreground">Item</span>
-                <span className="text-xs font-medium text-muted-foreground text-center">Cost</span>
-                <span className="text-xs font-medium text-muted-foreground text-center">Sell ({isInterstate ? "2x" : "+ 30%"})</span>
-              </div>
-              <div className="grid grid-cols-[1fr_120px_120px] gap-3 items-center px-4 py-2.5">
-                <span className="text-sm">Electrician Quotation</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={electricianCost || ""}
-                  onChange={(e) => setElectricianCost(parseFloat(e.target.value) || 0)}
-                  placeholder="$0"
-                  className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                />
-                <span className="text-sm font-mono text-center text-muted-foreground">
-                  ${fmt(Math.round(electricianCost * (isInterstate ? 2 : 1.3) * 100) / 100)}
-                </span>
-              </div>
-            </div>
-          </div>
+          {electricianPanel}
         </div>
       )}
 
