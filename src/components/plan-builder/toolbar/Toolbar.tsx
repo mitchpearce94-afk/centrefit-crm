@@ -176,22 +176,43 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
       const planName = [tb.client, tb.projectName, tb.revision].filter(Boolean).join(' - ') || 'Untitled Plan';
       const exportData = generateQuoteExport();
 
-      // Upload .cfp to Storage
-      console.log(`[Plan Builder] Saving to cloud: planFileId=${store.planFileId}, using=${planId}`);
-      const cfpBlob = new Blob([cfpData], { type: 'application/json' });
-      const cfpPath = `plans/${planId}.cfp`;
-      await supabase.storage.from('plan-files').upload(cfpPath, cfpBlob, { upsert: true });
-      const { data: cfpUrlData } = supabase.storage.from('plan-files').getPublicUrl(cfpPath);
-
-      // Generate the PDF in parallel-ish — start it before the row upsert
-      // so the user's wall-clock save is the max(cfp+row, pdf-render) and
-      // not the sum. PDF render reads from the in-memory store, which is
-      // already up to date.
-      setSavingPhase("rendering");
+      // Generate the PDF in parallel-ish — started before any cloud write so
+      // the user's wall-clock save is the max(cfp+row, pdf-render) and not
+      // the sum, and so a failed cloud save can still hand the rendered blob
+      // back to callers for the local file write. Render reads from the
+      // in-memory store, which is already up to date.
       const pdfPromise = exportToPdf({ download: false }).catch((err) => {
         console.error("[Plan Builder] PDF render failed during save:", err);
         return null as Blob | null;
       });
+
+      // No session = every write below bounces off RLS as anon with a
+      // cryptic policy error. Stop early with rescue instructions instead.
+      if (!user) {
+        pdfBlob = await pdfPromise;
+        alert(
+          "Your login session has expired, so the plan can't be saved to the cloud.\n\n" +
+          "DON'T refresh or close this tab — you'll lose your work.\n\n" +
+          "1. Open a NEW tab and log back into the CRM.\n" +
+          "2. Come back to this tab and hit Save again."
+        );
+        return pdfBlob;
+      }
+
+      // Upload .cfp to Storage
+      console.log(`[Plan Builder] Saving to cloud: planFileId=${store.planFileId}, using=${planId}`);
+      const cfpBlob = new Blob([cfpData], { type: 'application/json' });
+      const cfpPath = `plans/${planId}.cfp`;
+      const cfpUpload = await supabase.storage.from('plan-files').upload(cfpPath, cfpBlob, { upsert: true });
+      if (cfpUpload.error) {
+        // Skip the row upsert too — metadata pointing at a missing or stale
+        // .cfp is worse than no update at all.
+        console.error('[Plan Builder] .cfp upload failed:', cfpUpload.error);
+        pdfBlob = await pdfPromise;
+        alert('Failed to save plan to cloud (.cfp upload): ' + cfpUpload.error.message);
+        return pdfBlob;
+      }
+      const { data: cfpUrlData } = supabase.storage.from('plan-files').getPublicUrl(cfpPath);
 
       // Initial row upsert (cfp_url + metadata) — done before the PDF
       // finishes so the row exists even if PDF gen fails.
@@ -214,13 +235,15 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
       const { error } = await supabase.from('plan_files').upsert(planRow, { onConflict: 'id' });
       if (error) {
         console.error('Failed to save plan:', error);
+        pdfBlob = await pdfPromise;
         alert('Failed to save plan to cloud: ' + error.message);
-        return null;
+        return pdfBlob;
       }
 
       usePlanStore.setState({ planFileId: planId });
       // Wait for PDF + upload before marking clean / clearing the URL hint
       // so the next "Send to electrician" sees the fresh file.
+      setSavingPhase("rendering");
       pdfBlob = await pdfPromise;
       if (pdfBlob) {
         const pdfPath = `plans/${planId}.pdf`;
@@ -244,10 +267,14 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
         window.history.replaceState(null, '', `/plans/${planId}`);
       }
     } catch (err) {
+      // Early returns above skip this, so the finally block owns the state
+      // reset — without it a thrown save left the button stuck on "Saving…".
       console.error('Cloud save error:', err);
+      alert('Failed to save plan to cloud: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSaving(false);
+      setSavingPhase("idle");
     }
-    setSaving(false);
-    setSavingPhase("idle");
     return pdfBlob;
   };
 
