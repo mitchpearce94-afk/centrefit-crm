@@ -58,3 +58,5 @@ scripts/gc-discovery-output.json
 scripts/xero-repeating-output.json
 scripts/dd-sheet-output.json
 scripts/recon-report.md
+scripts/site-first-xero-map.md
+scripts/site-first-split-log.md
