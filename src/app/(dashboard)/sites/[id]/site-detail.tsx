@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { CustomerSite, CustomerContact, SiteAsset, AssetType } from "@/lib/types";
 import { Tabs } from "@/components/tabs";
 import { SiteEditForm } from "./site-edit-form";
+import { OwnerCard, type OwnerInfo } from "./owner-card";
 import { SiteContactsList } from "./site-contacts-list";
 import { SiteAssetsList } from "./site-assets-list";
 import { KeyInfoPanel, type KeyInfoPhoto } from "./key-info-panel";
@@ -77,6 +78,8 @@ function StatusPill({ label, colour }: { label: string; colour: string }) {
 
 export function SiteDetail({
   site,
+  owner,
+  activePlanCount,
   contacts,
   jobs,
   quotes,
@@ -91,6 +94,8 @@ export function SiteDetail({
   importJobId,
 }: {
   site: CustomerSite & { customer: { id: string; name: string } | null };
+  owner: OwnerInfo | null;
+  activePlanCount: number;
   contacts: CustomerContact[];
   jobs: Job[];
   quotes: Quote[];
@@ -108,6 +113,7 @@ export function SiteDetail({
   const activePlans = plans.filter((p) => p.status !== "cancelled");
   const tabs = [
     { id: "details", label: "Details" },
+    ...(owner ? [{ id: "owner", label: "Owner" }] : []),
     { id: "contacts", label: "Contacts", count: contacts.length },
     { id: "jobs", label: "Jobs", count: jobs.length },
     { id: "quotes", label: "Quotes", count: quotes.length },
@@ -127,6 +133,17 @@ export function SiteDetail({
       {(activeTab) => (
         <>
           {activeTab === "details" && <SiteEditForm site={site} />}
+
+          {activeTab === "owner" && owner && (
+            <div className="max-w-xl">
+              <OwnerCard
+                siteId={site.id}
+                owner={owner}
+                activePlanCount={activePlanCount}
+                isAdmin={isAdmin}
+              />
+            </div>
+          )}
 
           {activeTab === "contacts" && (
             <SiteContactsList

@@ -2,7 +2,6 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { SiteDetail } from "./site-detail";
-import { OwnerCard } from "./owner-card";
 import type { CustomerSite, CustomerContact, SiteAsset, AssetType } from "@/lib/types";
 import { currentUserHasPermission } from "@/lib/auth/permissions";
 
@@ -179,44 +178,41 @@ export default async function SiteDetailPage({
 
   return (
     <div>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Link href="/sites" className="hover:text-foreground transition-colors">
-              Sites
-            </Link>
-            <span>/</span>
-          </div>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight">{site.name}</h1>
-          <div className="mt-1 text-sm text-muted-foreground">
-            {[site.address, site.suburb, site.state, site.postcode]
-              .filter(Boolean)
-              .join(", ") || "No address on file"}
-          </div>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Link href="/sites" className="hover:text-foreground transition-colors">
+            Sites
+          </Link>
+          <span>/</span>
         </div>
-        {site.customer && (
-          <div className="w-full lg:w-80 shrink-0">
-            <OwnerCard
-              siteId={site.id}
-              owner={{
-                id: site.customer.id,
-                name: site.customer.name,
-                abn: site.customer.abn ?? null,
-                billing_email: site.customer.billing_email ?? null,
-                contactName: ownerContact?.name ?? null,
-                contactEmail: ownerContact?.email ?? null,
-                contactPhone: ownerContact?.phone ?? null,
-              }}
-              activePlanCount={activePlanCount}
-              isAdmin={isAdmin}
-            />
-          </div>
-        )}
+        <h1 className="mt-1 text-2xl font-bold tracking-tight">{site.name}</h1>
+        <div className="mt-1 text-sm text-muted-foreground">
+          {[site.address, site.suburb, site.state, site.postcode]
+            .filter(Boolean)
+            .join(", ") || "No address on file"}
+          {site.customer && (
+            <span className="text-muted-foreground/70"> · {site.customer.name}</span>
+          )}
+        </div>
       </div>
 
       <div className="mt-6">
         <SiteDetail
           site={site}
+          owner={
+            site.customer
+              ? {
+                  id: site.customer.id,
+                  name: site.customer.name,
+                  abn: site.customer.abn ?? null,
+                  billing_email: site.customer.billing_email ?? null,
+                  contactName: ownerContact?.name ?? null,
+                  contactEmail: ownerContact?.email ?? null,
+                  contactPhone: ownerContact?.phone ?? null,
+                }
+              : null
+          }
+          activePlanCount={activePlanCount}
           contacts={contacts}
           jobs={jobs as any}
           quotes={quotes as any}
