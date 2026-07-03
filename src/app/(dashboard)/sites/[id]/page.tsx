@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { SiteDetail } from "./site-detail";
-import { TransferSiteButton } from "./transfer-site-button";
+import { OwnerCard } from "./owner-card";
 import type { CustomerSite, CustomerContact, SiteAsset, AssetType } from "@/lib/types";
 import { currentUserHasPermission } from "@/lib/auth/permissions";
 
@@ -38,20 +38,58 @@ export default async function SiteDetailPage({
     isAdmin = viewerStaff?.role === "admin";
   }
 
-  const [siteResult, contactsResult, jobsResult, assetsResult, assetTypesResult, keyInfoPhotosResult, vaultFoldersResult, importJobResult] = await Promise.all([
-    supabase
-      .from("customer_sites")
-      .select(
-        "*, customer:customers!customer_id(id, name)"
-      )
-      .eq("id", id)
-      .single(),
+  // Site first — the owner joins ride along; everything else keys off the
+  // site id + backing customer id (site-first D2: the site IS the account).
+  const siteResult = await supabase
+    .from("customer_sites")
+    .select("*, customer:customers!customer_id(id, name, abn, billing_email)")
+    .eq("id", id)
+    .single();
+
+  if (siteResult.error || !siteResult.data) {
+    notFound();
+  }
+
+  const rawSite = siteResult.data as CustomerSite & {
+    customer:
+      | { id: string; name: string; abn: string | null; billing_email: string | null }
+      | { id: string; name: string; abn: string | null; billing_email: string | null }[]
+      | null;
+  };
+  const site = {
+    ...rawSite,
+    customer: Array.isArray(rawSite.customer)
+      ? rawSite.customer[0] ?? null
+      : rawSite.customer,
+  };
+  const customerId = site.customer?.id ?? site.customer_id;
+
+  const [
+    contactsResult,
+    ownerContactResult,
+    jobsResult,
+    quotesResult,
+    invoicesResult,
+    plansResult,
+    assetsResult,
+    assetTypesResult,
+    keyInfoPhotosResult,
+    vaultFoldersResult,
+    importJobResult,
+  ] = await Promise.all([
     supabase
       .from("customer_contacts")
       .select("*")
       .eq("site_id", id)
       .order("is_primary", { ascending: false })
       .order("name"),
+    supabase
+      .from("customer_contacts")
+      .select("id, name, email, phone, is_primary")
+      .eq("customer_id", customerId)
+      .order("is_primary", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
     supabase
       .from("jobs")
       .select(
@@ -60,6 +98,24 @@ export default async function SiteDetailPage({
       .eq("site_id", id)
       .order("created_at", { ascending: false })
       .limit(50),
+    supabase
+      .from("quotes")
+      .select("id, ref, status, expires_at, created_at, sent_at")
+      .or(`site_id.eq.${id},customer_id.eq.${customerId}`)
+      .order("created_at", { ascending: false })
+      .limit(50),
+    supabase
+      .from("invoices")
+      .select("id, xero_invoice_number, invoice_type, status, total, amount_due, due_date, created_at")
+      .or(`site_id.eq.${id},customer_id.eq.${customerId}`)
+      .order("created_at", { ascending: false })
+      .limit(50),
+    supabase
+      .from("recurring_plans")
+      .select("id, status, next_invoice_date, created_at, recurring_plan_items(service_name, price_inc_gst, frequency, quantity)")
+      .or(`site_id.eq.${id},customer_id.eq.${customerId}`)
+      .order("created_at", { ascending: false })
+      .limit(20),
     supabase
       .from("site_assets")
       .select("*")
@@ -95,21 +151,14 @@ export default async function SiteDetailPage({
       .maybeSingle(),
   ]);
 
-  if (siteResult.error || !siteResult.data) {
-    notFound();
-  }
-
-  const rawSite = siteResult.data as CustomerSite & {
-    customer: { id: string; name: string } | { id: string; name: string }[] | null;
-  };
-  const site = {
-    ...rawSite,
-    customer: Array.isArray(rawSite.customer)
-      ? rawSite.customer[0] ?? null
-      : rawSite.customer,
-  };
   const contacts = (contactsResult.data ?? []) as CustomerContact[];
+  const ownerContact = ownerContactResult.data as
+    | { id: string; name: string | null; email: string | null; phone: string | null }
+    | null;
   const jobs = jobsResult.data ?? [];
+  const quotes = quotesResult.data ?? [];
+  const invoices = invoicesResult.data ?? [];
+  const plans = plansResult.data ?? [];
   const assets = (assetsResult.data ?? []) as SiteAsset[];
   const assetTypes = (assetTypesResult.data ?? []) as AssetType[];
   const keyInfoPhotos = (keyInfoPhotosResult.data ?? []) as Array<{
@@ -124,26 +173,19 @@ export default async function SiteDetailPage({
   const vaultFolders = (vaultFoldersResult.data ?? []) as VaultFolderForRefRow[];
   const importJobId = (importJobResult.data as { job_id: string | null } | null)?.job_id ?? null;
 
+  const activePlanCount = (plans as { status: string }[]).filter((p) =>
+    ["active", "pending_mandate", "paused"].includes(p.status),
+  ).length;
+
   return (
     <div>
-      <div className="flex items-start justify-between">
-        <div>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Link href="/sites" className="hover:text-foreground transition-colors">
               Sites
             </Link>
             <span>/</span>
-            {site.customer && (
-              <>
-                <Link
-                  href={`/customers/${site.customer.id}`}
-                  className="hover:text-foreground transition-colors"
-                >
-                  {site.customer.name}
-                </Link>
-                <span>/</span>
-              </>
-            )}
           </div>
           <h1 className="mt-1 text-2xl font-bold tracking-tight">{site.name}</h1>
           <div className="mt-1 text-sm text-muted-foreground">
@@ -152,13 +194,23 @@ export default async function SiteDetailPage({
               .join(", ") || "No address on file"}
           </div>
         </div>
-        {isAdmin && site.customer && (
-          <TransferSiteButton
-            siteId={site.id}
-            siteName={site.name}
-            currentCustomerId={site.customer.id}
-            currentCustomerName={site.customer.name}
-          />
+        {site.customer && (
+          <div className="w-full lg:w-80 shrink-0">
+            <OwnerCard
+              siteId={site.id}
+              owner={{
+                id: site.customer.id,
+                name: site.customer.name,
+                abn: site.customer.abn ?? null,
+                billing_email: site.customer.billing_email ?? null,
+                contactName: ownerContact?.name ?? null,
+                contactEmail: ownerContact?.email ?? null,
+                contactPhone: ownerContact?.phone ?? null,
+              }}
+              activePlanCount={activePlanCount}
+              isAdmin={isAdmin}
+            />
+          </div>
         )}
       </div>
 
@@ -167,6 +219,9 @@ export default async function SiteDetailPage({
           site={site}
           contacts={contacts}
           jobs={jobs as any}
+          quotes={quotes as any}
+          invoices={invoices as any}
+          plans={plans as any}
           assets={assets}
           assetTypes={assetTypes}
           keyInfoPhotos={keyInfoPhotos}
