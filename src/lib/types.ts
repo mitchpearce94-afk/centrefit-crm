@@ -86,8 +86,11 @@ export interface CustomerSite {
   state: string | null;
   postcode: string | null;
   phone: string | null;
-  // Site-level invoice email. Wins over customer.billing_email when present.
-  // Comma-separated for multi-recipient billing (Total Fusion pattern).
+  // General site contact email (reception / manager). NOT the invoice email.
+  email: string | null;
+  // Invoice recipient. Edited via the site's Owner tab (mirrors the backing
+  // customer's billing_email since 2026-07-04); comma-separated for
+  // multi-recipient billing (Total Fusion pattern).
   billing_email: string | null;
   lat: number | null;
   lng: number | null;

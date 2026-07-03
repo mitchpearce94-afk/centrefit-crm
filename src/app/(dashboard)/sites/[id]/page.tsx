@@ -190,9 +190,6 @@ export default async function SiteDetailPage({
           {[site.address, site.suburb, site.state, site.postcode]
             .filter(Boolean)
             .join(", ") || "No address on file"}
-          {site.customer && (
-            <span className="text-muted-foreground/70"> · {site.customer.name}</span>
-          )}
         </div>
       </div>
 

@@ -541,7 +541,7 @@ function TimedEntryBlock({
           </div>
           {height > 44 && isJob && lanes < 3 && (
             <p className="text-[10px] text-muted-foreground truncate mt-0.5">
-              {entry.job?.site?.name ?? entry.job?.customer?.name}{entry.job?.site && entry.job?.customer ? ` · ${entry.job.customer.name}` : ""}
+              {entry.job?.site?.name ?? entry.job?.customer?.name}
             </p>
           )}
           {height > 64 && lanes < 3 && (
@@ -598,9 +598,6 @@ function TimedEntryBlock({
               )}
               <div className="mt-1.5 space-y-0.5 text-xs">
                 <p className="font-medium truncate">{entry.job?.site?.name ?? entry.job?.customer?.name ?? "—"}</p>
-                {entry.job?.site?.name && entry.job?.customer?.name && (
-                  <p className="opacity-70 truncate">{entry.job.customer.name}</p>
-                )}
               </div>
             </>
           ) : (

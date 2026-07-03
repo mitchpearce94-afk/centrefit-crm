@@ -37,7 +37,7 @@ export function AddSiteButton({ ownerPrefills }: { ownerPrefills: OwnerPrefillOp
   const [state, setState] = useState("QLD");
   const [postcode, setPostcode] = useState("");
   const [phone, setPhone] = useState("");
-  const [siteBillingEmail, setSiteBillingEmail] = useState("");
+  const [siteEmail, setSiteEmail] = useState("");
   const [notes, setNotes] = useState("");
 
   const [ownerName, setOwnerName] = useState("");
@@ -71,7 +71,7 @@ export function AddSiteButton({ ownerPrefills }: { ownerPrefills: OwnerPrefillOp
 
   function reset() {
     setName(""); setAddress(""); setSuburb(""); setState("QLD");
-    setPostcode(""); setPhone(""); setSiteBillingEmail(""); setNotes("");
+    setPostcode(""); setPhone(""); setSiteEmail(""); setNotes("");
     setOwnerName(""); setAbn(""); setOwnerBillingEmail("");
     setContactName(""); setContactEmail(""); setContactPhone("");
     setCopySearch(""); setShowCopy(false);
@@ -91,7 +91,7 @@ export function AddSiteButton({ ownerPrefills }: { ownerPrefills: OwnerPrefillOp
         body: JSON.stringify({
           site: {
             name: name.trim(), address: address.trim(), suburb: suburb.trim(), state: state.trim(),
-            postcode: postcode.trim(), phone: phone.trim(), billingEmail: siteBillingEmail.trim(), notes: notes.trim(),
+            postcode: postcode.trim(), phone: phone.trim(), email: siteEmail.trim(), notes: notes.trim(),
           },
           owner: {
             name: ownerName.trim(), abn: abn.trim(), billingEmail: ownerBillingEmail.trim(),
@@ -153,7 +153,7 @@ export function AddSiteButton({ ownerPrefills }: { ownerPrefills: OwnerPrefillOp
             <input placeholder="Postcode" value={postcode} onChange={(e) => setPostcode(e.target.value)} className={inputClass} />
           </div>
           <input placeholder="Phone (site reception / main contact)" value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" className={inputClass} />
-          <input placeholder="Billing email (where this site's invoices go)" value={siteBillingEmail} onChange={(e) => setSiteBillingEmail(e.target.value)} type="text" className={inputClass} />
+          <input placeholder="Site email (reception / manager — invoices go to the owner's billing email)" value={siteEmail} onChange={(e) => setSiteEmail(e.target.value)} type="text" className={inputClass} />
           <textarea placeholder="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={`${inputClass} resize-none`} />
 
           <div className="flex items-center justify-between pt-2">

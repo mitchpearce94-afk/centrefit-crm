@@ -26,9 +26,7 @@ export default async function SitesPage({
 
   let query = supabase
     .from("customer_sites")
-    .select(
-      "id, name, address, suburb, state, postcode, notes, customer:customers!customer_id(id, name, abn, billing_email)"
-    )
+    .select("id, name, address, suburb, state, postcode, phone, email, notes")
     .order("name");
 
   if (params.q) {
@@ -57,17 +55,12 @@ export default async function SitesPage({
     suburb: string | null;
     state: string | null;
     postcode: string | null;
+    phone: string | null;
+    email: string | null;
     notes: string | null;
-    customer:
-      | { id: string; name: string; abn: string | null; billing_email: string | null }
-      | { id: string; name: string; abn: string | null; billing_email: string | null }[]
-      | null;
   };
 
-  const rows = (sites as RawRow[] | null)?.map((r) => ({
-    ...r,
-    customer: Array.isArray(r.customer) ? (r.customer[0] ?? null) : r.customer,
-  }));
+  const rows = (sites as RawRow[] | null) ?? [];
 
   // Owner prefill options for "Copy owner from an existing site…" in the
   // add-site form (D2: the new site still gets its OWN backing record).
@@ -112,13 +105,14 @@ export default async function SitesPage({
           <thead>
             <tr className="border-b border-border bg-muted/50">
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Site</th>
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden md:table-cell">Owner</th>
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden md:table-cell">Email</th>
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden sm:table-cell">Phone</th>
               <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden lg:table-cell">Address</th>
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden sm:table-cell">State</th>
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden xl:table-cell">State</th>
             </tr>
           </thead>
           <tbody>
-            {rows?.map((site) => (
+            {rows.map((site) => (
               <tr
                 key={site.id}
                 className="border-b border-border last:border-0 transition-colors hover:bg-muted/30"
@@ -131,15 +125,18 @@ export default async function SitesPage({
                     {site.name}
                   </Link>
                 </td>
-                <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">
-                  {site.customer?.name ?? "—"}
+                <td className="px-4 py-3 text-muted-foreground hidden md:table-cell font-mono text-xs">
+                  {site.email ?? "—"}
+                </td>
+                <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">
+                  {site.phone ?? "—"}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">
                   {[site.address, site.suburb, site.postcode]
                     .filter(Boolean)
                     .join(", ") || "—"}
                 </td>
-                <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">
+                <td className="px-4 py-3 text-muted-foreground hidden xl:table-cell">
                   {site.state ?? "—"}
                 </td>
               </tr>
@@ -147,7 +144,7 @@ export default async function SitesPage({
             {(!sites || sites.length === 0) && (
               <tr>
                 <td
-                  colSpan={4}
+                  colSpan={5}
                   className="px-4 py-12 text-center text-muted-foreground"
                 >
                   No sites found. Use “+ Add site” above.

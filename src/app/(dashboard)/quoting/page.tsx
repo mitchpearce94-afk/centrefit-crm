@@ -212,7 +212,6 @@ export default async function QuotingPage({
             <tr className="border-b border-border bg-muted/50">
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Ref</th>
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Site</th>
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden sm:table-cell">Client</th>
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
               <th className="px-4 py-3 text-right font-medium text-muted-foreground hidden md:table-cell">Expires</th>
               <th className="px-4 py-3 text-right font-medium text-muted-foreground hidden md:table-cell">Created</th>
@@ -238,9 +237,6 @@ export default async function QuotingPage({
                   </td>
                   <td className="px-4 py-3 font-medium text-foreground">
                     {quote.site_name ?? quote.customer?.name ?? quote.client_name ?? "\u2014"}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">
-                    {quote.site_name ? (quote.customer?.name ?? quote.client_name ?? "\u2014") : "\u2014"}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -273,7 +269,7 @@ export default async function QuotingPage({
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
+                <td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">
                   {q
                     ? "No quotes match your search."
                     : tab === "followup"

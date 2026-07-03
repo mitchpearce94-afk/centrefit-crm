@@ -125,7 +125,7 @@ function PlanRow({ plan, countDevices, formatDate, completed }: { plan: any; cou
       {/* Plan info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-sm text-foreground truncate">{[plan.site_name, plan.client_name].filter(Boolean).join(' — ') || plan.name}</span>
+          <span className="font-medium text-sm text-foreground truncate">{plan.site_name || plan.client_name || plan.name}</span>
           <span className="flex-shrink-0 px-1.5 py-0.5 bg-amber-500/10 text-amber-500 rounded text-xs font-medium">Rev {plan.revision || 'A'}</span>
           {plan.sent_to_electrician_at && (
             <span

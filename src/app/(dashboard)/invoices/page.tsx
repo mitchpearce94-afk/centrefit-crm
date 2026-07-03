@@ -192,7 +192,6 @@ export default async function InvoicesPage({
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Invoice</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider hidden sm:table-cell">Type</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Site</th>
-              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider hidden md:table-cell">Customer</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Status</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Sent</th>
               <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider text-right">Total</th>
@@ -204,7 +203,7 @@ export default async function InvoicesPage({
           <tbody className="divide-y divide-border">
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">
+                <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground text-sm">
                   {q
                     ? "No invoices match your search."
                     : tab === "active"
@@ -236,14 +235,7 @@ export default async function InvoicesPage({
                   </td>
                   <td className="px-4 py-2.5 text-xs text-muted-foreground hidden sm:table-cell">{TYPE_LABEL[inv.invoice_type] ?? inv.invoice_type}</td>
                   <td className="px-4 py-2.5 text-sm font-medium">
-                    {siteName ? (
-                      <span className="text-foreground">{siteName}</span>
-                    ) : (
-                      <span className="text-foreground">{inv.customer?.name ?? "—"}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-sm text-muted-foreground hidden md:table-cell">
-                    {siteName ? (inv.customer?.name ?? "—") : "—"}
+                    <span className="text-foreground">{siteName ?? inv.customer?.name ?? "—"}</span>
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-1.5 flex-wrap">

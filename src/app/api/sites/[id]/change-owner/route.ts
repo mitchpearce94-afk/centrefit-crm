@@ -73,9 +73,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   }
 
+  // Re-point the site + mirror the new owner's billing email onto it (all
+  // billing paths read customer_sites.billing_email first — the previous
+  // owner's address must not keep receiving invoices).
   const { error: siteErr } = await svc
     .from("customer_sites")
-    .update({ customer_id: newCustomerId, updated_at: new Date().toISOString() })
+    .update({
+      customer_id: newCustomerId,
+      billing_email: body.billingEmail?.trim() || null,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", siteId);
   if (siteErr) return NextResponse.json({ error: `Site re-point failed: ${siteErr.message}` }, { status: 500 });
 

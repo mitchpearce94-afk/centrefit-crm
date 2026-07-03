@@ -22,7 +22,7 @@ export function SiteEditForm({ site }: { site: CustomerSite }) {
   const [state, setState] = useState(site.state ?? "QLD");
   const [postcode, setPostcode] = useState(site.postcode ?? "");
   const [phone, setPhone] = useState(site.phone ?? "");
-  const [billingEmail, setBillingEmail] = useState(site.billing_email ?? "");
+  const [email, setEmail] = useState((site as CustomerSite & { email?: string | null }).email ?? "");
   const [notes, setNotes] = useState(site.notes ?? "");
 
   async function handleSave(e: React.FormEvent) {
@@ -42,7 +42,7 @@ export function SiteEditForm({ site }: { site: CustomerSite }) {
         state: state.trim() || null,
         postcode: postcode.trim() || null,
         phone: phone.trim() || null,
-        billing_email: billingEmail.trim() || null,
+        email: email.trim() || null,
         notes: notes.trim() || null,
       })
       .eq("id", site.id);
@@ -152,18 +152,18 @@ export function SiteEditForm({ site }: { site: CustomerSite }) {
 
       <div>
         <label className="text-xs font-medium text-muted-foreground">
-          Billing email for this site
+          Site email
         </label>
         <input
           type="text"
-          value={billingEmail}
-          onChange={(e) => setBillingEmail(e.target.value)}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
           className={inputClass + " mt-1"}
-          placeholder="finance@example.com, manager@example.com"
+          placeholder="manager@example.com"
         />
         <p className="mt-1 text-[10px] text-muted-foreground">
-          Where invoices for this site get emailed. Wins over the parent
-          customer&apos;s billing email. Comma-separate for multiple recipients.
+          General contact email for this site (reception / manager). Invoices
+          go to the billing email on the Owner tab.
         </p>
       </div>
 

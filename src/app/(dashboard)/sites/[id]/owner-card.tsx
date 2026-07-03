@@ -132,6 +132,21 @@ export function OwnerCard({
             <p className="text-xs text-muted-foreground">Billing: <span className="font-mono">{owner.billing_email}</span></p>
           )}
           {owner.abn && <p className="text-xs text-muted-foreground">ABN {owner.abn}</p>}
+          {/* Customer ID — deliberately surfaced ONLY here (site-first spec:
+              the CCTV/asset bulk imports key on it). Click to copy. */}
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(owner.id).then(
+                () => toast("Customer ID copied"),
+                () => toast("Couldn't copy — select it manually", "error"),
+              );
+            }}
+            title="Click to copy (used by the asset import spreadsheets)"
+            className="block text-[10px] text-muted-foreground/60 font-mono hover:text-muted-foreground transition-colors"
+          >
+            Customer ID: {owner.id}
+          </button>
         </div>
       )}
 

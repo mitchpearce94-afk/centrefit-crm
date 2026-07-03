@@ -233,9 +233,6 @@ export default async function JobsPage({
               <p className="text-sm font-medium text-foreground truncate">
                 {job.site?.name ?? job.customer?.name ?? "—"}
               </p>
-              {job.site?.name && job.customer?.name && (
-                <p className="text-xs text-muted-foreground truncate">{job.customer.name}</p>
-              )}
               <div className="mt-2 flex items-center justify-between gap-2">
                 {scheduleLabel ? (
                   <span className={`text-xs font-medium ${isToday ? "text-primary" : "text-muted-foreground"}`}>
@@ -320,11 +317,6 @@ export default async function JobsPage({
                     >
                       {job.customer?.name ?? "—"}
                     </Link>
-                  )}
-                  {job.site && job.customer?.name && (
-                    <span className="block text-xs text-muted-foreground">
-                      {job.customer.name}
-                    </span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell max-w-[200px] truncate">

@@ -8,9 +8,12 @@ import { createServiceRoleClient } from "@/lib/supabase/service";
  * (site = billing account, 1:1). Any active staff member.
  *
  * Body: {
- *   site: { name, address?, suburb?, state?, postcode?, phone?, billingEmail?, notes? },
+ *   site: { name, address?, suburb?, state?, postcode?, phone?, email?, notes? },
  *   owner: { name, abn?, billingEmail?, contactName?, contactEmail?, contactPhone? }
  * }
+ *
+ * The owner's billingEmail is mirrored onto customer_sites.billing_email —
+ * billing paths read the site column first.
  */
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -20,7 +23,7 @@ export async function POST(req: NextRequest) {
   if (!staffRow?.is_active) return NextResponse.json({ error: "Staff only" }, { status: 403 });
 
   let body: {
-    site?: { name?: string; address?: string; suburb?: string; state?: string; postcode?: string; phone?: string; billingEmail?: string; notes?: string };
+    site?: { name?: string; address?: string; suburb?: string; state?: string; postcode?: string; phone?: string; email?: string; notes?: string };
     owner?: { name?: string; abn?: string; billingEmail?: string; contactName?: string; contactEmail?: string; contactPhone?: string };
   };
   try {
@@ -51,7 +54,8 @@ export async function POST(req: NextRequest) {
     state: body.site?.state?.trim() || null,
     postcode: body.site?.postcode?.trim() || null,
     phone: body.site?.phone?.trim() || null,
-    billing_email: body.site?.billingEmail?.trim() || null,
+    email: body.site?.email?.trim() || null,
+    billing_email: body.owner?.billingEmail?.trim() || null,
     notes: body.site?.notes?.trim() || null,
   }).select("id").single();
   if (siteErr) {

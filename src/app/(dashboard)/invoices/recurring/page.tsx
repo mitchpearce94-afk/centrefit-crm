@@ -246,9 +246,6 @@ export default async function RecurringInvoicesPage() {
                     <Link href={`/invoices/recurring/${p.id}`} className="font-medium text-foreground hover:text-primary transition-colors">
                       {siteName ?? customerName}
                     </Link>
-                    {siteName && customerName !== "—" && customerName !== siteName && (
-                      <p className="text-[11px] text-muted-foreground mt-0.5">{customerName}</p>
-                    )}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-muted-foreground">
                     {items.length === 0

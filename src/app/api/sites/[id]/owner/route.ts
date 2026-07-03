@@ -45,6 +45,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (error) return NextResponse.json({ error: `Owner update failed: ${error.message}` }, { status: 500 });
   }
 
+  // Billing email is edited HERE (Owner tab) but every billing path still
+  // reads customer_sites.billing_email first — mirror it onto the site so
+  // invoice delivery follows the owner's billing email.
+  if (body.billingEmail !== undefined) {
+    const { error } = await svc
+      .from("customer_sites")
+      .update({ billing_email: body.billingEmail?.trim() || null })
+      .eq("id", siteId);
+    if (error) return NextResponse.json({ error: `Billing email mirror failed: ${error.message}` }, { status: 500 });
+  }
+
   // Primary contact: update the existing primary (or first) contact, or
   // create one when contact fields are supplied and none exists.
   if (body.contactName !== undefined || body.contactEmail !== undefined || body.contactPhone !== undefined) {
