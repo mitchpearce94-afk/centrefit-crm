@@ -126,7 +126,7 @@ export function EditServicesButton({
 
       {open && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onMouseDown={() => !submitting && setOpen(false)} />
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
           <div
             className="relative w-full max-w-xl max-h-[90dvh] overflow-hidden rounded-xl bg-background border border-border shadow-2xl flex flex-col"
             onMouseDown={(e) => e.stopPropagation()}

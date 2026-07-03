@@ -44,6 +44,25 @@ export function InvoiceActions({
   const [reminderRecipient, setReminderRecipient] = useState<string>(sentToEmail ?? defaultRecipient ?? "");
   const [sending, setSending] = useState(false);
   const [sendingReminder, setSendingReminder] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/invoices/${invoiceId}/delete`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Delete failed");
+      toast("Draft invoice deleted");
+      router.push("/invoices");
+      router.refresh();
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : "Delete failed", "error");
+      setDeleting(false);
+      setConfirmDelete(false);
+      router.refresh();
+    }
+  }
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -235,6 +254,32 @@ export function InvoiceActions({
           >
             {authorising ? "Working…" : "Authorise & Send"}
           </button>
+        )}
+        {status === "draft" && !confirmDelete && (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="rounded-md border border-destructive/40 px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10 transition-colors"
+          >
+            Delete draft
+          </button>
+        )}
+        {status === "draft" && confirmDelete && (
+          <span className="inline-flex items-center gap-1.5">
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="rounded-md bg-destructive px-3 py-1.5 text-xs font-medium text-white hover:bg-destructive/90 disabled:opacity-50 transition-colors"
+            >
+              {deleting ? "Deleting…" : "Confirm delete"}
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              disabled={deleting}
+              className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent transition-colors"
+            >
+              Cancel
+            </button>
+          </span>
         )}
         <button
           onClick={handleRefresh}

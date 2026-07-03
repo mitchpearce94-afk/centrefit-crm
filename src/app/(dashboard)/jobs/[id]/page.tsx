@@ -196,6 +196,7 @@ export default async function JobDetailPage({
           fitOffDate={job.fit_off_date ?? null}
           fitOffEndDate={job.fit_off_end_date ?? null}
           fitOffStaffIds={job.fit_off_staff_ids ?? []}
+          openingDate={job.opening_date ?? null}
           contact={
             (job as any).job_contact ??
             (job as any).site?.site_contact ??

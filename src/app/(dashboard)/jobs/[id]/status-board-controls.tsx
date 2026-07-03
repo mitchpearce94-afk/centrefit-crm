@@ -29,6 +29,7 @@ interface Props {
   fitOffDate: string | null;
   fitOffEndDate: string | null;
   fitOffStaffIds: string[];
+  openingDate: string | null;
   contact?: Contact | null;
 }
 
@@ -50,6 +51,7 @@ export function StatusBoardControls({
   fitOffDate: initFoStart,
   fitOffEndDate: initFoEnd,
   fitOffStaffIds: initFoStaff,
+  openingDate: initOpening,
   contact,
 }: Props) {
   const router = useRouter();
@@ -62,6 +64,7 @@ export function StatusBoardControls({
   const [foStart, setFoStart] = useState(initFoStart ?? "");
   const [foEnd, setFoEnd] = useState(initFoEnd ?? "");
   const [foStaff, setFoStaff] = useState<string[]>(initFoStaff ?? []);
+  const [opening, setOpening] = useState(initOpening ?? "");
   const [busy, setBusy] = useState(false);
 
   // Persist the whole board state in one call. Pass overrides so a setter +
@@ -70,6 +73,7 @@ export function StatusBoardControls({
     isNewBuild: boolean;
     riStart: string; riEnd: string; riStaff: string[];
     foStart: string; foEnd: string; foStaff: string[];
+    opening: string;
   }> = {}) {
     const payload = {
       isNewBuild: over.isNewBuild ?? isNewBuild,
@@ -79,6 +83,7 @@ export function StatusBoardControls({
       fitOffDate: (over.foStart ?? foStart) || null,
       fitOffEndDate: (over.foEnd ?? foEnd) || null,
       fitOffStaffIds: over.foStaff ?? foStaff,
+      openingDate: (over.opening ?? opening) || null,
     };
     setBusy(true);
     try {
@@ -155,6 +160,23 @@ export function StatusBoardControls({
               onEndCommit={(v) => sync({ foEnd: v })}
               onStaff={(v) => { setFoStaff(v); sync({ foStaff: v }); }}
             />
+            {/* Opening Date — Sue 2026-07-03: single date, no crew booking */}
+            <div className="rounded-md border border-border/60 bg-background/40 p-3 sm:col-span-2">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <span className="text-xs font-semibold">Opening Date</span>
+              </div>
+              <label className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                Club opens
+                <input
+                  type="date"
+                  value={opening}
+                  onChange={(e) => setOpening(e.target.value)}
+                  onBlur={(e) => sync({ opening: e.target.value })}
+                  className={dateInput}
+                />
+              </label>
+            </div>
             <p className="sm:col-span-2 text-[11px] text-muted-foreground">
               Assigned crew are auto-booked on the scheduler (all-day) across the date range. Changing dates or crew re-syncs the bookings.
             </p>

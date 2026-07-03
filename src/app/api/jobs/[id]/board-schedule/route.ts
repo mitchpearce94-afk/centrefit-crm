@@ -18,6 +18,7 @@ interface Body {
   fitOffDate?: string | null;
   fitOffEndDate?: string | null;
   fitOffStaffIds?: string[];
+  openingDate?: string | null;
 }
 
 export async function POST(
@@ -56,6 +57,7 @@ export async function POST(
       fit_off_date: body.fitOffDate || null,
       fit_off_end_date: body.fitOffEndDate || null,
       fit_off_staff_ids: fitStaff,
+      opening_date: body.openingDate || null,
     })
     .eq("id", id);
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });

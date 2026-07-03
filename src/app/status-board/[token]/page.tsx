@@ -22,6 +22,7 @@ interface BoardJob {
   rough_in_end_date: string | null;
   fit_off_date: string | null;
   fit_off_end_date: string | null;
+  opening_date: string | null;
   rough_in_staff_ids: string[] | null;
   fit_off_staff_ids: string[] | null;
   customer: { name: string } | { name: string }[] | null;
@@ -176,7 +177,7 @@ export default async function StatusBoardPage({
   const { data } = await supabase
     .from("jobs")
     .select(
-      "id, number, reference, rough_in_date, rough_in_end_date, fit_off_date, fit_off_end_date, rough_in_staff_ids, fit_off_staff_ids, customer:customers(name), site:customer_sites(name), status:statuses(name, colour, sort_order)",
+      "id, number, reference, rough_in_date, rough_in_end_date, fit_off_date, fit_off_end_date, opening_date, rough_in_staff_ids, fit_off_staff_ids, customer:customers(name), site:customer_sites(name), status:statuses(name, colour, sort_order)",
     )
     .eq("is_new_build", true);
 
@@ -226,7 +227,7 @@ export default async function StatusBoardPage({
 
   // Fluid column template (fr units) so the grid fills any screen width; on
   // mobile the rows stack into a single column instead.
-  const cols = "md:grid-cols-[2fr_1.4fr_1.4fr_1.5fr] md:gap-x-6 md:items-center";
+  const cols = "md:grid-cols-[2fr_1.3fr_1.3fr_0.9fr_1.5fr] md:gap-x-6 md:items-center";
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[radial-gradient(ellipse_at_top,_#1e1b4b_0%,_#0b1020_45%,_#05070d_100%)] px-4 py-5 sm:px-6 lg:px-10 lg:py-8 text-white">
@@ -262,6 +263,7 @@ export default async function StatusBoardPage({
             <span>Site</span>
             <span>Rough In</span>
             <span>Fit Off</span>
+            <span>Opens</span>
             <span className="text-right">Status</span>
           </div>
 
@@ -296,6 +298,16 @@ export default async function StatusBoardPage({
                       <div>
                         <div className="md:hidden mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-white/35">Fit Off</div>
                         <PhaseBlock start={j.fit_off_date} end={j.fit_off_end_date} crew={crewOf(j.fit_off_staff_ids)} />
+                      </div>
+
+                      {/* Opening date */}
+                      <div>
+                        <div className="md:hidden mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-white/35">Opens</div>
+                        {j.opening_date ? (
+                          <span className="font-semibold text-emerald-300 text-[clamp(0.85rem,1vw,1.2rem)]">{fmtShort(j.opening_date)}</span>
+                        ) : (
+                          <span className="text-white/25">—</span>
+                        )}
                       </div>
 
                       {/* Status */}
