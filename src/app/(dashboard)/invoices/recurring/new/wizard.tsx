@@ -5,11 +5,23 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useToast } from "@/components/ui/toast";
 
-interface Customer {
+/**
+ * Site-first plan creation (site-first-CONTEXT D5, 2026-07-03): staff pick a
+ * SITE, not a customer. The backing customer record is derived from the site
+ * and never surfaced beyond the owner fine print. Multi-site plans are still
+ * supported for sites sharing the same owner (one consolidated mandate email).
+ */
+export interface SiteOption {
   id: string;
   name: string;
-  customer_contacts: { name: string | null; email: string | null; is_primary: boolean }[];
-  customer_sites: { id: string; name: string; suburb: string | null; state: string | null }[];
+  suburb: string | null;
+  state: string | null;
+  customer: {
+    id: string;
+    name: string;
+    contactName: string | null;
+    contactEmail: string | null;
+  };
 }
 
 interface Service {
@@ -22,17 +34,16 @@ interface Service {
 }
 
 interface SiteDraft {
-  /** customer_sites.id, or null for "no site / use customer-level" */
-  siteId: string | null;
+  site: SiteOption;
   /** Map of serviceId -> quantity (1-default). Items not in map are unselected. */
   items: Map<string, number>;
 }
 
 export function NewRecurringPlanWizard({
-  customers,
+  sites,
   services,
 }: {
-  customers: Customer[];
+  sites: SiteOption[];
   services: Service[];
 }) {
   const router = useRouter();
@@ -42,24 +53,25 @@ export function NewRecurringPlanWizard({
 
   // Manual-lookup conversion bridges through query params (workstream D):
   //   ?customer=<id>&site=<id>&plan_sku=<code>&from_enquiry=<id>
-  // We pre-select customer + site, pre-tick the matching service, and on
-  // submit stamp the resulting plan id back onto the enquiry.
-  const initialCustomerId = searchParams.get("customer");
+  // Site-first: `site` is authoritative; a legacy `customer`-only link seeds
+  // that owner's first site. We pre-tick the matching service and on submit
+  // stamp the resulting plan id back onto the enquiry.
   const initialSiteId = searchParams.get("site");
+  const initialCustomerId = searchParams.get("customer");
   const initialPlanSku = searchParams.get("plan_sku");
   const fromEnquiryId = searchParams.get("from_enquiry");
 
-  const [customerId, setCustomerId] = useState<string | null>(initialCustomerId);
-  const [sites, setSites] = useState<SiteDraft[]>(() => {
-    if (initialCustomerId) {
-      const seedItems = new Map<string, number>();
-      if (initialPlanSku) {
-        const svc = services.find((s) => s.code === initialPlanSku);
-        if (svc) seedItems.set(svc.id, 1);
-      }
-      return [{ siteId: initialSiteId ?? null, items: seedItems }];
+  const [drafts, setDrafts] = useState<SiteDraft[]>(() => {
+    const seed =
+      (initialSiteId ? sites.find((s) => s.id === initialSiteId) : undefined) ??
+      (initialCustomerId ? sites.find((s) => s.customer.id === initialCustomerId) : undefined);
+    if (!seed) return [];
+    const seedItems = new Map<string, number>();
+    if (initialPlanSku) {
+      const svc = services.find((s) => s.code === initialPlanSku);
+      if (svc) seedItems.set(svc.id, 1);
     }
-    return [];
+    return [{ site: seed, items: seedItems }];
   });
   const [firstInvoiceDate, setFirstInvoiceDate] = useState<string>("");
   // Independent first-charge date for the yearly cadence (e.g. a MyAlarm
@@ -72,17 +84,20 @@ export function NewRecurringPlanWizard({
   const [mandateMode, setMandateMode] = useState<"signup" | "existing">("signup");
   const [existingMandateId, setExistingMandateId] = useState<string>("");
 
-  const customer = useMemo(
-    () => customers.find((c) => c.id === customerId) ?? null,
-    [customers, customerId],
-  );
-  const primary = customer?.customer_contacts.find((c) => c.is_primary)
-    ?? customer?.customer_contacts[0];
+  // The backing customer, derived from the first picked site.
+  const owner = drafts[0]?.site.customer ?? null;
+
+  // Sibling sites (same owner) not yet in the draft — offered by "add site".
+  const siblingOptions = useMemo(() => {
+    if (!owner) return [];
+    const used = new Set(drafts.map((d) => d.site.id));
+    return sites.filter((s) => s.customer.id === owner.id && !used.has(s.id));
+  }, [sites, drafts, owner]);
 
   const totals = useMemo(() => {
     let monthly = 0, yearly = 0;
-    for (const site of sites) {
-      for (const [svcId, qty] of site.items.entries()) {
+    for (const d of drafts) {
+      for (const [svcId, qty] of d.items.entries()) {
         const svc = services.find((s) => s.id === svcId);
         if (!svc) continue;
         const line = Number(svc.price_inc_gst) * qty;
@@ -91,70 +106,61 @@ export function NewRecurringPlanWizard({
       }
     }
     return { monthly, yearly };
-  }, [sites, services]);
+  }, [drafts, services]);
 
-  function pickCustomer(id: string) {
-    setCustomerId(id);
-    // Default to one empty site draft so user has somewhere to put items.
-    const cust = customers.find((c) => c.id === id);
-    if (cust && cust.customer_sites.length > 0) {
-      setSites([{ siteId: cust.customer_sites[0].id, items: new Map() }]);
-    } else {
-      setSites([{ siteId: null, items: new Map() }]);
-    }
+  function pickSite(id: string) {
+    const site = sites.find((s) => s.id === id);
+    if (!site) return;
+    // Picking (or re-picking) the lead site resets the draft to just it —
+    // the owner may have changed, and stale sibling drafts can't follow.
+    setDrafts([{ site, items: new Map() }]);
   }
 
-  function addSite() {
-    if (!customer) return;
-    const usedSiteIds = new Set(sites.map((s) => s.siteId).filter(Boolean));
-    const nextSite = customer.customer_sites.find((s) => !usedSiteIds.has(s.id));
-    setSites((prev) => [...prev, { siteId: nextSite?.id ?? null, items: new Map() }]);
+  function addSite(id: string) {
+    const site = siblingOptions.find((s) => s.id === id);
+    if (!site) return;
+    setDrafts((prev) => [...prev, { site, items: new Map() }]);
   }
 
   function removeSite(idx: number) {
-    setSites((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  function setSiteId(idx: number, siteId: string | null) {
-    setSites((prev) => prev.map((s, i) => (i === idx ? { ...s, siteId } : s)));
+    setDrafts((prev) => prev.filter((_, i) => i !== idx));
   }
 
   function toggleItem(idx: number, serviceId: string) {
-    setSites((prev) =>
-      prev.map((s, i) => {
-        if (i !== idx) return s;
-        const newMap = new Map(s.items);
+    setDrafts((prev) =>
+      prev.map((d, i) => {
+        if (i !== idx) return d;
+        const newMap = new Map(d.items);
         if (newMap.has(serviceId)) newMap.delete(serviceId);
         else newMap.set(serviceId, 1);
-        return { ...s, items: newMap };
+        return { ...d, items: newMap };
       }),
     );
   }
 
   function setQuantity(idx: number, serviceId: string, qty: number) {
     if (qty < 1) qty = 1;
-    setSites((prev) =>
-      prev.map((s, i) => {
-        if (i !== idx) return s;
-        const newMap = new Map(s.items);
+    setDrafts((prev) =>
+      prev.map((d, i) => {
+        if (i !== idx) return d;
+        const newMap = new Map(d.items);
         if (newMap.has(serviceId)) newMap.set(serviceId, qty);
-        return { ...s, items: newMap };
+        return { ...d, items: newMap };
       }),
     );
   }
 
   async function submit() {
-    if (!customer) return;
-    if (sites.length === 0) {
-      toast("Add at least one site before submitting", "error");
+    if (!owner || drafts.length === 0) {
+      toast("Pick a site before submitting", "error");
       return;
     }
-    if (sites.some((s) => s.items.size === 0)) {
+    if (drafts.some((d) => d.items.size === 0)) {
       toast("Each site needs at least one service", "error");
       return;
     }
-    if (mandateMode === "signup" && !primary?.email) {
-      toast("Customer has no primary contact email — set one before creating a plan", "error");
+    if (mandateMode === "signup" && !owner.contactEmail) {
+      toast("Site owner has no contact email — set one before creating a plan", "error");
       return;
     }
     if (mandateMode === "existing" && !existingMandateId.trim()) {
@@ -168,12 +174,12 @@ export function NewRecurringPlanWizard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customerId: customer.id,
+          customerId: owner.id,
           firstInvoiceDate: firstInvoiceDate || null,
           yearlyFirstInvoiceDate: yearlyFirstInvoiceDate || null,
-          sites: sites.map((s) => ({
-            siteId: s.siteId,
-            items: Array.from(s.items.entries()).map(([serviceId, quantity]) => ({
+          sites: drafts.map((d) => ({
+            siteId: d.site.id,
+            items: Array.from(d.items.entries()).map(([serviceId, quantity]) => ({
               serviceId, quantity,
             })),
           })),
@@ -201,7 +207,7 @@ export function NewRecurringPlanWizard({
       toast(
         json.attachedExistingMandate
           ? `Created ${json.planIds.length} ${planWord} — attached to mandate ${existingMandateId.trim()} and activated.`
-          : `Created ${json.planIds.length} ${planWord} — mandate email sent to ${primary?.email}`,
+          : `Created ${json.planIds.length} ${planWord} — mandate email sent to ${owner.contactEmail}`,
       );
       router.push("/invoices/recurring");
       router.refresh();
@@ -217,7 +223,7 @@ export function NewRecurringPlanWizard({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">New recurring plan</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Set up direct-debit billing for one or more sites. Each site gets its own GoCardless mandate; one consolidated email goes to the customer's primary contact with all signup links inline.
+            Set up direct-debit billing for a site. Pick the site first — the owner&apos;s billing details ride along automatically. Each site gets its own GoCardless mandate.
           </p>
         </div>
         <Link
@@ -228,62 +234,69 @@ export function NewRecurringPlanWizard({
         </Link>
       </div>
 
-      {/* Step 1: Customer */}
+      {/* Step 1: Site */}
       <section className="surface-card p-5 space-y-3">
         <div className="flex items-center gap-2">
           <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">1</span>
-          <h2 className="text-base font-semibold">Customer</h2>
+          <h2 className="text-base font-semibold">Site</h2>
         </div>
-        <CustomerPicker customers={customers} selected={customer} onPick={pickCustomer} />
-        {customer && (
+        <SitePicker sites={sites} selected={drafts[0]?.site ?? null} onPick={pickSite} />
+        {owner && (
           <p className="text-xs text-muted-foreground">
-            Primary contact: <span className="text-foreground">{primary?.name ?? "—"}</span>
-            {primary?.email && <> · <span className="font-mono">{primary.email}</span></>}
-            {!primary?.email && <span className="text-destructive"> · No email on file (required for mandate signup)</span>}
+            Owner: <span className="text-foreground">{owner.name}</span>
+            {owner.contactName && owner.contactName !== owner.name && <> · {owner.contactName}</>}
+            {owner.contactEmail && <> · <span className="font-mono">{owner.contactEmail}</span></>}
+            {!owner.contactEmail && <span className="text-destructive"> · No email on file (required for mandate signup)</span>}
           </p>
         )}
       </section>
 
-      {/* Step 2: Sites + items */}
-      {customer && (
+      {/* Step 2: Services per site */}
+      {owner && (
         <section className="surface-card p-5 space-y-4">
           <div className="flex items-center gap-2">
             <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">2</span>
-            <h2 className="text-base font-semibold">Sites &amp; services</h2>
+            <h2 className="text-base font-semibold">Services</h2>
           </div>
 
-          {sites.map((site, idx) => (
+          {drafts.map((draft, idx) => (
             <SiteEditor
-              key={idx}
+              key={draft.site.id}
               index={idx}
-              site={site}
-              customer={customer}
+              draft={draft}
               services={services}
-              onSiteIdChange={(id) => setSiteId(idx, id)}
               onToggleItem={(svcId) => toggleItem(idx, svcId)}
               onQuantityChange={(svcId, qty) => setQuantity(idx, svcId, qty)}
-              onRemove={sites.length > 1 ? () => removeSite(idx) : undefined}
+              onRemove={drafts.length > 1 ? () => removeSite(idx) : undefined}
             />
           ))}
 
-          <button
-            onClick={addSite}
-            className="text-sm text-primary hover:underline"
-          >
-            + Add another site
-          </button>
+          {siblingOptions.length > 0 && (
+            <label className="block">
+              <select
+                value=""
+                onChange={(e) => e.target.value && addSite(e.target.value)}
+                className="rounded-md border border-border bg-input px-3 py-1.5 text-sm text-primary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="">+ Add another {owner.name} site…</option>
+                {siblingOptions.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}{s.suburb ? ` — ${s.suburb}` : ""}</option>
+                ))}
+              </select>
+            </label>
+          )}
         </section>
       )}
 
-      {/* Step 2.5: Mandate source */}
-      {customer && sites.length > 0 && (
+      {/* Step 3: Mandate source */}
+      {owner && drafts.length > 0 && (
         <section className="surface-card p-5 space-y-3">
           <div className="flex items-center gap-2">
             <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">3</span>
             <h2 className="text-base font-semibold">Mandate</h2>
           </div>
           <MandateSourcePicker
-            customerId={customer.id}
+            customerId={owner.id}
             mode={mandateMode}
             onModeChange={setMandateMode}
             mandateId={existingMandateId}
@@ -293,7 +306,7 @@ export function NewRecurringPlanWizard({
       )}
 
       {/* Step 4: Review + submit */}
-      {customer && sites.length > 0 && (
+      {owner && drafts.length > 0 && (
         <section className="surface-card p-5 space-y-3">
           <div className="flex items-center gap-2">
             <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">4</span>
@@ -332,7 +345,7 @@ export function NewRecurringPlanWizard({
           <div className="rounded-md border border-border bg-muted/20 p-4 space-y-1.5 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Sites</span>
-              <span className="font-medium">{sites.length}</span>
+              <span className="font-medium">{drafts.length}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Monthly recurring (incl. GST)</span>
@@ -351,13 +364,13 @@ export function NewRecurringPlanWizard({
           </div>
           {mandateMode === "signup" ? (
             <p className="text-xs text-muted-foreground">
-              Submitting will create {sites.length} GoCardless customer{sites.length === 1 ? "" : "s"} (with `+sitename` email aliases), generate {sites.length} mandate signup link{sites.length === 1 ? "" : "s"}, and email everything in one consolidated message to <span className="font-mono">{primary?.email}</span>.
+              Submitting will create {drafts.length} GoCardless customer{drafts.length === 1 ? "" : "s"} (with `+sitename` email aliases), generate {drafts.length} mandate signup link{drafts.length === 1 ? "" : "s"}, and email everything in one consolidated message to <span className="font-mono">{owner.contactEmail}</span>.
               Each site&apos;s Xero RepeatingInvoice fires automatically once that site&apos;s mandate is active.
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">
-              Submitting will attach {sites.length} plan{sites.length === 1 ? "" : "s"} to existing mandate{" "}
-              <span className="font-mono">{existingMandateId || "(none picked)"}</span> and create the Xero RepeatingInvoice{sites.length === 1 ? "" : "s"} immediately. No signup email is sent — the customer has already authorised the direct debit.
+              Submitting will attach {drafts.length} plan{drafts.length === 1 ? "" : "s"} to existing mandate{" "}
+              <span className="font-mono">{existingMandateId || "(none picked)"}</span> and create the Xero RepeatingInvoice{drafts.length === 1 ? "" : "s"} immediately. No signup email is sent — the customer has already authorised the direct debit.
             </p>
           )}
           <button
@@ -378,17 +391,17 @@ export function NewRecurringPlanWizard({
 }
 
 /**
- * Searchable customer picker. Click to open, type to filter, click result to
- * select. Closes on outside click or Esc. Beats a native <select> when the
- * customer list grows past 20-ish entries — Centrefit will hit that quickly.
+ * Searchable site picker (site-first D5). Click to open, type to filter by
+ * site name, suburb, or owner name; click result to select. Closes on
+ * outside click or Esc. Site name leads; owner is fine print.
  */
-function CustomerPicker({
-  customers,
+function SitePicker({
+  sites,
   selected,
   onPick,
 }: {
-  customers: Customer[];
-  selected: Customer | null;
+  sites: SiteOption[];
+  selected: SiteOption | null;
   onPick: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -419,9 +432,13 @@ function CustomerPicker({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return customers;
-    return customers.filter((c) => c.name.toLowerCase().includes(q));
-  }, [customers, query]);
+    if (!q) return sites;
+    return sites.filter((s) =>
+      s.name.toLowerCase().includes(q) ||
+      (s.suburb ?? "").toLowerCase().includes(q) ||
+      s.customer.name.toLowerCase().includes(q),
+    );
+  }, [sites, query]);
 
   return (
     <div ref={wrapRef} className="relative">
@@ -431,7 +448,7 @@ function CustomerPicker({
         className="w-full flex items-center justify-between rounded-md border border-border bg-input px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
       >
         <span className={selected ? "text-foreground" : "text-muted-foreground"}>
-          {selected ? selected.name : "Select a customer..."}
+          {selected ? `${selected.name}${selected.suburb ? ` — ${selected.suburb}` : ""}` : "Select a site..."}
         </span>
         <svg className="h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M6 9l6 6 6-6" />
@@ -446,7 +463,7 @@ function CustomerPicker({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search customers..."
+              placeholder="Search sites or owners..."
               className="w-full rounded-md border border-border bg-input px-3 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
@@ -454,14 +471,14 @@ function CustomerPicker({
             {filtered.length === 0 && (
               <div className="px-3 py-4 text-center text-xs text-muted-foreground">No matches</div>
             )}
-            {filtered.map((c) => {
-              const isSelected = selected?.id === c.id;
+            {filtered.map((s) => {
+              const isSelected = selected?.id === s.id;
               return (
                 <button
-                  key={c.id}
+                  key={s.id}
                   type="button"
                   onClick={() => {
-                    onPick(c.id);
+                    onPick(s.id);
                     setOpen(false);
                     setQuery("");
                   }}
@@ -469,12 +486,8 @@ function CustomerPicker({
                     isSelected ? "bg-primary/10 text-primary" : "hover:bg-accent"
                   }`}
                 >
-                  {c.name}
-                  {c.customer_sites.length > 0 && (
-                    <span className="ml-2 text-[11px] text-muted-foreground">
-                      {c.customer_sites.length} {c.customer_sites.length === 1 ? "site" : "sites"}
-                    </span>
-                  )}
+                  <span>{s.name}{s.suburb ? ` — ${s.suburb}` : ""}</span>
+                  <span className="ml-2 text-[11px] text-muted-foreground">{s.customer.name}</span>
                 </button>
               );
             })}
@@ -487,19 +500,15 @@ function CustomerPicker({
 
 function SiteEditor({
   index,
-  site,
-  customer,
+  draft,
   services,
-  onSiteIdChange,
   onToggleItem,
   onQuantityChange,
   onRemove,
 }: {
   index: number;
-  site: SiteDraft;
-  customer: Customer;
+  draft: SiteDraft;
   services: Service[];
-  onSiteIdChange: (id: string | null) => void;
   onToggleItem: (svcId: string) => void;
   onQuantityChange: (svcId: string, qty: number) => void;
   onRemove?: () => void;
@@ -509,16 +518,9 @@ function SiteEditor({
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-muted/30">
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Site {index + 1}</span>
-          <select
-            value={site.siteId ?? ""}
-            onChange={(e) => onSiteIdChange(e.target.value || null)}
-            className="rounded-md border border-border bg-input px-2 py-1 text-xs focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-          >
-            <option value="">No specific site</option>
-            {customer.customer_sites.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}{s.suburb ? ` — ${s.suburb}` : ""}</option>
-            ))}
-          </select>
+          <span className="text-xs font-medium">
+            {draft.site.name}{draft.site.suburb ? ` — ${draft.site.suburb}` : ""}
+          </span>
         </div>
         {onRemove && (
           <button
@@ -531,12 +533,12 @@ function SiteEditor({
       </div>
       <div className="p-3 space-y-1">
         {services.map((svc) => {
-          const selected = site.items.has(svc.id);
-          const qty = site.items.get(svc.id) ?? 1;
+          const selected = draft.items.has(svc.id);
+          const qty = draft.items.get(svc.id) ?? 1;
           return (
             <label
               key={svc.id}
-              className={`flex items-center gap-3 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent ${selected ? "" : ""}`}
+              className="flex items-center gap-3 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent"
             >
               <input
                 type="checkbox"
@@ -603,13 +605,13 @@ function MandateSourcePicker({
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [mandates, setMandates] = useState<MandateOption[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [showPaste, setShowPaste] = useState(false);
   const [pasteInput, setPasteInput] = useState("");
   const [pasteBusy, setPasteBusy] = useState(false);
 
   useEffect(() => {
-    if (mode !== "existing" || loaded) return;
+    if (mode !== "existing" || loadedFor === customerId) return;
     setLoading(true);
     fetch(`/api/gc/mandates?customer_id=${encodeURIComponent(customerId)}`)
       .then((r) => r.json().then((j) => ({ ok: r.ok, json: j })))
@@ -619,11 +621,11 @@ function MandateSourcePicker({
           return;
         }
         setMandates(json.mandates as MandateOption[]);
-        setLoaded(true);
+        setLoadedFor(customerId);
       })
       .catch((e) => toast(e instanceof Error ? e.message : "Network error", "error"))
       .finally(() => setLoading(false));
-  }, [mode, loaded, customerId, toast]);
+  }, [mode, loadedFor, customerId, toast]);
 
   // Reset mandate selection if mode flips back to signup.
   useEffect(() => {
@@ -686,14 +688,14 @@ function MandateSourcePicker({
             <p className="text-xs text-muted-foreground italic">Fetching mandates from GoCardless…</p>
           ) : (
             <>
-              {mandates.length === 0 && loaded ? (
+              {mandates.length === 0 && loadedFor === customerId ? (
                 <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5 text-xs text-amber-300 space-y-1">
-                  <p className="font-medium">No mandates auto-detected for this customer.</p>
+                  <p className="font-medium">No mandates auto-detected for this owner.</p>
                   <p className="text-amber-300/80 leading-relaxed">
                     The auto-detect only finds mandates already linked to this
-                    CRM customer via a prior plan. If the customer signed a
+                    site&apos;s owner via a prior plan. If they signed a
                     mandate elsewhere (e.g. brought over from outside the CRM,
-                    or sits on a different customer record) paste the
+                    or sits on a different record) paste the
                     mandate ID below — it starts with <span className="font-mono">MD</span>
                     and you&apos;ll find it on the GoCardless dashboard under
                     Customers → Mandates.
