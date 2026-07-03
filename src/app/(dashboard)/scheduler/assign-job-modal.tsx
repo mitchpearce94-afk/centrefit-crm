@@ -736,8 +736,8 @@ export function AssignJobModal({
                         {selectedJob.number}
                       </span>
                       <span className="text-sm text-muted-foreground ml-2">
-                        {selectedJob.customer?.name}
-                        {selectedJob.site ? ` · ${selectedJob.site.name}` : ""}
+                        {selectedJob.site?.name ?? selectedJob.customer?.name}
+                        {selectedJob.site && selectedJob.customer ? ` · ${selectedJob.customer.name}` : ""}
                       </span>
                     </div>
                     <button
@@ -791,8 +791,8 @@ export function AssignJobModal({
                                 )}
                               </div>
                               <p className="text-xs text-muted-foreground truncate">
-                                {job.customer?.name}
-                                {job.site ? ` · ${job.site.name}` : ""}
+                                {job.site?.name ?? job.customer?.name}
+                                {job.site && job.customer ? ` · ${job.customer.name}` : ""}
                               </p>
                             </div>
                           </button>

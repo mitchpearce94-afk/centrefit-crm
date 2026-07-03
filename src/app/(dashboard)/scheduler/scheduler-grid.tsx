@@ -346,7 +346,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
               <div className="mt-1 space-y-1">
                 {(allDayByDate.get(selectedDay) ?? []).map(e => { const s = getStaff(e); const isJob = e.entry_type === "job"; return (
                   <button key={`${e.id}-${selectedDay}`} onClick={() => setModal({ staffId: e.staff_id, date: e.schedule_date, entry: e })} className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium text-white ${!isJob ? "border border-dashed border-white/40" : ""}`} style={{ backgroundColor: s?.colour ?? "#6b7280" }}>
-                    {s?.initials} · {isJob ? `${e.job?.number} — ${e.job?.customer?.name ?? ""}` : `${e.entry_type === "reminder" ? "⏰ " : ""}${e.title ?? ""}`}
+                    {s?.initials} · {isJob ? `${e.job?.number} — ${e.job?.site?.name ?? e.job?.customer?.name ?? ""}` : `${e.entry_type === "reminder" ? "⏰ " : ""}${e.title ?? ""}`}
                   </button>
                 ); })}
               </div>
@@ -541,7 +541,7 @@ function TimedEntryBlock({
           </div>
           {height > 44 && isJob && lanes < 3 && (
             <p className="text-[10px] text-muted-foreground truncate mt-0.5">
-              {entry.job?.customer?.name}{entry.job?.site ? ` · ${entry.job.site.name}` : ""}
+              {entry.job?.site?.name ?? entry.job?.customer?.name}{entry.job?.site && entry.job?.customer ? ` · ${entry.job.customer.name}` : ""}
             </p>
           )}
           {height > 64 && lanes < 3 && (

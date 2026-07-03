@@ -37,7 +37,7 @@ export default async function InvoicesPage({
   const { data: invoices } = await supabase
     .from("invoices")
     .select(
-      "id, xero_invoice_number, invoice_type, status, total, amount_due, due_date, paid_at, created_at, sent_at, sent_to_email, last_reminder_sent_at, reminder_count, auto_remind_enabled, customer:customers(id, name), quote:quotes(id, ref, site:customer_sites(id, name)), job:jobs(id, number, site:customer_sites(id, name))",
+      "id, xero_invoice_number, invoice_type, status, total, amount_due, due_date, paid_at, created_at, sent_at, sent_to_email, last_reminder_sent_at, reminder_count, auto_remind_enabled, customer:customers(id, name), site:customer_sites(id, name), quote:quotes(id, ref, site:customer_sites(id, name)), job:jobs(id, number, site:customer_sites(id, name))",
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -70,6 +70,7 @@ export default async function InvoicesPage({
         [
           inv.xero_invoice_number,
           inv.quote?.ref,
+          inv.site?.name,
           inv.quote?.site?.name,
           inv.job?.site?.name,
           inv.job?.number,
@@ -219,7 +220,7 @@ export default async function InvoicesPage({
             {filtered.map((inv) => {
               const colour = STATUS_COLOURS[inv.status] ?? "#6b7280";
               const isOverdue = inv._isOverdue;
-              const siteName = inv.quote?.site?.name ?? inv.job?.site?.name ?? null;
+              const siteName = inv.site?.name ?? inv.quote?.site?.name ?? inv.job?.site?.name ?? null;
               const lastReminded = inv.last_reminder_sent_at
                 ? Math.floor((Date.now() - new Date(inv.last_reminder_sent_at).getTime()) / 86_400_000)
                 : null;
