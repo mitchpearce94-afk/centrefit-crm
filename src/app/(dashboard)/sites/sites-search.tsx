@@ -37,7 +37,7 @@ export function SitesSearch({
   return (
     <div className="mt-4 flex flex-wrap items-center gap-2">
       <input
-        placeholder="Search sites..."
+        placeholder="Search sites, suburbs or owners..."
         value={q}
         onChange={(e) => setQ(e.target.value)}
         className="flex-1 min-w-[180px] rounded-md border border-border bg-input px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"

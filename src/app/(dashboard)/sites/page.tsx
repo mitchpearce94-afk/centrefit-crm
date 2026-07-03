@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { SitesSearch } from "./sites-search";
-import { AddSiteButton } from "./add-site-button";
+import { AddSiteButton, type OwnerPrefillOption } from "./add-site-button";
 
 export default async function SitesPage({
   searchParams,
@@ -11,26 +11,38 @@ export default async function SitesPage({
   const params = await searchParams;
   const supabase = await createClient();
 
+  // Site-first search (D1): matching an owner's name finds their site(s),
+  // so resolve owner-name hits to customer ids first — PostgREST .or() can't
+  // OR across a joined relation.
+  let matchedCustomerIds: string[] = [];
+  if (params.q) {
+    const { data: matchedCustomers } = await supabase
+      .from("customers")
+      .select("id")
+      .ilike("name", `%${params.q}%`)
+      .limit(200);
+    matchedCustomerIds = (matchedCustomers ?? []).map((r) => r.id as string);
+  }
+
   let query = supabase
     .from("customer_sites")
     .select(
-      "id, name, address, suburb, state, postcode, notes, customer:customers!customer_id(id, name)"
+      "id, name, address, suburb, state, postcode, notes, customer:customers!customer_id(id, name, abn, billing_email)"
     )
     .order("name");
 
   if (params.q) {
-    query = query.ilike("name", `%${params.q}%`);
+    const clauses = [`name.ilike.%${params.q}%`, `suburb.ilike.%${params.q}%`];
+    if (matchedCustomerIds.length > 0) {
+      clauses.push(`customer_id.in.(${matchedCustomerIds.join(",")})`);
+    }
+    query = query.or(clauses.join(","));
   }
   if (params.state) {
     query = query.eq("state", params.state);
   }
 
   const { data: sites, error } = await query;
-  const { data: customers } = await supabase
-    .from("customers")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name");
 
   if (error) {
     return (
@@ -46,13 +58,40 @@ export default async function SitesPage({
     state: string | null;
     postcode: string | null;
     notes: string | null;
-    customer: { id: string; name: string } | { id: string; name: string }[] | null;
+    customer:
+      | { id: string; name: string; abn: string | null; billing_email: string | null }
+      | { id: string; name: string; abn: string | null; billing_email: string | null }[]
+      | null;
   };
 
   const rows = (sites as RawRow[] | null)?.map((r) => ({
     ...r,
     customer: Array.isArray(r.customer) ? (r.customer[0] ?? null) : r.customer,
   }));
+
+  // Owner prefill options for "Copy owner from an existing site…" in the
+  // add-site form (D2: the new site still gets its OWN backing record).
+  const { data: prefillRows } = await supabase
+    .from("customer_sites")
+    .select("id, name, customer:customers!customer_id(name, abn, billing_email, customer_contacts(name, email, phone, is_primary))")
+    .order("name")
+    .limit(500);
+  const ownerPrefills: OwnerPrefillOption[] = (prefillRows ?? []).flatMap((r) => {
+    const c = Array.isArray(r.customer) ? r.customer[0] : r.customer;
+    if (!c) return [];
+    const contacts = (c.customer_contacts ?? []) as { name: string | null; email: string | null; phone: string | null; is_primary: boolean }[];
+    const primary = contacts.find((x) => x.is_primary) ?? contacts[0];
+    return [{
+      siteId: r.id as string,
+      siteName: r.name as string,
+      ownerName: c.name as string,
+      abn: (c.abn as string | null) ?? null,
+      billingEmail: (c.billing_email as string | null) ?? null,
+      contactName: primary?.name ?? null,
+      contactEmail: primary?.email ?? null,
+      contactPhone: primary?.phone ?? null,
+    }];
+  });
 
   return (
     <div>
@@ -63,7 +102,7 @@ export default async function SitesPage({
             {sites?.length ?? 0} sites
           </p>
         </div>
-        <AddSiteButton customers={(customers ?? []) as { id: string; name: string }[]} />
+        <AddSiteButton ownerPrefills={ownerPrefills} />
       </div>
 
       <SitesSearch defaultQuery={params.q} defaultState={params.state} />
@@ -73,7 +112,7 @@ export default async function SitesPage({
           <thead>
             <tr className="border-b border-border bg-muted/50">
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Site</th>
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden md:table-cell">Customer</th>
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden md:table-cell">Owner</th>
               <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden lg:table-cell">Address</th>
               <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden sm:table-cell">State</th>
             </tr>
@@ -93,16 +132,7 @@ export default async function SitesPage({
                   </Link>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">
-                  {site.customer ? (
-                    <Link
-                      href={`/customers/${site.customer.id}`}
-                      className="hover:text-primary transition-colors"
-                    >
-                      {site.customer.name}
-                    </Link>
-                  ) : (
-                    "—"
-                  )}
+                  {site.customer?.name ?? "—"}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">
                   {[site.address, site.suburb, site.postcode]
@@ -120,7 +150,7 @@ export default async function SitesPage({
                   colSpan={4}
                   className="px-4 py-12 text-center text-muted-foreground"
                 >
-                  No sites found. Use “+ Add site” above, or add one from a customer page.
+                  No sites found. Use “+ Add site” above.
                 </td>
               </tr>
             )}

@@ -472,14 +472,14 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
           onClick={() => projectInputRef.current?.click()}>Load</button>
       </div>
 
-      {/* Job selector */}
+      {/* Job selector — searchable (2026-07-04: the plain <select> was an
+          unscrollable wall once the job list grew) */}
       <div className="flex items-center gap-1 pr-3 border-r border-gray-700">
         <span className="text-gray-500 text-xs">Job:</span>
-        <select
-          value={linkedJobId || ''}
-          onChange={(e) => {
-            const jobId = e.target.value || null;
-            const job = jobs.find(j => j.id === jobId);
+        <JobSearchPicker
+          jobs={jobs}
+          linkedJobId={linkedJobId}
+          onPick={(job) => {
             if (!job) {
               setLinkedJob(null, null);
               return;
@@ -487,7 +487,7 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
             const cust = unwrap(job.customer);
             const site = unwrap(job.site);
             const label = jobLabel(job);
-            setLinkedJob(jobId, label);
+            setLinkedJob(job.id, label);
             updateTitleBlock({
               client: cust?.name ?? '',
               projectName: site?.name ?? job.reference ?? '',
@@ -495,13 +495,7 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
               state: site?.state ?? '',
             });
           }}
-          className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500 max-w-64 truncate"
-        >
-          <option value="">No job linked</option>
-          {jobs.map(j => (
-            <option key={j.id} value={j.id}>{jobLabel(j)}</option>
-          ))}
-        </select>
+        />
       </div>
 
       {/* Export + Complete */}
@@ -588,6 +582,125 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
               <button className="px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white text-xs rounded font-medium"
                 onClick={() => { if (newFloorName.trim()) { addFloor(newFloorName.trim()); setShowFloorModal(false); setNewFloorName(''); } }}>Add Floor</button>
             </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Searchable job picker for the toolbar. Type-to-filter across job number,
+ * site, owner, and reference; keeps the toolbar's dark compact styling.
+ */
+function JobSearchPicker({
+  jobs,
+  linkedJobId,
+  onPick,
+}: {
+  jobs: JobOption[];
+  linkedJobId: string | null;
+  onPick: (job: JobOption | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const linked = jobs.find(j => j.id === linkedJobId) ?? null;
+
+  React.useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    document.addEventListener('keydown', onKey);
+    setTimeout(() => inputRef.current?.focus(), 0);
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const q = query.trim().toLowerCase();
+  const filtered = !q
+    ? jobs
+    : jobs.filter(j => {
+        const cust = unwrap(j.customer);
+        const site = unwrap(j.site);
+        return (
+          j.number.toLowerCase().includes(q) ||
+          (j.reference ?? '').toLowerCase().includes(q) ||
+          (cust?.name ?? '').toLowerCase().includes(q) ||
+          (site?.name ?? '').toLowerCase().includes(q)
+        );
+      });
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 max-w-64 truncate text-left"
+        title={linked ? jobLabel(linked) : 'Link a job'}
+      >
+        <span className={linked ? 'text-white' : 'text-gray-400'}>
+          {linked ? jobLabel(linked) : 'No job linked'}
+        </span>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-96 rounded border border-gray-600 bg-gray-800 shadow-xl overflow-hidden">
+          <div className="border-b border-gray-700 p-1.5">
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search site, owner, job # or reference…"
+              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div className="max-h-72 overflow-y-auto">
+            {linked && (
+              <button
+                type="button"
+                onClick={() => { onPick(null); setOpen(false); setQuery(''); }}
+                className="w-full text-left px-2.5 py-1.5 text-xs text-red-300 hover:bg-gray-700 border-b border-gray-700"
+              >
+                ✕ Unlink job
+              </button>
+            )}
+            {filtered.length === 0 && (
+              <div className="px-2.5 py-3 text-center text-xs text-gray-500">No matching jobs</div>
+            )}
+            {filtered.slice(0, 50).map(j => {
+              const site = unwrap(j.site);
+              const cust = unwrap(j.customer);
+              const isLinked = j.id === linkedJobId;
+              return (
+                <button
+                  key={j.id}
+                  type="button"
+                  onClick={() => { onPick(j); setOpen(false); setQuery(''); }}
+                  className={`w-full text-left px-2.5 py-1.5 text-xs hover:bg-gray-700 ${isLinked ? 'bg-blue-900/40 text-blue-300' : 'text-white'}`}
+                >
+                  <span className="font-mono text-gray-400">{j.number}</span>{' '}
+                  <span className="font-medium">{site?.name ?? cust?.name ?? '—'}</span>
+                  {site?.name && cust?.name && (
+                    <span className="text-gray-400"> · {cust.name}</span>
+                  )}
+                  {j.reference && <span className="block text-[10px] text-gray-500 truncate">{j.reference}</span>}
+                </button>
+              );
+            })}
+            {filtered.length > 50 && (
+              <div className="px-2.5 py-1.5 text-[10px] text-gray-500">…{filtered.length - 50} more — keep typing to narrow</div>
+            )}
           </div>
         </div>
       )}

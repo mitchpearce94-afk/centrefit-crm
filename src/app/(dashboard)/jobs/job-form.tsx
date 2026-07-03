@@ -66,32 +66,28 @@ export function JobForm({
   const jobTypes = categories.filter((c) => c.type === "job_type");
   const businessUnits = categories.filter((c) => c.type === "business_unit");
 
-  // Unified search across customer names AND site names
+  // Site-first search (D5): results are SITES. Matching an owner's name
+  // surfaces their site(s); owners with no site yet appear unselectable so
+  // staff create the site first — every job anchors to a site.
   const searchResults = useMemo(() => {
     if (!searchQuery || searchQuery.length < 2) return [];
     const q = searchQuery.toLowerCase();
-    const results: { customerId: string; customerName: string; siteId?: string; siteName?: string; label: string }[] = [];
+    const results: { customerId: string; customerName: string; siteId?: string; siteName?: string; noSite?: boolean }[] = [];
 
     for (const customer of customers) {
-      // Match customer name
-      if (customer.name.toLowerCase().includes(q)) {
-        results.push({
-          customerId: customer.id,
-          customerName: customer.name,
-          label: customer.name,
-        });
-      }
-      // Match site names
+      const custMatch = customer.name.toLowerCase().includes(q);
       for (const site of customer.customer_sites) {
-        if (site.name.toLowerCase().includes(q)) {
+        if (custMatch || site.name.toLowerCase().includes(q)) {
           results.push({
             customerId: customer.id,
             customerName: customer.name,
             siteId: site.id,
             siteName: site.name,
-            label: `${site.name}`,
           });
         }
+      }
+      if (custMatch && customer.customer_sites.length === 0) {
+        results.push({ customerId: customer.id, customerName: customer.name, noSite: true });
       }
     }
     return results.slice(0, 20);
@@ -153,8 +149,8 @@ export function JobForm({
     setSaving(true);
     setError(null);
 
-    if (!customerId) {
-      setError("Customer is required");
+    if (!customerId || !siteId) {
+      setError("Pick a site for this job");
       setSaving(false);
       return;
     }
@@ -214,21 +210,21 @@ export function JobForm({
         </div>
       )}
 
-      {/* Customer / Site Search */}
+      {/* Site search (site-first D5) */}
       <div>
         <label className="block text-sm font-medium">
-          Customer / Site <span className="text-destructive">*</span>
+          Site <span className="text-destructive">*</span>
         </label>
 
         {customerId ? (
           <div className="mt-1 flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">
             <div className="flex-1">
               <span className="text-sm font-medium">
-                {selectedCustomer?.name}
+                {selectedSite?.name ?? selectedCustomer?.name}
               </span>
-              {selectedSite && (
+              {selectedSite && selectedCustomer && (
                 <span className="text-sm text-muted-foreground">
-                  {" "}— {selectedSite.name}
+                  {" "}· {selectedCustomer.name}
                 </span>
               )}
             </div>
@@ -244,7 +240,7 @@ export function JobForm({
           <div className="relative">
             <input
               type="text"
-              placeholder="Search by customer name or site name..."
+              placeholder="Search by site or owner name..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               autoFocus
@@ -256,39 +252,41 @@ export function JobForm({
                   <button
                     key={`${result.customerId}-${result.siteId ?? "no-site"}-${i}`}
                     type="button"
+                    disabled={result.noSite}
                     onClick={() => selectResult(result)}
-                    className="flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm hover:bg-accent transition-colors border-b border-border last:border-0"
+                    className="flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm hover:bg-accent transition-colors border-b border-border last:border-0 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <div>
                       {result.siteName ? (
                         <>
                           <span className="font-medium">{result.siteName}</span>
                           <span className="block text-xs text-muted-foreground">
-                            Customer: {result.customerName}
+                            {result.customerName}
                           </span>
                         </>
                       ) : (
-                        <span className="font-medium">{result.customerName}</span>
+                        <>
+                          <span className="font-medium">{result.customerName}</span>
+                          <span className="block text-xs text-amber-400">
+                            No site yet — add one on the Sites page first
+                          </span>
+                        </>
                       )}
                     </div>
-                    {result.siteName && (
-                      <span className="ml-auto shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                        Site
-                      </span>
-                    )}
                   </button>
                 ))}
               </div>
             )}
             {searchQuery.length >= 2 && searchResults.length === 0 && (
               <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-border bg-card px-3 py-3 text-sm text-muted-foreground shadow-xl">
-                No customers or sites found
+                No sites found
               </div>
             )}
           </div>
         )}
 
-        {/* Site picker if customer selected but no site picked via search */}
+        {/* Site picker fallback — a prefilled owner (e.g. from a pipeline
+            deal) with multiple sites still needs an explicit site choice. */}
         {customerId && !siteId && sites.length > 0 && (
           <div className="mt-2">
             <label className="block text-xs font-medium text-muted-foreground mb-1">
@@ -299,7 +297,7 @@ export function JobForm({
               onChange={(e) => setSiteId(e.target.value)}
               className={inputClass}
             >
-              <option value="">No specific site</option>
+              <option value="">Pick a site…</option>
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}

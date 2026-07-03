@@ -1,15 +1,7 @@
-import { CustomerForm } from "../customer-form";
+import { redirect } from "next/navigation";
 
+// Site-first Phase C (D5): customers are never created directly — the new
+// site form captures owner details and creates the backing record invisibly.
 export default function NewCustomerPage() {
-  return (
-    <div>
-      <h1 className="text-2xl font-bold tracking-tight">New Customer</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Add a new customer to the CRM
-      </p>
-      <div className="mt-6">
-        <CustomerForm />
-      </div>
-    </div>
-  );
+  redirect("/sites");
 }

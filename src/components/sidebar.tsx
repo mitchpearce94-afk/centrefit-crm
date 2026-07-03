@@ -18,7 +18,7 @@ const navigation: {
   anyOf?: string[];
 }[] = [
   { name: "Today", href: "/", icon: LayoutIcon, flag: null },
-  { name: "Customers", href: "/customers", icon: UsersIcon, flag: "customers.view" },
+  // Customers tab removed 2026-07-04 (site-first D1) — Sites is the directory.
   { name: "Sites", href: "/sites", icon: MapPinIcon, flag: "sites.view" },
   { name: "Jobs", href: "/jobs", icon: BriefcaseIcon, flag: "jobs.view" },
   { name: "Scheduler", href: "/scheduler", icon: CalendarIcon, flag: null },
