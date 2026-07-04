@@ -80,6 +80,9 @@ emergency arrangements; approval; sign-on; subbie table; equipment checklist.
   acknowledge from each tech's phone before the signature applies — noted, not built.
 - Sub-contractor rows: manual entry (name, company, licences) or on-glass signature.
 - Nearest hospital auto-filled from the site address (lookup at generation).
+- **Export button (Mitchell 2026-07-05): SWMS is generate → download PDF** so staff can
+  email it to the builder themselves. No customer-facing send flow for SWMS — it's an
+  internal document that leaves via normal email.
 
 ## Generated document 3 — Handover Documentation (Phase D)
 
@@ -111,6 +114,12 @@ Auto-assembled per site:
   **64937**. The handover template's 64951/C12897 is stale — never use it. Store as
   app constants.
 - Client acceptance signature (sign-on-glass or link) → signed handover stored.
+- **Guest Wi-Fi QR poster (Mitchell 2026-07-05) — a SEPARATE printable document,**
+  never embedded in the handover pack: a branded, print-ready page (A4/A5) with a QR
+  encoding the guest network (WIFI:T:WPA;S:<ssid>;P:<password>;; format) so members
+  scan to join without the password ever being shown or given out. Generated from the
+  site's Key Info Wi-Fi data (per-network button — guest network the main use). Sent /
+  printed on its own alongside the handover.
 
 ## Phases
 
