@@ -435,9 +435,15 @@ export interface GcSubscription {
   amount: number;
   currency: string;
   interval_unit: string;
+  /** Cadence multiplier — e.g. interval_unit=monthly + interval=3 is quarterly. */
+  interval?: number;
+  day_of_month?: number | null;
   start_date: string | null;
   name: string | null;
   created_at: string;
+  metadata?: Record<string, string>;
+  /** Next charges GC has scheduled — first entry is the next debit. */
+  upcoming_payments?: Array<{ charge_date: string; amount: number }>;
   links: { mandate: string };
 }
 

@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { CancelButton } from "./cancel-button";
+import { RemandateButton } from "./remandate-button";
 import { EditServicesButton } from "./edit-services-button";
 import { AddServiceButton } from "./add-service-button";
 import { EditStartDateButton } from "./edit-start-date-button";
@@ -42,9 +43,10 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
         id, status, source, next_invoice_date, first_invoice_date, alias_email, signup_link_url, signup_emailed_at,
         gc_customer_id, gc_mandate_id, xero_repeating_invoice_id, xero_contact_id,
         activation_error, activation_attempts, last_activation_attempt_at,
+        remandate_billing_request_id, remandate_signup_url, remandate_requested_at, remandate_completed_at,
         created_at, notes,
         customers(id, name),
-        customer_sites(id, name, address, suburb, state, postcode),
+        customer_sites(id, name, address, suburb, state, postcode, customer_id),
         recurring_plan_items(id, service_id, service_name, description, price_inc_gst, frequency, account_code, quantity)
       `)
       .eq("id", id)
@@ -188,6 +190,53 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
               </p>
             </div>
             <RetryActivationButton planId={plan.id} />
+          </div>
+        </div>
+      )}
+
+      {/* Re-mandate (site-first D4). Two states:
+          1. Site's backing customer ≠ plan's customer → the site was sold and
+             this plan still collects from the previous owner's mandate.
+          2. A signup is pending → show the link + when it went out. */}
+      {(plan.status === "active" || plan.status === "paused") &&
+        site && (site as { customer_id?: string }).customer_id !== customer?.id && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-amber-300">
+                {plan.remandate_requested_at && !plan.remandate_completed_at
+                  ? "New-owner DD signup sent — awaiting signature"
+                  : "Site owner changed — plan still collects from the previous owner"}
+              </p>
+              <p className="mt-1 text-xs text-amber-300/80">
+                {plan.remandate_requested_at && !plan.remandate_completed_at ? (
+                  <>Sent {new Date(plan.remandate_requested_at).toLocaleString("en-AU")}. Billing swaps to the new owner&apos;s bank automatically when they sign; until then the previous owner&apos;s mandate keeps collecting.</>
+                ) : (
+                  <>The mandate is bound to the previous owner&apos;s bank account. Send the new owner a DD signup — subscriptions swap over automatically once they sign.</>
+                )}
+              </p>
+              {plan.remandate_signup_url && !plan.remandate_completed_at && (
+                <div className="mt-2 flex gap-2">
+                  <input
+                    readOnly
+                    value={plan.remandate_signup_url}
+                    className="flex-1 min-w-0 rounded-md border border-border bg-input px-2 py-1 text-xs font-mono"
+                  />
+                  <a
+                    href={plan.remandate_signup_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-md border border-border px-3 py-1 text-xs hover:bg-accent transition-colors"
+                  >
+                    Open
+                  </a>
+                </div>
+              )}
+            </div>
+            <RemandateButton
+              planId={plan.id}
+              resend={!!plan.remandate_requested_at && !plan.remandate_completed_at}
+            />
           </div>
         </div>
       )}

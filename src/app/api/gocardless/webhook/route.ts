@@ -3,6 +3,7 @@ import { createServiceRoleClient } from "@/lib/supabase/service";
 import { verifyGoCardlessSignature } from "@/lib/gocardless/webhook-verify";
 import { getMandate, getBillingRequest } from "@/lib/gocardless/client";
 import { activatePlan } from "@/lib/recurring/activate-plan";
+import { completeRemandate } from "@/lib/recurring/remandate";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
 
 /**
@@ -96,7 +97,24 @@ async function handleBillingRequestEvent(
     .select("id, status, gc_customer_id, gc_mandate_id")
     .eq("gc_billing_request_id", billingRequestId)
     .maybeSingle();
-  if (!plan) return;
+  if (!plan) {
+    // Re-mandate BRs (site sold — new owner signing a fresh mandate) live on
+    // their own column so the original signup linkage stays intact. They get
+    // the subscription-swap flow, NOT activatePlan — the plan is already
+    // active with a Xero RI; only the GC side changes hands.
+    const { data: remandatePlan } = await supabase
+      .from("recurring_plans")
+      .select("id")
+      .eq("remandate_billing_request_id", billingRequestId)
+      .maybeSingle();
+    if (remandatePlan && event.action === "fulfilled") {
+      const result = await completeRemandate(supabase, remandatePlan.id, billingRequestId);
+      if (!result.ok) {
+        console.error(`[gc-webhook] completeRemandate failed for plan ${remandatePlan.id}: ${result.reason}`);
+      }
+    }
+    return;
+  }
 
   // We only care about transitions that surface customer + mandate IDs.
   if (event.action !== "fulfilled" && event.action !== "ready_to_fulfil") return;

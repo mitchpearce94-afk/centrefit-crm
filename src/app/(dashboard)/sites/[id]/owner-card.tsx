@@ -38,6 +38,7 @@ export function OwnerCard({
   const { toast } = useToast();
   const [mode, setMode] = useState<"view" | "edit" | "change">("view");
   const [busy, setBusy] = useState(false);
+  const [sendDdSignup, setSendDdSignup] = useState(true);
 
   // Shared form state — seeded from the current owner in edit mode, blank in
   // change mode.
@@ -59,6 +60,7 @@ export function OwnerCard({
 
   function openChange() {
     setForm({ name: "", abn: "", billingEmail: "", contactName: "", contactEmail: "", contactPhone: "" });
+    setSendDdSignup(true);
     setMode("change");
   }
 
@@ -67,9 +69,15 @@ export function OwnerCard({
       toast("Owner name is required", "error");
       return;
     }
+    const isChange = mode === "change";
+    // The DD signup email goes to billing email (falls back to contact email)
+    // — catch the miss client-side rather than after the owner is created.
+    if (isChange && sendDdSignup && activePlanCount > 0 && !form.billingEmail.trim() && !form.contactEmail.trim()) {
+      toast("Add a billing or contact email so the new owner can receive the direct-debit signup", "error");
+      return;
+    }
     setBusy(true);
     try {
-      const isChange = mode === "change";
       const res = await fetch(`/api/sites/${siteId}/${isChange ? "change-owner" : "owner"}`, {
         method: isChange ? "POST" : "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -80,6 +88,7 @@ export function OwnerCard({
           contactName: form.contactName.trim() || null,
           contactEmail: form.contactEmail.trim() || null,
           contactPhone: form.contactPhone.trim() || null,
+          ...(isChange ? { sendDdSignup } : {}),
         }),
       });
       const json = await res.json();
@@ -89,11 +98,19 @@ export function OwnerCard({
         return;
       }
       if (isChange) {
-        toast(
-          json.activePlansNeedingRemandate > 0
-            ? `Owner changed. ${json.activePlansNeedingRemandate} recurring plan(s) need a new mandate for the new owner.`
-            : "Owner changed.",
-        );
+        const sent = (json.remandate ?? []).filter((r: { ok: boolean }) => r.ok).length;
+        const failedCount = (json.remandate ?? []).filter((r: { ok: boolean }) => !r.ok).length;
+        if (failedCount > 0) {
+          toast(`Owner changed, but the DD signup failed for ${failedCount} plan(s) — check the plan page.`, "error");
+        } else if (sent > 0) {
+          toast(`Owner changed. DD signup emailed for ${sent} plan(s) — billing swaps when they sign.`);
+        } else {
+          toast(
+            json.activePlansNeedingRemandate > 0
+              ? `Owner changed. ${json.activePlansNeedingRemandate} recurring plan(s) still need a new mandate for the new owner.`
+              : "Owner changed.",
+          );
+        }
       } else {
         toast("Owner details updated");
       }
@@ -158,9 +175,22 @@ export function OwnerCard({
               <p className="mt-0.5 text-amber-300/80">
                 A new owner record is created; all history (jobs, quotes, invoices, plans) stays with the previous owner to match the Xero paper trail.
                 {activePlanCount > 0 && (
-                  <> This site has <strong>{activePlanCount} recurring plan{activePlanCount === 1 ? "" : "s"}</strong> collecting from the previous owner&apos;s bank — you&apos;ll need to set up a new mandate for the new owner and cancel the old plan once it collects.</>
+                  <> This site has <strong>{activePlanCount} recurring plan{activePlanCount === 1 ? "" : "s"}</strong> collecting from the previous owner&apos;s bank.</>
                 )}
               </p>
+              {activePlanCount > 0 && (
+                <label className="mt-2 flex cursor-pointer items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={sendDdSignup}
+                    onChange={(e) => setSendDdSignup(e.target.checked)}
+                    className="mt-0.5 accent-amber-500"
+                  />
+                  <span className="text-amber-300/90">
+                    Email the new owner a direct-debit signup now (recommended). Billing swaps to their bank automatically when they sign; the previous owner&apos;s mandate keeps collecting until then.
+                  </span>
+                </label>
+              )}
             </div>
           )}
           <label className="block">

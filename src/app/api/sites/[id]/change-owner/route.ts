@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
+import { startRemandate } from "@/lib/recurring/remandate";
 
 /**
  * POST /api/sites/[id]/change-owner — the site was SOLD to a new owner
@@ -11,14 +12,14 @@ import { enqueueNotification } from "@/lib/notifications/enqueue";
  * site.customer_id at it. History (jobs/quotes/invoices/plans) deliberately
  * stays on the OLD record so the CRM matches the Xero paper trail.
  *
- * Recurring plans also stay on the old record: their GC mandate is signed
- * against the old owner's bank account and cannot be inherited. Active/pending
- * plans trigger a re-mandate notification — the automated new-mandate +
- * subscription-swap flow is a separate gated build (billing-critical), so for
- * now staff set up the new mandate via the recurring wizard's "existing site"
- * path and cancel the old plan once the new one collects.
+ * Recurring plans also stay on the old record until the NEW owner signs their
+ * own mandate: a GC mandate is bound to a bank account and cannot be
+ * inherited. Unless sendDdSignup=false, active/paused plans get a re-mandate
+ * signup emailed to the new owner here (lib/recurring/remandate.ts); the
+ * BR-fulfilled webhook then swaps subscriptions onto the new mandate, cancels
+ * the old ones and re-points the plan at the new backing customer.
  *
- * Body: { name, abn?, billingEmail?, contactName?, contactEmail?, contactPhone? }
+ * Body: { name, abn?, billingEmail?, contactName?, contactEmail?, contactPhone?, sendDdSignup? }
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: siteId } = await params;
@@ -31,6 +32,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   let body: {
     name?: string; abn?: string | null; billingEmail?: string | null;
     contactName?: string | null; contactEmail?: string | null; contactPhone?: string | null;
+    /** Email the new owner a DD signup for existing plans (default true). */
+    sendDdSignup?: boolean;
   };
   try {
     body = await req.json();
@@ -86,14 +89,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     .eq("id", siteId);
   if (siteErr) return NextResponse.json({ error: `Site re-point failed: ${siteErr.message}` }, { status: 500 });
 
-  // DD exposure check — plans stay with the old owner (their mandate), staff
-  // must re-mandate the new owner.
+  // DD exposure — plans keep collecting from the old owner's mandate until
+  // the new owner signs their own (site-first D4). Default behaviour is to
+  // email the new owner a DD signup per active/paused plan right now; the
+  // BR-fulfilled webhook then swaps subscriptions + re-points the plan.
   const { data: plans } = await svc
     .from("recurring_plans")
     .select("id, status")
     .eq("site_id", siteId)
     .in("status", ["active", "pending_mandate", "paused"]);
   const planCount = plans?.length ?? 0;
+
+  const remandateResults: Array<{ planId: string; ok: boolean; emailedTo?: string | null; error?: string }> = [];
+  const pendingMandateCount = plans?.filter((p) => p.status === "pending_mandate").length ?? 0;
+  if (body.sendDdSignup !== false) {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(req.url).origin;
+    for (const p of plans ?? []) {
+      if (p.status !== "active" && p.status !== "paused") continue;
+      const r = await startRemandate(svc, p.id, { appUrl });
+      remandateResults.push(
+        r.ok
+          ? { planId: p.id, ok: true, emailedTo: r.emailedTo }
+          : { planId: p.id, ok: false, error: r.reason },
+      );
+    }
+  }
+  const sent = remandateResults.filter((r) => r.ok).length;
+  const failed = remandateResults.filter((r) => !r.ok);
 
   await enqueueNotification({
     supabase: svc,
@@ -104,9 +126,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     title: `Owner changed: ${site.name}`,
     body:
       `${oldOwner?.name ?? "Previous owner"} → ${name}.` +
-      (planCount > 0
-        ? ` ⚠ ${planCount} recurring plan${planCount === 1 ? "" : "s"} still collect from the previous owner's mandate — set up a new mandate for the new owner and cancel the old plan once it collects. Check the Xero contact's ABN/entity name too.`
-        : " No active recurring plans on this site."),
+      (planCount === 0
+        ? " No active recurring plans on this site."
+        : ` ${planCount} recurring plan${planCount === 1 ? "" : "s"} on this site.` +
+          (sent > 0
+            ? ` DD signup emailed to the new owner for ${sent} — billing swaps automatically when they sign; until then the previous owner's mandate keeps collecting.`
+            : "") +
+          (failed.length > 0
+            ? ` ⚠ Signup NOT sent for ${failed.length}: ${failed.map((f) => f.error).join("; ")}`.slice(0, 400)
+            : "") +
+          (pendingMandateCount > 0
+            ? ` ⚠ ${pendingMandateCount} plan(s) still pending the PREVIOUS owner's signature — cancel and recreate those for the new owner.`
+            : "") +
+          " Check the Xero contact's ABN/entity name too."),
     href: `/sites/${siteId}`,
   });
 
@@ -115,5 +147,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     newCustomerId,
     previousOwner: oldOwner?.name ?? null,
     activePlansNeedingRemandate: planCount,
+    remandate: remandateResults,
   });
 }
