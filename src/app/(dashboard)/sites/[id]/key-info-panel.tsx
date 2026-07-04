@@ -57,16 +57,31 @@ const LEGACY_KEY_INFO_TYPES = new Set([
   "WiFi Controller",
 ]);
 
+// Infrastructure sections, in tech-priority order. Keyed by asset_types.category;
+// legacy device_type strings all belong to data/cctv.
+const CATEGORY_SECTIONS: Array<{ key: string; label: string }> = [
+  { key: "data", label: "Network & Data" },
+  { key: "cctv", label: "CCTV" },
+  { key: "security", label: "Security & Alarms" },
+  { key: "access", label: "Access Control" },
+  { key: "duress", label: "Duress" },
+  { key: "audio", label: "Audio" },
+  { key: "av", label: "AV" },
+  { key: "other", label: "Other" },
+];
+
 export function KeyInfoPanel({
   siteId,
   assets,
   assetTypes,
   photos,
+  notes,
 }: {
   siteId: string;
   assets: SiteAsset[];
   assetTypes: AssetType[];
   photos: KeyInfoPhoto[];
+  notes: string | null;
 }) {
   const typeById = useMemo(() => {
     const m = new Map<string, AssetType>();
@@ -74,39 +89,154 @@ export function KeyInfoPanel({
     return m;
   }, [assetTypes]);
 
-  const keyInfoAssets = useMemo(() => {
-    return assets
-      .filter((a) => a.is_active)
-      .filter((a) => {
-        const t = a.asset_type_id ? typeById.get(a.asset_type_id) : null;
-        if (t?.is_key_info) return true;
-        if (!t && a.device_type && LEGACY_KEY_INFO_TYPES.has(a.device_type)) return true;
-        return false;
-      });
+  // Key-info assets bucketed by infrastructure category — Mitchell's 07-03
+  // ask: "separated by their infrastructure", not one flat pile.
+  const sections = useMemo(() => {
+    const buckets = new Map<string, Array<{ asset: SiteAsset; type: AssetType | null }>>();
+    for (const a of assets) {
+      if (!a.is_active) continue;
+      const t = a.asset_type_id ? typeById.get(a.asset_type_id) ?? null : null;
+      const isKeyInfo = t?.is_key_info || (!t && a.device_type && LEGACY_KEY_INFO_TYPES.has(a.device_type));
+      if (!isKeyInfo) continue;
+      const cat = t?.category ?? (a.device_type === "NVR" ? "cctv" : "data");
+      if (!buckets.has(cat)) buckets.set(cat, []);
+      buckets.get(cat)!.push({ asset: a, type: t });
+    }
+    // Stable order inside a section: asset-type sort order, then device name.
+    for (const list of buckets.values()) {
+      list.sort(
+        (x, y) =>
+          (x.type?.sort_order ?? 999) - (y.type?.sort_order ?? 999) ||
+          (x.asset.device_name ?? "").localeCompare(y.asset.device_name ?? ""),
+      );
+    }
+    const known = CATEGORY_SECTIONS.filter((s) => buckets.has(s.key)).map((s) => ({
+      ...s,
+      entries: buckets.get(s.key)!,
+    }));
+    // Categories we don't know about yet still render (defensive).
+    const extras = [...buckets.keys()]
+      .filter((k) => !CATEGORY_SECTIONS.some((s) => s.key === k))
+      .map((k) => ({ key: k, label: k.toUpperCase(), entries: buckets.get(k)! }));
+    return [...known, ...extras];
   }, [assets, typeById]);
+
+  const isEmpty = sections.length === 0;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-sm font-semibold mb-1">Network &amp; head-end devices</h2>
-        <p className="text-xs text-muted-foreground mb-3">
-          Read-only summary of the routers, switches, WAPs and NVR at this site. Edit values on the Assets tab.
-        </p>
-        {keyInfoAssets.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            No router, switch, WAP or NVR recorded yet. Add them on the Assets tab.
+      <NotesSection siteId={siteId} initialNotes={notes} />
+
+      {isEmpty ? (
+        <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+          No key-info devices recorded yet. Add them on the Assets tab.
+        </div>
+      ) : (
+        sections.map((section) => (
+          <div key={section.key}>
+            <div className="flex items-baseline gap-2 mb-2">
+              <h2 className="text-sm font-semibold">{section.label}</h2>
+              <span className="text-[11px] text-muted-foreground">
+                {section.entries.length} device{section.entries.length === 1 ? "" : "s"} · edit on the Assets tab
+              </span>
+            </div>
+            <div className="space-y-3">
+              {section.entries.map(({ asset, type }) => (
+                <KeyInfoCard key={asset.id} asset={asset} type={type} />
+              ))}
+            </div>
           </div>
-        ) : (
-          <div className="space-y-3">
-            {keyInfoAssets.map((a) => {
-              const t = a.asset_type_id ? typeById.get(a.asset_type_id) : null;
-              return <KeyInfoCard key={a.id} asset={a} type={t ?? null} />;
-            })}
+        ))
+      )}
+
+      <PhotosSection siteId={siteId} photos={photos} />
+    </div>
+  );
+}
+
+/**
+ * Free-text block at the top of Key Info — alarm codes, ISP account numbers,
+ * "the NVR is in the cleaner's cupboard" — anything without an asset field.
+ */
+function NotesSection({ siteId, initialNotes }: { siteId: string; initialNotes: string | null }) {
+  const router = useRouter();
+  const supabase = createClient();
+  const { toast } = useToast();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(initialNotes ?? "");
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    const { error } = await supabase
+      .from("customer_sites")
+      .update({ key_info_notes: draft.trim() || null, updated_at: new Date().toISOString() })
+      .eq("id", siteId);
+    setSaving(false);
+    if (error) {
+      toast(error.message, "error");
+      return;
+    }
+    toast("Key info notes saved");
+    setEditing(false);
+    router.refresh();
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h2 className="text-sm font-semibold">Site notes</h2>
+        {!editing && (
+          <div className="flex items-center gap-2">
+            {initialNotes && <CopyButton value={initialNotes} label="site notes" />}
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(initialNotes ?? "");
+                setEditing(true);
+              }}
+              className="text-xs text-primary hover:underline"
+            >
+              {initialNotes ? "Edit" : "+ Add notes"}
+            </button>
           </div>
         )}
       </div>
-
-      <PhotosSection siteId={siteId} photos={photos} />
+      {editing ? (
+        <div className="space-y-2">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={Math.min(14, Math.max(4, draft.split("\n").length + 1))}
+            autoFocus
+            placeholder={"Anything a tech needs that doesn't fit a device field — alarm codes, ISP details, where the rack lives…"}
+            className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : initialNotes ? (
+        <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground leading-relaxed">{initialNotes}</pre>
+      ) : (
+        <p className="text-xs text-muted-foreground italic">
+          Nothing here yet — codes, ISP details, access instructions, anything a tech should know.
+        </p>
+      )}
     </div>
   );
 }
@@ -141,6 +271,28 @@ function CopyButton({ value, label }: { value: string; label?: string }) {
   );
 }
 
+function CopyAllButton({ value }: { value: string }) {
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        } catch {
+          toast("Couldn't copy to clipboard", "error");
+        }
+      }}
+      className="shrink-0 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+    >
+      {copied ? "Copied ✓" : "Copy all"}
+    </button>
+  );
+}
+
 function KeyInfoCard({ asset, type }: { asset: SiteAsset; type: AssetType | null }) {
   const title =
     asset.device_name?.trim() ||
@@ -165,6 +317,21 @@ function KeyInfoCard({ asset, type }: { asset: SiteAsset; type: AssetType | null
   }
   if (asset.firmware) rows.push({ label: "Firmware", value: asset.firmware });
 
+  // One-click block for pasting into a ticket or handover doc — the "easy to
+  // copy" half of Mitchell's 07-03 suggestion.
+  const copyAllText = [
+    [title, type?.name && asset.device_name ? `(${type.name})` : null, asset.manufacturer, asset.model]
+      .filter(Boolean)
+      .join(" "),
+    ...rows.map((r) => `${r.label}: ${r.value}`),
+    ...(Array.isArray(asset.vlans) && asset.vlans.length > 0
+      ? ["VLANs:", ...asset.vlans.map((v) => `  ${v.id ?? "—"} ${v.name ?? ""}${v.notes ? ` · ${v.notes}` : ""}`)]
+      : []),
+    ...(Array.isArray(asset.wifi_ssids) && asset.wifi_ssids.length > 0
+      ? ["Wi-Fi:", ...asset.wifi_ssids.map((w) => `  ${w.ssid ?? "—"} ${w.password ?? ""}${w.notes ? ` · ${w.notes}` : ""}`)]
+      : []),
+  ].join("\n");
+
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <div className="flex items-center justify-between mb-2 gap-2">
@@ -179,6 +346,7 @@ function KeyInfoCard({ asset, type }: { asset: SiteAsset; type: AssetType | null
             </p>
           )}
         </div>
+        {rows.length > 0 && <CopyAllButton value={copyAllText} />}
       </div>
       <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
         {rows.map((row) => (

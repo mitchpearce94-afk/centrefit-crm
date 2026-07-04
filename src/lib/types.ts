@@ -96,6 +96,9 @@ export interface CustomerSite {
   lng: number | null;
   site_contact_id: string | null;
   notes: string | null;
+  // Free-text block on the Key Info tab — codes, ISP details, anything a tech
+  // needs that doesn't fit an asset field (Mitchell suggestion 2026-07-03).
+  key_info_notes: string | null;
   created_at: string;
   updated_at: string;
 }

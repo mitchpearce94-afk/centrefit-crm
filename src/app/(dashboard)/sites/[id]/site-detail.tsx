@@ -384,6 +384,7 @@ export function SiteDetail({
               assets={assets}
               assetTypes={assetTypes}
               photos={keyInfoPhotos}
+              notes={site.key_info_notes ?? null}
             />
           )}
 

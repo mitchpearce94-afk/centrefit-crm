@@ -55,7 +55,7 @@ export function JobForm({
   const [category1Id, setCategory1Id] = useState("");
   const [category2Id, setCategory2Id] = useState("");
   const [statusId, setStatusId] = useState(
-    statuses.find((s) => s.name === "Lead / Unassigned")?.id ?? ""
+    statuses.find((s) => s.name === "Unassigned")?.id ?? ""
   );
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
   const [showStaffPicker, setShowStaffPicker] = useState(false);

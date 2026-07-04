@@ -12,7 +12,7 @@ const AUTO_TRANSITIONS: Record<string, { from: string[]; to: string }> = {
   // final-completion statuses where the job's already physically wrapped.
   plans_sent_to_electrician: {
     from: [
-      'Lead / Unassigned', 'Assigned',
+      'Lead', 'Unassigned', 'Assigned',
       'Design Phase', 'Plans sent to electrician', 'Awaiting Approval', 'Sub-Quote Needed',
       'Quote Draft', 'Quote Sent', 'Quote Expired',
       'Awaiting Invoice Payment', 'Pending Schedule', 'Scheduled',
@@ -24,25 +24,25 @@ const AUTO_TRANSITIONS: Record<string, { from: string[]; to: string }> = {
   // Quote lifecycle — each step includes earlier statuses so transitions
   // still fire even if a previous step in the chain was skipped
   quote_created: {
-    from: ['Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Follow Up', 'On Hold', 'Design Phase', 'Plans sent to electrician', 'Awaiting Approval'],
+    from: ['Lead', 'Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Follow Up', 'On Hold', 'Design Phase', 'Plans sent to electrician', 'Awaiting Approval'],
     to: 'Quote Draft',
   },
   quote_sent: {
-    from: ['Quote Draft', 'Sub-Quote Needed', 'Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Follow Up', 'On Hold', 'Design Phase', 'Plans sent to electrician', 'Awaiting Approval'],
+    from: ['Quote Draft', 'Sub-Quote Needed', 'Lead', 'Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Follow Up', 'On Hold', 'Design Phase', 'Plans sent to electrician', 'Awaiting Approval'],
     to: 'Quote Sent',
   },
   quote_accepted: {
-    from: ['Quote Draft', 'Quote Sent', 'Quote Expired', 'Sub-Quote Needed', 'Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Follow Up', 'On Hold', 'Design Phase', 'Plans sent to electrician', 'Awaiting Approval'],
+    from: ['Quote Draft', 'Quote Sent', 'Quote Expired', 'Sub-Quote Needed', 'Lead', 'Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Follow Up', 'On Hold', 'Design Phase', 'Plans sent to electrician', 'Awaiting Approval'],
     to: 'Pending Schedule',
   },
   quote_declined: {
-    from: ['Quote Draft', 'Quote Sent', 'Quote Expired', 'Sub-Quote Needed', 'Lead / Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Design Phase', 'Plans sent to electrician', 'Awaiting Approval'],
+    from: ['Quote Draft', 'Quote Sent', 'Quote Expired', 'Sub-Quote Needed', 'Lead', 'Unassigned', 'Assigned', 'Pending Schedule', 'Scheduled', 'Design Phase', 'Plans sent to electrician', 'Awaiting Approval'],
     to: 'Follow Up',
   },
 
   // Job lifecycle
   staff_assigned: {
-    from: ['Lead / Unassigned'],
+    from: ['Lead', 'Unassigned'],
     to: 'Assigned',
   },
   // Booking a job onto the calendar can happen from any pre-completion
@@ -51,7 +51,7 @@ const AUTO_TRANSITIONS: Record<string, { from: string[]; to: string }> = {
   // phases so we never demote a job that's already underway.
   job_scheduled: {
     from: [
-      'Lead / Unassigned', 'Assigned',
+      'Lead', 'Unassigned', 'Assigned',
       'Design Phase', 'Plans sent to electrician', 'Awaiting Approval', 'Sub-Quote Needed',
       'Quote Draft', 'Quote Sent', 'Quote Expired',
       'Awaiting Invoice Payment', 'Pending Schedule', 'Scheduled',
@@ -92,7 +92,7 @@ const AUTO_TRANSITIONS: Record<string, { from: string[]; to: string }> = {
   // so it can be put on the calendar.
   invoice_authorised: {
     from: ['Pending Schedule', 'Quote Sent', 'Quote Draft', 'Quote Expired',
-           'Sub-Quote Needed', 'Lead / Unassigned', 'Assigned', 'Follow Up',
+           'Sub-Quote Needed', 'Lead', 'Unassigned', 'Assigned', 'Follow Up',
            'On Hold', 'Design Phase', 'Awaiting Approval'],
     to: 'Awaiting Invoice Payment',
   },

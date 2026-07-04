@@ -20,8 +20,7 @@ export default async function DashboardPage({
 
   const canSeeJobs = can("jobs.view");
   const canSeeAllJobs = can("jobs.view_all");
-  const canSeeCustomers = can("customers.view");
-  const canSeePipelineDollars = can("quoting.view_amounts");
+  const canSeeSites = can("customers.view");
   const canSeeFullSchedule = can("scheduler.view_all_team");
 
   const completionIds = await getCompletionStatusIds(supabase);
@@ -50,15 +49,15 @@ export default async function DashboardPage({
   const [
     { data: { user } },
     { data: allActiveJobs },
-    { count: totalCustomers },
-    { data: pipelineDeals },
+    { count: totalSites },
+    { data: leadStatusRow },
     { data: todaySchedule },
     { data: upcomingSchedule },
   ] = await Promise.all([
     supabase.auth.getUser(),
     jobQuery,
-    supabase.from("customers").select("id", { count: "exact", head: true }).eq("is_active", true),
-    supabase.from("pipeline_deals").select("id, value, stage").not("stage", "in", "(won,lost,accepted)"),
+    supabase.from("customer_sites").select("id", { count: "exact", head: true }),
+    supabase.from("statuses").select("id").eq("name", "Lead").maybeSingle(),
     // Today's entries — include multi-day overlaps so an install that
     // started yesterday and runs through Friday still shows today.
     supabase.from("schedule_entries")
@@ -86,6 +85,10 @@ export default async function DashboardPage({
 
   const recentJobs = filteredJobs.slice(0, 5);
   const overdueJobs = filteredJobs.filter((j: any) => j.due_date && j.due_date < todayISO);
+  // Leads = raw enquiries the admin team has entered, awaiting triage (Mark's
+  // bubble). Counted from the unfiltered active set — a staff filter would
+  // always zero it out since leads have nobody assigned yet.
+  const leadJobs = (allActiveJobs ?? []).filter((j: any) => j.status?.name === "Lead");
 
   const staffResult = await supabase.from("staff").select("display_name, role").eq("id", user?.id ?? "").single();
   const displayName = staffResult.data?.display_name ?? user?.email ?? "";
@@ -278,23 +281,27 @@ export default async function DashboardPage({
           currentCategory={params.category}
         />
 
-        {/* Stats — rendered per permission (D9). */}
+        {/* Stats — rendered per permission (D9). Customers + Pipeline cards
+            died with the site-first flip (Customers tab removed; Pipeline nav
+            hidden since April) — replaced by Sites and Mark's Leads bubble. */}
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {canSeeJobs && (
-            <StatCard label="Active Jobs" value={String(filteredJobs.length)} href="/jobs" />
+            <StatCard
+              label="Leads"
+              value={String(leadJobs.length)}
+              sublabel={leadJobs.length > 0 ? "new enquiries awaiting triage" : "no untriaged enquiries"}
+              accent="#ec4899"
+              href={leadStatusRow?.id ? `/jobs?status=${leadStatusRow.id}` : "/jobs"}
+            />
           )}
-          {canSeeCustomers && (
-            <StatCard label="Customers" value={String(totalCustomers ?? 0)} href="/customers" />
+          {canSeeJobs && (
+            <StatCard label="Active Jobs" value={String(filteredJobs.length)} href="/jobs" />
           )}
           {canSeeAllJobs && (
             <StatCard label="Overdue" value={String(overdueJobs.length)} warning={overdueJobs.length > 0} />
           )}
-          {canSeePipelineDollars && (
-            <StatCard
-              label="Pipeline Value"
-              value={`$${(pipelineDeals ?? []).reduce((sum: number, d: any) => sum + (d.value ?? 0), 0).toLocaleString("en-AU")}`}
-              href="/pipeline"
-            />
+          {canSeeSites && (
+            <StatCard label="Sites" value={String(totalSites ?? 0)} href="/sites" />
           )}
         </div>
 
@@ -550,7 +557,7 @@ function MobileEntryCard({ entry, showDate }: { entry: any; showDate: boolean })
   );
 }
 
-function StatCard({ label, value, href, warning, sublabel }: { label: string; value: string; href?: string; warning?: boolean; sublabel?: string }) {
+function StatCard({ label, value, href, warning, sublabel, accent }: { label: string; value: string; href?: string; warning?: boolean; sublabel?: string; accent?: string }) {
   const baseClass = warning
     ? "border-destructive/30 bg-destructive/5 hover:border-destructive/50"
     : "border-border bg-card hover:border-border-strong";
@@ -559,8 +566,17 @@ function StatCard({ label, value, href, warning, sublabel }: { label: string; va
       {warning && (
         <span className="pointer-events-none absolute right-3 top-3 inline-flex h-2 w-2 rounded-full bg-destructive/80 shadow-[0_0_12px] shadow-destructive/40" />
       )}
+      {!warning && accent && value !== "0" && (
+        <span
+          className="pointer-events-none absolute right-3 top-3 inline-flex h-2 w-2 rounded-full shadow-[0_0_12px]"
+          style={{ backgroundColor: accent, boxShadow: `0 0 12px ${accent}66` }}
+        />
+      )}
       <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p className={`num-display mt-2 text-3xl font-semibold ${warning ? "text-destructive" : "num-gradient"}`}>
+      <p
+        className={`num-display mt-2 text-3xl font-semibold ${warning ? "text-destructive" : accent && value !== "0" ? "" : "num-gradient"}`}
+        style={!warning && accent && value !== "0" ? { color: accent } : undefined}
+      >
         {value}
       </p>
       {sublabel && (
