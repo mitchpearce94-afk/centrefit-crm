@@ -203,6 +203,7 @@ export default async function SiteDetailPage({
                   name: site.customer.name,
                   abn: site.customer.abn ?? null,
                   billing_email: site.customer.billing_email ?? null,
+                  invoiceName: (site as { invoice_name?: string | null }).invoice_name ?? null,
                   contactName: ownerContact?.name ?? null,
                   contactEmail: ownerContact?.email ?? null,
                   contactPhone: ownerContact?.phone ?? null,

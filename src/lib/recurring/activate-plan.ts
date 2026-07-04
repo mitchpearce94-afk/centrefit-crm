@@ -119,7 +119,7 @@ async function activatePlanInner(
       xero_repeating_invoice_id, xero_repeating_invoice_secondary_id,
       gc_subscription_id, gc_subscription_secondary_id,
       customers(id, name, abn, xero_contact_id, billing_email, customer_contacts(name, email, phone, is_primary)),
-      customer_sites(name, address, suburb, state, postcode, xero_contact_id, billing_email)
+      customer_sites(name, invoice_name, address, suburb, state, postcode, xero_contact_id, billing_email)
     `)
     .eq("id", planId)
     .single();
@@ -208,6 +208,7 @@ async function activatePlanInner(
       ? {
           id: plan.site_id,
           name: site.name,
+          invoice_name: (site as { invoice_name?: string | null }).invoice_name ?? null,
           xero_contact_id: (site as { xero_contact_id?: string | null }).xero_contact_id ?? null,
           billing_email: (site as { billing_email?: string | null }).billing_email ?? null,
           address: site.address ?? null,

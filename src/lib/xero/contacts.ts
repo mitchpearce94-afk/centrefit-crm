@@ -31,6 +31,14 @@ export interface SiteForXero {
   id: string;
   name: string;
   xero_contact_id?: string | null;
+  /**
+   * Billing-entity override for the Xero contact name. Some franchise groups
+   * (Bravofit / Planet Fitness, 2026-07-04) require invoices billed to the
+   * legal entity ("Bravofit Oxley Pty Ltd"), not the club name — their
+   * accounts teams reject site-named invoices. When set, contact creation
+   * and name search use this instead of the site name.
+   */
+  invoice_name?: string | null;
   /** Site-level invoice email. Wins over customer-level when present. */
   billing_email?: string | null;
   address?: string | null;
@@ -73,8 +81,10 @@ export async function findOrCreateContact(
   // Preston", NOT "Benjamin Gunning — Snap Fitness Preston"). The site is the
   // billing entity the customer recognises on their invoice. Falls back to the
   // customer name for the site-less ad-hoc case. (Mitchell, 2026-05-28)
+  // invoice_name overrides when the group's accounts team requires the legal
+  // entity on invoices (Bravofit, 2026-07-04).
   const displayName = site
-    ? site.name.slice(0, 255)
+    ? (site.invoice_name?.trim() || site.name).slice(0, 255)
     : customer.name.slice(0, 255);
   const safeName = displayName.replace(/"/g, '\\"');
   let contactId: string | undefined;
@@ -101,9 +111,7 @@ export async function findOrCreateContact(
       const search = await xero.accountingApi.getContacts(
         tenantId,
         undefined,
-        site
-          ? `Name.Contains("${site.name.replace(/"/g, '\\"').slice(0, 60)}")`
-          : `Name.Contains("${safeName.slice(0, 60)}")`,
+        `Name.Contains("${safeName.slice(0, 60)}")`,
         undefined,  // order
         undefined,  // iDs
         1,          // page

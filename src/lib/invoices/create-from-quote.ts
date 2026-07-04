@@ -90,6 +90,7 @@ export async function createInvoiceFromAcceptedQuote(
   let site: {
     id: string;
     name: string;
+    invoice_name: string | null;
     address: string | null;
     suburb: string | null;
     state: string | null;
@@ -100,7 +101,7 @@ export async function createInvoiceFromAcceptedQuote(
   if (quote.site_id) {
     const { data: siteRow } = await supabase
       .from("customer_sites")
-      .select("id, name, address, suburb, state, postcode, xero_contact_id, billing_email")
+      .select("id, name, invoice_name, address, suburb, state, postcode, xero_contact_id, billing_email")
       .eq("id", quote.site_id)
       .maybeSingle();
     if (siteRow) site = siteRow;
@@ -182,6 +183,7 @@ export async function createInvoiceFromAcceptedQuote(
       ? {
           id: site.id,
           name: site.name,
+          invoice_name: site.invoice_name,
           xero_contact_id: site.xero_contact_id,
           billing_email: site.billing_email,
           address: site.address,

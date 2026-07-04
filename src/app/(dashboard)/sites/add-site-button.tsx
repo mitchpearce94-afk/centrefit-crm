@@ -43,6 +43,7 @@ export function AddSiteButton({ ownerPrefills }: { ownerPrefills: OwnerPrefillOp
   const [ownerName, setOwnerName] = useState("");
   const [abn, setAbn] = useState("");
   const [ownerBillingEmail, setOwnerBillingEmail] = useState("");
+  const [invoiceName, setInvoiceName] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
@@ -72,7 +73,7 @@ export function AddSiteButton({ ownerPrefills }: { ownerPrefills: OwnerPrefillOp
   function reset() {
     setName(""); setAddress(""); setSuburb(""); setState("QLD");
     setPostcode(""); setPhone(""); setSiteEmail(""); setNotes("");
-    setOwnerName(""); setAbn(""); setOwnerBillingEmail("");
+    setOwnerName(""); setAbn(""); setOwnerBillingEmail(""); setInvoiceName("");
     setContactName(""); setContactEmail(""); setContactPhone("");
     setCopySearch(""); setShowCopy(false);
     setError(null);
@@ -95,6 +96,7 @@ export function AddSiteButton({ ownerPrefills }: { ownerPrefills: OwnerPrefillOp
           },
           owner: {
             name: ownerName.trim(), abn: abn.trim(), billingEmail: ownerBillingEmail.trim(),
+            invoiceName: invoiceName.trim(),
             contactName: contactName.trim(), contactEmail: contactEmail.trim(), contactPhone: contactPhone.trim(),
           },
         }),
@@ -197,6 +199,29 @@ export function AddSiteButton({ ownerPrefills }: { ownerPrefills: OwnerPrefillOp
           <div className="grid grid-cols-2 gap-2">
             <input placeholder="ABN" value={abn} onChange={(e) => setAbn(e.target.value)} className={inputClass} />
             <input placeholder="Owner billing email" value={ownerBillingEmail} onChange={(e) => setOwnerBillingEmail(e.target.value)} className={inputClass} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <input
+                placeholder="Invoice name — blank bills as the site name"
+                value={invoiceName}
+                onChange={(e) => setInvoiceName(e.target.value)}
+                className={inputClass}
+              />
+              {!invoiceName && /pty\s+ltd|ltd$|limited$/i.test(ownerName) && (
+                <button
+                  type="button"
+                  onClick={() => setInvoiceName(ownerName.trim())}
+                  className="shrink-0 rounded-md border border-border px-2 py-1.5 text-[11px] text-primary hover:bg-accent"
+                  title="Bill invoices to the owner entity instead of the site name"
+                >
+                  Use owner
+                </button>
+              )}
+            </div>
+            <p className="mt-0.5 text-[10px] text-muted-foreground">
+              Set when the owner&apos;s accounts team needs the legal entity on invoices (e.g. Bravofit clubs).
+            </p>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <input placeholder="Contact name" value={contactName} onChange={(e) => setContactName(e.target.value)} className={inputClass} />

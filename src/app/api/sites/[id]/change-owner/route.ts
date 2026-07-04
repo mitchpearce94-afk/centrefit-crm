@@ -31,6 +31,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   let body: {
     name?: string; abn?: string | null; billingEmail?: string | null;
+    /** Xero billing-entity override for the site (e.g. "Bravofit Oxley Pty Ltd"). */
+    invoiceName?: string | null;
     contactName?: string | null; contactEmail?: string | null; contactPhone?: string | null;
     /** Email the new owner a DD signup for existing plans (default true). */
     sendDdSignup?: boolean;
@@ -84,6 +86,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     .update({
       customer_id: newCustomerId,
       billing_email: body.billingEmail?.trim() || null,
+      // New owner, new billing identity — set or clear the Xero entity override.
+      invoice_name: body.invoiceName?.trim() || null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", siteId);

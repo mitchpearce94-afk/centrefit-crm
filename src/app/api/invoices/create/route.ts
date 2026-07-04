@@ -240,11 +240,11 @@ export async function POST(req: NextRequest) {
 
   // Resolve site row if we have one, so the contact gets the per-site
   // mapping + address attached (workstream Xero polish, 2026-04-29).
-  let siteRow: { id: string; name: string; address: string | null; suburb: string | null; state: string | null; postcode: string | null; xero_contact_id: string | null; billing_email: string | null } | null = null;
+  let siteRow: { id: string; name: string; invoice_name: string | null; address: string | null; suburb: string | null; state: string | null; postcode: string | null; xero_contact_id: string | null; billing_email: string | null } | null = null;
   if (siteId) {
     const { data } = await supabase
       .from("customer_sites")
-      .select("id, name, address, suburb, state, postcode, xero_contact_id, billing_email")
+      .select("id, name, invoice_name, address, suburb, state, postcode, xero_contact_id, billing_email")
       .eq("id", siteId)
       .maybeSingle();
     if (data) siteRow = data;

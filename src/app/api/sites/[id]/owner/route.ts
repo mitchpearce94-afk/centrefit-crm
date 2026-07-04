@@ -8,7 +8,7 @@ import { createServiceRoleClient } from "@/lib/supabase/service";
  * change of ownership). Updates the backing customer row + its primary
  * contact. Any active staff member.
  *
- * Body: { name?, abn?, billingEmail?, contactName?, contactEmail?, contactPhone? }
+ * Body: { name?, abn?, billingEmail?, invoiceName?, contactName?, contactEmail?, contactPhone? }
  */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: siteId } = await params;
@@ -20,6 +20,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   let body: {
     name?: string; abn?: string | null; billingEmail?: string | null;
+    /** Xero billing-entity override (e.g. "Bravofit Oxley Pty Ltd"). Empty = bill as site name. */
+    invoiceName?: string | null;
     contactName?: string | null; contactEmail?: string | null; contactPhone?: string | null;
   };
   try {
@@ -47,13 +49,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   // Billing email is edited HERE (Owner tab) but every billing path still
   // reads customer_sites.billing_email first — mirror it onto the site so
-  // invoice delivery follows the owner's billing email.
-  if (body.billingEmail !== undefined) {
+  // invoice delivery follows the owner's billing email. Same slot carries the
+  // invoice-name override (billing concern → Owner tab per Mitchell's rule).
+  if (body.billingEmail !== undefined || body.invoiceName !== undefined) {
+    const sitePatch: Record<string, string | null> = {};
+    if (body.billingEmail !== undefined) sitePatch.billing_email = body.billingEmail?.trim() || null;
+    if (body.invoiceName !== undefined) sitePatch.invoice_name = body.invoiceName?.trim() || null;
     const { error } = await svc
       .from("customer_sites")
-      .update({ billing_email: body.billingEmail?.trim() || null })
+      .update(sitePatch)
       .eq("id", siteId);
-    if (error) return NextResponse.json({ error: `Billing email mirror failed: ${error.message}` }, { status: 500 });
+    if (error) return NextResponse.json({ error: `Site billing update failed: ${error.message}` }, { status: 500 });
   }
 
   // Primary contact: update the existing primary (or first) contact, or

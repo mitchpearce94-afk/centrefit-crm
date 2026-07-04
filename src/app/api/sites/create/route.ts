@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
 
   let body: {
     site?: { name?: string; address?: string; suburb?: string; state?: string; postcode?: string; phone?: string; email?: string; notes?: string };
-    owner?: { name?: string; abn?: string; billingEmail?: string; contactName?: string; contactEmail?: string; contactPhone?: string };
+    owner?: { name?: string; abn?: string; billingEmail?: string; invoiceName?: string; contactName?: string; contactEmail?: string; contactPhone?: string };
   };
   try {
     body = await req.json();
@@ -56,6 +56,9 @@ export async function POST(req: NextRequest) {
     phone: body.site?.phone?.trim() || null,
     email: body.site?.email?.trim() || null,
     billing_email: body.owner?.billingEmail?.trim() || null,
+    // Xero billing-entity override (e.g. "Bravofit Oxley Pty Ltd") — the
+    // contact is created under this name instead of the site name.
+    invoice_name: body.owner?.invoiceName?.trim() || null,
     notes: body.site?.notes?.trim() || null,
   }).select("id").single();
   if (siteErr) {

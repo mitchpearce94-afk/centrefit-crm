@@ -15,6 +15,8 @@ export interface OwnerInfo {
   name: string;
   abn: string | null;
   billing_email: string | null;
+  /** Xero billing-entity override (customer_sites.invoice_name). Null = bill as site name. */
+  invoiceName: string | null;
   contactName: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
@@ -43,7 +45,7 @@ export function OwnerCard({
   // Shared form state — seeded from the current owner in edit mode, blank in
   // change mode.
   const [form, setForm] = useState({
-    name: "", abn: "", billingEmail: "", contactName: "", contactEmail: "", contactPhone: "",
+    name: "", abn: "", billingEmail: "", invoiceName: "", contactName: "", contactEmail: "", contactPhone: "",
   });
 
   function openEdit() {
@@ -51,6 +53,7 @@ export function OwnerCard({
       name: owner.name,
       abn: owner.abn ?? "",
       billingEmail: owner.billing_email ?? "",
+      invoiceName: owner.invoiceName ?? "",
       contactName: owner.contactName ?? "",
       contactEmail: owner.contactEmail ?? "",
       contactPhone: owner.contactPhone ?? "",
@@ -59,7 +62,7 @@ export function OwnerCard({
   }
 
   function openChange() {
-    setForm({ name: "", abn: "", billingEmail: "", contactName: "", contactEmail: "", contactPhone: "" });
+    setForm({ name: "", abn: "", billingEmail: "", invoiceName: "", contactName: "", contactEmail: "", contactPhone: "" });
     setSendDdSignup(true);
     setMode("change");
   }
@@ -85,6 +88,7 @@ export function OwnerCard({
           name: form.name.trim(),
           abn: form.abn.trim() || null,
           billingEmail: form.billingEmail.trim() || null,
+          invoiceName: form.invoiceName.trim() || null,
           contactName: form.contactName.trim() || null,
           contactEmail: form.contactEmail.trim() || null,
           contactPhone: form.contactPhone.trim() || null,
@@ -148,6 +152,9 @@ export function OwnerCard({
           {owner.billing_email && owner.billing_email !== owner.contactEmail && (
             <p className="text-xs text-muted-foreground">Billing: <span className="font-mono">{owner.billing_email}</span></p>
           )}
+          {owner.invoiceName && (
+            <p className="text-xs text-muted-foreground">Invoices bill to: <span className="font-medium text-foreground">{owner.invoiceName}</span></p>
+          )}
           {owner.abn && <p className="text-xs text-muted-foreground">ABN {owner.abn}</p>}
           {/* Customer ID — deliberately surfaced ONLY here (site-first spec:
               the CCTV/asset bulk imports key on it). Click to copy. */}
@@ -207,6 +214,18 @@ export function OwnerCard({
               <input value={form.billingEmail} onChange={(e) => setForm({ ...form, billingEmail: e.target.value })} className={inputClass + " mt-1"} />
             </label>
           </div>
+          <label className="block">
+            <span className="text-xs font-medium text-muted-foreground">Invoice name (Xero contact)</span>
+            <input
+              value={form.invoiceName}
+              onChange={(e) => setForm({ ...form, invoiceName: e.target.value })}
+              placeholder="Leave blank to bill as the site name"
+              className={inputClass + " mt-1"}
+            />
+            <span className="mt-1 block text-[10px] text-muted-foreground">
+              Set this when the owner&apos;s accounts team needs the legal entity on invoices (e.g. &quot;Bravofit Oxley Pty Ltd&quot;). New Xero contacts are created under this name.
+            </span>
+          </label>
           <div className="grid grid-cols-3 gap-2">
             <label className="block">
               <span className="text-xs font-medium text-muted-foreground">Contact name</span>

@@ -113,7 +113,7 @@ export async function tryCreatePP2ForJob(
       if (quote.site_id) {
         const { data } = await supabase
           .from("customer_sites")
-          .select("id, name, address, suburb, state, postcode, xero_contact_id, billing_email")
+          .select("id, name, invoice_name, address, suburb, state, postcode, xero_contact_id, billing_email")
           .eq("id", quote.site_id)
           .maybeSingle();
         if (data) siteRow = data;
