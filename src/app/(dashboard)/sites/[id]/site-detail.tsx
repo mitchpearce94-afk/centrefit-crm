@@ -8,7 +8,7 @@ import { OwnerCard, type OwnerInfo } from "./owner-card";
 import { SiteContactsList } from "./site-contacts-list";
 import { SiteAssetsList } from "./site-assets-list";
 import { KeyInfoPanel, type KeyInfoPhoto } from "./key-info-panel";
-import { SiteVaultPanel, type VaultFolderForRefRow } from "./site-vault-panel";
+import { SiteDocumentsPanel, type SiteDocumentRow, type SitePlanFileRow } from "./site-documents-panel";
 
 type Job = {
   id: string;
@@ -88,8 +88,8 @@ export function SiteDetail({
   assets,
   assetTypes,
   keyInfoPhotos,
-  canVault,
-  vaultFolders,
+  documents,
+  planFiles,
   isAdmin,
   importJobId,
 }: {
@@ -104,8 +104,8 @@ export function SiteDetail({
   assets: SiteAsset[];
   assetTypes: AssetType[];
   keyInfoPhotos: KeyInfoPhoto[];
-  canVault: boolean;
-  vaultFolders: VaultFolderForRefRow[];
+  documents: SiteDocumentRow[];
+  planFiles: SitePlanFileRow[];
   isAdmin: boolean;
   importJobId: string | null;
 }) {
@@ -121,7 +121,7 @@ export function SiteDetail({
     { id: "billing", label: "Billing", count: activePlans.length },
     { id: "assets", label: "Assets", count: activeAssetCount },
     { id: "key-info", label: "Key Information", count: keyInfoPhotos.length },
-    ...(canVault ? [{ id: "vault", label: "Vault", count: vaultFolders.length }] : []),
+    { id: "documentation", label: "Documentation", count: documents.length + planFiles.length },
   ];
 
   // Uses shared <Tabs> so we get the native-select tab picker on mobile
@@ -388,8 +388,13 @@ export function SiteDetail({
             />
           )}
 
-          {activeTab === "vault" && canVault && (
-            <SiteVaultPanel siteId={site.id} initialFolders={vaultFolders} />
+          {activeTab === "documentation" && (
+            <SiteDocumentsPanel
+              siteId={site.id}
+              documents={documents}
+              planFiles={planFiles}
+              isAdmin={isAdmin}
+            />
           )}
         </>
       )}

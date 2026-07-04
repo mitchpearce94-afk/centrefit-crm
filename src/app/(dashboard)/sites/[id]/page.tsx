@@ -3,15 +3,6 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { SiteDetail } from "./site-detail";
 import type { CustomerSite, CustomerContact, SiteAsset, AssetType } from "@/lib/types";
-import { currentUserHasPermission } from "@/lib/auth/permissions";
-
-interface VaultFolderForRefRow {
-  folder_id: string;
-  folder_name: string;
-  is_personal: boolean;
-  has_access: boolean;
-  entry_count: number;
-}
 
 export default async function SiteDetailPage({
   params,
@@ -20,8 +11,6 @@ export default async function SiteDetailPage({
 }) {
   const { id } = await params;
   const supabase = await createClient();
-
-  const canVault = await currentUserHasPermission("vault.access");
 
   // Hard-deleting an asset is admin-only at the RLS layer (site_assets_delete
   // USING is_admin()), so gate the Delete button on the same check — match the
@@ -73,7 +62,8 @@ export default async function SiteDetailPage({
     assetsResult,
     assetTypesResult,
     keyInfoPhotosResult,
-    vaultFoldersResult,
+    documentsResult,
+    planFilesResult,
     importJobResult,
   ] = await Promise.all([
     supabase
@@ -133,9 +123,16 @@ export default async function SiteDetailPage({
       .select("*")
       .eq("site_id", id)
       .order("created_at", { ascending: false }),
-    canVault
-      ? supabase.rpc("vault_folders_for_ref", { p_ref_type: "site", p_ref_id: id })
-      : Promise.resolve({ data: [] as VaultFolderForRefRow[] }),
+    supabase
+      .from("site_documents")
+      .select("id, category, name, storage_path, mime_type, size_bytes, status, version, created_at, uploader:staff!uploaded_by(display_name)")
+      .eq("site_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("plan_files")
+      .select("id, name, state, revision, pdf_url, updated_at")
+      .eq("site_id", id)
+      .order("updated_at", { ascending: false }),
     // Job for THIS site to power the "Import from BOM" button on the Assets
     // tab. Prefer the most recent accepted quote; fall back to the latest
     // quote of any status (so it still shows on jobs whose quote is draft).
@@ -169,7 +166,11 @@ export default async function SiteDetailPage({
     uploaded_by: string | null;
     created_at: string;
   }>;
-  const vaultFolders = (vaultFoldersResult.data ?? []) as VaultFolderForRefRow[];
+  const documents = (documentsResult.data ?? []).map((d: Record<string, unknown>) => ({
+    ...d,
+    uploader: Array.isArray(d.uploader) ? d.uploader[0] ?? null : d.uploader,
+  })) as import("./site-documents-panel").SiteDocumentRow[];
+  const planFiles = (planFilesResult.data ?? []) as import("./site-documents-panel").SitePlanFileRow[];
   const importJobId = (importJobResult.data as { job_id: string | null } | null)?.job_id ?? null;
 
   const activePlanCount = (plans as { status: string }[]).filter((p) =>
@@ -219,8 +220,8 @@ export default async function SiteDetailPage({
           assets={assets}
           assetTypes={assetTypes}
           keyInfoPhotos={keyInfoPhotos}
-          canVault={canVault}
-          vaultFolders={vaultFolders}
+          documents={documents}
+          planFiles={planFiles}
           isAdmin={isAdmin}
           importJobId={importJobId}
         />

@@ -99,9 +99,10 @@ Auto-assembled per site:
   content) included only when the site has duress assets; CCTV playback guide; etc.
 - Wi-Fi details from the site's Key Info Wi-Fi data (SSIDs + passwords — this document
   is FOR the owner, so credentials are included by design).
-- Compliance statement — **canonical licence constants to confirm with Mitchell**:
-  handover says ASIAL 64951 / membership C12897; monitoring form says Security Licence
-  4626412 / ASIAL 64937. One set must win; store as app constants.
+- Compliance statement — **canonical licence constants (Mitchell confirmed 2026-07-05:
+  the security paperwork's set wins)**: Security Licence **4626412**, ASIAL Membership
+  **64937**. The handover template's 64951/C12897 is stale — never use it. Store as
+  app constants.
 - Client acceptance signature (sign-on-glass or link) → signed handover stored.
 
 ## Phases
@@ -114,7 +115,6 @@ Auto-assembled per site:
 
 ## Open items
 
-- Licence/membership numbers — Mitchell to confirm the canonical set.
 - Duress intercom make/model — Mitchell to confirm (agents shortlisting candidates).
 - PDF rendering approach decided at build time (server-side HTML→PDF; must satisfy the
   "stunning" bar — likely @react-pdf or headless Chromium via a render route).
