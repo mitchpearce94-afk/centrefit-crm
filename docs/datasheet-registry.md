@@ -1,11 +1,17 @@
 # Datasheet registry — key handover products
 
-Source hunt run 2026-07-05 (three parallel agents, every URL fetched and verified as a
-PDF matching the exact model). Phase D of docs/documentation-CONTEXT.md ingests these
-into the `datasheets` bucket keyed to product/model — treat this file as the seed list,
-not the runtime source. Confidence: high = official manufacturer PDF; medium = verified
-distributor copy (Ubiquiti no longer publishes PDFs for new gear — techspecs.ui.com is
-canonical; distributor exports use the official format).
+**INGESTED 2026-07-05: Mitchell supplied his own 13 datasheet PDFs (the PRIMARY source)
+and they are live in the `datasheets` bucket + table** (`ingest-datasheets-2026-07-05.mjs`,
+idempotent). His set: Dahua NVR4216/4232 Lite Series + DH-IPC-HDW3666EMP, D-Link
+DAP-X2850 / DGS-1210 / DSL-X3052E, Power Dynamics PRM240 / BC wall / NCSP ceiling,
+Kingray KAT series, generic GSM Duress Intercom, Bosch Solution 6000 (ONE general
+entry — never itemise panel components) and DS936, Electrocraft EPS-HDMI1001M4.
+
+The URL hunt below (three parallel agents, every URL fetched and verified) is the
+FALLBACK source for models Mitchell's set doesn't cover — e.g. the register's
+DH-IPC-HDW3667EM-S-IL-ANZ camera and NVR5432, and the Ubiquiti fleet. Confidence:
+high = official manufacturer PDF; medium = verified distributor copy (Ubiquiti no
+longer publishes PDFs for new gear — techspecs.ui.com is canonical).
 
 ## CCTV (Dahua)
 | Model | Product | Datasheet | Confidence |
