@@ -604,7 +604,7 @@ export function generateScopeOfWorks(
   // ── Ongoing costs ────────────────────────────────────────────────────────
   const baseOngoing: ScopeOngoingCost[] = [];
   if (panels > 0 || motion > 0 || reeds > 0) {
-    baseOngoing.push({ id: 'monitoring',  desc: '24/7 alarm monitoring (MyAlarm)',                       price: '$55.00 / month ex GST',  included: true });
+    baseOngoing.push({ id: 'monitoring',  desc: '24/7 alarm monitoring (MyAlarm)',                       price: '$65.00 / month ex GST',  included: true });
     baseOngoing.push({ id: 'app',         desc: 'Mobile app subscription (security + cameras)',         price: '$133.50 / year ex GST',  included: true });
   }
   if (intercoms > 0) {
