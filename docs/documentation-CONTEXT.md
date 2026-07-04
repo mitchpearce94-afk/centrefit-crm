@@ -93,8 +93,15 @@ Auto-assembled per site:
   (DHI-NVR5432-16P-AI/ANZ), Ubiquiti U7 Pro WAP, USW-48-PoE / USW-Pro-Max-48-PoE switch,
   UCG-Fiber router, GSM/4G duress intercom (model TBC by Mitchell), Power Dynamics
   PRM240 amp + 100V ceiling/wall speakers, Kingray 8-way active tap.
-- **Datasheet storage**: `datasheets` bucket + table keyed to product/model; datasheets
-  sourced online once (agent hunt 2026-07-05) and stored; admin can upload/replace.
+- **Datasheet storage**: `datasheets` bucket + table keyed to product/model; admin can
+  upload/replace. **Mitchell's own datasheet files are the primary source** (he's
+  supplying them); the agent-hunted URLs in docs/datasheet-registry.md are fallback
+  for anything he doesn't have.
+- **Alarm system = ONE handover entry** (Mitchell 2026-07-05): the Solution 6000 panel
+  in general. Never list the individual panel components (expansion boards CM704B/
+  CM710B, RF receiver, connector boards, MyAlarm module) as separate datasheet entries.
+- Duress intercom is a **GSM intercom** — datasheet coming from Mitchell (not the ELK
+  Seven).
 - Procedure blocks from a versioned library: Monthly Duress Testing Procedure (V2.1
   content) included only when the site has duress assets; CCTV playback guide; etc.
 - Wi-Fi details from the site's Key Info Wi-Fi data (SSIDs + passwords — this document
