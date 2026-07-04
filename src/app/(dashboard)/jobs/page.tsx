@@ -16,20 +16,23 @@ export default async function JobsPage({
 
   // Per-staff default override for the "Assigned" filter. Stored on
   // staff.jobs_default_staff_filter — "all" means default to everyone,
-  // a UUID means default to that staff member, NULL means fall back to
-  // "my jobs" (the signed-in user).
+  // a UUID means default to that staff member, NULL means fall back to the
+  // role default: admins run ops and get everyone; field staff get "my jobs"
+  // (Mitchell 2026-07-04).
   let staffDefaultFilter: string | null = null;
+  let isAdmin = false;
   if (currentUserId) {
     const { data: meRow } = await supabase
       .from("staff")
-      .select("jobs_default_staff_filter")
+      .select("jobs_default_staff_filter, role")
       .eq("id", currentUserId)
       .maybeSingle();
     staffDefaultFilter = meRow?.jobs_default_staff_filter ?? null;
+    isAdmin = meRow?.role === "admin";
   }
 
   const isActiveView = !params.view || params.view === "active";
-  const effectiveStaff = params.staff ?? staffDefaultFilter ?? currentUserId;
+  const effectiveStaff = params.staff ?? staffDefaultFilter ?? (isAdmin ? "all" : currentUserId);
   const isAllStaff = effectiveStaff === "all";
 
   function localISO(d: Date): string {
