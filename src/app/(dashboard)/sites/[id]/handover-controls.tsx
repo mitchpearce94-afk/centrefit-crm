@@ -15,6 +15,8 @@ export interface HandoverData {
   requests: SignRequestRow[];
   defaultRecipientName: string | null;
   defaultRecipientEmail: string | null;
+  /** SSIDs with passwords on the site's key info — QR poster candidates. */
+  wifiNetworks: string[];
 }
 
 export function HandoverControls({
@@ -32,8 +34,32 @@ export function HandoverControls({
   const [name, setName] = useState(handover.defaultRecipientName ?? "");
   const [email, setEmail] = useState(handover.defaultRecipientEmail ?? "");
   const [busy, setBusy] = useState<"download" | "send" | null>(null);
+  // Guest networks pre-ticked — the QR poster is a separate printable that
+  // travels alongside the pack (Mitchell: download must include it).
+  const [posterSel, setPosterSel] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(handover.wifiNetworks.map((ssid) => [ssid, /guest/i.test(ssid)])),
+  );
 
   const live = handover.requests.find((r) => r.status === "sent" || r.status === "viewed");
+
+  async function downloadPosters() {
+    const selected = handover.wifiNetworks.filter((ssid) => posterSel[ssid]);
+    for (const ssid of selected) {
+      try {
+        const res = await fetch(`/api/sites/${siteId}/wifi-poster?ssid=${encodeURIComponent(ssid)}`);
+        if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "poster failed");
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `WiFi Poster - ${ssid}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        toast(`Wi-Fi poster for ${ssid}: ${err instanceof Error ? err.message : "failed"}`, "error");
+      }
+    }
+  }
 
   async function generate(mode: "download" | "send") {
     if (mode === "send" && !email.trim()) {
@@ -67,6 +93,7 @@ export function HandoverControls({
       } else {
         toast(`Handover acceptance link sent to ${email.trim()}`);
       }
+      await downloadPosters();
       setOpen(false);
       router.refresh();
     } catch (err) {
@@ -92,8 +119,9 @@ export function HandoverControls({
           Generate Handover Pack
         </button>
         {open && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => !busy && setOpen(false)}>
-            <div className="surface-card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+          // No backdrop-click dismiss (Mitchell's feedback) — Cancel only.
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="surface-card w-full max-w-md p-5">
               <h3 className="text-sm font-semibold">Handover Documentation Pack</h3>
               <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
                 Assembled from this site&apos;s key-information assets: branded cover + contents, the matching
@@ -124,6 +152,25 @@ export function HandoverControls({
                     onChange={(e) => setEmail(e.target.value)}
                   />
                 </label>
+                {handover.wifiNetworks.length > 0 && (
+                  <div>
+                    <span className="text-[11px] font-medium text-muted-foreground">
+                      Also download Wi-Fi QR posters (separate printables — never inside the pack)
+                    </span>
+                    <div className="mt-1 space-y-1">
+                      {handover.wifiNetworks.map((ssid) => (
+                        <label key={ssid} className="flex items-center gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={posterSel[ssid] ?? false}
+                            onChange={(e) => setPosterSel({ ...posterSel, [ssid]: e.target.checked })}
+                          />
+                          {ssid}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="mt-5 flex justify-end gap-2">
                 <button

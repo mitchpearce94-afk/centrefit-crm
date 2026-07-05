@@ -28,6 +28,13 @@ export interface SwmsStaffOption {
   has_signature: boolean;
 }
 
+export interface SwmsPcbuDefaults {
+  name: string;
+  abn: string;
+  address: string;
+  keyReps: string;
+}
+
 interface SubbieRow {
   name: string;
   company: string;
@@ -39,17 +46,23 @@ export function SwmsGenerateModal({
   jobs,
   staffList,
   viewerId,
+  defaultPcbu,
   onClose,
 }: {
   siteId: string;
   jobs: SwmsJobOption[];
   staffList: SwmsStaffOption[];
   viewerId: string;
+  defaultPcbu: SwmsPcbuDefaults;
   onClose: () => void;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [jobId, setJobId] = useState<string>(jobs[0]?.id ?? "");
+  // The PCBU is usually the BUILDER, not the site owner (Mitchell's
+  // feedback: 9 times out of 10 the builder requires the SWMS) — owner
+  // details prefill as the fallback, everything editable.
+  const [pcbu, setPcbu] = useState<SwmsPcbuDefaults>(defaultPcbu);
   const [groups, setGroups] = useState<Record<string, boolean>>(
     Object.fromEntries(SWMS_TASK_GROUPS.map((g) => [g.key, true])),
   );
@@ -104,6 +117,7 @@ export function SwmsGenerateModal({
           proposedWorkDate: workDate || undefined,
           hospitalOverride: hospital || undefined,
           approverStaffId: approverId,
+          pcbu,
         }),
       });
       if (!res.ok) {
@@ -128,11 +142,9 @@ export function SwmsGenerateModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => !generating && onClose()}>
-      <div
-        className="surface-card w-full max-w-lg max-h-[90vh] overflow-y-auto p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
+    // No backdrop-click dismiss (Mitchell's feedback) — Cancel only.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="surface-card w-full max-w-lg max-h-[90vh] overflow-y-auto p-5">
         <h3 className="text-sm font-semibold">Generate SWMS</h3>
         <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
           Installation &amp; Commissioning of Security, Access Control and CCTV Infrastructure — the master
@@ -140,6 +152,47 @@ export function SwmsGenerateModal({
         </p>
 
         <div className="mt-4 space-y-4">
+          <div className="rounded-lg border border-border p-3">
+            <span className="text-[11px] font-semibold text-foreground">Who requires this SWMS (PCBU / client)</span>
+            <p className="text-[11px] text-muted-foreground mt-0.5 mb-2">
+              Usually the builder — replace the pre-filled owner details with the builder&apos;s.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block col-span-2">
+                <span className="text-[10px] font-medium text-muted-foreground">Company name</span>
+                <input
+                  className="mt-0.5 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs"
+                  value={pcbu.name}
+                  onChange={(e) => setPcbu({ ...pcbu, name: e.target.value })}
+                />
+              </label>
+              <label className="block">
+                <span className="text-[10px] font-medium text-muted-foreground">ABN</span>
+                <input
+                  className="mt-0.5 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs"
+                  value={pcbu.abn}
+                  onChange={(e) => setPcbu({ ...pcbu, abn: e.target.value })}
+                />
+              </label>
+              <label className="block">
+                <span className="text-[10px] font-medium text-muted-foreground">Key representative(s)</span>
+                <input
+                  className="mt-0.5 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs"
+                  value={pcbu.keyReps}
+                  onChange={(e) => setPcbu({ ...pcbu, keyReps: e.target.value })}
+                />
+              </label>
+              <label className="block col-span-2">
+                <span className="text-[10px] font-medium text-muted-foreground">Company address</span>
+                <input
+                  className="mt-0.5 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs"
+                  value={pcbu.address}
+                  onChange={(e) => setPcbu({ ...pcbu, address: e.target.value })}
+                />
+              </label>
+            </div>
+          </div>
+
           <label className="block">
             <span className="text-[11px] font-medium text-muted-foreground">Job (permit number + work dates)</span>
             <select

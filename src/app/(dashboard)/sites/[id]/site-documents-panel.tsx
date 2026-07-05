@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
-import { SwmsGenerateModal, type SwmsJobOption, type SwmsStaffOption } from "./swms-generate-modal";
+import { SwmsGenerateModal, type SwmsJobOption, type SwmsStaffOption, type SwmsPcbuDefaults } from "./swms-generate-modal";
 import { HandoverControls, type HandoverData } from "./handover-controls";
 
 /**
@@ -101,6 +101,8 @@ export function SiteDocumentsPanel({
   swmsJobs,
   staffList,
   viewerId,
+  swmsPcbuDefaults,
+  wifiNetworks,
   isAdmin,
 }: {
   siteId: string;
@@ -113,6 +115,8 @@ export function SiteDocumentsPanel({
   swmsJobs: SwmsJobOption[];
   staffList: SwmsStaffOption[];
   viewerId: string;
+  swmsPcbuDefaults: SwmsPcbuDefaults;
+  wifiNetworks: string[];
   isAdmin: boolean;
 }) {
   return (
@@ -134,13 +138,14 @@ export function SiteDocumentsPanel({
                 }
               : null
           }
-          swms={cat.key === "swms" ? { jobs: swmsJobs, staffList, viewerId } : null}
+          swms={cat.key === "swms" ? { jobs: swmsJobs, staffList, viewerId, defaultPcbu: swmsPcbuDefaults } : null}
           handover={
             cat.key === "handover"
               ? {
                   requests: signRequests.filter((r) => r.document_type === "handover"),
                   defaultRecipientName,
                   defaultRecipientEmail,
+                  wifiNetworks,
                 }
               : null
           }
@@ -162,6 +167,7 @@ interface SwmsSectionData {
   jobs: SwmsJobOption[];
   staffList: SwmsStaffOption[];
   viewerId: string;
+  defaultPcbu: SwmsPcbuDefaults;
 }
 
 function CategorySection({
@@ -302,6 +308,7 @@ function CategorySection({
           jobs={swms.jobs}
           staffList={swms.staffList}
           viewerId={swms.viewerId}
+          defaultPcbu={swms.defaultPcbu}
           onClose={() => setSwmsModalOpen(false)}
         />
       )}
@@ -444,8 +451,10 @@ function MonitoringSendButton({ siteId, monitoring }: { siteId: string; monitori
         {isReissue ? "Re-issue Monitoring Form" : "Generate & Send Monitoring Form"}
       </button>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => !sending && setOpen(false)}>
-          <div className="surface-card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+        // No backdrop-click dismiss — Mitchell's feedback: a misclick was
+        // silently eating half-filled modals. Cancel/Send only.
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="surface-card w-full max-w-md p-5">
             <h3 className="text-sm font-semibold">Security Monitoring Response Instructions</h3>
             <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
               {isReissue

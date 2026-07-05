@@ -408,6 +408,21 @@ export function SiteDetail({
               swmsJobs={jobs.map((j) => ({ id: j.id, number: j.number, reference: j.reference }))}
               staffList={staffList}
               viewerId={viewerId}
+              swmsPcbuDefaults={{
+                name: owner?.invoiceName ?? owner?.name ?? site.name,
+                abn: owner?.abn ?? "",
+                address: [site.address, site.suburb, site.state, site.postcode].filter(Boolean).join(", "),
+                keyReps: contacts.filter((c) => c.name).slice(0, 3).map((c) => c.name).join(", "),
+              }}
+              wifiNetworks={Array.from(
+                new Set(
+                  assets.flatMap((a) =>
+                    ((a as { wifi_ssids?: Array<{ ssid?: string; password?: string | null }> }).wifi_ssids ?? [])
+                      .filter((w) => w?.ssid && w?.password)
+                      .map((w) => w.ssid as string),
+                  ),
+                ),
+              )}
               isAdmin={isAdmin}
             />
           )}

@@ -37,6 +37,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     hospitalOverride?: string;
     approverStaffId?: string;
     keyRepsOverride?: string;
+    /** PCBU is usually the BUILDER — modal-supplied details win over the site owner. */
+    pcbu?: { name?: string; abn?: string; address?: string; keyReps?: string };
   };
   try {
     body = await req.json();
@@ -136,10 +138,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     }));
 
   const data: SwmsData = {
-    clientName: (site.invoice_name as string | null) ?? customer?.name ?? (site.name as string),
-    clientAbn: customer?.abn ?? "",
-    clientAddress: siteAddress,
+    clientName:
+      body.pcbu?.name?.trim() ||
+      ((site.invoice_name as string | null) ?? customer?.name ?? (site.name as string)),
+    clientAbn: body.pcbu?.abn?.trim() || (customer?.abn ?? ""),
+    clientAddress: body.pcbu?.address?.trim() || siteAddress,
     clientKeyReps:
+      body.pcbu?.keyReps?.trim() ||
       body.keyRepsOverride?.trim() ||
       (contactsResult.data ?? []).map((c) => c.name).filter(Boolean).join(", "),
     workSiteName: site.name as string,

@@ -10,7 +10,7 @@
  * signing time by the public submit route.
  */
 
-import { Document, Page, View, Text, Image, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
+import { Document, Page, View, Text, Image, Link, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import React from "react";
 import fs from "fs";
 import path from "path";
@@ -47,6 +47,8 @@ export interface HandoverEntry {
   blurb: string;
   /** null = key equipment with no library datasheet — listed, not dropped. */
   storagePath: string | null;
+  /** Public /api/public/datasheets/[id] URL — hyperlinked from the TOC. */
+  publicUrl: string | null;
 }
 
 export interface WifiNetwork {
@@ -77,11 +79,18 @@ interface AssetRow {
 }
 
 interface DatasheetRow {
+  id: string;
   model: string;
   manufacturer: string | null;
   product_name: string;
   match_models: string[];
   storage_path: string;
+}
+
+const APP_URL = (process.env.NEXT_PUBLIC_APP_URL || "https://crm.centrefit.com.au").replace(/\/$/, "");
+
+function datasheetPublicUrl(id: string): string {
+  return `${APP_URL}/api/public/datasheets/${id}`;
 }
 
 function norm(s: string): string {
@@ -100,7 +109,7 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
       .select("device_name, manufacturer, model, is_active, wifi_ssids, asset_type:asset_types!asset_type_id(slug, name, category, is_key_info)")
       .eq("site_id", siteId)
       .eq("is_active", true),
-    sb.from("datasheets").select("model, manufacturer, product_name, match_models, storage_path"),
+    sb.from("datasheets").select("id, model, manufacturer, product_name, match_models, storage_path"),
   ]);
 
   if (siteResult.error || !siteResult.data) throw new Error("Site not found");
@@ -132,6 +141,7 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
           productName: solution.product_name,
           blurb: PRODUCT_BLURBS[solution.model] ?? "",
           storagePath: solution.storage_path,
+          publicUrl: datasheetPublicUrl(solution.id),
         });
       }
       continue;
@@ -156,6 +166,7 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
         productName: sheet.product_name,
         blurb: PRODUCT_BLURBS[sheet.model] ?? `Datasheet for the ${sheet.product_name} installed in the facility.`,
         storagePath: sheet.storage_path,
+        publicUrl: datasheetPublicUrl(sheet.id),
       });
     } else {
       // Key equipment with no library datasheet still appears in the pack —
@@ -169,6 +180,7 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
           productName: asset.asset_type?.name ?? "Installed equipment",
           blurb: `${asset.asset_type?.name ?? "Equipment"} installed in the facility. Datasheet available from Centrefit on request.`,
           storagePath: null,
+          publicUrl: null,
         });
       }
     }
@@ -260,14 +272,16 @@ async function renderBodyFront(input: HandoverInput): Promise<Buffer> {
       num: `${i + 1}.`,
       title: `${e.manufacturer ? `${e.manufacturer} ` : ""}${e.model} — ${e.productName}`,
       blurb: e.blurb,
+      url: e.publicUrl,
     })),
     ...input.procedures.map((p, i) => ({
       num: `${input.entries.length + i + 1}.`,
       title: `${p.title} (${p.version})`,
       blurb: "",
+      url: null as string | null,
     })),
-    { num: `${input.entries.length + input.procedures.length + 1}.`, title: "Wi-Fi Details", blurb: "" },
-    { num: `${input.entries.length + input.procedures.length + 2}.`, title: "Compliance & Acceptance", blurb: "" },
+    { num: `${input.entries.length + input.procedures.length + 1}.`, title: "Wi-Fi Details", blurb: "", url: null as string | null },
+    { num: `${input.entries.length + input.procedures.length + 2}.`, title: "Compliance & Acceptance", blurb: "", url: null as string | null },
   ];
 
   const doc = (
@@ -293,11 +307,21 @@ async function renderBodyFront(input: HandoverInput): Promise<Buffer> {
         </View>
 
         <Text style={[s.sectionTitle, { marginTop: 42 }]}>Table of Contents</Text>
+        <Text style={{ fontSize: 8, color: MUTED, marginBottom: 4 }}>
+          Underlined items are hyperlinked — click to open that datasheet online. Full copies are also
+          included in this pack after the contents page.
+        </Text>
         {tocEntries.map((e) => (
           <View key={e.num} style={s.tocRow}>
             <Text style={{ width: 26, fontSize: 9.5, color: FAINT }}>{e.num}</Text>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 9.5, fontFamily: "Helvetica-Bold" }}>{e.title}</Text>
+              {e.url ? (
+                <Link src={e.url} style={{ fontSize: 9.5, fontFamily: "Helvetica-Bold", color: BRAND, textDecoration: "underline" }}>
+                  {e.title}
+                </Link>
+              ) : (
+                <Text style={{ fontSize: 9.5, fontFamily: "Helvetica-Bold" }}>{e.title}</Text>
+              )}
               {e.blurb ? <Text style={{ fontSize: 8, color: MUTED, marginTop: 1 }}>{e.blurb}</Text> : null}
             </View>
           </View>
@@ -320,6 +344,11 @@ async function renderDivider(input: HandoverInput, entry: HandoverEntry, index: 
           </Text>
           <Text style={{ fontSize: 11, color: MUTED, marginTop: 6 }}>{entry.productName}</Text>
           <Text style={[s.body, { marginTop: 14, maxWidth: 380 }]}>{entry.blurb}</Text>
+          {entry.publicUrl ? (
+            <Link src={entry.publicUrl} style={{ fontSize: 9, color: BRAND, textDecoration: "underline", marginTop: 10 }}>
+              View this datasheet online
+            </Link>
+          ) : null}
         </View>
       </Page>
     </Document>
