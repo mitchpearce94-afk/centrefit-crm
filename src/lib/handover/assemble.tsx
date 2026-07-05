@@ -22,6 +22,7 @@ import {
   CCTV_PLAYBACK_PROCEDURE,
   DURESS_SLUGS,
   DURESS_TESTING_PROCEDURE,
+  ENTRY_ORDER,
   HANDOVER_TITLE,
   PRODUCT_BLURBS,
   complianceStatement,
@@ -128,14 +129,16 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
   }));
   const sheets = (sheetsResult.data ?? []) as DatasheetRow[];
 
-  // Key-info assets only drive the datasheet pack (Mitchell's rule).
+  // The pack is driven by the site's WHOLE asset register — everything
+  // installed that matches the datasheet library gets an entry (Mitchell's
+  // feedback 2026-07-05: speakers, amps, cameras, alarm — the full kit,
+  // like the paper template). The library IS the key product set, so gear
+  // outside it (hard drives, monitors, Felixgate) naturally never appears.
   // Wi-Fi networks feed the Wi-Fi section, not the equipment list.
-  const keyAssets = assets.filter(
-    (a) => a.asset_type?.is_key_info && a.asset_type.slug !== "wifi_network",
-  );
+  const sweepAssets = assets.filter((a) => a.asset_type && a.asset_type.slug !== "wifi_network");
 
   const entryByKey = new Map<string, HandoverEntry>();
-  for (const asset of keyAssets) {
+  for (const asset of sweepAssets) {
     const slug = asset.asset_type?.slug ?? "";
     // Alarm system: ONE entry, regardless of which panel bits are on file.
     if (ALARM_PANEL_SLUGS.includes(slug)) {
@@ -174,9 +177,10 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
         storagePath: sheet.storage_path,
         publicUrl: sheetLink(sheet),
       });
-    } else {
-      // Key equipment with no library datasheet still appears in the pack —
-      // silently dropping installed gear made the pack read as incomplete.
+    } else if (asset.asset_type?.is_key_info) {
+      // Core equipment (NVR/router/switch/WAP-class types) with no library
+      // datasheet still appears — silently dropping a site's recorder made
+      // the pack read as incomplete. Peripheral unmatched gear is skipped.
       const model = asset.model || asset.device_name || asset.asset_type?.name || "Equipment";
       const dedupeKey = norm(`${asset.manufacturer ?? ""}${model}`);
       if (!entryByKey.has(dedupeKey)) {
@@ -192,7 +196,12 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
     }
   }
 
-  const entries: HandoverEntry[] = [...entryByKey.values()];
+  // Template order: modulator → alarm → CCTV → network → duress → audio → RF.
+  const rank = (e: HandoverEntry) => {
+    const i = ENTRY_ORDER.indexOf(e.model);
+    return i === -1 ? ENTRY_ORDER.length : i;
+  };
+  const entries: HandoverEntry[] = [...entryByKey.values()].sort((a, b) => rank(a) - rank(b));
 
   // Wi-Fi: dedupe by SSID across all assets carrying wifi_ssids.
   const wifiBySsid = new Map<string, WifiNetwork>();
@@ -205,7 +214,8 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
   }
 
   const hasDuress = assets.some((a) => DURESS_SLUGS.includes(a.asset_type?.slug ?? ""));
-  const hasCctv = keyAssets.some((a) => ["nvr", "camera"].includes(a.asset_type?.category ?? "")) ||
+  const hasCctv =
+    sweepAssets.some((a) => ["nvr", "camera"].includes(a.asset_type?.slug ?? "") || a.asset_type?.category === "cctv") ||
     entries.some((e) => e.model.includes("NVR"));
   const procedures: Procedure[] = [
     ...(hasDuress ? [DURESS_TESTING_PROCEDURE] : []),

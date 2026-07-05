@@ -36,7 +36,9 @@ export const PRODUCT_BLURBS: Record<string, string> = {
   "Solution 6000":
     "Datasheet for the Solution 6000 alarm system protecting the facility. Doesn't include information on automation — contact Centrefit for information on automation.",
   "DH-IPC-HDW3666EMP": "Datasheet for the IP cameras installed in the facility.",
+  "DH-IPC-HDW3667EM-S-IL-ANZ": "Datasheet for the IP cameras installed in the facility.",
   "DHI-NVR4216/4232-16P-4KS2": "Datasheet for the network video recorder installed in the facility.",
+  "DHI-NVR5432-16P-AI/ANZ": "Datasheet for the network video recorder installed in the facility.",
   "GSM Duress Intercom":
     "Datasheet for the GSM duress intercom on the wall for members to use in emergency situations.",
   PRM240: "Datasheet for the audio amplifier in the server cabinet.",
@@ -48,6 +50,32 @@ export const PRODUCT_BLURBS: Record<string, string> = {
   "BC Series": "Datasheet for the 100V wall-mounted speakers around the facility.",
   "KAT Series": "Datasheet for the Kingray active tap in the server cabinet.",
 };
+
+/**
+ * TOC ordering, mirroring the paper template's flow: AV/modulator → alarm →
+ * CCTV → network → duress → audio → RF. Unknown models sort last.
+ */
+export const ENTRY_ORDER: string[] = [
+  "EPS-HDMI1001M4",
+  "DS936",
+  "Solution 6000",
+  "DH-IPC-HDW3666EMP",
+  "DH-IPC-HDW3667EM-S-IL-ANZ",
+  "DHI-NVR4216/4232-16P-4KS2",
+  "DHI-NVR5432-16P-AI/ANZ",
+  "U7 Pro",
+  "DAP-X2850",
+  "USW-48-PoE",
+  "USW-Pro-Max-48-PoE",
+  "DGS-1210 Series",
+  "UCG-Fiber",
+  "DSL-X3052E",
+  "GSM Duress Intercom",
+  "PRM240",
+  "NCSP Series",
+  "BC Series",
+  "KAT Series",
+];
 
 // ── Procedure library (versioned) ───────────────────────────────────────────
 
