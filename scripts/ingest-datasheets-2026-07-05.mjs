@@ -24,7 +24,7 @@ const SHEETS = [
   { file: "pd-ceiling-speaker.pdf", manufacturer: "Power Dynamics", model: "NCSP Series", product: "100V low-profile ceiling speaker", match: ["NCSP5", "NCSP6", "NCSP8"] },
   { file: "kingray-active-tap.pdf", manufacturer: "Kingray", model: "KAT Series", product: "Active tap 47-2400MHz (8/16/24/32-way)", match: ["KAT8F", "KAT16F", "KAT24F", "KAT32F"] },
   { file: "gsm-duress-intercom.pdf", manufacturer: null, model: "GSM Duress Intercom", product: "GSM duress intercom (anti-vandal, IP55, dials 3 numbers)", match: ["GSM Duress Intercom"] },
-  { file: "bosch-solution-6000.pdf", manufacturer: "Bosch", model: "Solution 6000", product: "Solution 6000 alarm system (single general handover entry — never itemise panel components)", match: ["Solution 6000", "CC610GWP"] },
+  { file: "bosch-solution-6000.pdf", manufacturer: "Bosch", model: "Solution 6000", product: "Solution 6000 alarm system", match: ["Solution 6000", "CC610GWP"] },
   { file: "electrocraft-modulator.pdf", manufacturer: "Electrocraft", model: "EPS-HDMI1001M4", product: "1x HDMI DVB-T modulator (MPEG4)", match: ["EPS-HDMI1001 / M4", "EPS-HDM1001M4", "EPS-HDMI1001M4"] },
   { file: "bosch-ds936.pdf", manufacturer: "Bosch", model: "DS936", product: "360-degree ceiling-mount panoramic PIR", match: ["DS936"] },
 ];
