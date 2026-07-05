@@ -2,8 +2,28 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import QRCode from "qrcode";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+
+/**
+ * Supabase labels the TOTP entry with the project site_url — Mitchell wants
+ * "Centrefit CRM" in the authenticator app. The issuer/label inside an
+ * otpauth:// URI is display-only metadata (the secret is what verifies), so
+ * we rebrand the URI and render our own QR instead of the pre-made one.
+ */
+const TOTP_ISSUER = "Centrefit CRM";
+
+function rebrandOtpauthUri(uri: string, issuer: string, account: string): string {
+  try {
+    const u = new URL(uri);
+    u.pathname = `/${encodeURIComponent(`${issuer}:${account}`)}`;
+    u.searchParams.set("issuer", issuer);
+    return u.toString();
+  } catch {
+    return uri;
+  }
+}
 
 /**
  * One-time MFA enrolment (security hardening 2026-07-06). Middleware sends
@@ -60,8 +80,14 @@ function MfaSetupInner() {
         return;
       }
       setFactorId(data.id);
-      const qrCode = data.totp.qr_code;
-      setQr(qrCode.startsWith("data:") ? qrCode : `data:image/svg+xml;utf8,${encodeURIComponent(qrCode)}`);
+      const branded = rebrandOtpauthUri(data.totp.uri, TOTP_ISSUER, user.email ?? "staff");
+      try {
+        setQr(await QRCode.toDataURL(branded, { errorCorrectionLevel: "M", margin: 1, width: 380 }));
+      } catch {
+        // Fall back to Supabase's pre-made QR (site_url label) rather than block enrolment.
+        const qrCode = data.totp.qr_code;
+        setQr(qrCode.startsWith("data:") ? qrCode : `data:image/svg+xml;utf8,${encodeURIComponent(qrCode)}`);
+      }
       setSecret(data.totp.secret);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
