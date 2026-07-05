@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { brisbaneDateISO } from "@/lib/dates";
 
 /**
  * PATCH /api/recurring-plans/[id]/start-date
@@ -44,7 +45,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     if (!/^\d{4}-\d{2}-\d{2}$/.test(body.firstInvoiceDate)) {
       return NextResponse.json({ error: "firstInvoiceDate must be YYYY-MM-DD" }, { status: 400 });
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = brisbaneDateISO();
     if (body.firstInvoiceDate < today) {
       return NextResponse.json({ error: "firstInvoiceDate cannot be in the past" }, { status: 400 });
     }

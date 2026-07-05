@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { generateSwmsPdfBuffer, type SwmsData, type SwmsSubcontractorRow } from "@/lib/swms/pdf";
 import { SWMS_TASK_GROUPS, nearestHospital } from "@/lib/swms/spec";
+import { brisbaneDateISO } from "@/lib/dates";
 
 /**
  * SWMS generator (Phase C). Generate → download PDF only — staff email it
@@ -175,7 +176,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }
 
   // Store a copy under the SWMS heading, then hand the file back for download.
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = brisbaneDateISO();
   const fileName = `SWMS - ${site.name}${job?.number ? ` - ${job.number}` : ""} - ${stamp}.pdf`;
   const storagePath = `sites/${siteId}/swms/${Date.now()}-swms${job?.number ? `-${job.number}` : ""}.pdf`;
   const { error: uploadError } = await sb.storage

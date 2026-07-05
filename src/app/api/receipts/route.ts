@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { forwardReceiptEmail } from "@/lib/emails/receipt-forward";
+import { brisbaneDateISO } from "@/lib/dates";
 
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"]);
 const MAX_BYTES = 15 * 1024 * 1024; // 15 MB
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
 
   const sent = await forwardReceiptEmail({
     to,
-    filename: `receipt-${vendor ? vendor.replace(/[^a-z0-9]+/gi, "-").slice(0, 30) + "-" : ""}${new Date().toISOString().slice(0, 10)}.${ext}`,
+    filename: `receipt-${vendor ? vendor.replace(/[^a-z0-9]+/gi, "-").slice(0, 30) + "-" : ""}${brisbaneDateISO()}.${ext}`,
     content: bytes,
     vendor,
     amount: amount != null && !Number.isNaN(amount) ? amount : null,

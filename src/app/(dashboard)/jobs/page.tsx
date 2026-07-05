@@ -366,7 +366,7 @@ export default async function JobsPage({
                   {(() => {
                     const entries = (job.schedule_entries ?? []) as any[];
                     const upcoming = entries
-                      .filter((e: any) => e.schedule_date >= new Date().toISOString().split("T")[0])
+                      .filter((e: any) => e.schedule_date >= todayISO)
                       .sort((a: any, b: any) => a.schedule_date.localeCompare(b.schedule_date));
                     const next = upcoming[0];
                     if (!next) {
@@ -374,7 +374,7 @@ export default async function JobsPage({
                       if (past[0]) return <span className="opacity-50">{new Date(past[0].schedule_date + "T00:00:00").toLocaleDateString("en-AU")}</span>;
                       return <span className="opacity-30">—</span>;
                     }
-                    const isToday = next.schedule_date === new Date().toISOString().split("T")[0];
+                    const isToday = next.schedule_date === todayISO;
                     return (
                       <span className={isToday ? "text-primary font-medium" : ""}>
                         {isToday ? "Today" : new Date(next.schedule_date + "T00:00:00").toLocaleDateString("en-AU")}

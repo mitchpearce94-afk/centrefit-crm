@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useToast } from "@/components/ui/toast";
+import { brisbaneDateISO } from "@/lib/dates";
 
 /**
  * Site-first plan creation (site-first-CONTEXT D5, 2026-07-03): staff pick a
@@ -318,7 +319,7 @@ export function NewRecurringPlanWizard({
               <input
                 type="date"
                 value={firstInvoiceDate}
-                min={new Date().toISOString().slice(0, 10)}
+                min={brisbaneDateISO()}
                 onChange={(e) => setFirstInvoiceDate(e.target.value)}
                 className="mt-1 w-full rounded-md border border-border bg-input px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
@@ -332,7 +333,7 @@ export function NewRecurringPlanWizard({
                 <input
                   type="date"
                   value={yearlyFirstInvoiceDate}
-                  min={new Date().toISOString().slice(0, 10)}
+                  min={brisbaneDateISO()}
                   onChange={(e) => setYearlyFirstInvoiceDate(e.target.value)}
                   className="mt-1 w-full rounded-md border border-border bg-input px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />

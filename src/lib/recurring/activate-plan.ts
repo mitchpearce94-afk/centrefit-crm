@@ -5,6 +5,7 @@ import { findOrCreateContact } from "@/lib/xero/contacts";
 import { createRepeatingInvoice, type PlanFrequency } from "@/lib/xero/repeating-invoices";
 import { createSubscription, getMandate } from "@/lib/gocardless/client";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
+import { brisbaneDateISO } from "@/lib/dates";
 
 type ServiceClient = ReturnType<typeof createServiceRoleClient>;
 
@@ -223,7 +224,7 @@ async function activatePlanInner(
   // dates, so a stale pre-active first_invoice_date that's now in the past
   // gets bumped to today. Plans with no start date use today.
   const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
+  const todayStr = brisbaneDateISO(today);
   const startDate = plan.first_invoice_date && plan.first_invoice_date >= todayStr
     ? plan.first_invoice_date
     : todayStr;

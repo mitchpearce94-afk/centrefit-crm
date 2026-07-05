@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { brisbaneDateISO } from "@/lib/dates";
 
 /**
  * The Rev3-replacement order wizard: address → product → end user →
@@ -150,7 +151,7 @@ export function OrderWizard() {
       const json = await res.json();
       if (!res.ok || json.error) throw new Error(json.error ?? "Qualification failed");
       setQual(json.result);
-      setOrderRef(`CF.${m.id.replace("LOC", "")}.${new Date().toISOString().slice(0, 10)}`);
+      setOrderRef(`CF.${m.id.replace("LOC", "")}.${brisbaneDateISO()}`);
     });
     // Auto-load product options as soon as the address qualifies — no manual
     // Load step. Explicit locId arg: `loc` state isn't committed yet here.

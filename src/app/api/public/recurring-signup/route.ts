@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { createRecurringPlansForSites } from "@/lib/recurring/create-plan";
 import { checkRateLimit, clientIp } from "@/lib/recurring/rate-limit";
+import { brisbaneDateISO } from "@/lib/dates";
 
 /**
  * POST /api/public/recurring-signup
@@ -132,7 +133,7 @@ export async function POST(req: NextRequest) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(body.first_invoice_date)) {
       return NextResponse.json({ error: "first_invoice_date must be YYYY-MM-DD" }, { status: 400, headers: cors });
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = brisbaneDateISO();
     if (body.first_invoice_date < today) {
       return NextResponse.json({ error: "first_invoice_date cannot be in the past" }, { status: 400, headers: cors });
     }

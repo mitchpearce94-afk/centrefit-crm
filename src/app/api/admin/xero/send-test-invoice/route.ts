@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { getAuthedClient } from "@/lib/xero/client";
+import { brisbaneDateISO } from "@/lib/dates";
 
 /**
  * One-shot test-invoice sender. Creates a $1 AUTHORISED invoice in Xero
@@ -93,8 +94,8 @@ export async function POST(req: NextRequest) {
     type: "ACCREC",
     status: "AUTHORISED",
     contact: { contactID: contactId },
-    date: today.toISOString().slice(0, 10),
-    dueDate: dueDate.toISOString().slice(0, 10),
+    date: brisbaneDateISO(today),
+    dueDate: brisbaneDateISO(dueDate),
     lineAmountTypes: "Exclusive",
     reference: "TEST — please void after viewing",
     brandingThemeID,

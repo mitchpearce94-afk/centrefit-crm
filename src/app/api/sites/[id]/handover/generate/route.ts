@@ -5,6 +5,7 @@ import { createServiceRoleClient } from "@/lib/supabase/service";
 import { logDocumentActivity } from "@/lib/activity/log";
 import { sendHandoverAcceptanceEmail } from "@/lib/emails/handover";
 import { assembleHandoverPack, buildHandoverInput } from "@/lib/handover/assemble";
+import { brisbaneDateISO } from "@/lib/dates";
 
 /**
  * Handover pack generation (Phase D). Two modes:
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     );
   }
 
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = brisbaneDateISO();
   const fileName = `Handover Documentation - ${input.siteName} - ${stamp}.pdf`;
   const storagePath = `sites/${siteId}/handover/${Date.now()}-handover-pack.pdf`;
   const { error: uploadError } = await sb.storage

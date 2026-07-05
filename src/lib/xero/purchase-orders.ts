@@ -1,4 +1,5 @@
 import type { XeroClient } from "xero-node";
+import { brisbaneDateISO } from "@/lib/dates";
 
 // Xero's default Cost of Sales account in the standard chart.
 // Centrefit uses 300 historically — override per-line if a particular
@@ -54,7 +55,7 @@ export async function createXeroPurchaseOrder({
     throw new Error("Cannot create a Xero PO with zero line items");
   }
 
-  const issueDate = (date ?? new Date()).toISOString().slice(0, 10);
+  const issueDate = brisbaneDateISO(date ?? new Date());
 
   const poPayload: Record<string, unknown> = {
     status: "DRAFT",

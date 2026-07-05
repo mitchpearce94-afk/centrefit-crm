@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 import { compressImage, mapWithConcurrency } from "@/lib/images/compress";
+import { brisbaneDateISO } from "@/lib/dates";
 
 const QUICK_LINES = [
   "Left KGSQ at __:__ and travelled to site",
@@ -251,7 +252,7 @@ function WorkEntryForm({
 
   const [content, setContent] = useState(entry?.content ?? "");
   const [workDate, setWorkDate] = useState(
-    entry?.work_date ?? new Date().toISOString().split("T")[0]
+    entry?.work_date ?? brisbaneDateISO()
   );
   const [callOut, setCallOut] = useState(entry?.call_out ?? false);
   const [labourHours, setLabourHours] = useState(entry?.labour_hours?.toString() ?? "");

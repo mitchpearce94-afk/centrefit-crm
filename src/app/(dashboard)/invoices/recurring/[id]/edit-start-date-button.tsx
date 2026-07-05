@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
+import { brisbaneDateISO } from "@/lib/dates";
 
 /**
  * Edit the customer-chosen first_invoice_date while a plan is still in
@@ -24,7 +25,7 @@ export function EditStartDateButton({
   const [date, setDate] = useState(currentDate ?? "");
   const [submitting, setSubmitting] = useState(false);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = brisbaneDateISO();
 
   async function save() {
     setSubmitting(true);

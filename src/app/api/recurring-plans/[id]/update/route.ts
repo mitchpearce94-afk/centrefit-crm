@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthedClient } from "@/lib/xero/client";
+import { brisbaneDateISO } from "@/lib/dates";
 import {
   createRepeatingInvoice,
   cancelRepeatingInvoice,
@@ -142,7 +143,7 @@ export async function POST(
   }
 
   const errors: string[] = [];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = brisbaneDateISO();
 
   // Resolve the contact ID we'll use for any newly-created RIs.
   const xeroContactId = plan.xero_contact_id;

@@ -1,4 +1,5 @@
 import type { XeroClient } from "xero-node";
+import { brisbaneDateISO } from "@/lib/dates";
 import {
   generateScopeOfWorks,
   manualScopeDocument,
@@ -66,8 +67,8 @@ export async function createXeroInvoice({
     type: "ACCREC", // Accounts Receivable — sales invoice
     status: "DRAFT",
     contact: { contactID: xeroContactId },
-    date: today.toISOString().slice(0, 10),
-    dueDate: due.toISOString().slice(0, 10),
+    date: brisbaneDateISO(today),
+    dueDate: brisbaneDateISO(due),
     lineAmountTypes: "Exclusive", // unit amounts are ex-GST; Xero adds GST
     lineItems: lineItems.map((li) => ({
       description: li.description.slice(0, 4000), // Xero limit

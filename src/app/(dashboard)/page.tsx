@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { DashboardFilters } from "./dashboard-filters";
 import { loadCurrentPermissions, hasPermission } from "@/lib/auth/permissions";
+import { brisbaneDateISO } from "@/lib/dates";
 
 export default async function DashboardPage({
   searchParams,
@@ -592,7 +593,7 @@ function isoDate(d: Date): string {
   // whole dashboard a day behind between midnight and 10am AEST (the
   // mobile Today view showed yesterday's — usually empty — schedule).
   // en-CA formats as YYYY-MM-DD.
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Brisbane" }).format(d);
+  return brisbaneDateISO(d);
 }
 
 function addDays(d: Date, n: number): Date {

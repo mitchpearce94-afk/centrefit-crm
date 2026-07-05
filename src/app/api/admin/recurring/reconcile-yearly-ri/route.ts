@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { getAuthedClient } from "@/lib/xero/client";
+import { brisbaneDateISO } from "@/lib/dates";
 import {
   getRepeatingInvoice,
   updateRepeatingInvoiceSchedule,
@@ -49,7 +50,7 @@ function nameOf(v: { name: string | null } | { name: string | null }[] | null): 
 // or ISO strings depending on the field — normalise either to YYYY-MM-DD.
 function toDateStr(v: unknown): string | null {
   if (v == null) return null;
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (v instanceof Date) return brisbaneDateISO(v);
   return String(v).slice(0, 10);
 }
 
@@ -61,7 +62,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const apply = url.searchParams.get("apply") === "1";
   const planId = url.searchParams.get("planId");
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = brisbaneDateISO();
 
   // Surface any failure (Xero auth/refresh, query, write) as readable JSON
   // instead of a bare 500, with the stage it died at and whatever completed.

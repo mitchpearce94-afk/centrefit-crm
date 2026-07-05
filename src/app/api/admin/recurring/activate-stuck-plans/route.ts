@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { activatePlan } from "@/lib/recurring/activate-plan";
 import { isXeroRateLimited, captureXeroRateLimit } from "@/lib/xero/rate-limit";
+import { brisbaneDateISO } from "@/lib/dates";
 
 const PLAN_DELAY_MS = 1500;
 
@@ -34,7 +35,7 @@ export async function POST() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = brisbaneDateISO();
   const results: unknown[] = [];
   let processedAny = false;
 
