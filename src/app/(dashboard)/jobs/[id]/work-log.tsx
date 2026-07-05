@@ -392,8 +392,8 @@ function WorkEntryForm({
           done++;
           setUploadProgress({ done, total: v.selectedFiles.length });
           if (error || !data) return null;
-          const { data: urlData } = supabase.storage.from("job-attachments").getPublicUrl(data.path);
-          return urlData.publicUrl;
+          // Bucket is private — same-origin authenticated proxy serves it.
+          return `/api/attachments/${data.path}`;
         });
         newUrls = uploaded.filter((u): u is string => !!u);
         setUploadProgress(null);

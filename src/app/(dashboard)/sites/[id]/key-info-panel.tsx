@@ -534,10 +534,9 @@ function PhotosSection({ siteId, photos }: { siteId: string; photos: KeyInfoPhot
           toast(uploadErr.message, "error");
           continue;
         }
-        const { data: urlData } = supabase.storage.from("job-attachments").getPublicUrl(path);
         const { error: insErr } = await supabase.from("site_key_info_photos").insert({
           site_id: siteId,
-          url: urlData.publicUrl,
+          url: `/api/attachments/${path}`,
           caption: file.name,
           storage_path: path,
           uploaded_by: user?.id ?? null,

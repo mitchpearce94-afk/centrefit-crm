@@ -47,8 +47,9 @@ export async function POST(
   const { data: job } = await db.from("jobs").select("id, number").eq("id", jobId).maybeSingle();
   if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
 
-  // Copy the image out of the private receipts bucket into the public
-  // job-attachments bucket so the job note can render it like any other photo.
+  // Copy the image out of the receipts bucket into job-attachments (both
+  // private) so the job note can render it like any other photo — served
+  // via the authenticated /api/attachments proxy.
   let publicUrl: string | null = null;
   let imgType = "image/jpeg";
   const ext = receipt.storage_path.split(".").pop() || "jpg";
@@ -61,7 +62,7 @@ export async function POST(
       .from("job-attachments")
       .upload(noteImagePath, buf, { contentType: imgType, upsert: false });
     if (!upErr) {
-      publicUrl = db.storage.from("job-attachments").getPublicUrl(noteImagePath).data.publicUrl;
+      publicUrl = `/api/attachments/${noteImagePath}`;
     }
   }
 

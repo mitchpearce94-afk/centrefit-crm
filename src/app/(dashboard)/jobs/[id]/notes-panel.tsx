@@ -325,11 +325,13 @@ function NoteDetail({
   }
 
   function bucketPathFromUrl(url: string): string | null {
-    // Public URL format: <project>/storage/v1/object/public/job-attachments/<path>
-    const marker = "/storage/v1/object/public/job-attachments/";
-    const idx = url.indexOf(marker);
-    if (idx === -1) return null;
-    return decodeURIComponent(url.slice(idx + marker.length));
+    // Current form: /api/attachments/<path> (private bucket proxy).
+    // Legacy form (pre-2026-07-06): <project>/storage/v1/object/public/job-attachments/<path>
+    for (const marker of ["/api/attachments/", "/storage/v1/object/public/job-attachments/"]) {
+      const idx = url.indexOf(marker);
+      if (idx !== -1) return decodeURIComponent(url.slice(idx + marker.length));
+    }
+    return null;
   }
 
   async function saveEdit() {
@@ -378,10 +380,7 @@ function NoteDetail({
       done++;
       setAddProgress({ done, total: files.length });
       if (error || !data) return null;
-      const { data: urlData } = supabase.storage
-        .from("job-attachments")
-        .getPublicUrl(data.path);
-      return { url: urlData.publicUrl, name: file.name, type: prepped.type, size: prepped.size };
+      return { url: `/api/attachments/${data.path}`, name: file.name, type: prepped.type, size: prepped.size };
     });
     setAddProgress(null);
 
@@ -745,11 +744,8 @@ function NoteForm({
       done++;
       setUploadProgress({ done, total: selectedFiles.length });
       if (error || !data) return null;
-      const { data: urlData } = supabase.storage
-        .from("job-attachments")
-        .getPublicUrl(data.path);
       return {
-        url: urlData.publicUrl,
+        url: `/api/attachments/${data.path}`,
         name: file.name,
         type: prepped.type,
         size: prepped.size,
