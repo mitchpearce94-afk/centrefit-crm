@@ -101,10 +101,37 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const isPublic = isPublicPath(pathname);
 
+  // ── MFA state (security hardening 2026-07-06) ────────────────────────────
+  // TOTP is ENFORCED for every staff account: no verified factor → forced
+  // enrolment; verified factor but aal1 session → verify step. Computed from
+  // the local session JWT (no network call).
+  const onMfaVerify = pathname === "/login/mfa";
+  const onMfaSetup = pathname === "/login/mfa-setup";
+  let needsVerify = false;
+  let needsEnrol = false;
+  if (user) {
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    needsVerify = aal?.nextLevel === "aal2" && aal?.currentLevel !== "aal2";
+    needsEnrol = aal?.nextLevel === "aal1";
+  }
+
+  function redirectTo(path: string) {
+    const url = request.nextUrl.clone();
+    url.pathname = path;
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
   // Redirect unauthenticated users to login (except for auth routes and
   // explicitly public endpoints which do their own secret-header auth)
   if (!user && !isPublic) {
     return redirectToLogin(request, null);
+  }
+
+  // MFA gate — an aal1 session can't touch anything non-public.
+  if (user && !isPublic) {
+    if (needsVerify) return redirectTo("/login/mfa");
+    if (needsEnrol) return redirectTo("/login/mfa-setup");
   }
 
   // Authenticated request on a non-public path → enforce idle + max session.
@@ -162,11 +189,21 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
-  // Redirect authenticated users away from login
-  if (user && pathname.startsWith("/login")) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/";
-    return NextResponse.redirect(url);
+  // Login + MFA page routing for authenticated users: each page only serves
+  // its own state; anything else moves along (prevents loops).
+  if (user) {
+    if (pathname === "/login") {
+      return redirectTo(needsVerify ? "/login/mfa" : needsEnrol ? "/login/mfa-setup" : "/");
+    }
+    if (onMfaVerify && !needsVerify) {
+      return redirectTo(needsEnrol ? "/login/mfa-setup" : "/");
+    }
+    if (onMfaSetup && needsVerify) {
+      return redirectTo("/login/mfa");
+    }
+    if (onMfaSetup && !needsEnrol) {
+      return redirectTo("/");
+    }
   }
 
   return supabaseResponse;

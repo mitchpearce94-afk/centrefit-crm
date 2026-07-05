@@ -174,6 +174,7 @@ export function StaffList({
                   >
                     Edit
                   </button>
+                  <ResetMfaButton member={member} />
                   {member.id !== currentUserId && (
                     <DeleteStaffButton member={member} />
                   )}
@@ -517,6 +518,50 @@ function StaffEditForm({
         </button>
       </div>
     </form>
+  );
+}
+
+/**
+ * Lost-phone escape hatch: wipes the staff member's MFA factors so their
+ * next login is password + forced re-enrolment. Two-click confirm.
+ */
+function ResetMfaButton({ member }: { member: Staff }) {
+  const { toast } = useToast();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function handleReset() {
+    if (!confirming) {
+      setConfirming(true);
+      setTimeout(() => setConfirming(false), 4000);
+      return;
+    }
+    setConfirming(false);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/staff/${member.id}/reset-mfa`, { method: "POST" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error ?? "Reset failed");
+      toast(
+        json.removed > 0
+          ? `MFA reset for ${member.display_name} — they'll set up a new authenticator on next login`
+          : `${member.display_name} had no authenticator set up yet`,
+      );
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Reset failed", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      onClick={handleReset}
+      disabled={busy}
+      className={`text-xs transition-colors ${confirming ? "text-destructive font-semibold" : "text-muted-foreground hover:text-foreground"} disabled:opacity-50`}
+    >
+      {busy ? "Resetting…" : confirming ? "Confirm reset" : "Reset MFA"}
+    </button>
   );
 }
 
