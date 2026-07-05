@@ -614,8 +614,10 @@ function PhotosSection({ siteId, photos }: { siteId: string; photos: KeyInfoPhot
               <div key={p.id} className="relative group">
                 <a href={p.url} target="_blank" rel="noopener noreferrer">
                   <img
-                    src={p.url}
+                    src={`${p.url}?w=640`}
                     alt={p.caption ?? "Site photo"}
+                    loading="lazy"
+                    decoding="async"
                     className="h-32 w-full rounded-md border border-border object-cover"
                   />
                 </a>

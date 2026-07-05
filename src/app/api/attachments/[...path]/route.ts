@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import sharp from "sharp";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 
@@ -12,7 +13,7 @@ import { createServiceRoleClient } from "@/lib/supabase/service";
  * Stored historical URLs were rewritten in the same migration
  * (20260706020000_job_attachments_private).
  */
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+export async function GET(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
   const objectPath = (path ?? []).map(decodeURIComponent).join("/");
   if (!objectPath || objectPath.includes("..")) {
@@ -28,6 +29,30 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ path: stri
   if (error || !data) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const buf = Buffer.from(await data.arrayBuffer());
+
+  // ?w=<px> serves a downscaled thumbnail so grids don't decode full-size
+  // photos into 128px tiles. Object paths embed Date.now()+random and are
+  // never rewritten, so resized responses are safe to cache immutably.
+  const wParam = Number(req.nextUrl.searchParams.get("w"));
+  if (Number.isFinite(wParam) && wParam > 0 && (data.type || "").startsWith("image/")) {
+    try {
+      const width = Math.min(Math.round(wParam), 1600);
+      const thumb = await sharp(buf)
+        .rotate() // respect EXIF orientation before it's stripped
+        .resize({ width, withoutEnlargement: true })
+        .jpeg({ quality: 75, mozjpeg: true })
+        .toBuffer();
+      return new NextResponse(new Uint8Array(thumb), {
+        headers: {
+          "Content-Type": "image/jpeg",
+          "Cache-Control": "private, max-age=31536000, immutable",
+        },
+      });
+    } catch {
+      // undecodable format (e.g. HEIC) — fall through to the original bytes
+    }
+  }
+
   return new NextResponse(new Uint8Array(buf), {
     headers: {
       "Content-Type": data.type || "application/octet-stream",
