@@ -322,10 +322,9 @@ async function renderBodyFront(input: HandoverInput): Promise<Buffer> {
           </View>
         </View>
 
-        <Text style={[s.sectionTitle, { marginTop: 42 }]}>Table of Contents</Text>
+        <Text style={[s.sectionTitle, { marginTop: 42 }]}>Equipment &amp; Documentation</Text>
         <Text style={{ fontSize: 8, color: MUTED, marginBottom: 4 }}>
-          Underlined items are hyperlinked — click to open that datasheet online. Full copies are also
-          included in this pack after the contents page.
+          All documentation is within the hyperlinks — click any underlined item to open its datasheet.
         </Text>
         {tocEntries.map((e) => (
           <View key={e.num} style={s.tocRow}>
@@ -342,30 +341,6 @@ async function renderBodyFront(input: HandoverInput): Promise<Buffer> {
             </View>
           </View>
         ))}
-      </Page>
-    </Document>
-  );
-  return await renderToBuffer(doc);
-}
-
-async function renderDivider(input: HandoverInput, entry: HandoverEntry, index: number): Promise<Buffer> {
-  const doc = (
-    <Document>
-      <Page size="A4" style={s.page}>
-        <Chrome input={input} section={`Section ${index + 1}`} />
-        <View style={{ marginTop: 240 }}>
-          <Text style={s.kicker}>SECTION {index + 1} · DATASHEET</Text>
-          <Text style={[s.h1, { fontSize: 20 }]}>
-            {entry.manufacturer ? `${entry.manufacturer} ` : ""}{entry.model}
-          </Text>
-          <Text style={{ fontSize: 11, color: MUTED, marginTop: 6 }}>{entry.productName}</Text>
-          <Text style={[s.body, { marginTop: 14, maxWidth: 380 }]}>{entry.blurb}</Text>
-          {entry.publicUrl ? (
-            <Link src={entry.publicUrl} style={{ fontSize: 9, color: BRAND, textDecoration: "underline", marginTop: 10 }}>
-              View this datasheet online
-            </Link>
-          ) : null}
-        </View>
       </Page>
     </Document>
   );
@@ -501,21 +476,11 @@ export async function assembleHandoverPack(sb: SupabaseClient, input: HandoverIn
     for (const p of pages) merged.addPage(p);
   }
 
+  // Datasheets are NOT embedded (Mitchell 2026-07-05: the merged sheets
+  // blew the pack out to 10MB+) — the equipment list hyperlinks each one,
+  // matching the original template's "all documentation is within the
+  // hyperlinks" approach. Stored PDFs serve via /api/public/datasheets/[id].
   await append(front);
-  for (let i = 0; i < input.entries.length; i++) {
-    const entry = input.entries[i];
-    const divider = await renderDivider(input, entry, i);
-    await append(divider);
-    if (!entry.storagePath) continue; // no library datasheet — divider carries the entry
-    const { data, error } = await sb.storage.from("datasheets").download(entry.storagePath);
-    if (error || !data) {
-      // Datasheet missing from the bucket — the divider carries the entry;
-      // don't fail the whole pack.
-      console.warn("[handover] datasheet download failed", entry.storagePath, error?.message);
-      continue;
-    }
-    await append(new Uint8Array(await data.arrayBuffer()));
-  }
   await append(back);
 
   merged.setTitle(`${HANDOVER_TITLE} — ${input.siteName}`);
