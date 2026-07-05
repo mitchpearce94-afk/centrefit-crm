@@ -51,6 +51,7 @@ const PUBLIC_PATH_PREFIXES = [
   "/recurring-thanks",
   "/status-board",
   "/monitoring-form",
+  "/handover",
 ];
 
 function isPublicPath(pathname: string): boolean {

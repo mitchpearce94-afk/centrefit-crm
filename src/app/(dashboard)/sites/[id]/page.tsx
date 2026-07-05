@@ -66,6 +66,7 @@ export default async function SiteDetailPage({
     planFilesResult,
     signRequestsResult,
     monitoringProfileResult,
+    staffListResult,
     importJobResult,
   ] = await Promise.all([
     supabase
@@ -145,6 +146,11 @@ export default async function SiteDetailPage({
       .select("selections, updated_at")
       .eq("site_id", id)
       .maybeSingle(),
+    supabase
+      .from("staff")
+      .select("id, display_name, role, signature_updated_at")
+      .eq("is_active", true)
+      .order("display_name"),
     // Job for THIS site to power the "Import from BOM" button on the Assets
     // tab. Prefer the most recent accepted quote; fall back to the latest
     // quote of any status (so it still shows on jobs whose quote is draft).
@@ -186,6 +192,17 @@ export default async function SiteDetailPage({
   const signRequests = (signRequestsResult.data ?? []) as import("./site-documents-panel").SignRequestRow[];
   const monitoringProfile = (monitoringProfileResult.data ??
     null) as import("./site-documents-panel").MonitoringProfileSummary | null;
+  const staffList = ((staffListResult.data ?? []) as Array<{
+    id: string;
+    display_name: string | null;
+    role: string | null;
+    signature_updated_at: string | null;
+  }>).map((s) => ({
+    id: s.id,
+    display_name: s.display_name,
+    role: s.role,
+    has_signature: Boolean(s.signature_updated_at),
+  }));
   const importJobId = (importJobResult.data as { job_id: string | null } | null)?.job_id ?? null;
 
   const activePlanCount = (plans as { status: string }[]).filter((p) =>
@@ -239,6 +256,8 @@ export default async function SiteDetailPage({
           planFiles={planFiles}
           signRequests={signRequests}
           monitoringProfile={monitoringProfile}
+          staffList={staffList}
+          viewerId={user?.id ?? ""}
           isAdmin={isAdmin}
           importJobId={importJobId}
         />

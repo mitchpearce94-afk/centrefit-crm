@@ -4,6 +4,8 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
+import { SwmsGenerateModal, type SwmsJobOption, type SwmsStaffOption } from "./swms-generate-modal";
+import { HandoverControls, type HandoverData } from "./handover-controls";
 
 /**
  * Site Documentation (docs/documentation-CONTEXT.md Phase A). Replaces the
@@ -96,6 +98,9 @@ export function SiteDocumentsPanel({
   monitoringProfile,
   defaultRecipientName,
   defaultRecipientEmail,
+  swmsJobs,
+  staffList,
+  viewerId,
   isAdmin,
 }: {
   siteId: string;
@@ -105,6 +110,9 @@ export function SiteDocumentsPanel({
   monitoringProfile: MonitoringProfileSummary | null;
   defaultRecipientName: string | null;
   defaultRecipientEmail: string | null;
+  swmsJobs: SwmsJobOption[];
+  staffList: SwmsStaffOption[];
+  viewerId: string;
   isAdmin: boolean;
 }) {
   return (
@@ -126,6 +134,16 @@ export function SiteDocumentsPanel({
                 }
               : null
           }
+          swms={cat.key === "swms" ? { jobs: swmsJobs, staffList, viewerId } : null}
+          handover={
+            cat.key === "handover"
+              ? {
+                  requests: signRequests.filter((r) => r.document_type === "handover"),
+                  defaultRecipientName,
+                  defaultRecipientEmail,
+                }
+              : null
+          }
           isAdmin={isAdmin}
         />
       ))}
@@ -140,12 +158,20 @@ interface MonitoringSectionData {
   defaultRecipientEmail: string | null;
 }
 
+interface SwmsSectionData {
+  jobs: SwmsJobOption[];
+  staffList: SwmsStaffOption[];
+  viewerId: string;
+}
+
 function CategorySection({
   siteId,
   category,
   documents,
   planFiles,
   monitoring,
+  swms,
+  handover,
   isAdmin,
 }: {
   siteId: string;
@@ -153,8 +179,11 @@ function CategorySection({
   documents: SiteDocumentRow[];
   planFiles: SitePlanFileRow[];
   monitoring: MonitoringSectionData | null;
+  swms: SwmsSectionData | null;
+  handover: HandoverData | null;
   isAdmin: boolean;
 }) {
+  const [swmsModalOpen, setSwmsModalOpen] = useState(false);
   const router = useRouter();
   const supabase = createClient();
   const { toast } = useToast();
@@ -243,6 +272,16 @@ function CategorySection({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {monitoring && <MonitoringSendButton siteId={siteId} monitoring={monitoring} />}
+          {swms && (
+            <button
+              type="button"
+              onClick={() => setSwmsModalOpen(true)}
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              Generate SWMS
+            </button>
+          )}
+          {handover && <HandoverControls siteId={siteId} handover={handover} buttonOnly />}
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
@@ -256,6 +295,16 @@ function CategorySection({
       </div>
 
       {monitoring && <MonitoringStatus siteId={siteId} monitoring={monitoring} />}
+      {handover && <HandoverControls siteId={siteId} handover={handover} />}
+      {swms && swmsModalOpen && (
+        <SwmsGenerateModal
+          siteId={siteId}
+          jobs={swms.jobs}
+          staffList={swms.staffList}
+          viewerId={swms.viewerId}
+          onClose={() => setSwmsModalOpen(false)}
+        />
+      )}
 
       {isEmpty ? (
         <div className="rounded-lg border border-dashed border-border p-5 text-center text-xs text-muted-foreground">

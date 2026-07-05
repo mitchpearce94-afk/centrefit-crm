@@ -92,6 +92,8 @@ export function SiteDetail({
   planFiles,
   signRequests,
   monitoringProfile,
+  staffList,
+  viewerId,
   isAdmin,
   importJobId,
 }: {
@@ -110,6 +112,8 @@ export function SiteDetail({
   planFiles: SitePlanFileRow[];
   signRequests: SignRequestRow[];
   monitoringProfile: MonitoringProfileSummary | null;
+  staffList: import("./swms-generate-modal").SwmsStaffOption[];
+  viewerId: string;
   isAdmin: boolean;
   importJobId: string | null;
 }) {
@@ -401,6 +405,9 @@ export function SiteDetail({
               monitoringProfile={monitoringProfile}
               defaultRecipientName={owner?.contactName ?? null}
               defaultRecipientEmail={owner?.billing_email ?? owner?.contactEmail ?? null}
+              swmsJobs={jobs.map((j) => ({ id: j.id, number: j.number, reference: j.reference }))}
+              staffList={staffList}
+              viewerId={viewerId}
               isAdmin={isAdmin}
             />
           )}

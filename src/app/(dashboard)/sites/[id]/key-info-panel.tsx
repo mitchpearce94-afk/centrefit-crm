@@ -178,7 +178,7 @@ export function KeyInfoPanel({
         <>
           {/* Wi-Fi box leads if there's no Network & Data section to anchor after. */}
           {wifiEntries.length > 0 && !sections.some((s) => s.key === "data") && (
-            <WifiSection entries={wifiEntries} />
+            <WifiSection siteId={siteId} entries={wifiEntries} />
           )}
           {sections.map((section) => (
             <div key={section.key} className="space-y-6">
@@ -196,7 +196,7 @@ export function KeyInfoPanel({
                 </div>
               </div>
               {section.key === "data" && wifiEntries.length > 0 && (
-                <WifiSection entries={wifiEntries} />
+                <WifiSection siteId={siteId} entries={wifiEntries} />
               )}
             </div>
           ))}
@@ -330,8 +330,10 @@ function CopyButton({ value, label }: { value: string; label?: string }) {
  * they came from "Wi-Fi Network" assets or a router/controller config.
  */
 function WifiSection({
+  siteId,
   entries,
 }: {
+  siteId: string;
   entries: Array<{ ssid: string; password: string | null; notes: string | null; source: string | null }>;
 }) {
   const copyAll = entries
@@ -369,6 +371,17 @@ function WifiSection({
                 <span className="text-[11px] italic text-muted-foreground">
                   {[w.notes, w.source ? `via ${w.source}` : null].filter(Boolean).join(" · ")}
                 </span>
+              )}
+              {w.password && (
+                <a
+                  href={`/api/sites/${siteId}/wifi-poster?ssid=${encodeURIComponent(w.ssid)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Print-ready poster with a scan-to-join QR — members connect without seeing the password"
+                  className="ml-auto rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                >
+                  QR poster
+                </a>
               )}
             </div>
           ))}
