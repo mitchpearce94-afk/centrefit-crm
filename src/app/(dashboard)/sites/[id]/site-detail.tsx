@@ -8,7 +8,7 @@ import { OwnerCard, type OwnerInfo } from "./owner-card";
 import { SiteContactsList } from "./site-contacts-list";
 import { SiteAssetsList } from "./site-assets-list";
 import { KeyInfoPanel, type KeyInfoPhoto } from "./key-info-panel";
-import { SiteDocumentsPanel, type SiteDocumentRow, type SitePlanFileRow } from "./site-documents-panel";
+import { SiteDocumentsPanel, type SiteDocumentRow, type SitePlanFileRow, type SignRequestRow, type MonitoringProfileSummary } from "./site-documents-panel";
 
 type Job = {
   id: string;
@@ -90,6 +90,8 @@ export function SiteDetail({
   keyInfoPhotos,
   documents,
   planFiles,
+  signRequests,
+  monitoringProfile,
   isAdmin,
   importJobId,
 }: {
@@ -106,6 +108,8 @@ export function SiteDetail({
   keyInfoPhotos: KeyInfoPhoto[];
   documents: SiteDocumentRow[];
   planFiles: SitePlanFileRow[];
+  signRequests: SignRequestRow[];
+  monitoringProfile: MonitoringProfileSummary | null;
   isAdmin: boolean;
   importJobId: string | null;
 }) {
@@ -393,6 +397,10 @@ export function SiteDetail({
               siteId={site.id}
               documents={documents}
               planFiles={planFiles}
+              signRequests={signRequests}
+              monitoringProfile={monitoringProfile}
+              defaultRecipientName={owner?.contactName ?? null}
+              defaultRecipientEmail={owner?.billing_email ?? owner?.contactEmail ?? null}
               isAdmin={isAdmin}
             />
           )}

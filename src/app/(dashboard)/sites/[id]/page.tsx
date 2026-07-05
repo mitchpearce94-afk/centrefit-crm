@@ -64,6 +64,8 @@ export default async function SiteDetailPage({
     keyInfoPhotosResult,
     documentsResult,
     planFilesResult,
+    signRequestsResult,
+    monitoringProfileResult,
     importJobResult,
   ] = await Promise.all([
     supabase
@@ -133,6 +135,16 @@ export default async function SiteDetailPage({
       .select("id, name, state, revision, pdf_url, updated_at")
       .eq("site_id", id)
       .order("updated_at", { ascending: false }),
+    supabase
+      .from("document_sign_requests")
+      .select("id, site_document_id, document_type, status, recipient_name, recipient_email, version, token, sent_at, viewed_at, signed_at")
+      .eq("site_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("site_monitoring_profiles")
+      .select("selections, updated_at")
+      .eq("site_id", id)
+      .maybeSingle(),
     // Job for THIS site to power the "Import from BOM" button on the Assets
     // tab. Prefer the most recent accepted quote; fall back to the latest
     // quote of any status (so it still shows on jobs whose quote is draft).
@@ -171,6 +183,9 @@ export default async function SiteDetailPage({
     uploader: Array.isArray(d.uploader) ? d.uploader[0] ?? null : d.uploader,
   })) as import("./site-documents-panel").SiteDocumentRow[];
   const planFiles = (planFilesResult.data ?? []) as import("./site-documents-panel").SitePlanFileRow[];
+  const signRequests = (signRequestsResult.data ?? []) as import("./site-documents-panel").SignRequestRow[];
+  const monitoringProfile = (monitoringProfileResult.data ??
+    null) as import("./site-documents-panel").MonitoringProfileSummary | null;
   const importJobId = (importJobResult.data as { job_id: string | null } | null)?.job_id ?? null;
 
   const activePlanCount = (plans as { status: string }[]).filter((p) =>
@@ -222,6 +237,8 @@ export default async function SiteDetailPage({
           keyInfoPhotos={keyInfoPhotos}
           documents={documents}
           planFiles={planFiles}
+          signRequests={signRequests}
+          monitoringProfile={monitoringProfile}
           isAdmin={isAdmin}
           importJobId={importJobId}
         />

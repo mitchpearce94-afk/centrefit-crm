@@ -36,6 +36,37 @@ export interface SitePlanFileRow {
   updated_at: string | null;
 }
 
+export interface SignRequestRow {
+  id: string;
+  site_document_id: string | null;
+  document_type: string;
+  status: string;
+  recipient_name: string | null;
+  recipient_email: string;
+  version: number;
+  token: string;
+  sent_at: string | null;
+  viewed_at: string | null;
+  signed_at: string | null;
+}
+
+export interface MonitoringProfileSummary {
+  selections: Record<string, string | undefined>;
+  updated_at: string;
+}
+
+const SELECTION_LABELS: Record<string, string> = {
+  late_to_close: "Late to close",
+  out_of_hours: "Out of hours",
+  holdup: "Hold-up",
+  sim_supply: "SIM",
+  burglar: "Burglar",
+  apply_scope: "Scope",
+  vav: "VAV",
+  power_fail: "Power fail",
+  battery_fail: "Battery fail",
+};
+
 const CATEGORIES: Array<{ key: string; label: string; hint: string }> = [
   { key: "plans", label: "Plans", hint: "Builder / architect plans and Centrefit CFP plans" },
   { key: "security", label: "Security Paperwork", hint: "Monitoring response instructions and security forms" },
@@ -61,11 +92,19 @@ export function SiteDocumentsPanel({
   siteId,
   documents,
   planFiles,
+  signRequests,
+  monitoringProfile,
+  defaultRecipientName,
+  defaultRecipientEmail,
   isAdmin,
 }: {
   siteId: string;
   documents: SiteDocumentRow[];
   planFiles: SitePlanFileRow[];
+  signRequests: SignRequestRow[];
+  monitoringProfile: MonitoringProfileSummary | null;
+  defaultRecipientName: string | null;
+  defaultRecipientEmail: string | null;
   isAdmin: boolean;
 }) {
   return (
@@ -77,6 +116,16 @@ export function SiteDocumentsPanel({
           category={cat}
           documents={documents.filter((d) => d.category === cat.key)}
           planFiles={cat.key === "plans" ? planFiles : []}
+          monitoring={
+            cat.key === "security"
+              ? {
+                  requests: signRequests.filter((r) => r.document_type === "monitoring_form"),
+                  profile: monitoringProfile,
+                  defaultRecipientName,
+                  defaultRecipientEmail,
+                }
+              : null
+          }
           isAdmin={isAdmin}
         />
       ))}
@@ -84,17 +133,26 @@ export function SiteDocumentsPanel({
   );
 }
 
+interface MonitoringSectionData {
+  requests: SignRequestRow[];
+  profile: MonitoringProfileSummary | null;
+  defaultRecipientName: string | null;
+  defaultRecipientEmail: string | null;
+}
+
 function CategorySection({
   siteId,
   category,
   documents,
   planFiles,
+  monitoring,
   isAdmin,
 }: {
   siteId: string;
   category: { key: string; label: string; hint: string };
   documents: SiteDocumentRow[];
   planFiles: SitePlanFileRow[];
+  monitoring: MonitoringSectionData | null;
   isAdmin: boolean;
 }) {
   const router = useRouter();
@@ -183,16 +241,21 @@ function CategorySection({
           <h2 className="text-sm font-semibold">{category.label}</h2>
           <p className="text-[11px] text-muted-foreground">{category.hint}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          disabled={uploading}
-          className="rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50 transition-colors"
-        >
-          {uploading ? "Uploading…" : "+ Upload"}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {monitoring && <MonitoringSendButton siteId={siteId} monitoring={monitoring} />}
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={uploading}
+            className="rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50 transition-colors"
+          >
+            {uploading ? "Uploading…" : "+ Upload"}
+          </button>
+        </div>
         <input ref={inputRef} type="file" multiple onChange={handleUpload} className="hidden" />
       </div>
+
+      {monitoring && <MonitoringStatus siteId={siteId} monitoring={monitoring} />}
 
       {isEmpty ? (
         <div className="rounded-lg border border-dashed border-border p-5 text-center text-xs text-muted-foreground">
@@ -275,6 +338,203 @@ function CategorySection({
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Phase B — "Generate & send" for the Security Monitoring Response
+ * Instructions. Pre-fills the recipient from the site owner, POSTs to the
+ * send route which snapshots CRM data + catalogue fees into a tokenised
+ * public form link emailed from accounts@.
+ */
+function MonitoringSendButton({ siteId, monitoring }: { siteId: string; monitoring: MonitoringSectionData }) {
+  const router = useRouter();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(monitoring.defaultRecipientName ?? "");
+  const [email, setEmail] = useState(monitoring.defaultRecipientEmail ?? "");
+  const [sending, setSending] = useState(false);
+
+  const live = monitoring.requests.find((r) => r.status === "sent" || r.status === "viewed");
+  const isReissue = Boolean(monitoring.profile);
+
+  async function send() {
+    if (!email.trim()) {
+      toast("Recipient email is required", "error");
+      return;
+    }
+    setSending(true);
+    try {
+      const res = await fetch(`/api/sites/${siteId}/monitoring-form/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipientName: name.trim() || null, recipientEmail: email.trim() }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error ?? "Send failed");
+      toast(`Monitoring form v${json.version} sent to ${email.trim()}`);
+      setOpen(false);
+      router.refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Send failed", "error");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+      >
+        {isReissue ? "Re-issue Monitoring Form" : "Generate & Send Monitoring Form"}
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => !sending && setOpen(false)}>
+          <div className="surface-card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold">Security Monitoring Response Instructions</h3>
+            <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+              {isReissue
+                ? "The customer gets a link to the form pre-filled with their current instructions — they change what's needed and sign electronically."
+                : "The customer gets a link to a fillable form pre-filled with everything the CRM knows, chooses their alarm responses and signs electronically."}
+              {" "}Fees are pulled live from the recurring services catalogue. The signed PDF lands back here under Security Paperwork.
+            </p>
+            {live && (
+              <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-400">
+                A live link sent to {live.recipient_email} will be voided and replaced.
+              </p>
+            )}
+            <div className="mt-4 space-y-3">
+              <label className="block">
+                <span className="text-[11px] font-medium text-muted-foreground">Recipient name</span>
+                <input
+                  className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. the facility manager"
+                />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-medium text-muted-foreground">Recipient email</span>
+                <input
+                  className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@business.com.au"
+                />
+              </label>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                disabled={sending}
+                className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={send}
+                disabled={sending}
+                className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              >
+                {sending ? "Sending…" : "Send to customer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Live-link status + current monitoring profile summary for the security heading. */
+function MonitoringStatus({ siteId, monitoring }: { siteId: string; monitoring: MonitoringSectionData }) {
+  const { toast } = useToast();
+  const [resending, setResending] = useState(false);
+  const live = monitoring.requests.find((r) => r.status === "sent" || r.status === "viewed");
+  const profile = monitoring.profile;
+
+  async function copyLink(token: string) {
+    await navigator.clipboard.writeText(`${window.location.origin}/monitoring-form/${token}`);
+    toast("Form link copied");
+  }
+
+  async function resend(requestId: string) {
+    setResending(true);
+    try {
+      const res = await fetch(`/api/sites/${siteId}/monitoring-form/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resendRequestId: requestId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error ?? "Resend failed");
+      toast("Form link re-sent");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Resend failed", "error");
+    } finally {
+      setResending(false);
+    }
+  }
+
+  if (!live && !profile) return null;
+
+  return (
+    <div className="mb-3 space-y-2">
+      {live && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2">
+          <span className="text-[11px] font-semibold text-sky-400">
+            v{live.version} awaiting signature
+          </span>
+          <span className="text-[11px] text-muted-foreground">
+            {live.recipient_email}
+            {live.sent_at ? ` · sent ${new Date(live.sent_at).toLocaleDateString("en-AU")}` : ""}
+            {live.viewed_at ? ` · opened ${new Date(live.viewed_at).toLocaleDateString("en-AU")}` : " · not yet opened"}
+          </span>
+          <span className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => copyLink(live.token)}
+              className="rounded-md border border-border px-2 py-0.5 text-[11px] hover:bg-accent transition-colors"
+            >
+              Copy link
+            </button>
+            <button
+              type="button"
+              onClick={() => resend(live.id)}
+              disabled={resending}
+              className="rounded-md border border-border px-2 py-0.5 text-[11px] hover:bg-accent disabled:opacity-50 transition-colors"
+            >
+              {resending ? "Re-sending…" : "Re-send email"}
+            </button>
+          </span>
+        </div>
+      )}
+      {profile && (
+        <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-3 py-2">
+          <span className="mr-1 text-[11px] font-semibold text-muted-foreground">Monitoring profile:</span>
+          {Object.entries(profile.selections)
+            .filter(([, v]) => v)
+            .map(([key, value]) => (
+              <span
+                key={key}
+                className="inline-flex items-center rounded-full border border-border bg-background px-2 py-0.5 text-[10px] text-muted-foreground"
+              >
+                {SELECTION_LABELS[key] ?? key}{" "}
+                <span className="ml-1 font-semibold text-foreground uppercase">{String(value)}</span>
+              </span>
+            ))}
+          <span className="ml-auto text-[10px] text-muted-foreground">
+            updated {new Date(profile.updated_at).toLocaleDateString("en-AU")}
+          </span>
         </div>
       )}
     </div>
