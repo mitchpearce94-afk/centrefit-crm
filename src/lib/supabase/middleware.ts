@@ -15,7 +15,11 @@ import { NextResponse, type NextRequest } from "next/server";
  * in the dashboard layout) handles the "tab left open overnight" case by
  * triggering a signOut even without user navigation.
  */
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000;        // 30 minutes
+// Idle went 30min → 4h on 2026-07-06: the aggressive window was
+// compensating for password-only logins; with TOTP MFA enforced, one MFA
+// login per workday (12h cap) is the stronger overall posture. The vault
+// keeps its own unlock regardless.
+const IDLE_TIMEOUT_MS = 4 * 60 * 60 * 1000;    // 4 hours
 const MAX_SESSION_MS = 12 * 60 * 60 * 1000;    // 12 hours
 
 const LAST_ACTIVITY_COOKIE = "cf-last-activity";

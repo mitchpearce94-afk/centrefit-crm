@@ -13,7 +13,9 @@ import { createClient } from "@/lib/supabase/client";
  * Mirrors the server-side window in src/lib/supabase/middleware.ts. Keep both
  * in sync if you tune the policy.
  */
-const IDLE_MS = 30 * 60 * 1000;
+// Keep in lockstep with IDLE_TIMEOUT_MS in src/lib/supabase/middleware.ts
+// (4h since 2026-07-06 — MFA made the 30-min window unnecessary friction).
+const IDLE_MS = 4 * 60 * 60 * 1000;
 
 const ACTIVITY_EVENTS = ["mousemove", "keydown", "click", "scroll", "touchstart"] as const;
 
