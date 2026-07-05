@@ -18,10 +18,15 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   const sb = createServiceRoleClient();
   const { data: sheet } = await sb
     .from("datasheets")
-    .select("model, manufacturer, storage_path")
+    .select("model, manufacturer, storage_path, source_url")
     .eq("id", id)
     .maybeSingle();
-  if (!sheet?.storage_path) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!sheet) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // Web-only entries (no stored PDF) bounce to the manufacturer's page.
+  if (!sheet.storage_path) {
+    if (sheet.source_url) return NextResponse.redirect(sheet.source_url);
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   const { data, error } = await sb.storage.from("datasheets").download(sheet.storage_path);
   if (error || !data) return NextResponse.json({ error: "Not found" }, { status: 404 });

@@ -84,7 +84,13 @@ interface DatasheetRow {
   manufacturer: string | null;
   product_name: string;
   match_models: string[];
-  storage_path: string;
+  storage_path: string | null;
+  /** Manufacturer web page for gear with no published PDF (Ubiquiti fleet). */
+  source_url: string | null;
+}
+
+function sheetLink(sheet: DatasheetRow): string | null {
+  return sheet.storage_path ? datasheetPublicUrl(sheet.id) : sheet.source_url;
 }
 
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL || "https://crm.centrefit.com.au").replace(/\/$/, "");
@@ -109,7 +115,7 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
       .select("device_name, manufacturer, model, is_active, wifi_ssids, asset_type:asset_types!asset_type_id(slug, name, category, is_key_info)")
       .eq("site_id", siteId)
       .eq("is_active", true),
-    sb.from("datasheets").select("id, model, manufacturer, product_name, match_models, storage_path"),
+    sb.from("datasheets").select("id, model, manufacturer, product_name, match_models, storage_path, source_url"),
   ]);
 
   if (siteResult.error || !siteResult.data) throw new Error("Site not found");
@@ -141,7 +147,7 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
           productName: solution.product_name,
           blurb: PRODUCT_BLURBS[solution.model] ?? "",
           storagePath: solution.storage_path,
-          publicUrl: datasheetPublicUrl(solution.id),
+          publicUrl: sheetLink(solution),
         });
       }
       continue;
@@ -166,7 +172,7 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
         productName: sheet.product_name,
         blurb: PRODUCT_BLURBS[sheet.model] ?? `Datasheet for the ${sheet.product_name} installed in the facility.`,
         storagePath: sheet.storage_path,
-        publicUrl: datasheetPublicUrl(sheet.id),
+        publicUrl: sheetLink(sheet),
       });
     } else {
       // Key equipment with no library datasheet still appears in the pack —
