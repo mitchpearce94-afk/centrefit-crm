@@ -61,14 +61,14 @@ export default async function DashboardPage({
     // Today's entries — include multi-day overlaps so an install that
     // started yesterday and runs through Friday still shows today.
     supabase.from("schedule_entries")
-      .select("id, schedule_date, end_date, start_time, end_time, notes, staff_id, entry_type, title, staff:staff(id, display_name, initials, colour), job:jobs(id, number, customer:customers(name), site:customer_sites(name), job_staff(staff_id))")
+      .select("id, schedule_date, end_date, start_time, end_time, notes, staff_id, entry_type, title, staff:staff!schedule_entries_staff_id_fkey(id, display_name, initials, colour), job:jobs(id, number, customer:customers(name), site:customer_sites(name), job_staff(staff_id))")
       .lte("schedule_date", todayISO)
       .or(`end_date.gte.${todayISO},and(end_date.is.null,schedule_date.eq.${todayISO})`)
       .order("start_time"),
     // Upcoming entries — include multi-day overlaps for the
     // [tomorrow, weekEnd] window, same shape the scheduler page uses.
     supabase.from("schedule_entries")
-      .select("id, schedule_date, end_date, start_time, end_time, notes, staff_id, entry_type, title, staff:staff(id, display_name, initials, colour), job:jobs(id, number, customer:customers(name), site:customer_sites(name), job_staff(staff_id))")
+      .select("id, schedule_date, end_date, start_time, end_time, notes, staff_id, entry_type, title, staff:staff!schedule_entries_staff_id_fkey(id, display_name, initials, colour), job:jobs(id, number, customer:customers(name), site:customer_sites(name), job_staff(staff_id))")
       .lte("schedule_date", weekEndISO)
       .or(`end_date.gte.${tomorrowISO},and(end_date.is.null,schedule_date.gte.${tomorrowISO})`)
       .order("schedule_date")
@@ -588,7 +588,11 @@ function StatCard({ label, value, href, warning, sublabel, accent }: { label: st
 }
 
 function isoDate(d: Date): string {
-  return d.toISOString().split("T")[0];
+  // Brisbane calendar date — toISOString() is always UTC, which put the
+  // whole dashboard a day behind between midnight and 10am AEST (the
+  // mobile Today view showed yesterday's — usually empty — schedule).
+  // en-CA formats as YYYY-MM-DD.
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Brisbane" }).format(d);
 }
 
 function addDays(d: Date, n: number): Date {
