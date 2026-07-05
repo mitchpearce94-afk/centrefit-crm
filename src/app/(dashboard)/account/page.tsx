@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AccountForm } from "./account-form";
+import { PasskeysSection } from "./passkeys-section";
 
 export default async function AccountPage() {
   const supabase = await createClient();
@@ -19,8 +20,9 @@ export default async function AccountPage() {
     <div className="max-w-2xl">
       <h1 className="text-3xl font-semibold tracking-tight">My account</h1>
       <p className="mt-1 text-sm text-muted-foreground">Update your details and password.</p>
-      <div className="mt-6">
+      <div className="mt-6 space-y-6">
         <AccountForm staff={staff} />
+        <PasskeysSection />
       </div>
     </div>
   );

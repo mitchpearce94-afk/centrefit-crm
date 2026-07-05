@@ -54,6 +54,26 @@ export default function LoginPage() {
     }
   }
 
+  // One-tap passkey sign-in (Windows Hello / Face ID / Touch ID). The
+  // discoverable-credential ceremony resolves the account itself — no email
+  // needed — and middleware treats it as MFA-satisfied (no TOTP step).
+  async function handlePasskey() {
+    setLoading(true);
+    setError(null);
+    const { error } = await supabase.auth.signInWithPasskey();
+    if (error) {
+      setError(
+        error.message.toLowerCase().includes("cancel")
+          ? "Passkey sign-in was cancelled."
+          : `Passkey sign-in failed: ${error.message}. Use your password instead, then add a passkey from Account.`,
+      );
+      setLoading(false);
+    } else {
+      router.push("/");
+      router.refresh();
+    }
+  }
+
   return (
     <div className="relative flex min-h-dvh items-center justify-center px-4 overflow-hidden">
       {/* Ambient gradient backdrop */}
@@ -145,6 +165,24 @@ export default function LoginPage() {
             >
               Forgot your password?
             </Link>
+
+            <div className="flex items-center gap-3 pt-1">
+              <span className="h-px flex-1 bg-border" />
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">or</span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+
+            <button
+              type="button"
+              onClick={handlePasskey}
+              disabled={loading}
+              className="w-full rounded-md border border-border bg-transparent px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+            >
+              Sign in with a passkey
+            </button>
+            <p className="text-center text-[10px] text-muted-foreground -mt-2">
+              Face ID, Windows Hello or your password manager — add one from Account after signing in.
+            </p>
           </form>
         </div>
 

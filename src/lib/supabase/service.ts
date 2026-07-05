@@ -23,5 +23,9 @@ export function createServiceRoleClient() {
       getAll: () => [],
       setAll: () => {},
     },
+    auth: {
+      // Enables auth.admin.passkey.* (admin MFA/passkey reset flows).
+      experimental: { passkey: true },
+    },
   });
 }

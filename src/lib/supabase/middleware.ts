@@ -115,8 +115,18 @@ export async function updateSession(request: NextRequest) {
   let needsEnrol = false;
   if (user) {
     const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    needsVerify = aal?.nextLevel === "aal2" && aal?.currentLevel !== "aal2";
-    needsEnrol = aal?.nextLevel === "aal1";
+    // A passkey sign-in is possession + biometric in one phishing-resistant
+    // ceremony — treated as MFA-satisfied, no TOTP step. Detected from the
+    // session's AMR claim (entries may be strings or {method} objects).
+    const methods = (aal?.currentAuthenticationMethods ?? []) as Array<string | { method: string }>;
+    const passkeyAuthed = methods.some((m) => {
+      const name = typeof m === "string" ? m : m?.method ?? "";
+      return name.includes("passkey") || name.includes("webauthn");
+    });
+    if (!passkeyAuthed) {
+      needsVerify = aal?.nextLevel === "aal2" && aal?.currentLevel !== "aal2";
+      needsEnrol = aal?.nextLevel === "aal1";
+    }
   }
 
   function redirectTo(path: string) {
