@@ -4,7 +4,7 @@ import { SyncToXeroButton } from "./sync-to-xero-button";
 
 export default async function SettingsProductsPage() {
   const supabase = await createClient();
-  const [{ data: products }, { data: suppliers }, { data: scopeRoles }, { data: labourTimings }, { data: assetTypes }, { data: subcategories }, { data: xeroConn }] =
+  const [{ data: products }, { data: suppliers }, { data: scopeRoles }, { data: labourTimings }, { data: assetTypes }, { data: subcategories }, { data: xeroConn }, { data: offers }] =
     await Promise.all([
       supabase.from("quote_products").select("*").order("category, name"),
       supabase.from("suppliers").select("id, name").eq("is_active", true).order("name"),
@@ -26,6 +26,11 @@ export default async function SettingsProductsPage() {
         .select("id, tenant_name, last_sync_at")
         .limit(1)
         .maybeSingle(),
+      supabase
+        .from("product_supplier_offers")
+        .select("id, product_id, supplier_id, supplier_sku, supplier_item_name, cost_price, cost_updated_at, is_preferred")
+        .order("is_preferred", { ascending: false })
+        .order("cost_price", { ascending: true }),
     ]);
 
   return (
@@ -40,7 +45,7 @@ export default async function SettingsProductsPage() {
         <SyncToXeroButton connected={!!xeroConn} tenantName={xeroConn?.tenant_name ?? null} />
       </div>
       <div className="mt-5">
-        <ProductCatalog products={products ?? []} suppliers={suppliers ?? []} scopeRoles={scopeRoles ?? []} labourTimings={labourTimings ?? []} assetTypes={assetTypes ?? []} subcategories={subcategories ?? []} />
+        <ProductCatalog products={products ?? []} suppliers={suppliers ?? []} scopeRoles={scopeRoles ?? []} labourTimings={labourTimings ?? []} assetTypes={assetTypes ?? []} subcategories={subcategories ?? []} offers={offers ?? []} />
       </div>
     </div>
   );

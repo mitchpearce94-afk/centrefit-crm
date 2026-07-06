@@ -45,6 +45,20 @@ interface Supplier {
   name: string;
 }
 
+// One supplier's offer for a product (products-CONTEXT.md D1): their SKU,
+// their item name, their cost. The preferred offer mirrors onto the product
+// row via DB trigger, so flipping the star here re-prices future quotes.
+export interface ProductOffer {
+  id: string;
+  product_id: string;
+  supplier_id: string;
+  supplier_sku: string | null;
+  supplier_item_name: string | null;
+  cost_price: number;
+  cost_updated_at: string | null;
+  is_preferred: boolean;
+}
+
 interface ScopeRoleOption {
   slug: string;
   label: string;
@@ -79,6 +93,7 @@ export function ProductCatalog({
   labourTimings,
   assetTypes,
   subcategories,
+  offers = [],
 }: {
   products: Product[];
   suppliers: Supplier[];
@@ -86,6 +101,7 @@ export function ProductCatalog({
   labourTimings: LabourTimingOption[];
   assetTypes: AssetTypeOption[];
   subcategories: ProductSubcategory[];
+  offers?: ProductOffer[];
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -124,6 +140,17 @@ export function ProductCatalog({
     () => [...suppliers].sort((a, b) => a.name.localeCompare(b.name)),
     [suppliers]
   );
+  // Offers grouped per product, preferred first (server pre-sorts).
+  const offersByProduct = useMemo(() => {
+    const m = new Map<string, ProductOffer[]>();
+    for (const o of offers) {
+      const list = m.get(o.product_id) ?? [];
+      list.push(o);
+      m.set(o.product_id, list);
+    }
+    return m;
+  }, [offers]);
+  const [offersOpenId, setOffersOpenId] = useState<string | null>(null);
   // Inline asset-type tag — drives the BOM->assets import (only products mapped
   // to a trackable asset type become asset shells). Saves on change.
   async function saveAssetType(productId: string, assetTypeId: string) {
@@ -587,7 +614,14 @@ export function ProductCatalog({
                             </div>
                           </td>
                           <td className="px-3 py-2 text-xs text-muted-foreground font-mono hidden md:table-cell">{p.sku || "—"}</td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">{p.supplier}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">
+                            {p.supplier}
+                            {(offersByProduct.get(p.id)?.length ?? 0) > 1 && (
+                              <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px]" title="Number of suppliers with pricing for this product">
+                                +{(offersByProduct.get(p.id)!.length - 1)}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-3 py-2 text-right text-xs font-mono">${p.cost_price.toFixed(2)}</td>
                           <td className="px-3 py-2 text-right text-xs font-mono text-muted-foreground">{(p.markup * 100).toFixed(0)}%</td>
                           <td className="px-3 py-2 text-right text-xs font-mono">${p.sell_price.toFixed(2)}</td>
@@ -595,6 +629,13 @@ export function ProductCatalog({
                             {p.is_default && <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">Default</span>}
                           </td>
                           <td className="px-3 py-2 text-right space-x-2">
+                            <button
+                              onClick={() => setOffersOpenId(offersOpenId === p.id ? null : p.id)}
+                              className={`text-xs transition-colors ${offersOpenId === p.id ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                              title="Per-supplier pricing — star an offer to make it drive quotes"
+                            >
+                              Suppliers ({offersByProduct.get(p.id)?.length ?? 0})
+                            </button>
                             <button onClick={() => setEditingId(p.id)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Edit</button>
                             <RowXeroSyncButton productId={p.id} hasSku={!!p.sku && p.sku.trim() !== ""} />
                             <button onClick={() => toggleActive(p.id, p.is_active)} className={`text-xs transition-colors ${p.is_active ? "text-muted-foreground hover:text-red-400" : "text-emerald-500 hover:text-emerald-400"}`}>
@@ -602,6 +643,17 @@ export function ProductCatalog({
                             </button>
                           </td>
                         </tr>
+                        {offersOpenId === p.id && (
+                          <tr className="border-b border-border bg-muted/20">
+                            <td colSpan={8} className="px-3 py-3">
+                              <OffersPanel
+                                product={p}
+                                offers={offersByProduct.get(p.id) ?? []}
+                                suppliers={sortedSuppliers}
+                              />
+                            </td>
+                          </tr>
+                        )}
                       </Fragment>
                     ))}
                   </tbody>
@@ -1469,6 +1521,196 @@ function NewLabourTimingInline({
           {busy ? "Creating…" : "Create timing"}
         </button>
       </div>
+    </div>
+  );
+}
+
+/* ── Per-product supplier offers (products-CONTEXT.md D1/D2) ──
+   Star = preferred: a DB trigger demotes siblings and mirrors that offer's
+   supplier + cost onto the product row, which is what quotes/POs read. */
+function OffersPanel({
+  product,
+  offers,
+  suppliers,
+}: {
+  product: { id: string; name: string; supplier_id: string | null };
+  offers: ProductOffer[];
+  suppliers: Supplier[];
+}) {
+  const router = useRouter();
+  const supabase = createClient();
+  const { toast } = useToast();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [costEdit, setCostEdit] = useState<Record<string, string>>({});
+  const [adding, setAdding] = useState(false);
+  const [newSupplierId, setNewSupplierId] = useState("");
+  const [newSku, setNewSku] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newCost, setNewCost] = useState("");
+
+  const supplierName = (id: string) => suppliers.find((s) => s.id === id)?.name ?? "—";
+  const takenSupplierIds = new Set(offers.map((o) => o.supplier_id));
+  const availableSuppliers = suppliers.filter((s) => !takenSupplierIds.has(s.id));
+
+  async function setPreferred(offer: ProductOffer) {
+    if (offer.is_preferred) return;
+    setBusyId(offer.id);
+    const { error } = await supabase
+      .from("product_supplier_offers")
+      .update({ is_preferred: true })
+      .eq("id", offer.id);
+    setBusyId(null);
+    if (error) { toast(error.message, "error"); return; }
+    toast(`${supplierName(offer.supplier_id)} now prices ${product.name}`);
+    router.refresh();
+  }
+
+  async function saveCost(offer: ProductOffer) {
+    const raw = costEdit[offer.id];
+    if (raw == null || raw.trim() === "") return;
+    const val = Number(raw);
+    if (!Number.isFinite(val) || val < 0) { toast("Invalid cost", "error"); return; }
+    setBusyId(offer.id);
+    const { error } = await supabase
+      .from("product_supplier_offers")
+      .update({ cost_price: val, cost_updated_at: new Date().toISOString() })
+      .eq("id", offer.id);
+    setBusyId(null);
+    if (error) { toast(error.message, "error"); return; }
+    setCostEdit((m) => { const n = { ...m }; delete n[offer.id]; return n; });
+    router.refresh();
+  }
+
+  async function removeOffer(offer: ProductOffer) {
+    if (offer.is_preferred) { toast("Make another offer preferred first", "error"); return; }
+    setBusyId(offer.id);
+    const { error } = await supabase.from("product_supplier_offers").delete().eq("id", offer.id);
+    setBusyId(null);
+    if (error) { toast(error.message, "error"); return; }
+    router.refresh();
+  }
+
+  async function addOffer() {
+    if (!newSupplierId) { toast("Pick a supplier", "error"); return; }
+    const val = Number(newCost);
+    if (!Number.isFinite(val) || val < 0) { toast("Invalid cost", "error"); return; }
+    setBusyId("new");
+    const { error } = await supabase.from("product_supplier_offers").insert({
+      product_id: product.id,
+      supplier_id: newSupplierId,
+      supplier_sku: newSku.trim() || null,
+      supplier_item_name: newName.trim() || null,
+      cost_price: val,
+      cost_updated_at: new Date().toISOString(),
+      is_preferred: false,
+    });
+    setBusyId(null);
+    if (error) { toast(error.message, "error"); return; }
+    setAdding(false);
+    setNewSupplierId(""); setNewSku(""); setNewName(""); setNewCost("");
+    router.refresh();
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Supplier pricing — star drives quotes &amp; POs
+        </span>
+        {!adding && availableSuppliers.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
+          >
+            + Add supplier offer
+          </button>
+        )}
+      </div>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+            <th className="py-1 pr-2 w-8"></th>
+            <th className="py-1 pr-3">Supplier</th>
+            <th className="py-1 pr-3">Their SKU</th>
+            <th className="py-1 pr-3 hidden md:table-cell">Their item name</th>
+            <th className="py-1 pr-3 text-right">Cost</th>
+            <th className="py-1 pr-3 hidden sm:table-cell">Updated</th>
+            <th className="py-1 text-right"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {offers.map((o) => (
+            <tr key={o.id} className="border-t border-border/60">
+              <td className="py-1.5 pr-2">
+                <button
+                  type="button"
+                  onClick={() => setPreferred(o)}
+                  disabled={busyId === o.id}
+                  title={o.is_preferred ? "Preferred — this offer prices quotes and POs" : "Make preferred"}
+                  className={`text-sm transition-colors ${o.is_preferred ? "text-amber-400" : "text-muted-foreground/40 hover:text-amber-400"}`}
+                >
+                  {o.is_preferred ? "★" : "☆"}
+                </button>
+              </td>
+              <td className="py-1.5 pr-3 font-medium">{supplierName(o.supplier_id)}</td>
+              <td className="py-1.5 pr-3 font-mono text-muted-foreground">{o.supplier_sku || "—"}</td>
+              <td className="py-1.5 pr-3 text-muted-foreground hidden md:table-cell truncate max-w-[280px]">{o.supplier_item_name || "—"}</td>
+              <td className="py-1.5 pr-3 text-right font-mono">
+                <input
+                  value={costEdit[o.id] ?? o.cost_price.toFixed(2)}
+                  onChange={(e) => setCostEdit((m) => ({ ...m, [o.id]: e.target.value }))}
+                  onBlur={() => saveCost(o)}
+                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                  className="w-20 rounded border border-border bg-input px-1.5 py-0.5 text-right font-mono text-xs focus:border-primary focus:outline-none"
+                />
+              </td>
+              <td className="py-1.5 pr-3 text-muted-foreground hidden sm:table-cell">
+                {o.cost_updated_at ? new Date(o.cost_updated_at).toLocaleDateString("en-AU") : "—"}
+              </td>
+              <td className="py-1.5 text-right">
+                {!o.is_preferred && (
+                  <button
+                    type="button"
+                    onClick={() => removeOffer(o)}
+                    disabled={busyId === o.id}
+                    className="text-[11px] text-muted-foreground hover:text-red-400 transition-colors"
+                  >
+                    Remove
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+          {adding && (
+            <tr className="border-t border-border/60">
+              <td className="py-1.5 pr-2"></td>
+              <td className="py-1.5 pr-3">
+                <select value={newSupplierId} onChange={(e) => setNewSupplierId(e.target.value)} className="rounded border border-border bg-input px-1.5 py-1 text-xs focus:border-primary focus:outline-none">
+                  <option value="">Supplier…</option>
+                  {availableSuppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </td>
+              <td className="py-1.5 pr-3">
+                <input value={newSku} onChange={(e) => setNewSku(e.target.value)} placeholder="their SKU" className="w-28 rounded border border-border bg-input px-1.5 py-1 font-mono text-xs focus:border-primary focus:outline-none" />
+              </td>
+              <td className="py-1.5 pr-3 hidden md:table-cell">
+                <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="their item name" className="w-full rounded border border-border bg-input px-1.5 py-1 text-xs focus:border-primary focus:outline-none" />
+              </td>
+              <td className="py-1.5 pr-3 text-right">
+                <input value={newCost} onChange={(e) => setNewCost(e.target.value)} placeholder="0.00" className="w-20 rounded border border-border bg-input px-1.5 py-1 text-right font-mono text-xs focus:border-primary focus:outline-none" />
+              </td>
+              <td className="py-1.5 pr-3 hidden sm:table-cell"></td>
+              <td className="py-1.5 text-right space-x-2 whitespace-nowrap">
+                <button type="button" onClick={() => setAdding(false)} className="text-[11px] text-muted-foreground hover:text-foreground transition-colors">Cancel</button>
+                <button type="button" onClick={addOffer} disabled={busyId === "new"} className="text-[11px] font-semibold text-primary hover:text-primary/80 disabled:opacity-50 transition-colors">
+                  {busyId === "new" ? "Adding…" : "Add"}
+                </button>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

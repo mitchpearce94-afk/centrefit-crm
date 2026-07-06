@@ -2,10 +2,12 @@
 
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
 
 export interface ProcurementItem {
   id: string;
+  product_id: string | null;
   product_name: string;
   sku: string | null;
   quantity: number;
@@ -24,13 +26,28 @@ export interface ProcurementItem {
 }
 
 /**
- * Effective cost for a procurement line: the LIVE catalogue price
- * (quote_products.cost_price) wins when set, falling back to the quote-time
- * snapshot (quote_line_items.cost_price). Mirrors resolveCost in the PO
- * generate route so the screen's "no cost price" warning matches the price
- * the PO will actually use — and reflects later product-price edits.
+ * Per-supplier offer for a (product × supplier) pair — the actual supplier's
+ * own SKU, item name and cost (products-CONTEXT.md D6). When a line's actual
+ * supplier has an offer, that price wins and order sheets print THEIR part
+ * numbers, not ours.
  */
-function effectiveCost(i: ProcurementItem): number {
+export interface SupplierOffer {
+  product_id: string;
+  supplier_id: string;
+  supplier_sku: string | null;
+  supplier_item_name: string | null;
+  cost_price: number;
+}
+
+/**
+ * Effective cost for a procurement line: the actual supplier's offer wins,
+ * then the LIVE catalogue price (quote_products.cost_price = preferred
+ * offer), then the quote-time snapshot (quote_line_items.cost_price).
+ * Mirrors resolveCost in the PO generate route so the screen's "no cost
+ * price" warning matches the price the PO will actually use.
+ */
+function effectiveCost(i: ProcurementItem, offer?: SupplierOffer | null): number {
+  if (offer && Number(offer.cost_price) > 0) return Number(offer.cost_price);
   const live = Number(i.product?.cost_price ?? 0);
   return live > 0 ? live : Number(i.line?.cost_price ?? 0);
 }
@@ -96,6 +113,36 @@ export function JobProcurement({
     return (id: string | null) => (id ? m.get(id) ?? "—" : "—");
   }, [suppliers]);
 
+  // Supplier offers for every product on this job, keyed product:supplier.
+  // Fetched client-side so both mounts (job tab + procurement board) get
+  // offer-aware pricing without threading props through two server pages.
+  const [offers, setOffers] = useState<Map<string, SupplierOffer>>(new Map());
+  const productIdsKey = useMemo(
+    () => Array.from(new Set(items.map((i) => i.product_id).filter(Boolean))).sort().join(","),
+    [items],
+  );
+  useEffect(() => {
+    if (!productIdsKey) return;
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("product_supplier_offers")
+        .select("product_id, supplier_id, supplier_sku, supplier_item_name, cost_price")
+        .in("product_id", productIdsKey.split(","));
+      if (cancelled || !data) return;
+      const m = new Map<string, SupplierOffer>();
+      for (const o of data as SupplierOffer[]) m.set(`${o.product_id}:${o.supplier_id}`, o);
+      setOffers(m);
+    })();
+    return () => { cancelled = true; };
+  }, [productIdsKey]);
+
+  const offerFor = (i: ProcurementItem): SupplierOffer | null =>
+    i.product_id && i.actual_supplier_id
+      ? offers.get(`${i.product_id}:${i.actual_supplier_id}`) ?? null
+      : null;
+
   const hasItems = items.length > 0;
   const orderCount = useMemo(() => items.filter((i) => i.status === "order").length, [items]);
   const unassignedOrderCount = useMemo(
@@ -103,8 +150,9 @@ export function JobProcurement({
     [items],
   );
   const zeroPricedOrderCount = useMemo(
-    () => items.filter((i) => i.status === "order" && effectiveCost(i) <= 0).length,
-    [items],
+    () => items.filter((i) => i.status === "order" && effectiveCost(i, offerFor(i)) <= 0).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, offers],
   );
   const supplierOrderCount = useMemo(
     () => items.filter((i) => i.status === "order" || i.status === "ordered").length,
@@ -372,13 +420,19 @@ export function JobProcurement({
     for (const [supplier, supItems] of sorted) {
       let rowsHtml = "";
       for (const it of supItems) {
+        // Print the supplier's OWN item name and SKU when we hold an offer
+        // from the line's actual supplier — their pickers can't do anything
+        // with our internal naming (products-CONTEXT.md D6).
+        const offer = offerFor(it);
+        const displayName = offer?.supplier_item_name || it.product_name;
+        const displaySku = offer?.supplier_sku || it.sku;
         rowsHtml += `<tr style="border-bottom:1px solid #f1f5f9">
-          <td style="padding:8px;font-weight:500">${it.product_name}${
+          <td style="padding:8px;font-weight:500">${displayName}${
             it.status === "ordered" && it.xero_po_number
               ? ` <span style="font-size:10px;color:#6366f1;font-family:monospace">${it.xero_po_number}</span>`
               : ""
           }</td>
-          <td style="padding:8px;font-family:monospace;color:#64748b;font-size:12px">${it.sku || "—"}</td>
+          <td style="padding:8px;font-family:monospace;color:#64748b;font-size:12px">${displaySku || "—"}</td>
           <td style="padding:8px;text-align:right;font-weight:600">${it.quantity}</td>
         </tr>`;
       }
@@ -698,7 +752,7 @@ export function JobProcurement({
               const isLocked = !editable;
               const rowBusy = busy === item.id;
               const noCost =
-                item.status === "order" && effectiveCost(item) <= 0;
+                item.status === "order" && effectiveCost(item, offerFor(item)) <= 0;
               const cat = item.product?.category || "Uncategorised";
               const showCatHeader = cat !== prevCat;
               prevCat = cat;

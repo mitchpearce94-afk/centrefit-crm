@@ -103,9 +103,38 @@ export async function POST(
     }
   }
 
-  // Resolve the unit cost for a row: live catalogue price wins, then the
-  // quote-time snapshot, then 0 (surfaced to the UI as zero-priced).
+  // Per-supplier offers for these products (products-CONTEXT.md D6): when a
+  // line's actual supplier holds an offer, the PO must use THAT supplier's
+  // price and part number — not the preferred supplier's mirrored on the
+  // product row. Keyed product_id:supplier_id.
+  interface OfferRow {
+    product_id: string;
+    supplier_id: string;
+    supplier_sku: string | null;
+    supplier_item_name: string | null;
+    cost_price: number | null;
+  }
+  const offerMap = new Map<string, OfferRow>();
+  if (productIds.length > 0) {
+    const { data: offerRows } = await supabase
+      .from("product_supplier_offers")
+      .select("product_id, supplier_id, supplier_sku, supplier_item_name, cost_price")
+      .in("product_id", productIds);
+    for (const o of (offerRows ?? []) as OfferRow[]) {
+      offerMap.set(`${o.product_id}:${o.supplier_id}`, o);
+    }
+  }
+  const offerFor = (it: ItemRow): OfferRow | null =>
+    it.product_id && it.actual_supplier_id
+      ? offerMap.get(`${it.product_id}:${it.actual_supplier_id}`) ?? null
+      : null;
+
+  // Resolve the unit cost for a row: the actual supplier's offer wins, then
+  // the live catalogue price (preferred offer), then the quote-time snapshot,
+  // then 0 (surfaced to the UI as zero-priced).
   const resolveCost = (it: ItemRow): number => {
+    const offer = offerFor(it);
+    if (offer && Number(offer.cost_price) > 0) return Number(offer.cost_price);
     const live = it.product_id ? liveProducts.get(it.product_id)?.cost_price : null;
     if (live != null && Number(live) > 0) return Number(live);
     return Number(it.quote_line_items?.cost_price ?? 0);
@@ -220,8 +249,13 @@ export async function POST(
         // SKU was edited in settings after the quote was built.
         const catalogueSku = r.product_id ? liveProducts.get(r.product_id)?.sku : null;
         const itemCode = synced && catalogueSku ? catalogueSku.slice(0, 30) : undefined;
-        const description =
-          !itemCode && r.sku ? `${r.product_name} (${r.sku})` : r.product_name;
+        // When this supplier holds an offer, the description carries THEIR
+        // item name and part number so the PO makes sense on their side —
+        // the ItemCode stays our catalogue SKU for Xero item tracking (D3).
+        const offer = offerFor(r);
+        const description = offer && (offer.supplier_item_name || offer.supplier_sku)
+          ? `${offer.supplier_item_name ?? r.product_name}${offer.supplier_sku ? ` (${offer.supplier_sku})` : ""}`
+          : !itemCode && r.sku ? `${r.product_name} (${r.sku})` : r.product_name;
         return {
           description,
           itemCode,
