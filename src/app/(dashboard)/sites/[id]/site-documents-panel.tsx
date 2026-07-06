@@ -90,6 +90,17 @@ function fmtSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// The plan builder can take a PDF (full pdf.js pipeline) or a plain image
+// as its base plan; anything else has no sensible canvas representation.
+function canUseAsBasePlan(doc: SiteDocumentRow): boolean {
+  const mime = doc.mime_type ?? "";
+  return (
+    mime === "application/pdf" ||
+    mime.startsWith("image/") ||
+    /\.(pdf|png|jpe?g|webp)$/i.test(doc.name)
+  );
+}
+
 export function SiteDocumentsPanel({
   siteId,
   documents,
@@ -244,6 +255,26 @@ function CategorySection({
     window.open(data.signedUrl, "_blank", "noopener");
   }
 
+  // Signed URL with the download option → Supabase serves the exact stored
+  // bytes with Content-Disposition: attachment under the original filename,
+  // so the browser saves it instead of opening a viewer tab.
+  async function downloadDocument(doc: SiteDocumentRow) {
+    if (!doc.storage_path) return;
+    const { data, error } = await supabase.storage
+      .from("site-documents")
+      .createSignedUrl(doc.storage_path, 3600, { download: doc.name });
+    if (error || !data?.signedUrl) {
+      toast(error?.message ?? "Couldn't download document", "error");
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = data.signedUrl;
+    a.download = doc.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
   function handleDeleteClick(docId: string) {
     if (confirmingDeleteId !== docId) {
       setConfirmingDeleteId(docId);
@@ -377,6 +408,22 @@ function CategorySection({
                       {doc.status}
                     </span>
                   )}
+                  {category.key === "plans" && canUseAsBasePlan(doc) && (
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/plans/new?fresh=1&baseDoc=${doc.id}`)}
+                      className="rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary hover:bg-primary/10 transition-colors"
+                    >
+                      Use in Plan Builder
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void downloadDocument(doc)}
+                    className="rounded-md border border-border px-2.5 py-1 text-[11px] hover:bg-accent transition-colors"
+                  >
+                    Download
+                  </button>
                   {isAdmin && (
                     <button
                       type="button"

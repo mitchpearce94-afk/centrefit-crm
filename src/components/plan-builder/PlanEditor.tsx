@@ -17,7 +17,7 @@ const PlanCanvas = dynamic(() => import('@/components/plan-builder/canvas/PlanCa
   ),
 });
 
-export default function PlanEditor({ jobs = [] }: { jobs?: JobOption[] }) {
+export default function PlanEditor({ jobs = [], baseDocId = null }: { jobs?: JobOption[]; baseDocId?: string | null }) {
   const isDirty = usePlanStore(s => s.isDirty);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [pendingPopState, setPendingPopState] = useState(false);
@@ -83,7 +83,7 @@ export default function PlanEditor({ jobs = [] }: { jobs?: JobOption[] }) {
     <div className="flex flex-col bg-gray-950 text-white overflow-hidden -m-4 md:-m-6 h-[calc(100dvh-3.5rem)] lg:h-[calc(100dvh-3rem)]">
       {/* Toolbar */}
       <div className="flex-shrink-0">
-        <Toolbar jobs={jobs} />
+        <Toolbar jobs={jobs} baseDocId={baseDocId} />
       </div>
 
       {/* Main content */}

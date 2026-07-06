@@ -2,8 +2,9 @@ import { createClient } from '@/lib/supabase/server';
 import PlanEditor from '@/components/plan-builder/PlanEditor';
 import { PlanStoreInit } from './plan-store-init';
 
-export default async function NewPlanPage({ searchParams }: { searchParams: Promise<{ fresh?: string }> }) {
+export default async function NewPlanPage({ searchParams }: { searchParams: Promise<{ fresh?: string; baseDoc?: string }> }) {
   const params = await searchParams;
+  const baseDocId = params.baseDoc ?? null;
   const supabase = await createClient();
 
   // Pull completion-phase statuses (Complete / Cancelled / etc.) to exclude
@@ -38,11 +39,13 @@ export default async function NewPlanPage({ searchParams }: { searchParams: Prom
   const { data: jobsRaw } = await jobsQuery;
   const jobs = (jobsRaw ?? []).filter((j: { id: string }) => !linkedJobIds.has(j.id));
 
-  return params.fresh ? (
+  // A base document implies a fresh start too — never drop a site plan on
+  // top of whatever project is lingering in the store.
+  return params.fresh || baseDocId ? (
     <PlanStoreInit>
-      <PlanEditor jobs={jobs} />
+      <PlanEditor jobs={jobs} baseDocId={baseDocId} />
     </PlanStoreInit>
   ) : (
-    <PlanEditor jobs={jobs} />
+    <PlanEditor jobs={jobs} baseDocId={baseDocId} />
   );
 }

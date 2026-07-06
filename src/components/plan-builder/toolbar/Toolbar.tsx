@@ -40,7 +40,7 @@ function jobLabel(j: JobOption): string {
   return `${head}${tail}${ref}`;
 }
 
-export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
+export default function Toolbar({ jobs = [], baseDocId = null }: { jobs?: JobOption[]; baseDocId?: string | null }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
   const [showPageSelector, setShowPageSelector] = useState(false);
@@ -76,23 +76,30 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
 
   const [loadingPdf, setLoadingPdf] = useState(false);
 
+  // Shared by the toolbar's file input and the site-documentation "Use in
+  // Plan Builder" flow: single-page PDFs load straight in, multi-page PDFs
+  // go through the page selector.
+  const loadPdfFile = async (file: File) => {
+    const pages = await getPdfPages(file);
+    if (pages.length === 1) {
+      setLoadingPdf(true);
+      const { dataUrl, width, height, elements } = await renderPdfPageWithElements(file, 1);
+      setBackground(dataUrl, width, height, file.name);
+      setPdfSource(file, 1);
+      setPdfElements(elements);
+      setLoadingPdf(false);
+    } else {
+      setPdfPages(pages);
+      setPendingFile(file);
+      setShowPageSelector(true);
+    }
+  };
+
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const pages = await getPdfPages(file);
-      if (pages.length === 1) {
-        setLoadingPdf(true);
-        const { dataUrl, width, height, elements } = await renderPdfPageWithElements(file, 1);
-        setBackground(dataUrl, width, height, file.name);
-        setPdfSource(file, 1);
-        setPdfElements(elements);
-        setLoadingPdf(false);
-      } else {
-        setPdfPages(pages);
-        setPendingFile(file);
-        setShowPageSelector(true);
-      }
+      await loadPdfFile(file);
     } catch (err) {
       console.error('PDF render error:', err);
       alert('Failed to render PDF. Please try again.');
@@ -100,6 +107,63 @@ export default function Toolbar({ jobs = [] }: { jobs?: JobOption[] }) {
     }
     e.target.value = '';
   };
+
+  // Base plan handed over from Site Documentation (?baseDoc=<site_document id>):
+  // pull the original file out of the private site-documents bucket and feed
+  // it through the same load path as a local upload.
+  React.useEffect(() => {
+    if (!baseDocId) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingPdf(true);
+      try {
+        const supabase = createClient();
+        const { data: doc, error } = await supabase
+          .from('site_documents')
+          .select('name, storage_path, mime_type')
+          .eq('id', baseDocId)
+          .single();
+        if (error || !doc?.storage_path) throw new Error(error?.message ?? 'Document not found');
+        const { data: signed, error: signErr } = await supabase.storage
+          .from('site-documents')
+          .createSignedUrl(doc.storage_path, 600);
+        if (signErr || !signed?.signedUrl) throw new Error(signErr?.message ?? "Couldn't access the document");
+        const res = await fetch(signed.signedUrl);
+        if (!res.ok) throw new Error('Failed to fetch the document');
+        const blob = await res.blob();
+        if (cancelled) return;
+        const type = doc.mime_type || blob.type || '';
+        const file = new File([blob], doc.name, { type });
+        if (type === 'application/pdf' || /\.pdf$/i.test(doc.name)) {
+          await loadPdfFile(file);
+        } else if (type.startsWith('image/')) {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error('Failed to read the image'));
+            reader.readAsDataURL(blob);
+          });
+          const img = new window.Image();
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve();
+            img.onerror = () => reject(new Error('Failed to decode the image'));
+            img.src = dataUrl;
+          });
+          if (cancelled) return;
+          setBackground(dataUrl, img.naturalWidth, img.naturalHeight, doc.name);
+        } else {
+          throw new Error('Only PDF and image documents can be used as a base plan');
+        }
+      } catch (err) {
+        console.error('Base plan load error:', err);
+        alert(err instanceof Error ? err.message : 'Failed to load the base plan');
+      } finally {
+        if (!cancelled) setLoadingPdf(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseDocId]);
 
   const handlePageSelect = async (pageNumber: number) => {
     if (!pendingFile) return;
