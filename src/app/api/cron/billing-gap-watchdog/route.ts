@@ -39,6 +39,22 @@ interface Finding {
 const dayDiff = (a: string, b: string) => Math.round((Date.parse(a) - Date.parse(b)) / 86400000);
 const isoDaysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 
+/**
+ * Normalise the three date shapes the Xero SDK hands back (Date instance,
+ * ".NET /Date(ms)/" string, ISO-ish string) to "YYYY-MM-DD", or null.
+ */
+function toIso(d: unknown): string | null {
+  if (d == null) return null;
+  if (d instanceof Date) return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+  const s = String(d);
+  const dotNet = /\/Date\((\d+)/.exec(s);
+  if (dotNet) return new Date(Number(dotNet[1])).toISOString().slice(0, 10);
+  const iso = /^(\d{4}-\d{2}-\d{2})/.exec(s);
+  if (iso) return iso[1];
+  const parsed = Date.parse(s);
+  return isNaN(parsed) ? null : new Date(parsed).toISOString().slice(0, 10);
+}
+
 /** Previous occurrence before `next` for a Xero schedule (MONTHLY/WEEKLY units). */
 function prevOccurrence(next: string, unit: string, period: number): string | null {
   const [y, m, d] = next.split("-").map(Number);
@@ -108,10 +124,12 @@ export async function GET(req: NextRequest) {
     );
     const batch = res.body.invoices ?? [];
     for (const i of batch) {
+      const date = toIso(i.date);
+      if (!date) continue;
       invoices.push({
         contactId: i.contact?.contactID ?? "",
         contactName: i.contact?.name ?? "",
-        date: i.date ? String(i.date).slice(0, 10) : "",
+        date,
         total: Number(i.total ?? 0),
         used: false,
       });
@@ -128,7 +146,7 @@ export async function GET(req: NextRequest) {
   );
   const gapFloor = isoDaysAgo(RI_GAP_WINDOW_DAYS);
   for (const r of ris) {
-    const next = r.schedule?.nextScheduledDate ? String(r.schedule.nextScheduledDate).slice(0, 10) : null;
+    const next = toIso(r.schedule?.nextScheduledDate);
     const unit = String(r.schedule?.unit ?? "");
     const period = Number(r.schedule?.period ?? 0);
     if (!next || !unit || !period) continue;
