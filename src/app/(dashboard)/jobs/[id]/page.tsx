@@ -120,13 +120,15 @@ export default async function JobDetailPage({
   // server before the UI renders. Non-admins still see the tab content.
   const { data: { user } } = await supabase.auth.getUser();
   let isAdmin = false;
+  let viewerInitials = "??";
   if (user) {
     const { data: viewerStaff } = await supabase
       .from("staff")
-      .select("role")
+      .select("role, initials")
       .eq("id", user.id)
       .maybeSingle();
     isAdmin = viewerStaff?.role === "admin";
+    viewerInitials = viewerStaff?.initials ?? "??";
   }
 
   // Look up sell_price for every product referenced in the work-log materials
@@ -233,6 +235,8 @@ export default async function JobDetailPage({
           billingSettings={billingSettings}
           receipts={receipts}
           isAdmin={isAdmin}
+          viewerId={user?.id ?? null}
+          viewerInitials={viewerInitials}
         />
       </div>
     </div>

@@ -47,6 +47,8 @@ export function JobTabs({
   billingSettings,
   receipts,
   isAdmin,
+  viewerId,
+  viewerInitials,
 }: {
   jobId: string;
   job: any;
@@ -71,6 +73,8 @@ export function JobTabs({
   billingSettings: { labour_sell_rate: number; callout_fee_sell: number; it_service_labour_rate: number };
   receipts: { id: string; vendor: string | null; amount: number }[];
   isAdmin: boolean;
+  viewerId: string | null;
+  viewerInitials: string;
 }) {
   const [activeTab, setActiveTab] = useState("job");
   const showNbn = isNbnJob || nbnSteps.length > 0;
@@ -149,6 +153,8 @@ export function JobTabs({
             jobUpdates={jobUpdates}
             timeEntries={timeEntries}
             scheduleEntries={scheduleEntries ?? []}
+            viewerId={viewerId}
+            viewerInitials={viewerInitials}
           />
         )}
         {activeTab === "notes" && (
@@ -268,6 +274,8 @@ function JobOverview({
   jobUpdates,
   timeEntries,
   scheduleEntries,
+  viewerId,
+  viewerInitials,
 }: {
   jobId: string;
   job: any;
@@ -281,6 +289,8 @@ function JobOverview({
   jobUpdates: any[];
   timeEntries: any[];
   scheduleEntries: any[];
+  viewerId: string | null;
+  viewerInitials: string;
 }) {
   return (
     <div className="space-y-6">
@@ -338,6 +348,8 @@ function JobOverview({
         jobId={jobId}
         items={checklistItems}
         templates={templates}
+        viewerId={viewerId}
+        viewerInitials={viewerInitials}
       />
 
       {/* ── Work Completed ── */}

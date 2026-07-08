@@ -71,12 +71,19 @@ export async function POST(req: NextRequest) {
     headerDescription = body.description ?? "";
     subtotal = pricedLines.reduce((s, li) => s + (li.unitAmount * (li.quantity ?? 1)), 0);
 
-    // Prepend the narrative (job description + checklist + work log + materials)
-    // as a $0 line so it appears at the top of the Xero invoice as proof of work.
+    // Fold the narrative (job description + checklist + work log) into the
+    // FIRST priced line so the Xero invoice shows one line carrying both the
+    // proof of work and the charge — not a $0 description line followed by a
+    // separate priced line (Mitchell, 2026-07-09). Matches how quote-linked
+    // invoices render (scope text + price on one line).
     if (headerDescription.trim()) {
+      const [first, ...rest] = pricedLines;
       lineItems = [
-        { description: headerDescription.trim(), quantity: 1, unitAmount: 0 },
-        ...pricedLines,
+        {
+          ...first,
+          description: `${headerDescription.trim()}\n\n${first.description}`,
+        },
+        ...rest,
       ];
     } else {
       lineItems = pricedLines;

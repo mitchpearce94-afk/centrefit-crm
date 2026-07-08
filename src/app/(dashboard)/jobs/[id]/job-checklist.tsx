@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
@@ -26,10 +26,14 @@ export function JobChecklist({
   jobId,
   items,
   templates,
+  viewerId,
+  viewerInitials,
 }: {
   jobId: string;
   items: ChecklistItem[];
   templates: Template[];
+  viewerId: string | null;
+  viewerInitials: string;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -38,14 +42,33 @@ export function JobChecklist({
   const [showTemplates, setShowTemplates] = useState(false);
   const [showActions, setShowActions] = useState(false);
 
-  const completedCount = items.filter((i) => i.is_completed).length;
-  const totalCount = items.length;
+  // Optimistic copy of the checklist — ticks flip here instantly and the DB
+  // write runs in the background. Server props only overwrite it when no
+  // writes are in flight, so a refresh landing mid-tick can't undo a tick.
+  const [localItems, setLocalItems] = useState(items);
+  const pendingWrites = useRef(0);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (pendingWrites.current === 0) setLocalItems(items);
+  }, [items]);
+
+  // Other consumers of checklist state (invoicing tab, remount on tab switch)
+  // read the server props, so re-sync them — but debounced, one refresh after
+  // a burst of ticks rather than a full page re-query per tick.
+  function scheduleRefresh() {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => router.refresh(), 1000);
+  }
+
+  const completedCount = localItems.filter((i) => i.is_completed).length;
+  const totalCount = localItems.length;
 
   async function applyTemplate(template: Template) {
     setApplying(true);
 
     // Remove existing items first if any
-    if (items.length > 0) {
+    if (localItems.length > 0) {
       await supabase
         .from("job_checklist_items")
         .delete()
@@ -89,52 +112,72 @@ export function JobChecklist({
   }
 
   async function toggleItem(item: ChecklistItem) {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const nowCompleted = !item.is_completed;
+    const today = new Date().toLocaleDateString("en-AU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+    });
+    const completedText = nowCompleted ? `${viewerInitials} ${today}` : null;
+    const completedAt = nowCompleted ? new Date().toISOString() : null;
 
-    let completedText: string | null = null;
-    if (!item.is_completed) {
-      const { data: staff } = await supabase
-        .from("staff")
-        .select("initials")
-        .eq("id", user?.id ?? "")
-        .single();
+    setLocalItems((prev) =>
+      prev.map((i) =>
+        i.id === item.id
+          ? {
+              ...i,
+              is_completed: nowCompleted,
+              completed_by_text: completedText,
+              completed_at: completedAt,
+            }
+          : i
+      )
+    );
 
-      const today = new Date().toLocaleDateString("en-AU", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "2-digit",
-      });
-      completedText = `${staff?.initials ?? "??"} ${today}`;
-    }
-
+    pendingWrites.current++;
     const { error } = await supabase
       .from("job_checklist_items")
       .update({
-        is_completed: !item.is_completed,
-        completed_by_text: item.is_completed ? null : completedText,
-        completed_at: item.is_completed ? null : new Date().toISOString(),
-        completed_by_staff_id: item.is_completed ? null : user?.id,
+        is_completed: nowCompleted,
+        completed_by_text: completedText,
+        completed_at: completedAt,
+        completed_by_staff_id: nowCompleted ? viewerId : null,
       })
       .eq("id", item.id);
+    pendingWrites.current--;
 
     if (error) {
+      // Roll the tick back so the UI never shows a state the DB rejected.
+      setLocalItems((prev) => prev.map((i) => (i.id === item.id ? item : i)));
       toast(error.message, "error");
     } else {
-      router.refresh();
+      scheduleRefresh();
     }
   }
 
   async function updateCompletedText(itemId: string, text: string) {
-    await supabase
+    const prev = localItems.find((i) => i.id === itemId);
+    setLocalItems((p) =>
+      p.map((i) => (i.id === itemId ? { ...i, completed_by_text: text } : i))
+    );
+
+    pendingWrites.current++;
+    const { error } = await supabase
       .from("job_checklist_items")
       .update({ completed_by_text: text })
       .eq("id", itemId);
+    pendingWrites.current--;
+
+    if (error) {
+      if (prev) setLocalItems((p) => p.map((i) => (i.id === itemId ? prev : i)));
+      toast(error.message, "error");
+    } else {
+      scheduleRefresh();
+    }
   }
 
   // ── No checklist — show picker ──
-  if (items.length === 0 && !showTemplates) {
+  if (localItems.length === 0 && !showTemplates) {
     return (
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -163,7 +206,7 @@ export function JobChecklist({
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            {items.length > 0 ? "Change Checklist Template" : "Apply Checklist"}
+            {localItems.length > 0 ? "Change Checklist Template" : "Apply Checklist"}
           </h2>
         </div>
         <div className="rounded-lg border border-primary/30 bg-card p-4">
@@ -269,7 +312,7 @@ export function JobChecklist({
       {/* Scrollable task list */}
       <div className="max-h-[400px] overflow-y-auto rounded-lg border border-border">
         <div className="space-y-0">
-          {items
+          {[...localItems]
             .sort((a, b) => a.task_number - b.task_number)
             .map((item) => (
               <ChecklistTask

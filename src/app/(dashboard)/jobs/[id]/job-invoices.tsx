@@ -609,7 +609,8 @@ export function JobInvoices({
                   </button>
                 </div>
                 <p className="text-[11px] text-muted-foreground mb-1.5">
-                  Appears at the top of the invoice at $0 — this is the proof of work.
+                  Merged into the first priced line item below, so the invoice shows
+                  one line with the proof of work and the price — no separate $0 line.
                   Pre-filled with the job description, completed checklist, and work-log entries. Edit freely.
                 </p>
                 <textarea
