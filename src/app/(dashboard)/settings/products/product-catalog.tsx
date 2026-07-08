@@ -924,11 +924,15 @@ function ProductFormModal(props: ProductFormModalProps) {
   const [sku, setSku] = useState(isEditing ? (props.product.sku || "") : "");
   const [supplierId, setSupplierId] = useState(isEditing ? (props.product.supplier_id || "") : "");
   const [costPrice, setCostPrice] = useState(isEditing ? props.product.cost_price.toString() : "");
-  // Map the stored markup to the exact dropdown option string. (0.5).toString()
-  // is "0.5" which didn't match the "0.50" option, so edit defaulted to 25%.
-  const [markup, setMarkup] = useState(
-    isEditing ? (Number(props.product.markup) === 0.25 ? "0.25" : "0.50") : "0.50",
-  );
+  // Preserve the stored markup exactly. Supplier flips set non-standard values
+  // (e.g. 2.48) to hold sell price steady — coercing to a dropdown preset on
+  // edit would silently reprice the product on save.
+  const STANDARD_MARKUPS = ["0.25", "0.50", "0.75", "1.00"];
+  const initialMarkup = isEditing
+    ? (STANDARD_MARKUPS.find((m) => Number(m) === Number(props.product.markup)) ?? String(Number(props.product.markup)))
+    : "0.50";
+  const [markup, setMarkup] = useState(initialMarkup);
+  const [sellPrice, setSellPrice] = useState(isEditing ? props.product.sell_price.toString() : "");
   const [deviceType, setDeviceType] = useState(isEditing ? (props.product.device_type || "") : "");
   const [scopeRole, setScopeRole] = useState(isEditing ? (props.product.scope_role || "") : "");
   const [labourCode, setLabourCode] = useState(isEditing ? (props.product.labour_code || "") : "");
@@ -962,7 +966,14 @@ function ProductFormModal(props: ProductFormModalProps) {
   }
 
   const categoryDevices = DEVICE_TYPES.filter(d => d.category === category);
+  // CentreFit-supplied products (direct/China imports) take actual COGS + sell
+  // price directly and the markup is derived; everything else keeps presets.
+  const isCentrefit = (props.suppliers.find((s) => s.id === supplierId)?.name ?? "").trim().toLowerCase() === "centrefit";
   const sellPreview = (parseFloat(costPrice || "0") * (1 + parseFloat(markup || "0.5"))).toFixed(2);
+  const cfCost = parseFloat(costPrice || "0");
+  const cfSell = parseFloat(sellPrice || "0");
+  const cfProfit = cfSell - cfCost;
+  const cfMarkup = cfCost > 0 && cfSell > 0 ? Math.round((cfSell / cfCost - 1) * 1e6) / 1e6 : 0;
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
@@ -984,6 +995,10 @@ function ProductFormModal(props: ProductFormModalProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !costPrice) return;
+    if (isCentrefit && cfSell <= 0) {
+      toast("Enter the sell price for this CentreFit product", "error");
+      return;
+    }
     if (!category) {
       toast("Pick a category (infrastructure) for this product", "error");
       return;
@@ -1005,7 +1020,7 @@ function ProductFormModal(props: ProductFormModalProps) {
       supplier: selectedSupplier?.name || (isEditing ? props.product.supplier : "Unknown"),
       supplier_id: supplierId || null,
       cost_price: parseFloat(costPrice),
-      markup: parseFloat(markup),
+      markup: isCentrefit ? cfMarkup : parseFloat(markup),
       device_type: deviceType || null,
       scope_role: scopeRole || null,
       labour_code: labourCode || null,
@@ -1156,28 +1171,8 @@ function ProductFormModal(props: ProductFormModalProps) {
             />
           </div>
 
-          {/* Cost / markup / sell */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Cost price *</label>
-              <input type="number" step="0.01" value={costPrice} onChange={(e) => setCostPrice(e.target.value)} required className={inputClass} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Markup</label>
-              <select value={markup} onChange={(e) => setMarkup(e.target.value)} className={inputClass}>
-                <option value="0.25">25%</option>
-                <option value="0.50">50%</option>
-                <option value="0.75">75%</option>
-                <option value="1.00">100%</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Sell price</label>
-              <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm font-mono text-foreground">${sellPreview}</div>
-            </div>
-          </div>
-
-          {/* Supplier + Default qty */}
+          {/* Supplier + Default qty — supplier first: CentreFit switches the
+              pricing row below to direct cost + sell entry */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Supplier</label>
@@ -1199,6 +1194,48 @@ function ProductFormModal(props: ProductFormModalProps) {
                 className={inputClass}
               />
             </div>
+          </div>
+
+          {/* Cost / markup / sell. CentreFit (direct import) products take
+              actual COGS + sell price; markup is derived and stored. */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">{isCentrefit ? "Actual cost of goods *" : "Cost price *"}</label>
+              <input type="number" step="0.01" value={costPrice} onChange={(e) => setCostPrice(e.target.value)} required className={inputClass} />
+            </div>
+            {isCentrefit ? (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Sell price *</label>
+                  <input type="number" step="0.01" value={sellPrice} onChange={(e) => setSellPrice(e.target.value)} required className={inputClass} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Margin</label>
+                  <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm font-mono text-foreground">
+                    {cfCost > 0 && cfSell > 0 ? `$${cfProfit.toFixed(2)} (${(cfMarkup * 100).toFixed(0)}%)` : "—"}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Markup</label>
+                  <select value={markup} onChange={(e) => setMarkup(e.target.value)} className={inputClass}>
+                    {!STANDARD_MARKUPS.includes(initialMarkup) && (
+                      <option value={initialMarkup}>Current ({(Number(initialMarkup) * 100).toFixed(0)}%)</option>
+                    )}
+                    <option value="0.25">25%</option>
+                    <option value="0.50">50%</option>
+                    <option value="0.75">75%</option>
+                    <option value="1.00">100%</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Sell price</label>
+                  <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm font-mono text-foreground">${sellPreview}</div>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Device type (only for categories with device options) */}
