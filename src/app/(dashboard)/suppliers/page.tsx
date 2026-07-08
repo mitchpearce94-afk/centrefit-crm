@@ -6,13 +6,13 @@ export default async function SuppliersPage() {
 
   const { data: suppliers } = await supabase
     .from("suppliers")
-    .select("*, parts:parts(count)")
+    .select("*, parts:parts(count), offers:product_supplier_offers(count)")
     .order("name");
 
   return (
     <div>
       <h1 className="text-2xl font-bold tracking-tight">
-        Suppliers & Parts
+        Suppliers
       </h1>
       <p className="mt-1 text-sm text-muted-foreground">
         {suppliers?.length ?? 0} suppliers

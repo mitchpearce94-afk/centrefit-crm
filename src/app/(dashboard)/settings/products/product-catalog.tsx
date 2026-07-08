@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
@@ -112,12 +113,6 @@ export function ProductCatalog({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [addingToCategory, setAddingToCategory] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
-  const [groupMode, setGroupMode] = useState<"category" | "supplier">("category");
-  const [sendingRfqSupplierId, setSendingRfqSupplierId] = useState<string | null>(null);
-  // Per-supplier RFQ selection. Empty set = "send all active" (legacy behaviour).
-  // Map: supplier_id → Set of selected product ids.
-  const [rfqSelections, setRfqSelections] = useState<Map<string, Set<string>>>(new Map());
-  const [costEdits, setCostEdits] = useState<Record<string, string>>({});
 
   // Local copies of picker options so inline-create flows can extend them
   // immediately without waiting for a router.refresh round trip.
@@ -138,6 +133,13 @@ export function ProductCatalog({
   );
   const sortedSuppliers = useMemo(
     () => [...suppliers].sort((a, b) => a.name.localeCompare(b.name)),
+    [suppliers]
+  );
+  // Supplier names always come from the suppliers table via supplier_id —
+  // never from the quote_products.supplier text column, which is a legacy
+  // mirror the UI no longer trusts (products-CONTEXT.md D9).
+  const suppliersById = useMemo(
+    () => new Map(suppliers.map((s) => [s.id, s.name])),
     [suppliers]
   );
   // Offers grouped per product, preferred first (server pre-sorts).
@@ -177,14 +179,42 @@ export function ProductCatalog({
     }
     if (search.length >= 2) {
       const q = search.toLowerCase();
-      list = list.filter((p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.sku?.toLowerCase().includes(q) ||
-        p.supplier.toLowerCase().includes(q)
-      );
+      // Offer-aware search (D10): a product matches on its own name/SKU, its
+      // supplier's name, or ANY supplier offer's SKU / item name — so
+      // searching e.g. a Seadan part number finds the product it maps to.
+      list = list.filter((p) => {
+        if (p.name.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q)) return true;
+        if (p.supplier_id && (suppliersById.get(p.supplier_id) ?? "").toLowerCase().includes(q)) return true;
+        return (offersByProduct.get(p.id) ?? []).some(
+          (o) =>
+            o.supplier_sku?.toLowerCase().includes(q) ||
+            o.supplier_item_name?.toLowerCase().includes(q) ||
+            (suppliersById.get(o.supplier_id) ?? "").toLowerCase().includes(q)
+        );
+      });
     }
     return list;
-  }, [products, search, categoryFilter, showInactive, taggingFilter]);
+  }, [products, search, categoryFilter, showInactive, taggingFilter, offersByProduct, suppliersById]);
+
+  // When a search hit came via a supplier offer (not the product's own
+  // name/SKU), surface which supplier + SKU matched so the result isn't a
+  // mystery row.
+  const offerMatchHints = useMemo(() => {
+    const m = new Map<string, string>();
+    if (search.length < 2) return m;
+    const q = search.toLowerCase();
+    for (const [pid, list] of offersByProduct) {
+      const hit = list.find(
+        (o) =>
+          o.supplier_sku?.toLowerCase().includes(q) ||
+          o.supplier_item_name?.toLowerCase().includes(q)
+      );
+      if (hit) {
+        m.set(pid, `${suppliersById.get(hit.supplier_id) ?? "?"}: ${hit.supplier_sku || hit.supplier_item_name}`);
+      }
+    }
+    return m;
+  }, [search, offersByProduct, suppliersById]);
 
   // Tagging stats — only counts active products since inactive ones don't appear on quotes
   const taggingStats = useMemo(() => {
@@ -235,121 +265,6 @@ export function ProductCatalog({
     return m;
   }, [subcategories]);
 
-  const supplierGrouped = useMemo(() => {
-    type Group = { supplierId: string | null; supplierName: string; items: Product[] };
-    const map = new Map<string, Group>();
-    for (const p of filtered) {
-      const key = p.supplier_id ?? "__unassigned__";
-      const existing = map.get(key);
-      if (existing) {
-        existing.items.push(p);
-      } else {
-        map.set(key, {
-          supplierId: p.supplier_id,
-          supplierName: p.supplier?.trim() || "— Unassigned —",
-          items: [p],
-        });
-      }
-    }
-    return Array.from(map.values()).sort((a, b) => {
-      if (a.supplierId === null) return 1;
-      if (b.supplierId === null) return -1;
-      return a.supplierName.localeCompare(b.supplierName);
-    });
-  }, [filtered]);
-
-  async function sendSupplierRfq(supplierId: string, supplierName: string) {
-    const selected = rfqSelections.get(supplierId);
-    const productIds = selected && selected.size > 0 ? Array.from(selected) : undefined;
-    // Confirm before firing — this emails a real supplier. "Send all" is the
-    // riskier path (whole active list) so it gets a louder warning.
-    const confirmMsg = productIds
-      ? `Send an RFQ email to ${supplierName} for ${productIds.length} selected product${productIds.length === 1 ? "" : "s"}?`
-      : `Send an RFQ email to ${supplierName} for ALL active products? This emails the supplier their entire active product list.`;
-    if (!confirm(confirmMsg)) return;
-    setSendingRfqSupplierId(supplierId);
-    try {
-      const res = await fetch(`/api/suppliers/${supplierId}/rfq`, {
-        method: "POST",
-        headers: productIds ? { "Content-Type": "application/json" } : undefined,
-        body: productIds ? JSON.stringify({ productIds }) : undefined,
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast(json.error ?? "RFQ send failed", "error");
-        return;
-      }
-      toast(`RFQ sent to ${supplierName} (${json.lineCount} line${json.lineCount === 1 ? "" : "s"})`);
-      // Clear the selection for that supplier after a successful send.
-      setRfqSelections((prev) => {
-        const next = new Map(prev);
-        next.delete(supplierId);
-        return next;
-      });
-    } finally {
-      setSendingRfqSupplierId(null);
-    }
-  }
-
-  function toggleRfqSelection(supplierId: string, productId: string) {
-    setRfqSelections((prev) => {
-      const next = new Map(prev);
-      const set = new Set(next.get(supplierId) ?? []);
-      if (set.has(productId)) set.delete(productId);
-      else set.add(productId);
-      if (set.size === 0) next.delete(supplierId);
-      else next.set(supplierId, set);
-      return next;
-    });
-  }
-
-  function setRfqSelectAll(supplierId: string, productIds: string[], on: boolean) {
-    setRfqSelections((prev) => {
-      const next = new Map(prev);
-      if (on) next.set(supplierId, new Set(productIds));
-      else next.delete(supplierId);
-      return next;
-    });
-  }
-
-  async function saveCostInline(productId: string) {
-    const raw = costEdits[productId];
-    if (raw === undefined) return;
-    const parsed = Number(raw);
-    if (Number.isNaN(parsed) || parsed < 0) {
-      toast("Invalid cost", "error");
-      return;
-    }
-    const product = products.find((p) => p.id === productId);
-    if (!product) return;
-    if (parsed === Number(product.cost_price)) {
-      // No actual change — drop the edit and don't fire a request.
-      setCostEdits((prev) => {
-        const next = { ...prev };
-        delete next[productId];
-        return next;
-      });
-      return;
-    }
-    // sell_price is a GENERATED column (cost x (1+markup)) — writing it errors
-    // and the whole update fails, which is why the cost wasn't saving. Update
-    // cost only; the DB recalculates sell automatically.
-    const { error } = await supabase
-      .from("quote_products")
-      .update({ cost_price: parsed, cost_updated_at: new Date().toISOString() })
-      .eq("id", productId);
-    if (error) {
-      toast(error.message, "error");
-      return;
-    }
-    setCostEdits((prev) => {
-      const next = { ...prev };
-      delete next[productId];
-      return next;
-    });
-    router.refresh();
-  }
-
   async function updateProduct(id: string, updates: Partial<Product>) {
     const { error } = await supabase.from("quote_products").update(updates).eq("id", id);
     if (error) {
@@ -363,59 +278,6 @@ export function ProductCatalog({
 
   async function toggleActive(id: string, currentActive: boolean) {
     await updateProduct(id, { is_active: !currentActive });
-  }
-
-  const [seedingSuppliers, setSeedingSuppliers] = useState(false);
-
-  async function seedSuppliersFromProducts() {
-    setSeedingSuppliers(true);
-    try {
-      const { data: allProducts } = await supabase
-        .from("quote_products")
-        .select("id, supplier, supplier_id");
-
-      if (!allProducts) { toast("No products found", "error"); setSeedingSuppliers(false); return; }
-
-      const uniqueNames = [...new Set(
-        allProducts.map(p => p.supplier?.trim()).filter((s): s is string => !!s && s.length > 0)
-      )];
-
-      const { data: existingSuppliers } = await supabase.from("suppliers").select("id, name");
-      const existingMap = new Map((existingSuppliers ?? []).map(s => [s.name.toLowerCase().trim(), s.id]));
-
-      const toInsert = uniqueNames.filter(name => !existingMap.has(name.toLowerCase().trim()));
-      let created = 0;
-
-      if (toInsert.length > 0) {
-        const { data: newSuppliers, error } = await supabase
-          .from("suppliers")
-          .insert(toInsert.map(name => ({ name, is_active: true })))
-          .select("id, name");
-
-        if (error) { toast(error.message, "error"); setSeedingSuppliers(false); return; }
-        created = newSuppliers?.length ?? 0;
-        for (const s of newSuppliers ?? []) {
-          existingMap.set(s.name.toLowerCase().trim(), s.id);
-        }
-      }
-
-      let linked = 0;
-      for (const product of allProducts) {
-        if (product.supplier_id) continue;
-        const supplierName = product.supplier?.trim();
-        if (!supplierName) continue;
-        const supplierId = existingMap.get(supplierName.toLowerCase().trim());
-        if (!supplierId) continue;
-        const { error } = await supabase.from("quote_products").update({ supplier_id: supplierId }).eq("id", product.id);
-        if (!error) linked++;
-      }
-
-      toast(`${created} suppliers created, ${linked} products linked`);
-      router.refresh();
-    } catch (err: any) {
-      toast(err.message, "error");
-    }
-    setSeedingSuppliers(false);
   }
 
   async function handleScopeRoleCreated(role: ScopeRoleOption) {
@@ -478,37 +340,13 @@ export function ProductCatalog({
           </button>
           Show inactive
         </label>
-        <div className="flex items-center rounded-md border border-border p-0.5">
-          <button
-            type="button"
-            onClick={() => setGroupMode("category")}
-            className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
-              groupMode === "category"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            By Infrastructure
-          </button>
-          <button
-            type="button"
-            onClick={() => setGroupMode("supplier")}
-            className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
-              groupMode === "supplier"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            By Supplier
-          </button>
-        </div>
-        <button
-          onClick={seedSuppliersFromProducts}
-          disabled={seedingSuppliers}
-          className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm font-medium text-amber-400 transition-colors hover:bg-amber-500/10 disabled:opacity-50"
+        <Link
+          href="/suppliers"
+          className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          title="Per-supplier price lists, their SKUs, and the monthly RFQ workflow"
         >
-          {seedingSuppliers ? "Seeding..." : "Sync Suppliers"}
-        </button>
+          Supplier catalogues →
+        </Link>
         <button
           onClick={() => setAddingToCategory("")}
           className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
@@ -520,7 +358,7 @@ export function ProductCatalog({
       <p className="text-xs text-muted-foreground mb-4">{filtered.length} products{taggingFilter ? ` (filtered to untagged)` : ""}</p>
 
       {/* Category groups */}
-      {groupMode === "category" && Array.from(grouped).map(([category, items]) => {
+      {Array.from(grouped).map(([category, items]) => {
         if (!categoryFilter && items.length === 0) return null;
 
         // Sub-group the table by subcategory when any product in this
@@ -613,9 +451,16 @@ export function ProductCatalog({
                               </div>
                             </div>
                           </td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground font-mono hidden md:table-cell">{p.sku || "—"}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground font-mono hidden md:table-cell">
+                            {p.sku || "—"}
+                            {offerMatchHints.has(p.id) && (
+                              <span className="mt-0.5 block whitespace-nowrap font-sans text-[10px] text-primary/80" title="Your search matched this supplier's SKU / item name">
+                                ↳ {offerMatchHints.get(p.id)}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">
-                            {p.supplier}
+                            {(p.supplier_id && suppliersById.get(p.supplier_id)) || "—"}
                             {(offersByProduct.get(p.id)?.length ?? 0) > 1 && (
                               <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px]" title="Number of suppliers with pricing for this product">
                                 +{(offersByProduct.get(p.id)!.length - 1)}
@@ -664,170 +509,6 @@ export function ProductCatalog({
         );
       })}
 
-      {/* Supplier groups */}
-      {groupMode === "supplier" && (
-        <>
-          <div className="mb-3 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-            Monthly RFQ workflow: hit <strong className="text-foreground">Send RFQ</strong> per supplier to email every active product. Tick rows to send a hand-picked subset instead — the button label updates with the count. Bulk-update cost prices inline as replies come in; sell prices auto-recalc from each product&apos;s markup.
-          </div>
-          {supplierGrouped.map((group) => {
-            const groupKey = group.supplierId ?? "__unassigned__";
-            const sending = sendingRfqSupplierId === group.supplierId;
-            const supplierId = group.supplierId;
-            const activeProductIds = group.items.filter((p) => p.is_active).map((p) => p.id);
-            const selectedSet = (supplierId && rfqSelections.get(supplierId)) || new Set<string>();
-            const selectedCount = selectedSet.size;
-            const allSelected = selectedCount > 0 && selectedCount === activeProductIds.length;
-            const sendLabel = selectedCount > 0
-              ? `Send RFQ (${selectedCount} selected)`
-              : `Send RFQ (all ${activeProductIds.length})`;
-            return (
-              <div key={groupKey} className="mb-6">
-                <div className="flex items-center justify-between mb-2 gap-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {group.supplierName} ({group.items.length})
-                  </h3>
-                  {supplierId && (
-                    <div className="flex items-center gap-2">
-                      {selectedCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setRfqSelectAll(supplierId, activeProductIds, false)}
-                          className="text-xs text-muted-foreground hover:text-foreground"
-                        >
-                          Clear
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => sendSupplierRfq(supplierId, group.supplierName)}
-                        disabled={sending || activeProductIds.length === 0}
-                        className="rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50 transition-colors"
-                        title={selectedCount > 0
-                          ? `Email ${group.supplierName} asking for refreshed pricing on the ${selectedCount} selected product${selectedCount === 1 ? "" : "s"}`
-                          : `Email ${group.supplierName} asking for refreshed pricing on every active product we have from them`}
-                      >
-                        {sending ? "Sending RFQ…" : sendLabel}
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <div className="overflow-x-auto rounded-lg border border-border">
-                  <table className="w-full text-sm table-fixed">
-                    <thead>
-                      <tr className="border-b border-border bg-muted/50">
-                        {supplierId && (
-                          <th className="px-2 py-2 w-8 text-center">
-                            <input
-                              type="checkbox"
-                              checked={allSelected}
-                              onChange={(e) => setRfqSelectAll(supplierId, activeProductIds, e.target.checked)}
-                              className="rounded border-border accent-primary"
-                              title="Select all active products in this supplier group"
-                            />
-                          </th>
-                        )}
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">Product</th>
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground hidden md:table-cell w-32">SKU</th>
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground hidden lg:table-cell w-36">Category</th>
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground hidden xl:table-cell w-44" title="Maps this product to an asset type for the BOM → assets import. Leave blank for cable/mounts/consumables.">Asset type</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground w-28">Cost (ex-GST)</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground w-16">Markup</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground w-24">Sell</th>
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground w-16"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.items.map((p) => {
-                        const editValue = costEdits[p.id];
-                        const dirty = editValue !== undefined && Number(editValue) !== Number(p.cost_price);
-                        const isChecked = supplierId ? selectedSet.has(p.id) : false;
-                        return (
-                          <tr key={p.id} className={`border-b border-border last:border-0 ${!p.is_active ? "opacity-40" : ""}`}>
-                            {supplierId && (
-                              <td className="px-2 py-2 text-center">
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  disabled={!p.is_active}
-                                  onChange={() => toggleRfqSelection(supplierId, p.id)}
-                                  className="rounded border-border accent-primary"
-                                  title={p.is_active ? "Include in RFQ send" : "Inactive product — activate to include"}
-                                />
-                              </td>
-                            )}
-                            <td className="px-3 py-2">
-                              <div className="flex items-center gap-2">
-                                {p.image_url ? (
-                                  <img src={p.image_url} alt="" className="h-8 w-8 rounded border border-border object-contain bg-card shrink-0" />
-                                ) : null}
-                                <span>{p.name}</span>
-                              </div>
-                            </td>
-                            <td className="px-3 py-2 text-xs text-muted-foreground font-mono hidden md:table-cell">{p.sku || "—"}</td>
-                            <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">{p.category}</td>
-                            <td className="px-3 py-2 hidden xl:table-cell">
-                              <select
-                                value={p.asset_type_id ?? ""}
-                                onChange={(e) => saveAssetType(p.id, e.target.value)}
-                                className="w-full rounded-md border border-border bg-input px-1.5 py-1 text-xs text-foreground focus:border-primary focus:outline-none"
-                                title="Asset type for BOM → assets import"
-                              >
-                                <option value="">— none —</option>
-                                {assetTypes.map((t) => (
-                                  <option key={t.id} value={t.id}>{t.name}</option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={editValue ?? p.cost_price.toFixed(2)}
-                                onChange={(e) =>
-                                  setCostEdits((prev) => ({ ...prev, [p.id]: e.target.value }))
-                                }
-                                onBlur={() => saveCostInline(p.id)}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    (e.target as HTMLInputElement).blur();
-                                  }
-                                }}
-                                className={`w-24 rounded-md border bg-input px-2 py-1 text-right text-xs font-mono focus:outline-none focus:ring-1 ${
-                                  dirty
-                                    ? "border-amber-500/40 ring-amber-500/30"
-                                    : "border-border focus:border-primary focus:ring-primary"
-                                }`}
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-right text-xs font-mono text-muted-foreground">{(p.markup * 100).toFixed(0)}%</td>
-                            <td className={`px-3 py-2 text-right text-xs font-mono ${dirty ? "text-amber-400" : ""}`}>
-                              ${(dirty && editValue !== undefined && editValue !== "" && !Number.isNaN(Number(editValue))
-                                ? Number(editValue) * (1 + Number(p.markup ?? 0))
-                                : p.sell_price
-                              ).toFixed(2)}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              <button
-                                onClick={() => setEditingId(p.id)}
-                                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                              >
-                                Edit
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })}
-        </>
-      )}
 
       {/* Add modal */}
       {addingToCategory !== null && (
@@ -854,6 +535,7 @@ export function ProductCatalog({
           <ProductFormModal
             mode="edit"
             product={product}
+            offers={offersByProduct.get(product.id) ?? []}
             suppliers={sortedSuppliers}
             scopeRoles={sortedScopeRoles}
             labourTimings={sortedLabourTimings}
@@ -889,11 +571,13 @@ type ProductFormModalProps =
       onClose: () => void;
       onSaved: () => void;
       product?: never;
+      offers?: never;
       onSave?: never;
     }
   | {
       mode: "edit";
       product: Product;
+      offers: ProductOffer[];
       suppliers: Supplier[];
       scopeRoles: ScopeRoleOption[];
       labourTimings: LabourTimingOption[];
@@ -922,7 +606,12 @@ function ProductFormModal(props: ProductFormModalProps) {
 
   const [name, setName] = useState(isEditing ? props.product.name : "");
   const [sku, setSku] = useState(isEditing ? (props.product.sku || "") : "");
-  const [supplierId, setSupplierId] = useState(isEditing ? (props.product.supplier_id || "") : "");
+  // Create mode only — the initial supplier becomes the product's preferred
+  // offer (D11). In edit mode the supplier is whoever holds the preferred
+  // offer; it's managed in the Supplier pricing section, not a form field.
+  const [supplierId, setSupplierId] = useState("");
+  const [supplierRefSku, setSupplierRefSku] = useState("");
+  const [supplierRefName, setSupplierRefName] = useState("");
   const [costPrice, setCostPrice] = useState(isEditing ? props.product.cost_price.toString() : "");
   // Preserve the stored markup exactly. Supplier flips set non-standard values
   // (e.g. 2.48) to hold sell price steady — coercing to a dropdown preset on
@@ -966,10 +655,19 @@ function ProductFormModal(props: ProductFormModalProps) {
   }
 
   const categoryDevices = DEVICE_TYPES.filter(d => d.category === category);
+  // Effective supplier: in edit mode it's the preferred offer's supplier
+  // (live — starring a different offer in the panel below re-derives this);
+  // in create mode it's the picked initial supplier.
+  const effectiveSupplierId = isEditing
+    ? (props.offers.find((o) => o.is_preferred)?.supplier_id ?? props.product.supplier_id ?? "")
+    : supplierId;
   // CentreFit-supplied products (direct/China imports) take actual COGS + sell
   // price directly and the markup is derived; everything else keeps presets.
-  const isCentrefit = (props.suppliers.find((s) => s.id === supplierId)?.name ?? "").trim().toLowerCase() === "centrefit";
-  const sellPreview = (parseFloat(costPrice || "0") * (1 + parseFloat(markup || "0.5"))).toFixed(2);
+  const isCentrefit = (props.suppliers.find((s) => s.id === effectiveSupplierId)?.name ?? "").trim().toLowerCase() === "centrefit";
+  // Non-CentreFit edit mode: cost belongs to the preferred offer, so the
+  // preview reads the live mirrored value, not a form field.
+  const effectiveCost = isEditing && !isCentrefit ? props.product.cost_price : parseFloat(costPrice || "0");
+  const sellPreview = (effectiveCost * (1 + parseFloat(markup || "0.5"))).toFixed(2);
   const cfCost = parseFloat(costPrice || "0");
   const cfSell = parseFloat(sellPrice || "0");
   const cfProfit = cfSell - cfCost;
@@ -994,7 +692,15 @@ function ProductFormModal(props: ProductFormModalProps) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !costPrice) return;
+    if (!name.trim()) return;
+    if (!isEditing && !supplierId) {
+      toast("Pick the supplier this product comes from — it becomes the preferred pricing offer", "error");
+      return;
+    }
+    if ((!isEditing || isCentrefit) && !costPrice) {
+      toast("Enter the cost price", "error");
+      return;
+    }
     if (isCentrefit && cfSell <= 0) {
       toast("Enter the sell price for this CentreFit product", "error");
       return;
@@ -1013,13 +719,12 @@ function ProductFormModal(props: ProductFormModalProps) {
     }
 
     const qty = parseInt(defaultQuantity);
-    const selectedSupplier = props.suppliers.find(s => s.id === supplierId);
+    // No supplier/supplier text in the payload (D9/D11): supplier_id is set
+    // on create only, the text column is derived by DB trigger, and in edit
+    // mode supplier + cost belong to the offers, not the product form.
     const payload = {
       name: name.trim(),
       sku: sku.trim() || (isEditing ? "" : null),
-      supplier: selectedSupplier?.name || (isEditing ? props.product.supplier : "Unknown"),
-      supplier_id: supplierId || null,
-      cost_price: parseFloat(costPrice),
       markup: isCentrefit ? cfMarkup : parseFloat(markup),
       device_type: deviceType || null,
       scope_role: scopeRole || null,
@@ -1035,21 +740,47 @@ function ProductFormModal(props: ProductFormModalProps) {
     };
 
     if (isEditing) {
-      props.onSave(props.product.id, { ...payload, category } as Partial<Product>);
+      const updates: Partial<Product> = { ...payload, category } as Partial<Product>;
+      // CentreFit direct entry writes actual COGS onto the product (the
+      // trigger mirrors it to the CentreFit offer). Other suppliers' costs
+      // are edited in the Supplier pricing section, never here.
+      if (isCentrefit) updates.cost_price = parseFloat(costPrice);
+      props.onSave(props.product.id, updates);
       return;
     }
 
     setSaving(true);
-    const { error } = await supabase.from("quote_products").insert({
-      ...payload,
-      category,
-      is_active: true,
-    });
-    setSaving(false);
-    if (error) {
-      toast(error.message, "error");
+    const { data: created, error } = await supabase
+      .from("quote_products")
+      .insert({
+        ...payload,
+        category,
+        supplier_id: supplierId,
+        cost_price: parseFloat(costPrice),
+        is_active: true,
+      })
+      .select("id")
+      .single();
+    if (error || !created) {
+      setSaving(false);
+      toast(error?.message ?? "Insert failed", "error");
       return;
     }
+    // The DB trigger just created the preferred offer using our catalogue
+    // SKU/name as placeholders — overwrite with the supplier's own SKU/item
+    // name if they were provided.
+    if (supplierRefSku.trim() || supplierRefName.trim()) {
+      const { error: offerErr } = await supabase
+        .from("product_supplier_offers")
+        .update({
+          supplier_sku: supplierRefSku.trim() || null,
+          supplier_item_name: supplierRefName.trim() || null,
+        })
+        .eq("product_id", created.id)
+        .eq("supplier_id", supplierId);
+      if (offerErr) toast(`Product added, but saving the supplier's SKU failed: ${offerErr.message}`, "error");
+    }
+    setSaving(false);
     toast("Product added");
     props.onSaved();
   }
@@ -1171,16 +902,21 @@ function ProductFormModal(props: ProductFormModalProps) {
             />
           </div>
 
-          {/* Supplier + Default qty — supplier first: CentreFit switches the
-              pricing row below to direct cost + sell entry */}
+          {/* Supplier (create only — becomes the preferred offer) + Default
+              qty. CentreFit switches the pricing row to direct cost + sell. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Supplier</label>
-              <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className={inputClass}>
-                <option value="">Select supplier...</option>
-                {props.suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
+            {!isEditing && (
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Supplier <span className="text-destructive">*</span>
+                  <span className="ml-1 font-normal text-muted-foreground/60">— becomes the preferred pricing offer</span>
+                </label>
+                <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} required className={inputClass}>
+                  <option value="">Select supplier...</option>
+                  {props.suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">
                 Default quantity
@@ -1196,13 +932,54 @@ function ProductFormModal(props: ProductFormModalProps) {
             </div>
           </div>
 
+          {/* Create mode: the supplier's own SKU / item name for the initial
+              offer (D11). Hidden for CentreFit — direct imports have no
+              external part number beyond our own SKU. */}
+          {!isEditing && supplierId && !isCentrefit && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Supplier&apos;s SKU
+                  <span className="ml-1 font-normal text-muted-foreground/60">— their part number, searchable later</span>
+                </label>
+                <input value={supplierRefSku} onChange={(e) => setSupplierRefSku(e.target.value)} className={inputClass} placeholder="optional" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Supplier&apos;s item name</label>
+                <input value={supplierRefName} onChange={(e) => setSupplierRefName(e.target.value)} className={inputClass} placeholder="optional" />
+              </div>
+            </div>
+          )}
+
+          {/* Edit mode: supplier pricing lives on the offers, right here in
+              the form — star an offer to change who prices this product. */}
+          {isEditing && (
+            <div className="rounded-md border border-border bg-muted/20 px-3 py-3">
+              <OffersPanel
+                product={props.product}
+                offers={props.offers}
+                suppliers={props.suppliers}
+              />
+            </div>
+          )}
+
           {/* Cost / markup / sell. CentreFit (direct import) products take
               actual COGS + sell price; markup is derived and stored. */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">{isCentrefit ? "Actual cost of goods *" : "Cost price *"}</label>
-              <input type="number" step="0.01" value={costPrice} onChange={(e) => setCostPrice(e.target.value)} required className={inputClass} />
-            </div>
+            {isEditing && !isCentrefit ? (
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Cost price
+                  <span className="ml-1 font-normal text-muted-foreground/60">— from the ★ offer above</span>
+                </label>
+                <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm font-mono text-foreground">${props.product.cost_price.toFixed(2)}</div>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">{isCentrefit ? "Actual cost of goods *" : "Cost price *"}</label>
+                <input type="number" step="0.01" value={costPrice} onChange={(e) => setCostPrice(e.target.value)} required className={inputClass} />
+              </div>
+            )}
             {isCentrefit ? (
               <>
                 <div>

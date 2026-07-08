@@ -53,35 +53,46 @@ export async function POST(
     return NextResponse.json({ error: "Supplier is inactive" }, { status: 400 });
   }
 
-  let prodQuery = supabase
-    .from("quote_products")
-    .select("id, name, sku, cost_price")
+  // Offer-based (products-CONTEXT.md D12): RFQ every product this supplier
+  // OFFERS — not just the ones where they're currently preferred — and quote
+  // THEIR part numbers / item names so the supplier recognises the lines.
+  let offerQuery = supabase
+    .from("product_supplier_offers")
+    .select("product_id, supplier_sku, supplier_item_name, cost_price, product:quote_products!inner(id, name, sku, is_active)")
     .eq("supplier_id", supplierId)
-    .eq("is_active", true)
-    .order("name");
+    .eq("product.is_active", true);
   if (productIds && productIds.length > 0) {
-    prodQuery = prodQuery.in("id", productIds);
+    offerQuery = offerQuery.in("product_id", productIds);
   }
 
-  const { data: products, error: prodErr } = await prodQuery;
-  if (prodErr) return NextResponse.json({ error: prodErr.message }, { status: 500 });
-  if (!products || products.length === 0) {
+  const { data: offers, error: offerErr } = await offerQuery;
+  if (offerErr) return NextResponse.json({ error: offerErr.message }, { status: 500 });
+  if (!offers || offers.length === 0) {
     return NextResponse.json(
       {
         error: productIds
-          ? "None of the selected products belong to this supplier (or all are inactive)"
-          : "No active products from this supplier to send",
+          ? "None of the selected products have an offer from this supplier (or all are inactive)"
+          : "No active products offered by this supplier to send",
       },
       { status: 400 },
     );
   }
 
-  const lines: RFQLine[] = products.map((p) => ({
-    productName: p.name,
-    sku: p.sku ?? null,
-    quantity: 1,
-    lastKnownCost: p.cost_price != null ? Number(p.cost_price) : null,
-  }));
+  type OfferRow = {
+    product_id: string;
+    supplier_sku: string | null;
+    supplier_item_name: string | null;
+    cost_price: number | null;
+    product: { id: string; name: string; sku: string | null; is_active: boolean };
+  };
+  const lines: RFQLine[] = (offers as unknown as OfferRow[])
+    .sort((a, b) => (a.supplier_item_name ?? a.product.name).localeCompare(b.supplier_item_name ?? b.product.name))
+    .map((o) => ({
+      productName: o.supplier_item_name ?? o.product.name,
+      sku: o.supplier_sku ?? o.product.sku ?? null,
+      quantity: 1,
+      lastKnownCost: o.cost_price != null ? Number(o.cost_price) : null,
+    }));
 
   const now = new Date();
   const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;

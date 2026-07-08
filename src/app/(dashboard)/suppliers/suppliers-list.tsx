@@ -17,6 +17,7 @@ interface Supplier {
   notes: string | null;
   is_active: boolean;
   parts?: { count: number }[];
+  offers?: { count: number }[];
 }
 
 interface ImportAction {
@@ -200,21 +201,24 @@ export function SuppliersList({ suppliers }: { suppliers: Supplier[] }) {
                 <th className="px-4 py-2.5 text-left font-medium text-muted-foreground hidden lg:table-cell">
                   Account #
                 </th>
+                <th className="px-4 py-2.5 text-right font-medium text-muted-foreground w-24" title="Products this supplier offers pricing on — click the row to open their catalogue">
+                  Products
+                </th>
                 <th className="px-4 py-2.5 text-right font-medium text-muted-foreground w-20">
                   Parts
                 </th>
+                <th className="px-4 py-2.5 w-16"></th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((supplier) => {
                 const partsCount = supplier.parts?.[0]?.count ?? 0;
+                const offersCount = supplier.offers?.[0]?.count ?? 0;
                 return (
                   <tr
                     key={supplier.id}
-                    onClick={() => {
-                      setEditing(supplier);
-                      setShowForm(true);
-                    }}
+                    onClick={() => router.push(`/suppliers/${supplier.id}`)}
+                    title={`Open ${supplier.name}'s catalogue — their price list, SKUs and RFQs`}
                     className={`border-b border-border last:border-0 cursor-pointer hover:bg-accent/50 transition-colors ${
                       !supplier.is_active ? "opacity-50" : ""
                     }`}
@@ -237,7 +241,23 @@ export function SuppliersList({ suppliers }: { suppliers: Supplier[] }) {
                       {supplier.account_number ?? "—"}
                     </td>
                     <td className="px-4 py-3 text-right text-muted-foreground">
+                      {offersCount > 0 ? offersCount : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">
                       {partsCount > 0 ? partsCount : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditing(supplier);
+                          setShowForm(true);
+                        }}
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Edit
+                      </button>
                     </td>
                   </tr>
                 );
