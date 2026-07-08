@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { procurementPaymentBlock } from "@/lib/procurement/payment-gate";
 
 /**
  * Ad-hoc procurement for service jobs (Mitchell, 2026-06-02).
@@ -53,6 +54,21 @@ export async function POST(
   const wanted = (body.items ?? []).filter((i) => i.productId && (i.quantity ?? 1) > 0);
   if (wanted.length === 0) {
     return NextResponse.json({ error: "Pick at least one part" }, { status: 400 });
+  }
+
+  // Payment gate applies on ENTRY only: if the job already has procurement
+  // rows (started before the gate shipped, or entered while paid up), staff
+  // can keep adding parts to it.
+  const { data: existingRows } = await supabase
+    .from("job_procurement_items")
+    .select("id")
+    .eq("job_id", jobId)
+    .limit(1);
+  if (!existingRows || existingRows.length === 0) {
+    const blocked = await procurementPaymentBlock(supabase, jobId);
+    if (blocked) {
+      return NextResponse.json({ error: blocked }, { status: 400 });
+    }
   }
 
   // Resolve product details (name/sku/supplier) for the chosen ids.

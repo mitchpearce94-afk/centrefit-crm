@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { procurementPaymentBlock } from "@/lib/procurement/payment-gate";
 
 /**
  * Initialise the procurement list for a job from its accepted quote's BOM.
@@ -29,6 +30,12 @@ export async function POST(
     .limit(1);
   if (existing && existing.length > 0) {
     return NextResponse.json({ ok: true, alreadyInitialised: true, count: existing.length });
+  }
+
+  // Payment gate — a job only enters procurement once its invoices are paid.
+  const blocked = await procurementPaymentBlock(supabase, jobId);
+  if (blocked) {
+    return NextResponse.json({ error: blocked }, { status: 400 });
   }
 
   // Find the accepted quote. Most recent wins if multiple.
