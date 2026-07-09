@@ -20,6 +20,10 @@
     {
       "path": "/api/cron/billing-gap-watchdog",
       "schedule": "45 21 * * 0"
+    },
+    {
+      "path": "/api/cron/pending-mandate-watchdog",
+      "schedule": "15 22 * * *"
     }
   ]
 }

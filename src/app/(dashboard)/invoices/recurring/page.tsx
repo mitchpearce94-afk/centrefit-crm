@@ -3,6 +3,8 @@ import { isCurrentUserAdmin } from "@/lib/auth/current-staff";
 import Link from "next/link";
 import { BackfillSubscriptionsButton } from "./backfill-subscriptions-button";
 import { nextMonthlyOccurrence } from "@/lib/recurring/next-occurrence";
+import { ListSearch } from "@/components/ui/list-search";
+import { brisbaneDateISO } from "@/lib/dates";
 
 const STATUS_LABEL: Record<string, string> = {
   pending_mandate: "Awaiting Mandate",
@@ -107,6 +109,9 @@ function allocate(item: PlanItemRow, simRate: number): StreamSplit {
 interface PlanRow {
   id: string;
   status: string;
+  source: string | null;
+  created_at: string;
+  first_invoice_date: string | null;
   next_invoice_date: string | null;
   alias_email: string | null;
   signup_emailed_at: string | null;
@@ -118,13 +123,23 @@ interface PlanRow {
   recurring_plan_items: PlanItemRow[];
 }
 
-export default async function RecurringInvoicesPage() {
+type Tab = "active" | "pending" | "paused" | "failed" | "cancelled";
+
+export default async function RecurringInvoicesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string; q?: string }>;
+}) {
   const supabase = await createClient();
+  const params = await searchParams;
+  const tab = (params.tab ?? "active") as Tab;
+  const q = (params.q ?? "").trim().toLowerCase();
 
   const { data: plans } = await supabase
     .from("recurring_plans")
     .select(`
-      id, status, next_invoice_date, alias_email, signup_emailed_at, signup_link_url,
+      id, status, source, created_at, first_invoice_date, next_invoice_date,
+      alias_email, signup_emailed_at, signup_link_url,
       customer_id, site_id,
       customers(id, name),
       customer_sites(id, name),
@@ -144,6 +159,12 @@ export default async function RecurringInvoicesPage() {
     .maybeSingle();
   const simRate = Number(simSvc?.price_inc_gst ?? 24.75) || 24.75;
 
+  const planMonthly = (p: PlanRow): number =>
+    (p.recurring_plan_items ?? []).reduce(
+      (s, i) => s + Number(i.price_inc_gst) * (i.quantity ?? 1) * monthlyFactor(i.frequency),
+      0,
+    );
+
   // Top-line metrics, split across revenue streams (yearly cadences ÷ 12).
   const streamMRR: StreamSplit = { security: 0, sim: 0, nbn: 0, other: 0 };
   for (const p of list) {
@@ -157,9 +178,37 @@ export default async function RecurringInvoicesPage() {
     }
   }
   const monthlyMRR = streamMRR.security + streamMRR.sim + streamMRR.nbn + streamMRR.other;
-  const activeCount = list.filter((p) => p.status === "active").length;
-  const pendingCount = list.filter((p) => p.status === "pending_mandate").length;
 
+  const activeList = list.filter((p) => p.status === "active");
+  const pendingList = list.filter((p) => p.status === "pending_mandate");
+  const pausedList = list.filter((p) => p.status === "paused");
+  const failedList = list.filter((p) => p.status === "failed");
+  const cancelledList = list.filter((p) => p.status === "cancelled");
+  // $ we're carrying costs on but not collecting — the unsigned-mandate leak.
+  const pendingMRR = pendingList.reduce((s, p) => s + planMonthly(p), 0);
+
+  // Search cuts across every tab — you shouldn't have to know whether the
+  // plan you're hunting is active, pending or cancelled to find it.
+  const searchList = q
+    ? list.filter((p) =>
+        [
+          p.customers?.name,
+          p.customer_sites?.name,
+          p.alias_email,
+          ...(p.recurring_plan_items ?? []).map((i) => i.service_name),
+        ].some((v) => v && String(v).toLowerCase().includes(q)),
+      )
+    : null;
+
+  const filtered =
+    searchList ??
+    (tab === "pending" ? pendingList
+    : tab === "paused" ? pausedList
+    : tab === "failed" ? failedList
+    : tab === "cancelled" ? cancelledList
+    : activeList);
+
+  const todayStr = brisbaneDateISO(new Date());
   const isAdmin = await isCurrentUserAdmin();
 
   return (
@@ -201,15 +250,75 @@ export default async function RecurringInvoicesPage() {
         </div>
         <div className="surface-card card-hover p-5">
           <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Active plans</p>
-          <p className="num-display mt-2 text-2xl font-semibold text-emerald-400">{activeCount}</p>
+          <p className="num-display mt-2 text-2xl font-semibold text-emerald-400">{activeList.length}</p>
         </div>
-        <div className="surface-card card-hover p-5">
+        <div className={`surface-card card-hover p-5 ${pendingList.length > 0 ? "border-amber-500/30 bg-amber-500/5" : ""}`}>
           <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Awaiting mandate</p>
-          <p className={`num-display mt-2 text-2xl font-semibold ${pendingCount > 0 ? "text-amber-400" : "text-muted-foreground"}`}>{pendingCount}</p>
+          <p className={`num-display mt-2 text-2xl font-semibold ${pendingList.length > 0 ? "text-amber-400" : "text-muted-foreground"}`}>{pendingList.length}</p>
+          {pendingMRR > 0 && (
+            <p className="text-[11px] text-amber-400/80 mt-1">
+              ${fmt(pendingMRR)}/mo not being collected
+            </p>
+          )}
         </div>
       </div>
 
-      <div className="surface-card mt-6 overflow-x-auto">
+      {/* Tab strip — matches the invoices page so the two feel like siblings */}
+      <div className="mt-5 flex flex-nowrap items-center gap-1 border-b border-border overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
+        {[
+          { key: "active", label: "Active", count: activeList.length },
+          { key: "pending", label: "Awaiting Mandate", count: pendingList.length, accent: pendingList.length > 0 },
+          { key: "failed", label: "Failed", count: failedList.length, accent: failedList.length > 0 },
+          { key: "paused", label: "Paused", count: pausedList.length },
+          { key: "cancelled", label: "Cancelled", count: cancelledList.length },
+        ].map((t) => {
+          const active = tab === t.key;
+          return (
+            <Link
+              key={t.key}
+              href={(() => {
+                const p = new URLSearchParams();
+                if (t.key !== "active") p.set("tab", t.key);
+                if (q) p.set("q", params.q!.trim());
+                const qs = p.toString();
+                return qs ? `/invoices/recurring?${qs}` : "/invoices/recurring";
+              })()}
+              className={`relative shrink-0 -mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
+                active
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+              {t.count > 0 && (
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                    t.accent
+                      ? "bg-destructive/20 text-destructive"
+                      : active
+                      ? "bg-primary/20 text-primary"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {t.count}
+                </span>
+              )}
+            </Link>
+          );
+        })}
+      </div>
+
+      {/* Search — cuts across every tab while active */}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <ListSearch placeholder="Search customer, site, service or alias email…" defaultValue={params.q ?? ""} />
+        {q && (
+          <p className="text-xs text-muted-foreground">
+            {filtered.length} match{filtered.length === 1 ? "" : "es"} across all tabs
+          </p>
+        )}
+      </div>
+
+      <div className="surface-card mt-4 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-muted-foreground">
             <tr className="text-left">
@@ -222,14 +331,20 @@ export default async function RecurringInvoicesPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {list.length === 0 && (
+            {filtered.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground text-sm">
-                  No recurring plans yet. Click "New recurring plan" to start one.
+                  {q
+                    ? "No plans match your search."
+                    : tab === "active"
+                    ? "No active plans yet. Click \"New recurring plan\" to start one."
+                    : tab === "pending"
+                    ? "No plans waiting on a mandate — everyone's signed."
+                    : `No ${STATUS_LABEL[tab]?.toLowerCase() ?? tab} plans.`}
                 </td>
               </tr>
             )}
-            {list.map((p) => {
+            {filtered.map((p) => {
               const items = p.recurring_plan_items ?? [];
               // Monthly column = monthly-equivalent of monthly + quarterly lines
               const monthly = items.filter((i) => i.frequency !== "yearly")
@@ -239,6 +354,13 @@ export default async function RecurringInvoicesPage() {
               const colour = STATUS_COLOURS[p.status] ?? "#6b7280";
               const customerName = p.customers?.name ?? "—";
               const siteName = p.customer_sites?.name;
+              // Unsigned-mandate ageing: how long we've been paying for the
+              // service with nothing collectable behind it.
+              const waitingDays = p.status === "pending_mandate"
+                ? Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86_400_000)
+                : null;
+              const startBlown = p.status === "pending_mandate"
+                && !!p.first_invoice_date && p.first_invoice_date < todayStr;
 
               return (
                 <tr key={p.id} className="transition-colors hover:bg-accent/40">
@@ -246,6 +368,9 @@ export default async function RecurringInvoicesPage() {
                     <Link href={`/invoices/recurring/${p.id}`} className="font-medium text-foreground hover:text-primary transition-colors">
                       {siteName ?? customerName}
                     </Link>
+                    {siteName && (
+                      <p className="text-[11px] text-muted-foreground">{customerName}</p>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-muted-foreground">
                     {items.length === 0
@@ -260,7 +385,13 @@ export default async function RecurringInvoicesPage() {
                     >
                       <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colour }} />
                       {STATUS_LABEL[p.status] ?? p.status}
+                      {waitingDays !== null && waitingDays > 0 && ` · ${waitingDays}d`}
                     </span>
+                    {startBlown && (
+                      <p className="mt-0.5 text-[10px] font-medium text-destructive">
+                        start date passed — chase signup
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-sm">
                     {monthly > 0 ? `$${fmt(monthly)}` : <span className="text-muted-foreground">—</span>}
@@ -273,6 +404,10 @@ export default async function RecurringInvoicesPage() {
                       ? <span className="text-muted-foreground">{(p.status === "active"
                           ? nextMonthlyOccurrence(p.next_invoice_date)
                           : new Date(p.next_invoice_date)).toLocaleDateString("en-AU")}</span>
+                      : p.status === "pending_mandate" && p.first_invoice_date
+                      ? <span className={startBlown ? "text-destructive" : "text-muted-foreground"}>
+                          wanted {new Date(p.first_invoice_date).toLocaleDateString("en-AU")}
+                        </span>
                       : <span className="text-muted-foreground">—</span>}
                   </td>
                 </tr>
