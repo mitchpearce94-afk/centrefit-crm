@@ -21,31 +21,42 @@ const ACTIVITY_EVENTS = ["mousemove", "keydown", "click", "scroll", "touchstart"
 
 export function IdleLogout() {
   const router = useRouter();
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastActivityRef = useRef(Date.now());
+  const firedRef = useRef(false);
 
   useEffect(() => {
     const supabase = createClient();
 
     const trigger = async () => {
+      if (firedRef.current) return;
+      firedRef.current = true;
       try { await supabase.auth.signOut(); } catch { /* offline → middleware catches next request */ }
       router.replace("/login?reason=idle");
     };
 
-    const reset = () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(trigger, IDLE_MS);
+    // Wall-clock comparison, NOT a one-shot timer: setTimeout doesn't tick
+    // while the machine sleeps, and the old visibilitychange handler RESET the
+    // timer on wake — so a laptop closed overnight sailed straight back in.
+    // Waking or refocusing now CHECKS the elapsed time instead of forgiving it.
+    const check = () => {
+      if (Date.now() - lastActivityRef.current > IDLE_MS) void trigger();
+    };
+    const activity = () => {
+      lastActivityRef.current = Date.now();
     };
 
-    reset();
+    const interval = setInterval(check, 30_000);
     for (const e of ACTIVITY_EVENTS) {
-      window.addEventListener(e, reset, { passive: true });
+      window.addEventListener(e, activity, { passive: true });
     }
-    document.addEventListener("visibilitychange", reset);
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("focus", check);
 
     return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      for (const e of ACTIVITY_EVENTS) window.removeEventListener(e, reset);
-      document.removeEventListener("visibilitychange", reset);
+      clearInterval(interval);
+      for (const e of ACTIVITY_EVENTS) window.removeEventListener(e, activity);
+      document.removeEventListener("visibilitychange", check);
+      window.removeEventListener("focus", check);
     };
   }, [router]);
 

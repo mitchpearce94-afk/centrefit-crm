@@ -25,6 +25,28 @@ const MAX_SESSION_MS = 12 * 60 * 60 * 1000;    // 12 hours
 const LAST_ACTIVITY_COOKIE = "cf-last-activity";
 const SESSION_STARTED_COOKIE = "cf-session-started";
 
+// The enforcement cookies MUST outlive the windows they measure — a cookie
+// that expires with the window deletes the very evidence of staleness (the
+// original bug: idle > 4h meant the browser dropped cf-last-activity, the
+// check was skipped as "first request", and nobody ever idled out).
+const ENFORCEMENT_COOKIE_MAX_AGE_S = 60 * 60 * 24 * 30; // 30 days
+
+// Stable id for the current Supabase login session, from the JWT's session_id
+// claim. Stamping it into the enforcement cookies scopes them to ONE login:
+// a fresh sign-in gets fresh windows even though the cookies now long outlive
+// the session.
+function sessionIdFromJwt(token: string | undefined): string | null {
+  if (!token) return null;
+  try {
+    const payload = token.split(".")[1];
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const claims = JSON.parse(json) as { session_id?: string };
+    return claims.session_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
@@ -151,36 +173,48 @@ export async function updateSession(request: NextRequest) {
   // Authenticated request on a non-public path → enforce idle + max session.
   if (user && !isPublic) {
     const now = Date.now();
-    const lastActivityRaw = request.cookies.get(LAST_ACTIVITY_COOKIE)?.value;
-    const sessionStartedRaw = request.cookies.get(SESSION_STARTED_COOKIE)?.value;
+    // Cookie format "sessionId:timestamp" — a stamp only counts when it was
+    // written by THIS login session, so re-logins start fresh windows and
+    // legacy plain-timestamp cookies are treated as absent.
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const sid = sessionIdFromJwt(session?.access_token) ?? user.id;
 
-    const lastActivity = lastActivityRaw ? Number(lastActivityRaw) : null;
-    const sessionStarted = sessionStartedRaw ? Number(sessionStartedRaw) : null;
+    const readStamp = (raw: string | undefined): number | null => {
+      if (!raw) return null;
+      const [cookieSid, ts] = raw.split(":");
+      if (cookieSid !== sid) return null;
+      const n = Number(ts);
+      return Number.isFinite(n) ? n : null;
+    };
 
-    // Idle check — only triggers if the cookie was set previously and has gone
-    // stale. First request after login has no cookie yet, so we skip and set
-    // it below.
-    if (lastActivity && Number.isFinite(lastActivity) && now - lastActivity > IDLE_TIMEOUT_MS) {
+    const lastActivity = readStamp(request.cookies.get(LAST_ACTIVITY_COOKIE)?.value);
+    const sessionStarted = readStamp(request.cookies.get(SESSION_STARTED_COOKIE)?.value);
+
+    // Idle check — first request of a login session has no stamp yet, so we
+    // skip and set it below.
+    if (lastActivity && now - lastActivity > IDLE_TIMEOUT_MS) {
       await supabase.auth.signOut();
       return redirectToLogin(request, "idle");
     }
 
     // Hard-cap check — independent of activity. If the user has been on this
     // session for 12 hours straight, force a fresh login.
-    if (sessionStarted && Number.isFinite(sessionStarted) && now - sessionStarted > MAX_SESSION_MS) {
+    if (sessionStarted && now - sessionStarted > MAX_SESSION_MS) {
       await supabase.auth.signOut();
       return redirectToLogin(request, "expired");
     }
 
     // Bump activity (sliding window) and set session-started on first request.
-    supabaseResponse.cookies.set(LAST_ACTIVITY_COOKIE, String(now), {
+    supabaseResponse.cookies.set(LAST_ACTIVITY_COOKIE, `${sid}:${now}`, {
       ...COOKIE_OPTIONS,
-      maxAge: Math.floor(IDLE_TIMEOUT_MS / 1000),
+      maxAge: ENFORCEMENT_COOKIE_MAX_AGE_S,
     });
-    if (!sessionStarted || !Number.isFinite(sessionStarted)) {
-      supabaseResponse.cookies.set(SESSION_STARTED_COOKIE, String(now), {
+    if (!sessionStarted) {
+      supabaseResponse.cookies.set(SESSION_STARTED_COOKIE, `${sid}:${now}`, {
         ...COOKIE_OPTIONS,
-        maxAge: Math.floor(MAX_SESSION_MS / 1000),
+        maxAge: ENFORCEMENT_COOKIE_MAX_AGE_S,
       });
     }
   }
