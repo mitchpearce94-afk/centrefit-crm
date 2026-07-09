@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
+import { resendSignupEmail } from "@/lib/recurring/resend-signup";
 import { brisbaneDateISO } from "@/lib/dates";
 
 /**
@@ -18,18 +19,26 @@ import { brisbaneDateISO } from "@/lib/dates";
  * monthly value, flagging any whose chosen first-invoice date has already
  * passed.
  *
- * Deliberately does NOT email customers — chasing the customer stays a
- * human decision (resend from the plan page). Staff-facing only.
+ * ALSO auto-chases the customer (Mitchell's call, 2026-07-09): plans whose
+ * last signup email is REMINDER_GAP_DAYS old get the mandate email re-sent
+ * with a fresh GoCardless link, at most MAX_AUTO_REMINDERS times per plan.
+ * After the cap it's staff-only chasing (the notification keeps nagging).
  *
  * Auth: X-Cf-Cron-Secret matches CRON_SECRET.
  */
 
 const GRACE_DAYS = 3;
+const REMINDER_GAP_DAYS = 5;
+const MAX_AUTO_REMINDERS = 3;
 
 interface PendingPlan {
   id: string;
   created_at: string;
   first_invoice_date: string | null;
+  gc_billing_request_id: string | null;
+  signup_emailed_at: string | null;
+  last_signup_reminder_at: string | null;
+  signup_reminder_count: number;
   customers: { name: string } | { name: string }[] | null;
   customer_sites: { name: string } | { name: string }[] | null;
   recurring_plan_items: Array<{
@@ -64,7 +73,8 @@ export async function GET(req: NextRequest) {
   const { data, error } = await supabase
     .from("recurring_plans")
     .select(`
-      id, created_at, first_invoice_date,
+      id, created_at, first_invoice_date, gc_billing_request_id,
+      signup_emailed_at, last_signup_reminder_at, signup_reminder_count,
       customers(name), customer_sites(name),
       recurring_plan_items(price_inc_gst, frequency, quantity)
     `)
@@ -103,9 +113,35 @@ export async function GET(req: NextRequest) {
     href: "/invoices/recurring?tab=pending",
   });
 
+  // ── Auto-chase the customer ──
+  // Re-send the signup email (fresh GC link) when the last email is
+  // REMINDER_GAP_DAYS old, capped at MAX_AUTO_REMINDERS per plan. Manual
+  // resends from the plan page bump last_signup_reminder_at too, so staff
+  // chasing pushes the next auto-reminder out rather than stacking on it.
+  const reminderCutoff = Date.now() - REMINDER_GAP_DAYS * 86_400_000;
+  const reminders: Array<{ planId: string; ok: boolean; to?: string; error?: string }> = [];
+  for (const p of plans) {
+    if (!p.gc_billing_request_id) continue;
+    if ((p.signup_reminder_count ?? 0) >= MAX_AUTO_REMINDERS) continue;
+    const lastEmail = p.last_signup_reminder_at ?? p.signup_emailed_at ?? p.created_at;
+    if (new Date(lastEmail).getTime() > reminderCutoff) continue;
+    try {
+      const r = await resendSignupEmail(supabase, p.id, { reminder: true });
+      reminders.push({ planId: p.id, ok: true, to: r.to });
+    } catch (err) {
+      reminders.push({
+        planId: p.id,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     pending: plans.length,
     monthlyAtStake: Math.round(totalMonthly * 100) / 100,
+    remindersSent: reminders.filter((r) => r.ok).length,
+    reminders,
   });
 }

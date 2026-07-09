@@ -8,6 +8,7 @@ import { AddServiceButton } from "./add-service-button";
 import { EditStartDateButton } from "./edit-start-date-button";
 import { AuthoriseXeroButton } from "./authorise-xero-button";
 import { RetryActivationButton } from "./retry-activation-button";
+import { ResendSignupButton } from "./resend-signup-button";
 import { accountCodeLabel } from "@/lib/xero/account-codes";
 import { getAuthedClient } from "@/lib/xero/client";
 import { getRepeatingInvoice, type RepeatingInvoiceState } from "@/lib/xero/repeating-invoices";
@@ -270,9 +271,11 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
         {plan.status === "pending_mandate" && plan.signup_link_url && (
           <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
             <p className="text-xs text-amber-300 mb-2">
-              Customer hasn't signed yet. They can use this link from the mandate email — or copy and resend if needed:
+              Customer hasn&apos;t signed yet. Resend emails them a fresh link (GoCardless
+              links expire after about a week) — auto-reminders also go out every 5 days,
+              up to 3 times.
             </p>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
               <input
                 readOnly
                 value={plan.signup_link_url}
@@ -286,6 +289,7 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
               >
                 Open
               </a>
+              {!plan.gc_mandate_id && <ResendSignupButton planId={plan.id} />}
             </div>
           </div>
         )}

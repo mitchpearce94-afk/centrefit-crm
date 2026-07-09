@@ -27,6 +27,8 @@ export interface SendMandateSignupInput {
   customerName: string;
   /** One mandate link per site they're being onboarded for. */
   links: MandateLink[];
+  /** Reminder re-send of an earlier signup email — softens the copy. */
+  reminder?: boolean;
 }
 
 /**
@@ -40,15 +42,22 @@ export interface SendMandateSignupInput {
  * per facility.
  */
 export async function sendMandateSignupEmail(input: SendMandateSignupInput) {
-  const { to, customerName, links } = input;
+  const { to, customerName, links, reminder = false } = input;
   if (links.length === 0) throw new Error("Cannot send mandate email with no links");
 
-  const subject = links.length === 1
+  const baseSubject = links.length === 1
     ? `Set up direct debit for ${links[0].siteLabel}`
     : `Set up direct debit for your ${links.length} Centrefit-managed sites`;
+  const subject = reminder ? `Reminder: ${baseSubject.charAt(0).toLowerCase()}${baseSubject.slice(1)}` : baseSubject;
 
   const intro = `
     <p style="font-size:14px;line-height:1.6;color:#111827;margin:0 0 18px">Hi ${escape(customerName)},</p>
+    ${reminder ? `
+    <p style="font-size:14px;line-height:1.6;color:#111827;margin:0 0 18px">
+      Just a friendly reminder — the direct debit authorisation below is still waiting on you.
+      Your services are already running, so completing it now keeps everything ticking along
+      without interruption. The link below is fresh in case the earlier one expired.
+    </p>` : ""}
     <p style="font-size:14px;line-height:1.6;color:#111827;margin:0 0 18px">
       ${links.length === 1
         ? `To get your recurring services set up for <strong>${escape(links[0].siteLabel)}</strong>, please complete the direct debit authorisation below. You'll only need to enter your bank details once and future invoices will be auto-debited on the schedule shown.`
