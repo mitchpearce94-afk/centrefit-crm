@@ -254,6 +254,41 @@ export async function getRepeatingInvoice(
   };
 }
 
+export interface RepeatingInvoiceRawLine {
+  description: string;
+  quantity: number;
+  unitAmount: number;
+  accountCode: string | null;
+  taxType: string | null;
+}
+
+/**
+ * Fetch a template's current line items verbatim plus enough schedule state
+ * to identify its cadence. Used by the add-service mirror to append a new
+ * service line without clobbering what's already billing.
+ */
+export async function getRepeatingInvoiceLines(
+  xero: XeroClient,
+  tenantId: string,
+  repeatingInvoiceId: string,
+): Promise<{ status: string; schedulePeriod: number | null; lines: RepeatingInvoiceRawLine[] }> {
+  const res = await xero.accountingApi.getRepeatingInvoice(tenantId, repeatingInvoiceId);
+  const ri = res.body.repeatingInvoices?.[0];
+  if (!ri) throw new Error(`Xero returned no RepeatingInvoice for ${repeatingInvoiceId}`);
+  const sched = (ri.schedule ?? {}) as Record<string, unknown>;
+  return {
+    status: String(ri.status ?? "UNKNOWN"),
+    schedulePeriod: (sched.period ?? null) as number | null,
+    lines: (ri.lineItems ?? []).map((l) => ({
+      description: l.description ?? "",
+      quantity: Number(l.quantity ?? 1),
+      unitAmount: Number(l.unitAmount ?? 0),
+      accountCode: l.accountCode ?? null,
+      taxType: (l as { taxType?: string }).taxType ?? null,
+    })),
+  };
+}
+
 /**
  * Flip a RepeatingInvoice template's status from DRAFT → AUTHORISED.
  * This is the action that makes Xero start generating children on the

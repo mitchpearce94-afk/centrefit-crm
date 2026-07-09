@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { createSubscription, getMandate, GoCardlessApiError } from "@/lib/gocardless/client";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
+import { mirrorServiceToXero } from "@/lib/recurring/mirror-service-invoice";
 
 /**
  * Add a service to a plan that bills via existing GoCardless subscriptions
@@ -79,18 +80,22 @@ export async function POST(req: NextRequest) {
 
     // Record: link row + plan item (service-role — both tables are
     // service-role-write-only).
-    const { error: linkErr } = await svc.from("recurring_plan_gc_subscriptions").insert({
-      plan_id: planId,
-      gc_subscription_id: sub.id,
-      name: sub.name,
-      amount_cents: sub.amount,
-      currency: sub.currency ?? "AUD",
-      interval_unit: frequency,
-      interval: 1,
-      start_date: sub.start_date,
-      gc_status: sub.status,
-      source: "crm",
-    });
+    const { data: linkRow, error: linkErr } = await svc
+      .from("recurring_plan_gc_subscriptions")
+      .insert({
+        plan_id: planId,
+        gc_subscription_id: sub.id,
+        name: sub.name,
+        amount_cents: sub.amount,
+        currency: sub.currency ?? "AUD",
+        interval_unit: frequency,
+        interval: 1,
+        start_date: sub.start_date,
+        gc_status: sub.status,
+        source: "crm",
+      })
+      .select("id")
+      .single();
     if (linkErr) console.error("[add-service] link insert failed:", linkErr);
 
     const { error: itemErr } = await svc.from("recurring_plan_items").insert({
@@ -104,6 +109,33 @@ export async function POST(req: NextRequest) {
     });
     if (itemErr) console.error("[add-service] item insert failed:", itemErr);
 
+    // ── Mirror into Xero so the customer is never charged without an
+    // invoice (gap found 2026-07-09: GC collected, no invoice existed).
+    // Failure here must NOT roll back the GC sub — it's already live — so we
+    // surface loudly instead: notification + warning in the response.
+    let xeroRepeatingInvoiceId: string | null = null;
+    let xeroMirrorError: string | null = null;
+    if (linkRow?.id) {
+      try {
+        const mirror = await mirrorServiceToXero(svc, {
+          planId,
+          subscriptionLinkId: linkRow.id,
+          serviceName: serviceName.trim(),
+          priceIncGst,
+          quantity,
+          accountCode: accountCode ?? "200",
+          frequency,
+          startDate: sub.start_date ?? chargeDate ?? new Date().toISOString().slice(0, 10),
+        });
+        xeroRepeatingInvoiceId = mirror.repeatingInvoiceId;
+      } catch (err) {
+        xeroMirrorError = err instanceof Error ? err.message : String(err);
+        console.error("[add-service] Xero mirror failed:", err);
+      }
+    } else {
+      xeroMirrorError = "subscription link row missing — Xero mirror skipped";
+    }
+
     const customer = Array.isArray(plan.customers) ? plan.customers[0] : plan.customers;
     const site = Array.isArray(plan.customer_sites) ? plan.customer_sites[0] : plan.customer_sites;
     await enqueueNotification({
@@ -115,12 +147,25 @@ export async function POST(req: NextRequest) {
       body: `${serviceName} $${priceIncGst.toFixed(2)}/${frequency} — GC subscription ${sub.id}, first charge ${sub.start_date ?? chargeDate ?? "TBC"}.`,
       href: `/invoices/recurring/${planId}`,
     });
+    if (xeroMirrorError) {
+      await enqueueNotification({
+        typeCode: "recurring_plan.activation_failed",
+        refType: "recurring_plan",
+        refId: planId,
+        audience: { allActive: true },
+        title: `⚠ NO XERO INVOICE for added service: ${customer?.name ?? "?"}`,
+        body: `${serviceName} $${priceIncGst.toFixed(2)}/${frequency} is charging via GC sub ${sub.id} but the Xero mirror failed: ${xeroMirrorError}. Create the invoice template manually or re-run the mirror.`,
+        href: `/invoices/recurring/${planId}`,
+      });
+    }
 
     return NextResponse.json({
       ok: true,
       subscriptionId: sub.id,
       firstCharge: sub.start_date ?? chargeDate,
       clampedToMandate: !!(startDate && earliest && startDate < earliest),
+      xeroRepeatingInvoiceId,
+      xeroMirrorError,
     });
   } catch (err) {
     if (err instanceof GoCardlessApiError) {
