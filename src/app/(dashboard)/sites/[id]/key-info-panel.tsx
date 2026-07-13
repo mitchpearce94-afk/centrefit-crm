@@ -54,7 +54,8 @@ const LEGACY_KEY_INFO_TYPES = new Set([
   "Network Switch",
   "Wi-Fi Access Point",
   "NVR",
-  "WiFi Controller",
+  "WiFi Controller", // pre-rename spelling (type renamed WAP Controller 2026-07-13)
+  "WAP Controller",
 ]);
 
 // Infrastructure sections, in tech-priority order. Keyed by asset_types.category;
