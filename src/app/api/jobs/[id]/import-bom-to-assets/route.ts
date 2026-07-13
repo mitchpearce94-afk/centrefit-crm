@@ -108,19 +108,24 @@ export async function POST(
     ]),
   );
 
-  // Aggregate the BOM into per-unit demand, keyed by (name + asset type) so a
-  // re-run can top up against what this job already created. Two lines with
-  // the same product just add their quantities.
+  // Aggregate the BOM into per-unit demand, bucketed by asset TYPE. Top-up
+  // absorption happens at type level (Tuggeranong lesson #2, 2026-07-13):
+  // techs fit what's on the van, not always the exact product quoted — 10TB
+  // drives against a 6TB BOM line are still the same four hard drives, not
+  // four missing ones. Name matching runs first so multi-product types
+  // (black + white cameras) fill the right lines; leftover units of the type
+  // absorb the rest.
   type Demand = {
     name: string;
     qty: number;
+    have: number;
     sku: string | null;
     assetTypeId: string;
     deviceType: string | null;
     manufacturer: string | null;
     model: string | null;
   };
-  const demand = new Map<string, Demand>();
+  const demandByType = new Map<string, Demand[]>();
   const unmapped: SkippedLine[] = []; // product has no asset-type tag — needs attention
   const consumables: SkippedLine[] = []; // mapped but not trackable — correctly skipped
 
@@ -153,14 +158,15 @@ export async function POST(
       continue;
     }
 
-    const key = `${name.toLowerCase()}|${assetTypeId}`;
-    const d = demand.get(key);
+    const bucket = demandByType.get(assetTypeId) ?? [];
+    const d = bucket.find((x) => x.name.toLowerCase() === name.toLowerCase());
     if (d) {
       d.qty += qty;
     } else {
-      demand.set(key, {
+      bucket.push({
         name,
         qty,
+        have: 0,
         sku: (li.sku ?? "").trim() || null,
         assetTypeId,
         // Prefer the asset type's name for the device label so the register
@@ -172,48 +178,71 @@ export async function POST(
         model: meta.model ?? ((li.sku ?? "").trim() || null),
       });
     }
+    demandByType.set(assetTypeId, bucket);
   }
 
-  // What this job already put in the register, bucketed the same way — the
-  // top-up baseline. Never deletes: a shrunk BOM just reports a surplus.
+  // What this job already put in the register — the top-up baseline.
+  // Never deletes: a shrunk BOM just reports a surplus.
   const { data: existingAssets } = await supabase
     .from("site_assets")
     .select("device_name, asset_type_id")
     .eq("job_id", jobId);
-  const existingByKey = new Map<string, number>();
+  const existingByType = new Map<string, { total: number; byName: Map<string, number> }>();
   for (const a of existingAssets ?? []) {
-    const key = `${(a.device_name ?? "").trim().toLowerCase()}|${a.asset_type_id ?? ""}`;
-    existingByKey.set(key, (existingByKey.get(key) ?? 0) + 1);
+    if (!a.asset_type_id) continue;
+    const e = existingByType.get(a.asset_type_id) ?? { total: 0, byName: new Map() };
+    e.total += 1;
+    const n = (a.device_name ?? "").trim().toLowerCase();
+    e.byName.set(n, (e.byName.get(n) ?? 0) + 1);
+    existingByType.set(a.asset_type_id, e);
   }
 
-  // Manually-added site assets (no job stamp) of the same types — can't be
-  // safely deduped against automatically, but the tech deserves a heads-up.
-  const demandTypeIds = [...new Set([...demand.values()].map((d) => d.assetTypeId))];
+  // Absorption: per type, exact-name matches fill their own lines first, then
+  // any remaining existing units of the type cover other lines (techs swap
+  // like-for-like hardware; the register cares about units, not part numbers).
+  let alreadyCovered = 0;
+  const deficitTypes = new Set<string>();
+  for (const [typeId, bucket] of demandByType) {
+    const e = existingByType.get(typeId);
+    let leftover = e?.total ?? 0;
+    for (const d of bucket) {
+      const nameMatched = Math.min(e?.byName.get(d.name.toLowerCase()) ?? 0, d.qty);
+      d.have = nameMatched;
+      leftover -= nameMatched;
+    }
+    for (const d of bucket) {
+      if (leftover <= 0) break;
+      const take = Math.min(d.qty - d.have, leftover);
+      d.have += take;
+      leftover -= take;
+    }
+    for (const d of bucket) {
+      alreadyCovered += d.have;
+      if (d.qty > d.have) deficitTypes.add(typeId);
+    }
+  }
+
+  // Manually-added site assets (no job stamp) of types we're about to create —
+  // can't be safely deduped against automatically, but the tech deserves a
+  // heads-up. (Adopting them onto the job makes future re-runs absorb them.)
   const possibleDuplicates: Array<{ deviceType: string; count: number }> = [];
-  if (demandTypeIds.length > 0) {
+  if (deficitTypes.size > 0) {
     const { data: unstamped } = await supabase
       .from("site_assets")
       .select("asset_type_id")
       .eq("site_id", job.site_id)
       .is("job_id", null)
-      .in("asset_type_id", demandTypeIds);
+      .in("asset_type_id", [...deficitTypes]);
     const byType = new Map<string, number>();
     for (const a of unstamped ?? []) {
       if (!a.asset_type_id) continue;
       byType.set(a.asset_type_id, (byType.get(a.asset_type_id) ?? 0) + 1);
     }
     for (const [typeId, count] of byType) {
-      // Only warn when this run is actually about to create that type.
-      const creating = [...demand.values()].some((d) => {
-        const key = `${d.name.toLowerCase()}|${d.assetTypeId}`;
-        return d.assetTypeId === typeId && d.qty > (existingByKey.get(key) ?? 0);
+      possibleDuplicates.push({
+        deviceType: metaById.get(typeId)?.name ?? "Unknown type",
+        count,
       });
-      if (creating) {
-        possibleDuplicates.push({
-          deviceType: metaById.get(typeId)?.name ?? "Unknown type",
-          count,
-        });
-      }
     }
   }
 
@@ -228,28 +257,25 @@ export async function POST(
     is_active: boolean;
   };
   const rows: Row[] = [];
-  let alreadyCovered = 0;
-  for (const d of demand.values()) {
-    const key = `${d.name.toLowerCase()}|${d.assetTypeId}`;
-    const have = existingByKey.get(key) ?? 0;
-    const need = Math.max(0, d.qty - have);
-    alreadyCovered += Math.min(have, d.qty);
-    for (let i = 0; i < need && rows.length < MAX_UNITS; i++) {
-      rows.push({
-        site_id: job.site_id,
-        job_id: jobId,
-        device_name: d.name,
-        device_type: d.deviceType,
-        manufacturer: d.manufacturer,
-        model: d.model,
-        asset_type_id: d.assetTypeId,
-        is_active: true,
-      });
+  outer: for (const bucket of demandByType.values()) {
+    for (const d of bucket) {
+      for (let i = d.have; i < d.qty; i++) {
+        if (rows.length >= MAX_UNITS) break outer;
+        rows.push({
+          site_id: job.site_id,
+          job_id: jobId,
+          device_name: d.name,
+          device_type: d.deviceType,
+          manufacturer: d.manufacturer,
+          model: d.model,
+          asset_type_id: d.assetTypeId,
+          is_active: true,
+        });
+      }
     }
-    if (rows.length >= MAX_UNITS) break;
   }
 
-  if (rows.length === 0 && demand.size === 0) {
+  if (rows.length === 0 && demandByType.size === 0) {
     return NextResponse.json(
       {
         error:
