@@ -200,9 +200,12 @@ export function JobProcurement({
       if (!res.ok || json.error) {
         toast(json.error ?? "Failed to start ordering", "error");
       } else {
-        toast(json.alreadyInitialised
-          ? "Procurement already initialised"
-          : `Created ${json.created} procurement rows from ${json.quoteRef}`);
+        const covered = json.coveredByHistory
+          ? ` (${json.coveredByHistory} unit${json.coveredByHistory === 1 ? "" : "s"} already covered by earlier orders)`
+          : "";
+        toast(json.created > 0
+          ? `Added ${json.created} item${json.created === 1 ? "" : "s"} from ${json.quoteRef}${covered}`
+          : `Procurement is up to date with ${json.quoteRef}${covered}`);
         router.refresh();
       }
     } finally {
@@ -665,6 +668,14 @@ export function JobProcurement({
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button
+            onClick={initFromQuote}
+            disabled={busy === "init"}
+            title="Pull in any accepted-quote items missing from this list — e.g. after the quote was revised. Never duplicates or re-orders received stock."
+            className="rounded-md border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50"
+          >
+            {busy === "init" ? "Syncing…" : "Sync from quote"}
+          </button>
           <button
             onClick={openAddParts}
             className="rounded-md border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent"
