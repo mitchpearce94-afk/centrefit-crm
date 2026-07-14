@@ -216,8 +216,11 @@ export async function createRecurringPlansForSites(
       );
       billingRequestId = br.id;
 
-      const givenName = primary.name?.split(/\s+/)[0];
-      const familyName = primary.name?.split(/\s+/).slice(1).join(" ");
+      // GC 422s `lock_customer_details` when a person has a given_name but no
+      // family_name — single-word contacts (e.g. "Owner") enrol company-only.
+      const nameParts = primary.name?.trim().split(/\s+/) ?? [];
+      const givenName = nameParts.length >= 2 ? nameParts[0] : undefined;
+      const familyName = nameParts.length >= 2 ? nameParts.slice(1).join(" ") : undefined;
 
       // Step 2 of the GC mandate flow: attach the customer detail to the
       // billing request via collect_customer_details. Without this action
