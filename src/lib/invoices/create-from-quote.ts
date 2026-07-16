@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAuthedClient } from "@/lib/xero/client";
 import { findOrCreateContact } from "@/lib/xero/contacts";
 import {
+  buildScopeInvoiceLines,
   createXeroInvoice,
   formatScopeDescription,
   type XeroLineItemInput,
@@ -137,7 +138,11 @@ export async function createInvoiceFromAcceptedQuote(
       { siteHeader, manualScopeText },
     );
     headerDescription = `Installation per quote ${quote.ref}`;
-    lineItems = [{ description, quantity: 1, unitAmount: amount }];
+    lineItems = buildScopeInvoiceLines(
+      description,
+      `${headerDescription} — as per the Scope of Works above`,
+      amount,
+    );
     subtotal = amount;
   } else {
     const amount = Number(pricing.pp1?.total ?? 0);
@@ -150,7 +155,11 @@ export async function createInvoiceFromAcceptedQuote(
       { siteHeader, milestoneHeader: "Progress Payment 1 — On Acceptance", manualScopeText },
     );
     headerDescription = `Progress Payment 1 — Quote ${quote.ref}`;
-    lineItems = [{ description, quantity: 1, unitAmount: amount }];
+    lineItems = buildScopeInvoiceLines(
+      description,
+      `${headerDescription} — as per the Scope of Works above`,
+      amount,
+    );
     subtotal = amount;
   }
 

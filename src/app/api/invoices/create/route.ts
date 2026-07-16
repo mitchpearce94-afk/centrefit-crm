@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAuthedClient } from "@/lib/xero/client";
 import { findOrCreateContact } from "@/lib/xero/contacts";
 import {
+  buildScopeInvoiceLines,
   createXeroInvoice,
   formatScopeDescription,
   type XeroLineItemInput,
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
     siteId = body.siteId ?? null;
     const pricedLines = body.lineItems;
     headerDescription = body.description ?? "";
-    subtotal = pricedLines.reduce((s, li) => s + (li.unitAmount * (li.quantity ?? 1)), 0);
+    subtotal = pricedLines.reduce((s, li) => s + ((li.unitAmount ?? 0) * (li.quantity ?? 1)), 0);
 
     // Fold the narrative (job description + checklist + work log) into the
     // FIRST priced line so the Xero invoice shows one line carrying both the
@@ -167,11 +168,11 @@ export async function POST(req: NextRequest) {
         { siteHeader, milestoneHeader: `CentreFit Installation — Quote ${quote.ref}`, manualScopeText },
       );
       headerDescription = `Installation per quote ${quote.ref}`;
-      lineItems = [{
+      lineItems = buildScopeInvoiceLines(
         description,
-        quantity: 1,
-        unitAmount: Number(pricing.totalExGST ?? 0),
-      }];
+        `${headerDescription} — as per the Scope of Works above`,
+        Number(pricing.totalExGST ?? 0),
+      );
       subtotal = Number(pricing.totalExGST ?? 0);
     } else if (body.type === "progress_pp1" || body.type === "progress_pp2") {
       if (quote.quote_type !== "progress") {
@@ -215,11 +216,11 @@ export async function POST(req: NextRequest) {
         { siteHeader, milestoneHeader: header, manualScopeText },
       );
       headerDescription = header;
-      lineItems = [{
+      lineItems = buildScopeInvoiceLines(
         description,
-        quantity: 1,
-        unitAmount: amount,
-      }];
+        `${header} — as per the Scope of Works above`,
+        amount,
+      );
       subtotal = amount;
     }
   }

@@ -14,12 +14,15 @@ interface EditableLine {
   unitAmount: number;
   accountCode: string;
   taxType: string;
+  /** Text-only row — renders in Xero as a full-width description with no charge. */
+  descriptionOnly: boolean;
 }
 
 interface InitialLine {
   description: string;
   quantity?: number;
-  unitAmount: number;
+  /** Absent on description-only rows (long scope-of-works text). */
+  unitAmount?: number;
   accountCode?: string;
   taxType?: string;
 }
@@ -48,6 +51,7 @@ export function LineItemsEditor({
       unitAmount: Number(li.unitAmount ?? 0),
       accountCode: li.accountCode ?? "200",
       taxType: li.taxType ?? "OUTPUT",
+      descriptionOnly: li.unitAmount == null,
     })),
   );
   const [saving, setSaving] = useState(false);
@@ -57,6 +61,7 @@ export function LineItemsEditor({
     let subtotal = 0;
     let gst = 0;
     for (const l of lines) {
+      if (l.descriptionOnly) continue;
       const lineTotal = (l.quantity || 0) * (l.unitAmount || 0);
       subtotal += lineTotal;
       if (l.taxType === "OUTPUT") gst += lineTotal * 0.1;
@@ -76,7 +81,7 @@ export function LineItemsEditor({
     setDirty(true);
   }
 
-  function add() {
+  function add(descriptionOnly = false) {
     setLines((prev) => [
       ...prev,
       {
@@ -85,6 +90,7 @@ export function LineItemsEditor({
         unitAmount: 0,
         accountCode: "200",
         taxType: "OUTPUT",
+        descriptionOnly,
       },
     ]);
     setDirty(true);
@@ -111,10 +117,14 @@ export function LineItemsEditor({
         toast(`Line ${i + 1} needs a description`, "error");
         return;
       }
-      if (!Number.isFinite(l.unitAmount)) {
+      if (!l.descriptionOnly && !Number.isFinite(l.unitAmount)) {
         toast(`Line ${i + 1} has an invalid unit amount`, "error");
         return;
       }
+    }
+    if (!lines.some((l) => !l.descriptionOnly)) {
+      toast("At least one line must carry an amount", "error");
+      return;
     }
 
     setSaving(true);
@@ -122,7 +132,19 @@ export function LineItemsEditor({
       const res = await fetch(`/api/invoices/${invoiceId}/update-lines`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lineItems: lines }),
+        body: JSON.stringify({
+          lineItems: lines.map((l) =>
+            l.descriptionOnly
+              ? { description: l.description }
+              : {
+                  description: l.description,
+                  quantity: l.quantity,
+                  unitAmount: l.unitAmount,
+                  accountCode: l.accountCode,
+                  taxType: l.taxType,
+                },
+          ),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Save failed");
@@ -170,63 +192,83 @@ export function LineItemsEditor({
               key={i}
               className="border-t border-border first:border-t-0 px-3 py-3 grid grid-cols-1 md:grid-cols-[1fr_70px_110px_200px_140px_90px_28px] gap-2 items-start"
             >
-              <textarea
-                value={line.description}
-                onChange={(e) => update(i, { description: e.target.value })}
-                placeholder="Description"
-                rows={2}
-                className="w-full rounded border border-border bg-background px-2 py-1 text-xs resize-y min-h-[3.5rem]"
-              />
-              <input
-                type="number"
-                inputMode="decimal"
-                value={line.quantity}
-                onChange={(e) => update(i, { quantity: Number(e.target.value) })}
-                step="any"
-                min="0"
-                className="w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono text-right"
-              />
-              <input
-                type="number"
-                inputMode="decimal"
-                value={line.unitAmount}
-                onChange={(e) =>
-                  update(i, { unitAmount: Number(e.target.value) })
-                }
-                step="0.01"
-                className="w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono text-right"
-              />
-              <select
-                value={line.accountCode}
-                onChange={(e) => update(i, { accountCode: e.target.value })}
-                className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
-              >
-                {XERO_SALES_ACCOUNTS.map((a) => (
-                  <option key={a.code} value={a.code}>
-                    {a.code} · {a.name}
-                  </option>
-                ))}
-                {!XERO_SALES_ACCOUNTS.find(
-                  (a) => a.code === line.accountCode,
-                ) && (
-                  <option value={line.accountCode}>
-                    {line.accountCode} (unknown)
-                  </option>
-                )}
-              </select>
-              <select
-                value={line.taxType}
-                onChange={(e) => update(i, { taxType: e.target.value })}
-                className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
-              >
-                {XERO_OUTPUT_TAX_TYPES.map((t) => (
-                  <option key={t.code} value={t.code}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+              <div className={line.descriptionOnly ? "md:col-span-5" : undefined}>
+                <textarea
+                  value={line.description}
+                  onChange={(e) => update(i, { description: e.target.value })}
+                  placeholder="Description"
+                  rows={line.descriptionOnly ? 5 : 2}
+                  className="w-full rounded border border-border bg-background px-2 py-1 text-xs resize-y min-h-[3.5rem]"
+                />
+                <label className="mt-1 flex items-center gap-1.5 text-[10px] text-muted-foreground select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={line.descriptionOnly}
+                    onChange={(e) =>
+                      update(i, { descriptionOnly: e.target.checked })
+                    }
+                  />
+                  Text-only line (no charge)
+                </label>
+              </div>
+              {!line.descriptionOnly && (
+                <>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={line.quantity}
+                    onChange={(e) => update(i, { quantity: Number(e.target.value) })}
+                    step="any"
+                    min="0"
+                    className="w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono text-right"
+                  />
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={line.unitAmount}
+                    onChange={(e) =>
+                      update(i, { unitAmount: Number(e.target.value) })
+                    }
+                    step="0.01"
+                    className="w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono text-right"
+                  />
+                  <select
+                    value={line.accountCode}
+                    onChange={(e) => update(i, { accountCode: e.target.value })}
+                    className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
+                  >
+                    {XERO_SALES_ACCOUNTS.map((a) => (
+                      <option key={a.code} value={a.code}>
+                        {a.code} · {a.name}
+                      </option>
+                    ))}
+                    {!XERO_SALES_ACCOUNTS.find(
+                      (a) => a.code === line.accountCode,
+                    ) && (
+                      <option value={line.accountCode}>
+                        {line.accountCode} (unknown)
+                      </option>
+                    )}
+                  </select>
+                  <select
+                    value={line.taxType}
+                    onChange={(e) => update(i, { taxType: e.target.value })}
+                    className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
+                  >
+                    {XERO_OUTPUT_TAX_TYPES.map((t) => (
+                      <option key={t.code} value={t.code}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
               <div className="text-right font-mono text-xs pt-1.5 self-center md:self-start">
-                ${fmt(lineTotal)}
+                {line.descriptionOnly ? (
+                  <span className="text-muted-foreground">—</span>
+                ) : (
+                  <>${fmt(lineTotal)}</>
+                )}
               </div>
               <div className="flex md:flex-col items-center md:items-end gap-1">
                 <button
@@ -262,13 +304,23 @@ export function LineItemsEditor({
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
-        <button
-          type="button"
-          onClick={add}
-          className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors"
-        >
-          <span className="text-base leading-none">+</span> Add line
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => add()}
+            className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors"
+          >
+            <span className="text-base leading-none">+</span> Add line
+          </button>
+          <button
+            type="button"
+            onClick={() => add(true)}
+            title="A full-width text row with no charge — used for scope-of-works text"
+            className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors"
+          >
+            <span className="text-base leading-none">+</span> Add text line
+          </button>
+        </div>
 
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <span>

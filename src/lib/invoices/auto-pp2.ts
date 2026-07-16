@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAuthedClient } from "@/lib/xero/client";
 import { findOrCreateContact } from "@/lib/xero/contacts";
-import { createXeroInvoice, formatScopeDescription, type XeroLineItemInput } from "@/lib/xero/invoices";
+import { buildScopeInvoiceLines, createXeroInvoice, formatScopeDescription, type XeroLineItemInput } from "@/lib/xero/invoices";
 
 export interface AutoPP2Result {
   created: { invoiceId: string; xeroInvoiceNumber: string | null; quoteId: string }[];
@@ -134,7 +134,11 @@ export async function tryCreatePP2ForJob(
         quote.scope_overrides ?? null,
         { siteHeader, milestoneHeader: header, manualScopeText },
       );
-      const lineItems: XeroLineItemInput[] = [{ description, quantity: 1, unitAmount: amount }];
+      const lineItems: XeroLineItemInput[] = buildScopeInvoiceLines(
+        description,
+        `${header} — as per the Scope of Works above`,
+        amount,
+      );
 
       const { client: xero, conn } = await getAuthedClient();
       const xeroContactId = await findOrCreateContact(

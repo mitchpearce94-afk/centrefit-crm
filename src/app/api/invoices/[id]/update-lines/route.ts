@@ -8,7 +8,8 @@ import { assertXeroAvailable, captureXeroRateLimit } from "@/lib/xero/rate-limit
 interface InboundLine {
   description: string;
   quantity?: number;
-  unitAmount: number;
+  /** Absent/null = description-only row (text line with no charge in Xero). */
+  unitAmount?: number | null;
   accountCode?: string;
   taxType?: string;
 }
@@ -37,12 +38,21 @@ export async function POST(
         { status: 400 },
       );
     }
+    // Description-only rows (unitAmount absent) carry no charge — skip the
+    // amount validation for those.
+    if (li.unitAmount == null) continue;
     if (typeof li.unitAmount !== "number" || !Number.isFinite(li.unitAmount)) {
       return NextResponse.json(
-        { error: "Every line item needs a valid unit amount" },
+        { error: "Every priced line item needs a valid unit amount" },
         { status: 400 },
       );
     }
+  }
+  if (!lineItems.some((li) => li.unitAmount != null)) {
+    return NextResponse.json(
+      { error: "At least one line item must carry an amount" },
+      { status: 400 },
+    );
   }
 
   const { data: invoice, error } = await supabase
@@ -77,6 +87,20 @@ export async function POST(
     );
   }
 
+  // Normalise before the Xero call: description-only rows keep ONLY their
+  // description (any other field would turn them into $0.00 priced rows).
+  const cleanedLines = lineItems.map((li) =>
+    li.unitAmount == null
+      ? { description: li.description }
+      : {
+          description: li.description,
+          quantity: li.quantity ?? 1,
+          unitAmount: li.unitAmount,
+          accountCode: li.accountCode ?? "200",
+          taxType: li.taxType ?? "OUTPUT",
+        },
+  );
+
   let totals;
   try {
     const { client, conn } = await getAuthedClient();
@@ -84,7 +108,7 @@ export async function POST(
       xero: client,
       tenantId: conn.tenant_id,
       xeroInvoiceId: invoice.xero_invoice_id,
-      lineItems,
+      lineItems: cleanedLines,
     });
   } catch (err: unknown) {
     await captureXeroRateLimit(supabase, err);
@@ -101,14 +125,6 @@ export async function POST(
       { status: 502 },
     );
   }
-
-  const cleanedLines = lineItems.map((li) => ({
-    description: li.description,
-    quantity: li.quantity ?? 1,
-    unitAmount: li.unitAmount,
-    accountCode: li.accountCode ?? "200",
-    taxType: li.taxType ?? "OUTPUT",
-  }));
 
   const { data: updated, error: updErr } = await supabase
     .from("invoices")

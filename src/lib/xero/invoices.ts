@@ -18,12 +18,41 @@ export const DEFAULT_TAX_TYPE_OUTPUT = "OUTPUT";
 // Default payment term: 14 days from issue. Overridable per customer later.
 export const DEFAULT_DUE_DAYS = 7;
 
+// Xero hard-caps LineItem.Description at 4000 chars. Longer scope text must
+// be split across multiple description-only rows (see buildScopeInvoiceLines).
+export const XERO_DESCRIPTION_LIMIT = 4000;
+
 export interface XeroLineItemInput {
   description: string;
   quantity?: number;       // defaults to 1
-  unitAmount: number;      // ex-GST
+  /**
+   * ex-GST. Omit entirely for a description-only row — Xero renders those as
+   * full-width text lines with blank qty/amount columns, provided quantity,
+   * unitAmount and accountCode are ALL absent from the payload.
+   */
+  unitAmount?: number;
   accountCode?: string;    // defaults to DEFAULT_SALES_ACCOUNT_CODE
   taxType?: string;        // defaults to DEFAULT_TAX_TYPE_OUTPUT
+}
+
+/** True when the line carries a charge (description-only rows have no unitAmount). */
+export function isPricedLine(li: Pick<XeroLineItemInput, "unitAmount">): boolean {
+  return li.unitAmount !== undefined && li.unitAmount !== null;
+}
+
+function toXeroLineItem(li: XeroLineItemInput): Record<string, unknown> {
+  if (!isPricedLine(li)) {
+    // Description-only: sending qty/amount/account would turn it into a $0.00
+    // priced row on the PDF, so the description must be the ONLY field.
+    return { description: li.description.slice(0, XERO_DESCRIPTION_LIMIT) };
+  }
+  return {
+    description: li.description.slice(0, XERO_DESCRIPTION_LIMIT),
+    quantity: li.quantity ?? 1,
+    unitAmount: li.unitAmount,
+    accountCode: li.accountCode ?? DEFAULT_SALES_ACCOUNT_CODE,
+    taxType: li.taxType ?? DEFAULT_TAX_TYPE_OUTPUT,
+  };
 }
 
 export interface CreateXeroInvoiceInput {
@@ -59,6 +88,9 @@ export async function createXeroInvoice({
   if (lineItems.length === 0) {
     throw new Error("Cannot create a Xero invoice with zero line items");
   }
+  if (!lineItems.some(isPricedLine)) {
+    throw new Error("Cannot create a Xero invoice with only description-only lines");
+  }
 
   const today = new Date();
   const due = dueDate ?? new Date(today.getTime() + DEFAULT_DUE_DAYS * 86400_000);
@@ -70,13 +102,7 @@ export async function createXeroInvoice({
     date: brisbaneDateISO(today),
     dueDate: brisbaneDateISO(due),
     lineAmountTypes: "Exclusive", // unit amounts are ex-GST; Xero adds GST
-    lineItems: lineItems.map((li) => ({
-      description: li.description.slice(0, 4000), // Xero limit
-      quantity: li.quantity ?? 1,
-      unitAmount: li.unitAmount,
-      accountCode: li.accountCode ?? DEFAULT_SALES_ACCOUNT_CODE,
-      taxType: li.taxType ?? DEFAULT_TAX_TYPE_OUTPUT,
-    })),
+    lineItems: lineItems.map(toXeroLineItem),
   };
   if (reference) invoicePayload.reference = reference.slice(0, 255);
 
@@ -130,17 +156,14 @@ export async function updateXeroInvoiceLines({
   if (lineItems.length === 0) {
     throw new Error("Cannot update Xero invoice to zero line items");
   }
+  if (!lineItems.some(isPricedLine)) {
+    throw new Error("Cannot update Xero invoice to only description-only lines");
+  }
   const res = await xero.accountingApi.updateInvoice(tenantId, xeroInvoiceId, {
     invoices: [
       {
         lineAmountTypes: "Exclusive",
-        lineItems: lineItems.map((li) => ({
-          description: li.description.slice(0, 4000),
-          quantity: li.quantity ?? 1,
-          unitAmount: li.unitAmount,
-          accountCode: li.accountCode ?? DEFAULT_SALES_ACCOUNT_CODE,
-          taxType: li.taxType ?? DEFAULT_TAX_TYPE_OUTPUT,
-        })),
+        lineItems: lineItems.map(toXeroLineItem),
       } as Record<string, unknown>,
     ],
   });
@@ -279,4 +302,59 @@ export function formatScopeDescription(
   if (opts.milestoneHeader) parts.push(opts.milestoneHeader);
   parts.push(body);
   return parts.join('\n\n');
+}
+
+/**
+ * Split long text into chunks that each fit Xero's per-line description
+ * limit, breaking on line boundaries so no sentence is cut mid-word. A single
+ * line longer than the limit (no natural break) is hard-split at the last
+ * space before the limit.
+ */
+export function chunkDescription(text: string, limit = XERO_DESCRIPTION_LIMIT): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  if (trimmed.length <= limit) return [trimmed];
+
+  const chunks: string[] = [];
+  let current = "";
+  for (const line of trimmed.split("\n")) {
+    let piece = line;
+    while (piece.length > limit) {
+      const lastSpace = piece.lastIndexOf(" ", limit);
+      const cut = lastSpace > limit * 0.5 ? lastSpace : limit;
+      if (current) {
+        chunks.push(current);
+        current = "";
+      }
+      chunks.push(piece.slice(0, cut).trimEnd());
+      piece = piece.slice(cut).trimStart();
+    }
+    const candidate = current ? `${current}\n${piece}` : piece;
+    if (candidate.length > limit) {
+      chunks.push(current);
+      current = piece;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current.trim()) chunks.push(current);
+  return chunks;
+}
+
+/**
+ * Build the line set for a scope-of-works invoice: the FULL scope text as
+ * description-only rows (split across as many rows as Xero's 4000-char limit
+ * requires — nothing is truncated), followed by a single priced line carrying
+ * the charge. This is what fixes long quotes getting their scope chopped when
+ * everything lived on the one priced line.
+ */
+export function buildScopeInvoiceLines(
+  scopeText: string,
+  pricedDescription: string,
+  amount: number,
+): XeroLineItemInput[] {
+  return [
+    ...chunkDescription(scopeText).map((description) => ({ description })),
+    { description: pricedDescription, quantity: 1, unitAmount: amount },
+  ];
 }

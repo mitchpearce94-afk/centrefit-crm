@@ -55,7 +55,8 @@ export default async function InvoiceDetailPage({
   const lineItems = (inv.line_items ?? []) as Array<{
     description: string;
     quantity?: number;
-    unitAmount: number;
+    /** Absent on description-only rows (scope-of-works text lines). */
+    unitAmount?: number;
     accountCode?: string;
     taxType?: string;
   }>;
@@ -239,10 +240,12 @@ export default async function InvoiceDetailPage({
                         </p>
                       )}
                     </div>
-                    <div className="flex items-center gap-4 shrink-0 text-right">
-                      <span className="text-xs font-mono text-muted-foreground w-10 text-center">{li.quantity ?? 1}</span>
-                      <span className="text-sm font-mono font-medium w-24">${fmt(Number(li.unitAmount) * (li.quantity ?? 1))}</span>
-                    </div>
+                    {li.unitAmount != null && (
+                      <div className="flex items-center gap-4 shrink-0 text-right">
+                        <span className="text-xs font-mono text-muted-foreground w-10 text-center">{li.quantity ?? 1}</span>
+                        <span className="text-sm font-mono font-medium w-24">${fmt(Number(li.unitAmount) * (li.quantity ?? 1))}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
