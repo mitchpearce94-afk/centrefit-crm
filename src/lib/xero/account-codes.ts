@@ -13,12 +13,15 @@ export const XERO_SALES_ACCOUNTS: XeroAccountOption[] = [
   { code: "202", name: "Sales - IT Service" },
   { code: "203", name: "Sales - IT Install" },
   { code: "204", name: "Sales - NBN" },
-  { code: "205", name: "Sales - B2B Monitoring Quarterly" },
+  { code: "205", name: "Sales - B2B Alarm Monitoring Quarterly" },
   { code: "206", name: "Sales - Parts" },
-  { code: "207", name: "Sales - SIM" },
-  { code: "208", name: "Sales - MyAlarm" },
-  { code: "209", name: "Sales - B2B Monitoring Monthly" },
-  { code: "215", name: "Sales - Freight" },
+  { code: "207", name: "Sales - Sim" },
+  { code: "208", name: "Sales - My Alarm" },
+  { code: "209", name: "Sales - B2B Alarm Monitoring Monthly" },
+  { code: "215", name: "Sales - Freight (charged to customer)" },
+  { code: "216", name: "Sales - Security Patrol" },
+  { code: "220", name: "Sales - Refund" },
+  { code: "221", name: "Sales - Security" },
 ];
 
 export interface XeroTaxTypeOption {
