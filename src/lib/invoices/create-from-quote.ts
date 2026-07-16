@@ -2,9 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAuthedClient } from "@/lib/xero/client";
 import { findOrCreateContact } from "@/lib/xero/contacts";
 import {
-  buildScopeInvoiceLines,
+  buildQuoteReferenceLine,
   createXeroInvoice,
-  formatScopeDescription,
   type XeroLineItemInput,
 } from "@/lib/xero/invoices";
 
@@ -60,31 +59,6 @@ export async function createInvoiceFromAcceptedQuote(
     .maybeSingle();
   if (existing) throw new Error(`${type} invoice already exists for this quote`);
 
-  const siteInfo = {
-    site_sqm: quote.site_sqm ?? 0,
-    door_count: quote.door_count ?? 0,
-    external_camera_count: quote.external_camera_count ?? 0,
-    concrete_mount_black: quote.concrete_mount_black ?? 0,
-    concrete_mount_white: quote.concrete_mount_white ?? 0,
-    cardio_count: quote.cardio_count ?? 0,
-    tv_count: quote.tv_count ?? 0,
-    ceiling_tv_count: quote.ceiling_tv_count ?? 0,
-    wall_tv_mount_count: quote.wall_tv_mount_count ?? 0,
-    ceiling_tv_mount_count: quote.ceiling_tv_mount_count ?? 0,
-    separate_studio_zone: quote.separate_studio_zone ?? false,
-  };
-
-  // BOM + product scope_roles for the scope-of-works generator
-  const [{ data: scopeBomRows }, { data: scopeProductRows }] = await Promise.all([
-    supabase.from("quote_line_items").select("product_id, quantity").eq("quote_id", quoteId),
-    supabase.from("quote_products").select("id, scope_role, name, sku"),
-  ]);
-  const scopeBom = (scopeBomRows ?? []).map((r) => ({
-    product_id: r.product_id ?? null,
-    quantity: Number(r.quantity) || 0,
-  }));
-  const scopeProducts = (scopeProductRows ?? []) as Array<{ id: string; scope_role: string }>;
-
   // Resolve site if the quote has one. We use this both for naming the Xero
   // contact (so multi-site customers don't lump everything under one Xero
   // record) and for the site-address block on the invoice line description.
@@ -122,44 +96,24 @@ export async function createInvoiceFromAcceptedQuote(
   let lineItems: XeroLineItemInput[];
   let subtotal: number;
 
-  const manualScopeText =
-    quote.quote_mode === "manual"
-      ? (quote.labour_data?.scope_of_works ?? "")
-      : "";
-
+  // Reference-only invoicing (Mitchell, 2026-07-16): the accepted quote is
+  // the scope document — the invoice just points at it, no scope text.
   if (type === "full") {
     const amount = Number(pricing.totalExGST ?? 0);
     if (amount <= 0) throw new Error("Quote has no billable total");
-    const description = formatScopeDescription(
-      scopeBom,
-      scopeProducts,
-      siteInfo,
-      quote.scope_overrides ?? null,
-      { siteHeader, manualScopeText },
-    );
     headerDescription = `Installation per quote ${quote.ref}`;
-    lineItems = buildScopeInvoiceLines(
-      description,
-      `${headerDescription} — as per the Scope of Works above`,
-      amount,
-    );
+    lineItems = buildQuoteReferenceLine({ quoteRef: quote.ref, amount, siteHeader });
     subtotal = amount;
   } else {
     const amount = Number(pricing.pp1?.total ?? 0);
     if (amount <= 0) throw new Error("No PP1 amount in the quote pricing snapshot");
-    const description = formatScopeDescription(
-      scopeBom,
-      scopeProducts,
-      siteInfo,
-      quote.scope_overrides ?? null,
-      { siteHeader, milestoneHeader: "Progress Payment 1 — On Acceptance", manualScopeText },
-    );
     headerDescription = `Progress Payment 1 — Quote ${quote.ref}`;
-    lineItems = buildScopeInvoiceLines(
-      description,
-      `${headerDescription} — as per the Scope of Works above`,
+    lineItems = buildQuoteReferenceLine({
+      quoteRef: quote.ref,
       amount,
-    );
+      siteHeader,
+      milestone: "Progress Payment 1 (on acceptance)",
+    });
     subtotal = amount;
   }
 

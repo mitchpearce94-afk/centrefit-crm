@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAuthedClient } from "@/lib/xero/client";
 import { findOrCreateContact } from "@/lib/xero/contacts";
-import { buildScopeInvoiceLines, createXeroInvoice, formatScopeDescription, type XeroLineItemInput } from "@/lib/xero/invoices";
+import { buildQuoteReferenceLine, createXeroInvoice, type XeroLineItemInput } from "@/lib/xero/invoices";
 
 export interface AutoPP2Result {
   created: { invoiceId: string; xeroInvoiceNumber: string | null; quoteId: string }[];
@@ -81,31 +81,6 @@ export async function tryCreatePP2ForJob(
         customer.customer_contacts?.find((c: { is_primary: boolean }) => c.is_primary) ??
         customer.customer_contacts?.[0];
 
-      const siteInfo = {
-        site_sqm: quote.site_sqm ?? 0,
-        door_count: quote.door_count ?? 0,
-        external_camera_count: quote.external_camera_count ?? 0,
-        concrete_mount_black: quote.concrete_mount_black ?? 0,
-        concrete_mount_white: quote.concrete_mount_white ?? 0,
-        cardio_count: quote.cardio_count ?? 0,
-        tv_count: quote.tv_count ?? 0,
-        ceiling_tv_count: quote.ceiling_tv_count ?? 0,
-        wall_tv_mount_count: quote.wall_tv_mount_count ?? 0,
-        ceiling_tv_mount_count: quote.ceiling_tv_mount_count ?? 0,
-        separate_studio_zone: quote.separate_studio_zone ?? false,
-      };
-
-      // BOM + product scope_roles for the scope-of-works generator
-      const [{ data: scopeBomRows }, { data: scopeProductRows }] = await Promise.all([
-        supabase.from("quote_line_items").select("product_id, quantity").eq("quote_id", quote.id),
-        supabase.from("quote_products").select("id, scope_role, name, sku"),
-      ]);
-      const scopeBom = (scopeBomRows ?? []).map((r) => ({
-        product_id: r.product_id ?? null,
-        quantity: Number(r.quantity) || 0,
-      }));
-      const scopeProducts = (scopeProductRows ?? []) as Array<{ id: string; scope_role: string }>;
-
       // Pull site info so the invoice has a "Site:" header + the Xero contact
       // resolves to the per-site billing entity (matches the quote-driven flow
       // in lib/invoices/create-from-quote.ts).
@@ -122,23 +97,15 @@ export async function tryCreatePP2ForJob(
         ? `Site: ${[siteRow?.name ?? quote.site_name, siteRow ? [siteRow.address, siteRow.suburb, siteRow.state, siteRow.postcode].filter(Boolean).join(", ") : quote.site_address].filter(Boolean).join(" — ")}`
         : undefined;
 
+      // Reference-only invoicing (Mitchell, 2026-07-16): the accepted quote
+      // is the scope document — the invoice just points at it.
       const header = `Progress Payment 2 — On Completion (Quote ${quote.ref})`;
-      const manualScopeText =
-        quote.quote_mode === "manual"
-          ? ((quote.labour_data as { scope_of_works?: string } | null)?.scope_of_works ?? "")
-          : "";
-      const description = formatScopeDescription(
-        scopeBom,
-        scopeProducts,
-        siteInfo,
-        quote.scope_overrides ?? null,
-        { siteHeader, milestoneHeader: header, manualScopeText },
-      );
-      const lineItems: XeroLineItemInput[] = buildScopeInvoiceLines(
-        description,
-        `${header} — as per the Scope of Works above`,
+      const lineItems: XeroLineItemInput[] = buildQuoteReferenceLine({
+        quoteRef: quote.ref,
         amount,
-      );
+        siteHeader,
+        milestone: "Progress Payment 2 (on completion)",
+      });
 
       const { client: xero, conn } = await getAuthedClient();
       const xeroContactId = await findOrCreateContact(

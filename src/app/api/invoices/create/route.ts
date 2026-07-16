@@ -3,9 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getAuthedClient } from "@/lib/xero/client";
 import { findOrCreateContact } from "@/lib/xero/contacts";
 import {
-  buildScopeInvoiceLines,
+  buildQuoteReferenceLine,
   createXeroInvoice,
-  formatScopeDescription,
   type XeroLineItemInput,
 } from "@/lib/xero/invoices";
 
@@ -117,6 +116,18 @@ export async function POST(req: NextRequest) {
     reference = quote.ref;
     if (quote.site_name || quote.site_address) {
       siteHeader = `Site: ${[quote.site_name, quote.site_address].filter(Boolean).join(" — ")}`;
+    } else if (quote.site_id) {
+      // Site-linked quote with no legacy freeform fields — pull the site so
+      // the invoice line still leads with "Site: ...".
+      const { data: s } = await supabase
+        .from("customer_sites")
+        .select("name, address, suburb, state, postcode")
+        .eq("id", quote.site_id)
+        .maybeSingle();
+      if (s) {
+        const addr = [s.address, s.suburb, s.state, s.postcode].filter(Boolean).join(", ");
+        siteHeader = `Site: ${[s.name, addr].filter(Boolean).join(" — ")}`;
+      }
     }
 
     const pricing = quote.pricing_snapshot as { totalExGST?: number; pp1?: { total: number }; pp2?: { total: number } } | null;
@@ -124,35 +135,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Quote has no pricing snapshot" }, { status: 400 });
     }
 
-    const siteInfo = {
-      site_sqm: quote.site_sqm ?? 0,
-      door_count: quote.door_count ?? 0,
-      external_camera_count: quote.external_camera_count ?? 0,
-      concrete_mount_black: quote.concrete_mount_black ?? 0,
-      concrete_mount_white: quote.concrete_mount_white ?? 0,
-      cardio_count: quote.cardio_count ?? 0,
-      tv_count: quote.tv_count ?? 0,
-      ceiling_tv_count: quote.ceiling_tv_count ?? 0,
-      wall_tv_mount_count: quote.wall_tv_mount_count ?? 0,
-      ceiling_tv_mount_count: quote.ceiling_tv_mount_count ?? 0,
-      separate_studio_zone: quote.separate_studio_zone ?? false,
-    };
-
-    // Pull this quote's BOM + product scope_roles for the scope generator.
-    const [{ data: scopeBomRows }, { data: scopeProductRows }] = await Promise.all([
-      supabase.from("quote_line_items").select("product_id, quantity").eq("quote_id", quoteId),
-      supabase.from("quote_products").select("id, scope_role, name, sku"),
-    ]);
-    const scopeBom = (scopeBomRows ?? []).map((r) => ({
-      product_id: r.product_id ?? null,
-      quantity: Number(r.quantity) || 0,
-    }));
-    const scopeProducts = (scopeProductRows ?? []) as Array<{ id: string; scope_role: string }>;
-    const manualScopeText =
-      quote.quote_mode === "manual"
-        ? (quote.labour_data?.scope_of_works ?? "")
-        : "";
-
+    // Reference-only invoicing (Mitchell, 2026-07-16): the accepted quote is
+    // the scope document — the invoice just points at it, no scope text.
     if (body.type === "full") {
       if (quote.quote_type === "progress") {
         return NextResponse.json(
@@ -160,19 +144,12 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
-      const description = formatScopeDescription(
-        scopeBom,
-        scopeProducts,
-        siteInfo,
-        quote.scope_overrides ?? null,
-        { siteHeader, milestoneHeader: `CentreFit Installation — Quote ${quote.ref}`, manualScopeText },
-      );
       headerDescription = `Installation per quote ${quote.ref}`;
-      lineItems = buildScopeInvoiceLines(
-        description,
-        `${headerDescription} — as per the Scope of Works above`,
-        Number(pricing.totalExGST ?? 0),
-      );
+      lineItems = buildQuoteReferenceLine({
+        quoteRef: quote.ref,
+        amount: Number(pricing.totalExGST ?? 0),
+        siteHeader,
+      });
       subtotal = Number(pricing.totalExGST ?? 0);
     } else if (body.type === "progress_pp1" || body.type === "progress_pp2") {
       if (quote.quote_type !== "progress") {
@@ -208,19 +185,15 @@ export async function POST(req: NextRequest) {
       const header = isPP1
         ? `Progress Payment 1 — On Acceptance (Quote ${quote.ref})`
         : `Progress Payment 2 — On Completion (Quote ${quote.ref})`;
-      const description = formatScopeDescription(
-        scopeBom,
-        scopeProducts,
-        siteInfo,
-        quote.scope_overrides ?? null,
-        { siteHeader, milestoneHeader: header, manualScopeText },
-      );
       headerDescription = header;
-      lineItems = buildScopeInvoiceLines(
-        description,
-        `${header} — as per the Scope of Works above`,
+      lineItems = buildQuoteReferenceLine({
+        quoteRef: quote.ref,
         amount,
-      );
+        siteHeader,
+        milestone: isPP1
+          ? "Progress Payment 1 (on acceptance)"
+          : "Progress Payment 2 (on completion)",
+      });
       subtotal = amount;
     }
   }

@@ -358,3 +358,26 @@ export function buildScopeInvoiceLines(
     { description: pricedDescription, quantity: 1, unitAmount: amount },
   ];
 }
+
+/**
+ * Reference-only invoice line (Mitchell's call, 2026-07-16): the accepted
+ * quote is the scope document, so the invoice carries ONE clean priced line
+ * referencing it instead of repeating the scope of works. Customers who need
+ * the detail have the accepted quote; head offices get the quote PDF.
+ */
+export function buildQuoteReferenceLine(opts: {
+  quoteRef: string;
+  amount: number;
+  /** "Site: Foo Gym — 123 Main St…" */
+  siteHeader?: string;
+  /** e.g. "Progress Payment 1 (on acceptance)" — omit for full invoices. */
+  milestone?: string;
+}): XeroLineItemInput[] {
+  const headline = opts.milestone
+    ? `${opts.milestone} — as per accepted Quote ${opts.quoteRef}`
+    : `Supply, install & commission as per accepted Quote ${opts.quoteRef}`;
+  const description = [headline, opts.siteHeader?.replace(/\n+$/, "")]
+    .filter(Boolean)
+    .join("\n");
+  return [{ description, quantity: 1, unitAmount: opts.amount }];
+}
