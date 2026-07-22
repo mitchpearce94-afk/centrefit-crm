@@ -53,6 +53,7 @@ export function QuoteActions({
   const [showScopeEditor, setShowScopeEditor] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendEmail, setSendEmail] = useState(contactEmail ?? "");
+  const [sendAsProposal, setSendAsProposal] = useState(false);
 
   async function updateStatus(newStatus: string, extra?: Record<string, unknown>) {
     setUpdating(true);
@@ -81,7 +82,7 @@ export function QuoteActions({
       const res = await fetch("/api/quotes/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quoteId, email: sendEmail.trim() }),
+        body: JSON.stringify({ quoteId, email: sendEmail.trim(), proposal: sendAsProposal }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send");
@@ -170,6 +171,8 @@ export function QuoteActions({
             {
               items: [
                 { label: "Preview Quote", onClick: () => setShowPreview(true) },
+                { label: "Download Quote PDF", onClick: () => window.open(`/api/quotes/${quoteId}/pdf`, "_blank") },
+                { label: "Download Proposal PDF", onClick: () => window.open(`/api/quotes/${quoteId}/pdf?proposal=1`, "_blank") },
                 { label: "Edit Quote", onClick: () => router.push(`/quoting/${quoteId}/edit`), hidden: status !== "draft" },
                 { label: "Duplicate Quote", onClick: handleDuplicate },
                 { label: `Scope of Works${hasScopeOverrides ? " • Edited" : ""}`, onClick: () => setShowScopeEditor(true), hidden: quoteMode === "manual" },
@@ -215,6 +218,25 @@ export function QuoteActions({
               autoFocus
               className="mt-1 h-9 w-full rounded-md border border-border bg-input px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
             />
+            <label className="mt-4 block text-xs font-medium text-muted-foreground">Attachment</label>
+            <div className="mt-1 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSendAsProposal(false)}
+                className={`rounded-md border px-3 py-2 text-left transition-colors ${!sendAsProposal ? "border-primary bg-primary/10" : "border-border hover:bg-accent"}`}
+              >
+                <span className="block text-xs font-medium text-foreground">Quote only</span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">Scope of works + pricing. Best for existing customers and small jobs.</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSendAsProposal(true)}
+                className={`rounded-md border px-3 py-2 text-left transition-colors ${sendAsProposal ? "border-primary bg-primary/10" : "border-border hover:bg-accent"}`}
+              >
+                <span className="block text-xs font-medium text-foreground">Full proposal</span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">Who we are, support, NBN plans — then the quote. Best for new business.</span>
+              </button>
+            </div>
             <div className="mt-5 flex justify-end gap-2">
               <button
                 onClick={() => setShowSendModal(false)}

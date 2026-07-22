@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Resend } from "resend";
 import { generateScopeOfWorks, manualScopeDocument, renderScopeAsText, type ScopeDocument } from "@/lib/quote-engine";
 import { generateQuotePdfBuffer, type QuoteForPdf } from "@/lib/quote-pdf";
+import { generateProposalPdfBuffer } from "@/lib/proposal-pdf";
 import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.server";
 import { emailHeader, emailFooter, emailLayout } from "@/lib/emails/brand";
 import { FROM_QUOTES, REPLY_TO_SALES } from "@/lib/emails/from-addresses";
@@ -35,10 +36,11 @@ function getResend() {
 
 
 export async function POST(req: NextRequest) {
-  const { quoteId, email } = await req.json();
+  const { quoteId, email, proposal } = await req.json();
   if (!quoteId || !email) {
     return NextResponse.json({ error: "Missing quoteId or email" }, { status: 400 });
   }
+  const asProposal = proposal === true;
 
   const supabase = await createClient();
 
@@ -75,6 +77,9 @@ export async function POST(req: NextRequest) {
     sent_at: new Date().toISOString(),
     sent_to_email: email,
     response_token: responseToken,
+    // Remembered so the by-token PDF endpoint serves the same document the
+    // customer received in the email.
+    sent_as_proposal: asProposal,
   }).eq("id", quoteId);
 
   const clientName = quote.customer?.name || quote.client_name;
@@ -143,7 +148,9 @@ export async function POST(req: NextRequest) {
       isProgress,
       pricing,
     };
-    pdfBuffer = await generateQuotePdfBuffer(quoteForPdf, scope);
+    pdfBuffer = asProposal
+      ? await generateProposalPdfBuffer(quoteForPdf, scope)
+      : await generateQuotePdfBuffer(quoteForPdf, scope);
   } catch (err) {
     return NextResponse.json(
       { error: `Failed to generate PDF: ${err instanceof Error ? err.message : String(err)}` },
@@ -167,15 +174,20 @@ export async function POST(req: NextRequest) {
 
   const subtitleParts = [quote.site_name, quote.site_address].filter(Boolean);
 
+  const docLabel = asProposal ? "Proposal" : "Quotation";
+  const attachmentBlurb = asProposal
+    ? "Your project proposal is attached as a PDF and is also available online via the link below — who we are, how we support you, and your detailed quotation including the full scope of works, pricing breakdown, ongoing costs and applicable standards."
+    : "Your detailed quotation is attached as a PDF and is also available online via the link below — including the full scope of works, pricing breakdown, ongoing costs and applicable standards.";
+
   const emailHtml = emailLayout(`
-  ${emailHeader({ rightLabel: "Quotation", rightValue: quote.ref })}
+  ${emailHeader({ rightLabel: docLabel, rightValue: quote.ref })}
 
   <!-- Body -->
   <tr><td style="padding:32px 32px 12px">
-    <h1 style="font-size:20px;font-weight:600;color:#0f172a;margin:0 0 4px;letter-spacing:-0.3px">Your Centrefit quote is ready</h1>
+    <h1 style="font-size:20px;font-weight:600;color:#0f172a;margin:0 0 4px;letter-spacing:-0.3px">Your Centrefit ${asProposal ? "proposal" : "quote"} is ready</h1>
     <p style="font-size:13px;color:#475569;margin:14px 0 0;line-height:1.6">${greeting}</p>
     <p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">
-      Thanks for the opportunity to quote ${quote.site_name ? `<strong>${quote.site_name}</strong>` : "your project"}. Your detailed quotation is attached as a PDF and is also available online via the link below — including the full scope of works, pricing breakdown, ongoing costs and applicable standards.
+      Thanks for the opportunity to quote ${quote.site_name ? `<strong>${quote.site_name}</strong>` : "your project"}. ${attachmentBlurb}
     </p>
     <p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">
       Please review the attached PDF, then click below to view it online and accept or decline.
@@ -210,12 +222,12 @@ export async function POST(req: NextRequest) {
     if (recipients.length === 0) {
       return NextResponse.json({ error: "No valid recipient email address" }, { status: 400 });
     }
-    const filename = `Centrefit-Quote-${quote.ref}.pdf`;
+    const filename = asProposal ? `Centrefit-Proposal-${quote.ref}.pdf` : `Centrefit-Quote-${quote.ref}.pdf`;
     const { error: sendError } = await getResend().emails.send({
       from: FROM_QUOTES,
       replyTo: REPLY_TO_SALES,
       to: recipients,
-      subject: `Quotation ${quote.ref} — ${clientName}${quote.site_name ? ` — ${quote.site_name}` : ''}`,
+      subject: `${docLabel} ${quote.ref} — ${clientName}${quote.site_name ? ` — ${quote.site_name}` : ''}`,
       html: emailHtml,
       // Custom headers — picked up by /api/resend/webhook to link
       // delivered / opened / bounced events to this quote on the activity

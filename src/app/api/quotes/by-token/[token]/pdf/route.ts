@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { generateScopeOfWorks, manualScopeDocument } from "@/lib/quote-engine";
 import { generateQuotePdfBuffer, type QuoteForPdf } from "@/lib/quote-pdf";
+import { generateProposalPdfBuffer } from "@/lib/proposal-pdf";
 
 /**
  * Public PDF endpoint for the customer-facing quote-response page. The
@@ -106,13 +107,19 @@ export async function GET(
     pricing,
   };
 
-  const pdf = await generateQuotePdfBuffer(quoteForPdf, scope);
+  // Render whatever the customer was actually sent — full proposal or bare
+  // quote — so the online download always matches the email attachment.
+  const asProposal = quote.sent_as_proposal === true;
+  const pdf = asProposal
+    ? await generateProposalPdfBuffer(quoteForPdf, scope)
+    : await generateQuotePdfBuffer(quoteForPdf, scope);
+  const filename = asProposal ? `Centrefit-Proposal-${quote.ref}.pdf` : `${quote.ref}.pdf`;
 
   return new NextResponse(new Uint8Array(pdf), {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${quote.ref}.pdf"`,
+      "Content-Disposition": `inline; filename="${filename}"`,
       "Cache-Control": "no-store",
     },
   });

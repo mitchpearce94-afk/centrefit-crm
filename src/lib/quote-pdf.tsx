@@ -523,7 +523,11 @@ function OngoingCosts({ items }: { items: ScopeOngoingCost[] }) {
 
 // ── Main document ──────────────────────────────────────────────────────────
 
-export function QuoteDocument({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDocument }) {
+/**
+ * The quote as a composable <Page> so other documents (e.g. the full project
+ * proposal) can append it after their own pages inside a single <Document>.
+ */
+export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDocument }) {
   const dateStr = new Date(quote.createdAt).toLocaleDateString("en-AU", {
     day: "numeric",
     month: "long",
@@ -531,7 +535,6 @@ export function QuoteDocument({ quote, scope }: { quote: QuoteForPdf; scope: Sco
   });
 
   return (
-    <Document title={`Quote ${quote.ref}`} author="Centrefit Group">
       <Page size="A4" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
@@ -600,7 +603,7 @@ export function QuoteDocument({ quote, scope }: { quote: QuoteForPdf; scope: Sco
           <>
             <View style={styles.sectionDivider}>
               <Text style={styles.sectionH}>BY THE CUSTOMER'S TRADES</Text>
-              <Text style={styles.sectionSub}>Items the gym's electrician / locksmith handles</Text>
+              <Text style={styles.sectionSub}>Items the customer's electrician / locksmith handles</Text>
             </View>
             {scope.byOthers.map((blk) => (
               <ByOthersBlock key={blk.id} blk={blk} />
@@ -704,6 +707,13 @@ export function QuoteDocument({ quote, scope }: { quote: QuoteForPdf; scope: Sco
           />
         </View>
       </Page>
+  );
+}
+
+export function QuoteDocument({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDocument }) {
+  return (
+    <Document title={`Quote ${quote.ref}`} author="Centrefit Group">
+      <QuotePage quote={quote} scope={scope} />
     </Document>
   );
 }
