@@ -38,7 +38,14 @@ export async function GET(req: NextRequest) {
 
   const svc = createServiceRoleClient();
   const results = await scanAllCouncils(LOOKBACK_DAYS);
-  const candidates = results.flatMap((r) => r.leads);
+  // Councils return one row per land parcel, so a single DA can appear
+  // several times in one batch — dedupe within the run first.
+  const byKey = new Map<string, (typeof results)[number]["leads"][number]>();
+  for (const lead of results.flatMap((r) => r.leads)) {
+    const key = `${lead.source}:${lead.application_number}`;
+    if (!byKey.has(key)) byKey.set(key, lead);
+  }
+  const candidates = [...byKey.values()];
 
   // Insert only rows we haven't seen — dedupe on (source, application_number).
   let inserted = 0;
