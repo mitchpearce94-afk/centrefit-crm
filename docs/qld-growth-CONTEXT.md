@@ -44,11 +44,19 @@ differentiators). Never compete as a single-trade cable puller.
   3. EstimateOne — listed as a security/data subcontractor, respond to
      package invitations.
 
-**D5 — DA scanner is the first automation build.** Nightly scan of SEQ
-council development-application data filtered to phase-1 verticals
-(childcare, medical, gym, commercial fitout), enriched with builder detail,
-surfaced as leads in the CRM + a weekly Monday digest. Data-source design
-per the feed research (research doc / findings appended when complete).
+**D5 — DA scanner (built 2026-07-28, DEPRIORITISED same week by Mitchell).**
+Nightly scan of SEQ council DA data runs silently (bd.lead notifications
+muted 2026-07-28) as a long-horizon asset — DAs precede builder selection by
+6–12 months, so they're influence-the-spec intel, not near-term work.
+**D5a — Tender-stage sources are the near-term priority (Mitchell's call):**
+  1. EstimateOne — free profile → invitations; paid sub for the noticeboard.
+     NEVER scrape E1 (ToS + account risk; the account IS the channel).
+     Automation = ingest E1 notification emails into bd_leads (stage
+     'tender', builder attached) via a dedicated inbound address.
+  2. QTenders + QLD local-government procurement portals — public by design,
+     keyword watcher (CCTV, security, access control, duress, data cabling)
+     is legitimate and suits recurring monitoring work.
+  3. BCI/Cordell = paid shortcut if volume ever justifies it.
 
 **D6 — Outreach is human-sent.** Automation researches and drafts
 (referencing the specific DA/project); Mitchell (or delegate) reviews and
