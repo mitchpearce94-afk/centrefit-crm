@@ -79,9 +79,25 @@ automation does prospecting grunt work; Mitchell does relationship calls.
 - 180 days: first non-gym recurring plan (monitoring/NBN) live from this
   channel.
 
+## D5 data sources (locked 2026-07-28, live-verified)
+
+- Brisbane / Ipswich / Redland: Development.i `POST /Geo/GetApplicationFilterResults`
+- Gold Coast: Development.i (newer build) `POST /Home/ApplicationFilterCSVPaged`
+  — rows under `applications`, epoch-ms string dates, broken server-side date
+  filter (sort desc + client-side cut)
+- Logan: DevET `council-api-proxy.lcc.wspdigital.com/pdonline/applications`
+  — `{pagination, data}` wrapper; richest feed (applicant + class)
+- Moreton Bay: `api.moretonbay.qld.gov.au/mplu/da/search/advanced` — ignores
+  date params, sorted newest-first, cut client-side
+- **Sunshine Coast NOT polled** — robots.txt disallows all; PlanningAlerts API
+  is the compliant substitute if wanted later
+- Enrichment (phase 1.5, not built): QBCC contractor register via
+  data.qld.gov.au CKAN datastore (resource 25608781-…) — applicant → licence/ABN
+- First live run 2026-07-28: 19 leads incl. 2 childcare (Logan), 3 shopping
+  centre fitout BWs, 2 indoor-rec MCUs (Redland)
+
 ## Open items
 
-- [ ] Feed research findings → append data-source decisions to D5
 - [ ] Confirm success metric numbers with Mitchell
 - [ ] EstimateOne registration (manual, Mitchell)
 - [ ] DWP branding question — whose name on customer-facing handover/
