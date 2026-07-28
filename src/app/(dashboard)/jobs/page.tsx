@@ -164,7 +164,7 @@ export default async function JobsPage({
     <div>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Jobs</h1>
+          <h1 className="text-2xl lg:text-3xl font-semibold tracking-tight">Jobs</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             <span className="font-medium text-foreground tabular-nums">{filteredJobs?.length ?? 0}</span> jobs
           </p>
@@ -194,7 +194,7 @@ export default async function JobsPage({
       />
 
       {/* ── Mobile cards ── (techs flicking through their list on a phone) */}
-      <div className="md:hidden mt-4 space-y-2">
+      <div className="lg:hidden mt-4 space-y-2">
         {filteredJobs?.length === 0 && (
           <div className="rounded-lg border border-dashed border-border bg-card/40 px-4 py-10 text-center text-sm text-muted-foreground">
             No jobs found.{" "}
@@ -236,6 +236,11 @@ export default async function JobsPage({
               <p className="text-sm font-medium text-foreground truncate">
                 {job.site?.name ?? job.customer?.name ?? "—"}
               </p>
+              {(job.reference || job.description) && (
+                <p className="mt-0.5 text-xs text-muted-foreground truncate">
+                  {job.reference || job.description}
+                </p>
+              )}
               <div className="mt-2 flex items-center justify-between gap-2">
                 {scheduleLabel ? (
                   <span className={`text-xs font-medium ${isToday ? "text-primary" : "text-muted-foreground"}`}>
@@ -264,7 +269,7 @@ export default async function JobsPage({
       </div>
 
       {/* ── Desktop table ── (unchanged from before) */}
-      <div className="hidden md:block surface-card mt-4 overflow-x-auto">
+      <div className="hidden lg:block surface-card mt-4 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/40">
@@ -274,19 +279,19 @@ export default async function JobsPage({
               <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Site
               </th>
-              <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hidden sm:table-cell">
+              <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hidden xl:table-cell">
                 Reference
               </th>
               <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Status
               </th>
-              <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hidden md:table-cell">
+              <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hidden xl:table-cell">
                 Category
               </th>
-              <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hidden lg:table-cell">
+              <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Assigned
               </th>
-              <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hidden md:table-cell">
+              <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Scheduled
               </th>
             </tr>
@@ -322,7 +327,7 @@ export default async function JobsPage({
                     </Link>
                   )}
                 </td>
-                <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell max-w-[200px] truncate">
+                <td className="px-4 py-3 text-muted-foreground hidden xl:table-cell max-w-[200px] truncate">
                   {job.reference || job.description?.slice(0, 60) || "—"}
                 </td>
                 <td className="px-4 py-3">
@@ -342,10 +347,10 @@ export default async function JobsPage({
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">
+                <td className="px-4 py-3 text-muted-foreground hidden xl:table-cell">
                   {job.category_1?.name ?? "—"}
                 </td>
-                <td className="px-4 py-3 hidden lg:table-cell">
+                <td className="px-4 py-3">
                   <div className="flex -space-x-1">
                     {job.job_staff?.map((js: any) => (
                       <span
@@ -362,7 +367,7 @@ export default async function JobsPage({
                     )}
                   </div>
                 </td>
-                <td className="px-4 py-3 text-right text-muted-foreground hidden md:table-cell">
+                <td className="px-4 py-3 text-right text-muted-foreground">
                   {(() => {
                     const entries = (job.schedule_entries ?? []) as any[];
                     const upcoming = entries

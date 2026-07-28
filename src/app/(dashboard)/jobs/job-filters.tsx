@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useState, useTransition } from "react";
+import { useCallback, useRef, useState, useTransition } from "react";
+import { Sheet } from "@/components/sheet";
 import type { Status, Category } from "@/lib/types";
 
 const phases = [
@@ -76,7 +77,10 @@ export function JobFilters({
     (defaultCategory ? 1 : 0) +
     (defaultStaff && defaultStaff !== baselineStaff ? 1 : 0);
 
-  const [menuOpen, setMenuOpen] = useState(extraCount > 0);
+  // Never auto-open: on a phone the expanded panel buried the job list below
+  // the fold whenever any filter was set. The button badge + chips row show
+  // what's active instead.
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const setQuickView = useCallback(
     (v: QuickView) => {
@@ -121,6 +125,25 @@ export function JobFilters({
     [router, searchParams, startTransition]
   );
 
+  // Search is debounced and uses replace() so typing doesn't fire a server
+  // round-trip per keystroke or pollute the history stack.
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onSearchChange = useCallback(
+    (value: string) => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+      searchTimer.current = setTimeout(() => {
+        const params = new URLSearchParams(searchParams.toString());
+        const trimmed = value.trim();
+        if (trimmed) params.set("q", trimmed);
+        else params.delete("q");
+        startTransition(() => {
+          router.replace(`/jobs?${params.toString()}`);
+        });
+      }, 250);
+    },
+    [router, searchParams, startTransition]
+  );
+
   function clearAllExtras() {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("q");
@@ -144,42 +167,111 @@ export function JobFilters({
     { key: "all", label: "All" },
   ];
 
+  // Active-filter chips — search shows in its own box, so q is excluded.
+  const chips: { param: string; label: string }[] = [];
+  if (defaultPhase) {
+    chips.push({ param: "phase", label: phases.find((p) => p.value === defaultPhase)?.label ?? "Phase" });
+  }
+  if (defaultStatus) {
+    chips.push({ param: "status", label: statuses.find((s) => s.id === defaultStatus)?.name ?? "Status" });
+  }
+  if (defaultCategory) {
+    chips.push({ param: "category", label: jobTypes.find((c) => c.id === defaultCategory)?.name ?? "Category" });
+  }
+  if (defaultStaff && defaultStaff !== baselineStaff) {
+    chips.push({
+      param: "staff",
+      label:
+        defaultStaff === "all"
+          ? "All staff"
+          : staff?.find((s) => s.id === defaultStaff)?.display_name ?? "Staff",
+    });
+  }
+
+  const filterFields = (
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-4 lg:gap-2">
+      <FilterSelect
+        label="Phase"
+        value={defaultPhase ?? ""}
+        onChange={(v) => updateParam("phase", v)}
+        options={phases.map((p) => ({ value: p.value, label: p.label }))}
+      />
+      <FilterSelect
+        label="Status"
+        value={defaultStatus ?? ""}
+        onChange={(v) => updateParam("status", v)}
+        options={[
+          { value: "", label: "All Statuses" },
+          ...filteredStatuses.map((s) => ({ value: s.id, label: s.name })),
+        ]}
+      />
+      <FilterSelect
+        label="Category"
+        value={defaultCategory ?? ""}
+        onChange={(v) => updateParam("category", v)}
+        options={[
+          { value: "", label: "All Categories" },
+          ...jobTypes.map((c) => ({ value: c.id, label: c.name })),
+        ]}
+      />
+      {staff && staff.length > 0 && (
+        <FilterSelect
+          label="Assigned"
+          value={defaultStaff ?? (currentUserId || "all")}
+          onChange={(v) => updateParam("staff", v)}
+          options={[
+            ...(currentUserId
+              ? [{ value: currentUserId, label: "My jobs (default)" }]
+              : []),
+            { value: "all", label: "All Staff" },
+            ...staff
+              .filter((s) => s.id !== currentUserId)
+              .map((s) => ({ value: s.id, label: s.display_name })),
+          ]}
+        />
+      )}
+    </div>
+  );
+
   return (
     <div className="mt-4 space-y-3">
-      {/* Quick-view tabs */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex rounded-lg border border-border bg-card p-0.5">
-          {quickTabs.map((t) => {
-            const active = activeQuick === t.key;
-            return (
-              <button
-                key={t.key}
-                onClick={() => setQuickView(t.key)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  active
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {t.label}
-              </button>
-            );
-          })}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Quick-view tabs — one scrollable row on mobile, never wraps */}
+        <div className="min-w-0 flex-1 overflow-x-auto scrollbar-hide lg:flex-none lg:overflow-visible">
+          <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
+            {quickTabs.map((t) => {
+              const active = activeQuick === t.key;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setQuickView(t.key)}
+                  className={`whitespace-nowrap px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    active
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Search lives on the toolbar (next to Filters), not buried in the
-            filter menu — Mitchell 2026-06-04. */}
+            filter menu — Mitchell 2026-06-04. Full-width second row on mobile;
+            text-base below lg stops iOS zooming the page on focus. */}
         <input
           type="text"
           placeholder="Search jobs…"
           defaultValue={defaultQuery}
-          onChange={(e) => updateParam("q", e.target.value)}
-          className="flex-1 min-w-[160px] rounded-md border border-border bg-input px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          onChange={(e) => onSearchChange(e.target.value)}
+          className="order-last w-full lg:order-none lg:w-auto lg:flex-1 lg:min-w-[160px] rounded-md border border-border bg-input px-3 py-2 text-base lg:py-1.5 lg:text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
 
         <button
           onClick={() => setMenuOpen((v) => !v)}
-          className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+          className={`shrink-0 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
             menuOpen || extraCount > 0
               ? "border-primary/40 bg-primary/10 text-primary"
               : "border-border text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -204,9 +296,33 @@ export function JobFilters({
         )}
       </div>
 
-      {/* Filters menu */}
+      {/* Active filter chips — what's filtering, without opening the panel */}
+      {chips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {chips.map((c) => (
+            <button
+              key={c.param}
+              onClick={() => updateParam(c.param, "")}
+              className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+            >
+              {c.label}
+              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          ))}
+          <button
+            onClick={clearAllExtras}
+            className="px-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
+
+      {/* Desktop: inline panel */}
       {menuOpen && (
-        <div className="rounded-lg border border-border bg-card p-3 space-y-3">
+        <div className="hidden lg:block rounded-lg border border-border bg-card p-3 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               Filters
@@ -220,51 +336,34 @@ export function JobFilters({
               </button>
             )}
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-            <FilterSelect
-              label="Phase"
-              value={defaultPhase ?? ""}
-              onChange={(v) => updateParam("phase", v)}
-              options={phases.map((p) => ({ value: p.value, label: p.label }))}
-            />
-            <FilterSelect
-              label="Status"
-              value={defaultStatus ?? ""}
-              onChange={(v) => updateParam("status", v)}
-              options={[
-                { value: "", label: "All Statuses" },
-                ...filteredStatuses.map((s) => ({ value: s.id, label: s.name })),
-              ]}
-            />
-            <FilterSelect
-              label="Category"
-              value={defaultCategory ?? ""}
-              onChange={(v) => updateParam("category", v)}
-              options={[
-                { value: "", label: "All Categories" },
-                ...jobTypes.map((c) => ({ value: c.id, label: c.name })),
-              ]}
-            />
-            {staff && staff.length > 0 && (
-              <FilterSelect
-                label="Assigned"
-                value={defaultStaff ?? (currentUserId || "all")}
-                onChange={(v) => updateParam("staff", v)}
-                options={[
-                  ...(currentUserId
-                    ? [{ value: currentUserId, label: "My jobs (default)" }]
-                    : []),
-                  { value: "all", label: "All Staff" },
-                  ...staff
-                    .filter((s) => s.id !== currentUserId)
-                    .map((s) => ({ value: s.id, label: s.display_name })),
-                ]}
-              />
-            )}
-          </div>
+          {filterFields}
         </div>
       )}
+
+      {/* Mobile: bottom sheet */}
+      <div className="lg:hidden">
+        <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title="Filter jobs">
+          <div className="space-y-4 pb-2">
+            {filterFields}
+            <div className="flex items-center gap-2 pt-1">
+              {extraCount > 0 && (
+                <button
+                  onClick={clearAllExtras}
+                  className="flex-1 rounded-md border border-border px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+                >
+                  Clear all
+                </button>
+              )}
+              <button
+                onClick={() => setMenuOpen(false)}
+                className="flex-1 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </Sheet>
+      </div>
     </div>
   );
 }
@@ -288,7 +387,7 @@ function FilterSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        className="rounded-md border border-border bg-input px-3 py-2.5 text-base lg:py-2 lg:text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
       >
         {options.map((o) => (
           <option key={o.value || "any"} value={o.value}>

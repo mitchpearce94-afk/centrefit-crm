@@ -1515,24 +1515,30 @@ export function QuoteWizard({
       )}
 
       <div className="rounded-lg border border-border overflow-hidden">
-        <div className="grid grid-cols-[1fr_120px_120px] gap-3 bg-muted/50 px-4 py-2.5 border-b border-border">
+        <div className="hidden lg:grid grid-cols-[1fr_120px_120px] gap-3 bg-muted/50 px-4 py-2.5 border-b border-border">
           <span className="text-xs font-medium text-muted-foreground">Item</span>
           <span className="text-xs font-medium text-muted-foreground text-center">Cost</span>
           <span className="text-xs font-medium text-muted-foreground text-center">Sell ({isInterstate ? "2x" : "+ 30%"})</span>
         </div>
-        <div className="grid grid-cols-[1fr_120px_120px] gap-3 items-center px-4 py-2.5">
-          <span className="text-sm">Electrician Quotation</span>
-          <input
-            type="number"
-            min="0"
-            value={electricianCost || ""}
-            onChange={(e) => setElectricianCost(parseFloat(e.target.value) || 0)}
-            placeholder="$0"
-            className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          />
-          <span className="text-sm font-mono text-center text-muted-foreground">
-            ${fmt(Math.round(electricianCost * (isInterstate ? 2 : 1.3) * 100) / 100)}
-          </span>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1fr_120px_120px] items-center px-4 py-2.5">
+          <span className="text-sm col-span-2 lg:col-span-1">Electrician Quotation</span>
+          <div>
+            <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Cost</p>
+            <input
+              type="number"
+              min="0"
+              value={electricianCost || ""}
+              onChange={(e) => setElectricianCost(parseFloat(e.target.value) || 0)}
+              placeholder="$0"
+              className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+          </div>
+          <div>
+            <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Sell ({isInterstate ? "2x" : "+ 30%"})</p>
+            <span className="block text-sm font-mono text-center text-muted-foreground">
+              ${fmt(Math.round(electricianCost * (isInterstate ? 2 : 1.3) * 100) / 100)}
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -1908,7 +1914,7 @@ export function QuoteWizard({
               {/* Manual BOM table */}
               {manualBomItems.length > 0 && (
                 <div className="rounded-lg border border-border overflow-hidden">
-                  <div className="grid grid-cols-[1fr_70px_90px_90px_100px_40px] gap-2 bg-muted/50 px-4 py-2.5 border-b border-border">
+                  <div className="hidden lg:grid grid-cols-[1fr_70px_90px_90px_100px_40px] gap-2 bg-muted/50 px-4 py-2.5 border-b border-border">
                     <span className="text-xs font-medium text-muted-foreground">Product</span>
                     <span className="text-xs font-medium text-muted-foreground text-center">Qty</span>
                     <span className="text-xs font-medium text-muted-foreground text-center">Cost</span>
@@ -1918,8 +1924,8 @@ export function QuoteWizard({
                   </div>
                   <div className="divide-y divide-border">
                     {manualBomItems.map((item, i) => (
-                      <div key={i} className="grid grid-cols-[1fr_70px_90px_90px_100px_40px] gap-2 items-center px-4 py-2.5">
-                        <div className="min-w-0">
+                      <div key={i} className="grid grid-cols-3 gap-2 lg:grid-cols-[1fr_70px_90px_90px_100px_40px] items-center px-4 py-2.5">
+                        <div className="min-w-0 col-span-3 lg:col-span-1">
                           {item.isCustom ? (
                             <input
                               type="text"
@@ -1963,36 +1969,48 @@ export function QuoteWizard({
                             </div>
                           )}
                         </div>
-                        <input
-                          type="number"
-                          min="1"
-                          value={item.quantity}
-                          onChange={(e) => setManualBomItems((prev) => prev.map((b, bi) => bi === i ? { ...b, quantity: parseInt(e.target.value) || 1 } : b))}
-                          className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.cost_price || ""}
-                          onChange={(e) => setManualBomItems((prev) => prev.map((b, bi) => bi === i ? { ...b, cost_price: parseFloat(e.target.value) || 0 } : b))}
-                          placeholder="$0"
-                          className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.sell_price || ""}
-                          onChange={(e) => setManualBomItems((prev) => prev.map((b, bi) => bi === i ? { ...b, sell_price: parseFloat(e.target.value) || 0 } : b))}
-                          placeholder="$0"
-                          className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                        <p className="text-sm font-mono font-medium text-right">${fmt(item.sell_price * item.quantity)}</p>
+                        <div>
+                          <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Qty</p>
+                          <input
+                            type="number"
+                            min="1"
+                            value={item.quantity}
+                            onChange={(e) => setManualBomItems((prev) => prev.map((b, bi) => bi === i ? { ...b, quantity: parseInt(e.target.value) || 1 } : b))}
+                            className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                        </div>
+                        <div>
+                          <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Cost</p>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.cost_price || ""}
+                            onChange={(e) => setManualBomItems((prev) => prev.map((b, bi) => bi === i ? { ...b, cost_price: parseFloat(e.target.value) || 0 } : b))}
+                            placeholder="$0"
+                            className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                        </div>
+                        <div>
+                          <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Sell</p>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.sell_price || ""}
+                            onChange={(e) => setManualBomItems((prev) => prev.map((b, bi) => bi === i ? { ...b, sell_price: parseFloat(e.target.value) || 0 } : b))}
+                            placeholder="$0"
+                            className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                        </div>
+                        <div className="col-span-2 lg:col-span-1 flex items-center justify-between lg:justify-end">
+                          <span className="lg:hidden text-[10px] text-muted-foreground">Total</span>
+                          <p className="text-sm font-mono font-medium text-right">${fmt(item.sell_price * item.quantity)}</p>
+                        </div>
                         <button
                           type="button"
                           onClick={() => setManualBomItems((prev) => prev.filter((_, bi) => bi !== i))}
-                          className="text-muted-foreground hover:text-red-400 transition-colors text-center"
+                          className="text-muted-foreground hover:text-red-400 transition-colors justify-self-end lg:justify-self-center"
                           title="Remove"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
@@ -2001,13 +2019,13 @@ export function QuoteWizard({
                     ))}
                   </div>
                   {/* Totals row */}
-                  <div className="grid grid-cols-[1fr_70px_90px_90px_100px_40px] gap-2 items-center px-4 py-2.5 bg-muted/30 border-t border-border">
+                  <div className="flex items-center justify-between gap-2 lg:grid lg:grid-cols-[1fr_70px_90px_90px_100px_40px] px-4 py-2.5 bg-muted/30 border-t border-border">
                     <span className="text-xs font-medium text-muted-foreground">Total ({manualBomItems.length} items)</span>
-                    <span className="text-xs font-mono text-center">{manualBomTotals.itemCount}</span>
-                    <span className="text-xs font-mono text-center">${fmt(manualBomTotals.totalCost)}</span>
-                    <span className="text-xs font-mono text-center">${fmt(manualBomTotals.totalSell)}</span>
+                    <span className="hidden lg:block text-xs font-mono text-center">{manualBomTotals.itemCount}</span>
+                    <span className="hidden lg:block text-xs font-mono text-center">${fmt(manualBomTotals.totalCost)}</span>
+                    <span className="hidden lg:block text-xs font-mono text-center">${fmt(manualBomTotals.totalSell)}</span>
                     <span className="text-sm font-mono font-medium text-right">${fmt(manualBomTotals.totalSell)}</span>
-                    <span></span>
+                    <span className="hidden lg:block"></span>
                   </div>
                 </div>
               )}
@@ -2128,7 +2146,7 @@ export function QuoteWizard({
                         const isCustom = item.product_id === null;
                         return (
                           <div key={`${item.product_id ?? "custom"}-${i}`} className="px-4 py-3">
-                            <div className="flex items-start justify-between gap-4">
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-4">
                               {/* Product info */}
                               <div className="flex-1 min-w-0">
                                 {isCustom ? (
@@ -2204,14 +2222,17 @@ export function QuoteWizard({
                               </div>
 
                               {/* Qty + Pricing */}
-                              <div className="flex items-center gap-3 shrink-0">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={item.quantity}
-                                  onChange={(e) => patchBomItem(item, { quantity: parseInt(e.target.value) || 0 })}
-                                  className="w-14 rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none"
-                                />
+                              <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap lg:gap-3 lg:shrink-0">
+                                <div>
+                                  <p className="lg:hidden text-[10px] text-muted-foreground">Qty</p>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={item.quantity}
+                                    onChange={(e) => patchBomItem(item, { quantity: parseInt(e.target.value) || 0 })}
+                                    className="w-14 rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none"
+                                  />
+                                </div>
                                 {isCustom ? (
                                   <>
                                     <div className="w-20">
@@ -2240,7 +2261,7 @@ export function QuoteWizard({
                                     </div>
                                   </>
                                 ) : (
-                                  <div className="hidden sm:block w-20 text-right">
+                                  <div className="w-20 text-right">
                                     <p className="text-[10px] text-muted-foreground">Unit</p>
                                     <p className="text-xs font-mono">${fmt(item.sell_price)}</p>
                                   </div>
@@ -2431,7 +2452,7 @@ export function QuoteWizard({
       {step === 3 && quoteMode === "manual" && (
         <div className="space-y-4 max-w-3xl">
           <div className="rounded-lg border border-border overflow-hidden">
-            <div className="grid grid-cols-[130px_1fr_64px_104px_104px_104px_28px] gap-2 bg-muted/50 px-4 py-2.5 border-b border-border text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+            <div className="hidden lg:grid grid-cols-[130px_1fr_64px_104px_104px_104px_28px] gap-2 bg-muted/50 px-4 py-2.5 border-b border-border text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
               <span>Type</span>
               <span>Description</span>
               <span className="text-center">Qty</span>
@@ -2444,7 +2465,7 @@ export function QuoteWizard({
               {manualLabourLines.map((line) => {
                 const lineTotal = (Number(line.quantity) || 0) * (Number(line.unitAmount) || 0);
                 return (
-                  <div key={line.id} className="grid grid-cols-[130px_1fr_64px_104px_104px_104px_28px] gap-2 items-center px-4 py-2">
+                  <div key={line.id} className="grid grid-cols-3 gap-2 lg:grid-cols-[130px_1fr_64px_104px_104px_104px_28px] items-center px-4 py-3 lg:py-2">
                     <select
                       value={MANUAL_LABOUR_CATEGORIES.includes(line.category as typeof MANUAL_LABOUR_CATEGORIES[number]) ? line.category : "Other"}
                       onChange={(e) => {
@@ -2460,43 +2481,55 @@ export function QuoteWizard({
                       value={line.description}
                       onChange={(e) => setManualLabourLines((prev) => prev.map((l) => l.id === line.id ? { ...l, description: e.target.value } : l))}
                       placeholder="e.g. Site install — 8 hours"
-                      className="rounded-md border border-border bg-input px-2 py-1 text-xs focus:border-primary focus:outline-none"
+                      className="col-span-2 lg:col-span-1 rounded-md border border-border bg-input px-2 py-1 text-xs focus:border-primary focus:outline-none"
                     />
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.25"
-                      value={line.quantity || ""}
-                      onChange={(e) => setManualLabourLines((prev) => prev.map((l) => l.id === line.id ? { ...l, quantity: parseFloat(e.target.value) || 0 } : l))}
-                      placeholder="0"
-                      className="rounded-md border border-border bg-input px-2 py-1 text-xs text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    />
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={line.unitCost ?? ""}
-                      onChange={(e) => setManualLabourLines((prev) => prev.map((l) => l.id === line.id ? { ...l, unitCost: parseFloat(e.target.value) || 0 } : l))}
-                      placeholder="0.00"
-                      title="What this line costs us per unit (wages, subbie, freight)"
-                      className="rounded-md border border-border bg-input px-2 py-1 text-xs text-right font-mono text-muted-foreground focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    />
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={line.unitAmount || ""}
-                      onChange={(e) => setManualLabourLines((prev) => prev.map((l) => l.id === line.id ? { ...l, unitAmount: parseFloat(e.target.value) || 0 } : l))}
-                      placeholder="0.00"
-                      title="What the customer pays per unit (ex GST)"
-                      className="rounded-md border border-border bg-input px-2 py-1 text-xs text-right font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    />
-                    <span className="text-right text-xs font-mono text-foreground">${fmt(lineTotal)}</span>
+                    <div>
+                      <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Qty</p>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.25"
+                        value={line.quantity || ""}
+                        onChange={(e) => setManualLabourLines((prev) => prev.map((l) => l.id === line.id ? { ...l, quantity: parseFloat(e.target.value) || 0 } : l))}
+                        placeholder="0"
+                        className="w-full rounded-md border border-border bg-input px-2 py-1 text-xs text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                    </div>
+                    <div>
+                      <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Cost $</p>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.unitCost ?? ""}
+                        onChange={(e) => setManualLabourLines((prev) => prev.map((l) => l.id === line.id ? { ...l, unitCost: parseFloat(e.target.value) || 0 } : l))}
+                        placeholder="0.00"
+                        title="What this line costs us per unit (wages, subbie, freight)"
+                        className="w-full rounded-md border border-border bg-input px-2 py-1 text-xs text-right font-mono text-muted-foreground focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                    </div>
+                    <div>
+                      <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Sell $</p>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.unitAmount || ""}
+                        onChange={(e) => setManualLabourLines((prev) => prev.map((l) => l.id === line.id ? { ...l, unitAmount: parseFloat(e.target.value) || 0 } : l))}
+                        placeholder="0.00"
+                        title="What the customer pays per unit (ex GST)"
+                        className="w-full rounded-md border border-border bg-input px-2 py-1 text-xs text-right font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                    </div>
+                    <div className="col-span-2 lg:col-span-1 flex items-center justify-between lg:justify-end">
+                      <span className="lg:hidden text-[10px] text-muted-foreground">Total</span>
+                      <span className="text-right text-xs font-mono text-foreground">${fmt(lineTotal)}</span>
+                    </div>
                     <button
                       type="button"
                       onClick={() => setManualLabourLines((prev) => prev.length > 1 ? prev.filter((l) => l.id !== line.id) : prev)}
                       disabled={manualLabourLines.length <= 1}
-                      className="text-muted-foreground hover:text-red-400 disabled:opacity-30 transition-colors"
+                      className="text-muted-foreground hover:text-red-400 disabled:opacity-30 transition-colors justify-self-end lg:justify-self-center"
                       title="Remove line"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

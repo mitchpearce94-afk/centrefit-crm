@@ -252,10 +252,10 @@ export default async function QuoteDetailPage({
               </summary>
               <div className="divide-y divide-border border-t border-border">
                 {items.map((item: any) => (
-                  <div key={item.id} className="px-4 py-3 flex items-start justify-between gap-4">
+                  <div key={item.id} className="px-4 py-3 flex flex-col gap-1.5 lg:flex-row lg:items-start lg:justify-between lg:gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium truncate">{item.product_name}</p>
+                        <p className="text-sm font-medium lg:truncate">{item.product_name}</p>
                         {item.auto_added && <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Auto</span>}
                       </div>
                       <div className="flex items-center gap-3 mt-0.5">
@@ -263,10 +263,11 @@ export default async function QuoteDetailPage({
                         {item.supplier && <span className="text-[11px] text-muted-foreground">{item.supplier}</span>}
                       </div>
                     </div>
-                    <div className="flex items-center gap-4 shrink-0 text-right">
-                      <span className="text-sm font-mono w-10 text-center">{item.quantity}</span>
-                      <span className="hidden sm:block text-xs font-mono text-muted-foreground w-20">${fmt(item.sell_price)}</span>
-                      <span className="text-sm font-mono font-medium w-24">${fmt(item.sell_price * item.quantity)}</span>
+                    <div className="flex items-center justify-between lg:justify-end gap-4 lg:shrink-0 text-right">
+                      <span className="lg:hidden text-xs font-mono text-muted-foreground">{item.quantity} × ${fmt(item.sell_price)}</span>
+                      <span className="hidden lg:block text-sm font-mono w-10 text-center">{item.quantity}</span>
+                      <span className="hidden lg:block text-xs font-mono text-muted-foreground w-20">${fmt(item.sell_price)}</span>
+                      <span className="text-sm font-mono font-medium lg:w-24">${fmt(item.sell_price * item.quantity)}</span>
                     </div>
                   </div>
                 ))}
@@ -329,11 +330,11 @@ export default async function QuoteDetailPage({
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Extras</h2>
           <div className="rounded-lg border border-border overflow-hidden divide-y divide-border">
             {extras.map((extra: any) => (
-              <div key={extra.id} className="flex items-center justify-between px-4 py-2.5">
+              <div key={extra.id} className="flex flex-col gap-1 lg:flex-row lg:items-center lg:justify-between px-4 py-2.5">
                 <span className="text-sm">{extra.description}</span>
-                <div className="flex gap-6 text-sm font-mono">
-                  <span className="text-muted-foreground w-24 text-right">Cost ${fmt(extra.cost)}</span>
-                  <span className="w-24 text-right">Sell ${fmt(extra.sell)}</span>
+                <div className="flex justify-between lg:justify-end gap-6 text-sm font-mono">
+                  <span className="text-muted-foreground lg:w-24 lg:text-right">Cost ${fmt(extra.cost)}</span>
+                  <span className="lg:w-24 lg:text-right">Sell ${fmt(extra.sell)}</span>
                 </div>
               </div>
             ))}
