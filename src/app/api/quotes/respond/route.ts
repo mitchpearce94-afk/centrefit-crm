@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     .update(update)
     .eq("response_token", token)
     .eq("status", "sent")
-    .select("id, ref, job_id, created_by, customer:customers(name)")
+    .select("id, ref, job_id, created_by, site_name, pricing_snapshot, customer:customers(name), job:jobs(number)")
     .maybeSingle();
 
   if (updateError) {
@@ -82,6 +82,13 @@ export async function POST(req: NextRequest) {
   const customerName = (Array.isArray((quote as { customer?: { name?: string }[] }).customer)
     ? (quote as { customer?: { name?: string }[] }).customer?.[0]?.name
     : (quote as { customer?: { name?: string } }).customer?.name) ?? "Customer";
+  const q = quote as {
+    site_name?: string | null;
+    pricing_snapshot?: { totalExGST?: number } | null;
+    job?: { number?: string | null } | { number?: string | null }[] | null;
+  };
+  const linkedJobNumber = (Array.isArray(q.job) ? q.job[0]?.number : q.job?.number) ?? null;
+  const quoteTotal = Number(q.pricing_snapshot?.totalExGST ?? 0);
   await enqueueNotification({
     supabase,
     typeCode: `quote.${newStatus}`,
@@ -91,6 +98,22 @@ export async function POST(req: NextRequest) {
     title: newStatus === "accepted" ? `Quote ${quote.ref} accepted` : `Quote ${quote.ref} declined`,
     body: `${customerName} ${newStatus} ${quote.ref}.`,
     href: `/quoting/${quote.id}`,
+    emailDetails: [
+      { label: "Quote", value: quote.ref },
+      { label: "Customer", value: customerName },
+      { label: "Site", value: q.site_name ?? "" },
+      { label: "Amount", value: quoteTotal > 0 ? `$${quoteTotal.toFixed(2)} ex GST` : "" },
+      { label: "Job", value: linkedJobNumber ?? "" },
+      {
+        label: "Responded",
+        value: new Date().toLocaleString("en-AU", {
+          timeZone: "Australia/Brisbane",
+          dateStyle: "medium",
+          timeStyle: "short",
+        }),
+      },
+    ],
+    ctaLabel: `View Quote ${quote.ref}`,
   });
 
   // Auto-transition linked job + sync the scope-of-works into the job's

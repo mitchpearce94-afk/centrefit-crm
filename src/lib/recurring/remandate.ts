@@ -435,6 +435,13 @@ async function completeRemandateInner(
       `${swaps.length} subscription${swaps.length === 1 ? "" : "s"} moved to the new owner's mandate; old subscriptions cancelled.` +
       (warnings.length > 0 ? ` Warnings: ${warnings.join("; ")}`.slice(0, 500) : ""),
     href: `/invoices/recurring/${planId}`,
+    emailDetails: [
+      { label: "New owner", value: newOwner?.name ?? "" },
+      { label: "Site", value: site.name ?? "" },
+      { label: "Subs moved", value: String(swaps.length) },
+      { label: "Warnings", value: warnings.length > 0 ? warnings.join("; ").slice(0, 300) : "" },
+    ],
+    ctaLabel: "View recurring plan",
   });
 
   return { ok: true, planId, swapped: swaps.length, warnings: warnings.length > 0 ? warnings : undefined };
@@ -451,6 +458,11 @@ async function notifyRemandateFailure(supabase: ServiceClient, planId: string, r
       title: "Re-mandate swap failed",
       body: `${reason}. The old owner's subscriptions are still collecting — retry from the plan page or fix manually in GoCardless.`.slice(0, 500),
       href: `/invoices/recurring/${planId}`,
+      emailDetails: [
+        { label: "Reason", value: reason.slice(0, 300) },
+        { label: "Impact", value: "Old owner's subscriptions are still collecting" },
+      ],
+      ctaLabel: "Open plan & retry",
     });
   } catch (err) {
     console.error(`[remandate] failure notification failed for ${planId}:`, err);

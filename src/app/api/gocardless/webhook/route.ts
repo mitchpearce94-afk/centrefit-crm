@@ -168,6 +168,19 @@ async function handleBillingRequestEvent(
         title: `${who} signed mandate`,
         body: "Recurring billing signup completed — provisioning Xero template now.",
         href: `/invoices/recurring/${plan.id}`,
+        emailDetails: [
+          { label: "Customer", value: cust?.name ?? "" },
+          { label: "Site", value: site?.name ?? "" },
+          {
+            label: "Signed",
+            value: new Date().toLocaleString("en-AU", {
+              timeZone: "Australia/Brisbane",
+              dateStyle: "medium",
+              timeStyle: "short",
+            }),
+          },
+        ],
+        ctaLabel: "View recurring plan",
       });
     } catch (err) {
       console.error(`[gc-webhook] signup_completed notify failed for ${plan.id}:`, err);
@@ -252,16 +265,41 @@ async function handleMandateEvent(
           notes: `${event.action} via GC: ${event.details.description ?? event.details.cause ?? ""}`.slice(0, 1000),
         })
         .eq("id", plan.id);
-      await enqueueNotification({
-        supabase,
-        typeCode: "mandate.failed",
-        refType: "recurring_plan",
-        refId: plan.id,
-        audience: { allActive: true },
-        title: `Mandate ${event.action}`,
-        body: `${event.details.description ?? event.details.cause ?? "GC reported a mandate state change."}`,
-        href: `/invoices/recurring/${plan.id}`,
-      });
+      {
+        // Best-effort labels so the email says WHOSE mandate died.
+        let failCust: string | null = null;
+        let failSite: string | null = null;
+        try {
+          const { data: labels } = await supabase
+            .from("recurring_plans")
+            .select("customers(name), customer_sites(name)")
+            .eq("id", plan.id)
+            .single();
+          const c = Array.isArray(labels?.customers) ? labels?.customers[0] : labels?.customers;
+          const s = Array.isArray(labels?.customer_sites) ? labels?.customer_sites[0] : labels?.customer_sites;
+          failCust = c?.name ?? null;
+          failSite = s?.name ?? null;
+        } catch {
+          // labels are nice-to-have
+        }
+        await enqueueNotification({
+          supabase,
+          typeCode: "mandate.failed",
+          refType: "recurring_plan",
+          refId: plan.id,
+          audience: { allActive: true },
+          title: failCust ? `Mandate ${event.action} — ${failCust}` : `Mandate ${event.action}`,
+          body: `${event.details.description ?? event.details.cause ?? "GC reported a mandate state change."}`,
+          href: `/invoices/recurring/${plan.id}`,
+          emailDetails: [
+            { label: "Customer", value: failCust ?? "" },
+            { label: "Site", value: failSite ?? "" },
+            { label: "Event", value: event.action },
+            { label: "Detail", value: event.details.description ?? event.details.cause ?? "" },
+          ],
+          ctaLabel: "View recurring plan",
+        });
+      }
       break;
 
     default:

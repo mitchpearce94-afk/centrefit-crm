@@ -89,6 +89,12 @@ export async function POST(req: NextRequest) {
       message: sanitizedMessage,
       ref_label: refLabel ?? null,
     },
+    emailDetails: [
+      { label: "From", value: senderName },
+      { label: "Regarding", value: refLabel ?? "" },
+      { label: "Message", value: sanitizedMessage ?? "" },
+    ],
+    ctaLabel: refLabel ? `View ${refLabel}`.slice(0, 60) : "Open in CRM",
     attachments,
   });
 

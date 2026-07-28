@@ -140,7 +140,7 @@ async function processInvoiceEvent(
   // event and blow the daily 5000-call cap on a busy tenant.
   const { data: invoice } = await supabase
     .from("invoices")
-    .select("id, status, job_id, invoice_type, xero_invoice_id")
+    .select("id, status, job_id, invoice_type, xero_invoice_id, customer:customers(name), site:customer_sites(name)")
     .eq("xero_invoice_id", xeroInvoiceId)
     .maybeSingle();
 
@@ -235,6 +235,12 @@ async function processInvoiceEvent(
 
   // Notify finance + the quote owner on the paid edge.
   if (!wasPaid && nowPaid) {
+    const inv = invoice as unknown as {
+      customer?: { name?: string | null } | { name?: string | null }[] | null;
+      site?: { name?: string | null } | { name?: string | null }[] | null;
+    };
+    const invCustomer = (Array.isArray(inv.customer) ? inv.customer[0]?.name : inv.customer?.name) ?? null;
+    const invSite = (Array.isArray(inv.site) ? inv.site[0]?.name : inv.site?.name) ?? null;
     await enqueueNotification({
       supabase,
       typeCode: "invoice.paid",
@@ -244,6 +250,19 @@ async function processInvoiceEvent(
       title: `Invoice paid · $${Number(latest.total).toFixed(2)}`,
       body: latest.invoiceNumber ? `${latest.invoiceNumber} marked paid in Xero.` : "Invoice marked paid in Xero.",
       href: `/invoices/${invoice.id}`,
+      emailDetails: [
+        { label: "Invoice", value: latest.invoiceNumber ?? "" },
+        { label: "Customer", value: invCustomer ?? "" },
+        { label: "Site", value: invSite ?? "" },
+        { label: "Amount", value: `$${Number(latest.total).toFixed(2)}` },
+        {
+          label: "Paid",
+          value: latest.fullyPaidOnDate
+            ? new Date(latest.fullyPaidOnDate).toLocaleDateString("en-AU")
+            : new Date().toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" }),
+        },
+      ],
+      ctaLabel: latest.invoiceNumber ? `View Invoice ${latest.invoiceNumber}` : "View invoice",
     });
   }
 }

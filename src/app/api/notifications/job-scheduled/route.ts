@@ -80,6 +80,14 @@ export async function POST(req: NextRequest) {
     title: `Scheduled: ${job.number}${when ? ` · ${when}` : ""}`,
     body: `${where}${job.reference ? ` · ${job.reference}` : ""}`,
     href: `/jobs/${jobId}`,
+    emailDetails: [
+      { label: "Job", value: job.number ?? "" },
+      { label: "Customer", value: customer?.name ?? "" },
+      { label: "Site", value: site?.name ?? "" },
+      { label: "When", value: when || "" },
+      { label: "Reference", value: job.reference ?? "" },
+    ],
+    ctaLabel: job.number ? `View Job ${job.number}` : "View job",
   });
 
   return NextResponse.json({ ok: true, notified: targets.length });

@@ -158,6 +158,16 @@ export async function POST(req: NextRequest) {
           ? `${result.plans.length} plan${result.plans.length > 1 ? "s" : ""} attached to existing mandate ${body.existingMandateId}.`
           : `Mandate signup link${result.plans.length > 1 ? "s" : ""} emailed to ${primary.email}.`,
         href: `/invoices/recurring/${result.plans[0].planId}`,
+        emailDetails: [
+          { label: "Customer", value: customer.name ?? "" },
+          { label: "Plans", value: String(result.plans.length) },
+          {
+            label: isExisting ? "Mandate" : "Sent to",
+            value: isExisting ? (body.existingMandateId ?? "") : (primary.email ?? ""),
+          },
+          { label: "First invoice", value: firstInvoiceDate ?? "" },
+        ],
+        ctaLabel: "View recurring plan",
       });
     }
 

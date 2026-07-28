@@ -130,6 +130,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ token: str
     title: `${prefillMeta.siteName ?? "A site"} accepted their handover`,
     body: `Handover documentation signed by ${signerName.trim()} (${signerPosition.trim()})`,
     href: `/sites/${request.site_id}`,
+    emailDetails: [
+      { label: "Site", value: prefillMeta.siteName ?? "" },
+      { label: "Signed by", value: `${signerName.trim()} (${signerPosition.trim()})` },
+      {
+        label: "Signed at",
+        value: new Date().toLocaleString("en-AU", {
+          timeZone: "Australia/Brisbane",
+          dateStyle: "medium",
+          timeStyle: "short",
+        }),
+      },
+    ],
+    ctaLabel: "View site",
   });
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;

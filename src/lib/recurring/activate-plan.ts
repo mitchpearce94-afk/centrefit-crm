@@ -57,6 +57,13 @@ async function recordActivationFailure(
       title: `Activation failed: ${who}`,
       body: `Attempt ${attempts} — ${reason}. Auto-retry will run within 15 min, or hit Retry on the plan page.`,
       href: `/invoices/recurring/${planId}`,
+      emailDetails: [
+        { label: "Customer", value: customer?.name ?? "" },
+        { label: "Site", value: site?.name ?? "" },
+        { label: "Attempt", value: String(attempts) },
+        { label: "Reason", value: reason },
+      ],
+      ctaLabel: "Open plan & retry",
     });
   } catch (err) {
     // Never let the failure-recorder itself throw — it would mask the real
@@ -393,6 +400,13 @@ async function activatePlanInner(
     })
     .eq("id", planId);
 
+  const billingSummary = Array.from(byFreq.entries())
+    .map(([frequency, group]) => {
+      const total = group.reduce((sum, it) => sum + Number(it.price_inc_gst) * (it.quantity ?? 1), 0);
+      return total > 0 ? `$${total.toFixed(2)}/${frequency === "yearly" ? "yr" : "mo"} inc GST` : null;
+    })
+    .filter(Boolean)
+    .join(" + ");
   await enqueueNotification({
     supabase,
     typeCode: "mandate.active",
@@ -404,6 +418,13 @@ async function activatePlanInner(
       ? `${site.name} — recurring billing live, first invoice ${startDate}.`
       : `Recurring billing live, first invoice ${startDate}.`,
     href: `/invoices/recurring/${planId}`,
+    emailDetails: [
+      { label: "Customer", value: customer.name ?? "" },
+      { label: "Site", value: site?.name ?? "" },
+      { label: "Billing", value: billingSummary },
+      { label: "First invoice", value: startDate },
+    ],
+    ctaLabel: "View recurring plan",
   });
 
   return {

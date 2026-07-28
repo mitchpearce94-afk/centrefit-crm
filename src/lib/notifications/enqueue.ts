@@ -57,6 +57,13 @@ export interface EnqueueNotificationInput {
   href?: string;
   metadata?: Record<string, unknown>;
   /**
+   * Entity specifics for the email only (label/value rows rendered as a
+   * table — Job #, Customer, Site, Amount…). Bell rows stay compact.
+   */
+  emailDetails?: { label: string; value: string }[];
+  /** Email CTA button label, e.g. "View Job 5018". Defaults to "Open in CRM". */
+  ctaLabel?: string;
+  /**
    * Files to attach to the email (e.g. plan PDF on a staff mention for a
    * plan). Bell rows are unaffected — attachments are an email-only
    * concern. Caller is responsible for fetching the bytes.
@@ -95,7 +102,7 @@ async function resolveAudience(
 }
 
 export async function enqueueNotification(input: EnqueueNotificationInput): Promise<void> {
-  const { typeCode, refType, refId, audience, title, body, href, metadata, attachments } = input;
+  const { typeCode, refType, refId, audience, title, body, href, metadata, attachments, emailDetails, ctaLabel } = input;
   try {
     const supabase = createServiceRoleClient();
     const targets = await resolveAudience(supabase, audience);
@@ -177,6 +184,8 @@ export async function enqueueNotification(input: EnqueueNotificationInput): Prom
             greetingName,
             title,
             body: body ?? null,
+            details: emailDetails,
+            ctaLabel,
             href: fullHref,
             typeCode,
             attachments,

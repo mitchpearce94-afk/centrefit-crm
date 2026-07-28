@@ -31,10 +31,16 @@ export async function POST(
   // Notify the tagged staffer — but not if they tagged themselves.
   if (staffId !== user.id) {
     const svc = createServiceRoleClient();
-    const { data: job } = await svc.from("jobs").select("number").eq("id", jobId).maybeSingle();
+    const { data: job } = await svc
+      .from("jobs")
+      .select("number, reference, description, customer:customers(name), site:customer_sites(name)")
+      .eq("id", jobId)
+      .maybeSingle();
     const { data: me } = await svc.from("staff").select("display_name").eq("id", user.id).maybeSingle();
     const jobLabel = job?.number ?? "a job";
     const by = me?.display_name ? ` by ${me.display_name}` : "";
+    const customer = Array.isArray(job?.customer) ? job?.customer[0] : job?.customer;
+    const site = Array.isArray(job?.site) ? job?.site[0] : job?.site;
     await enqueueNotification({
       supabase: svc,
       typeCode: "job.assigned",
@@ -44,6 +50,15 @@ export async function POST(
       title: `You've been added to ${jobLabel}`,
       body: `You were tagged onto ${jobLabel}${by}.`,
       href: `/jobs/${jobId}`,
+      emailDetails: [
+        { label: "Job", value: job?.number ?? "" },
+        { label: "Customer", value: customer?.name ?? "" },
+        { label: "Site", value: site?.name ?? "" },
+        { label: "Reference", value: job?.reference ?? "" },
+        { label: "Description", value: job?.description ? String(job.description).slice(0, 200) : "" },
+        { label: "Added by", value: me?.display_name ?? "" },
+      ],
+      ctaLabel: job?.number ? `View Job ${job.number}` : "View job",
     });
   }
 

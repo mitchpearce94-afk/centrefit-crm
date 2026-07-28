@@ -66,8 +66,15 @@ export async function notifyProcurementReadyIfEligible(
       .eq("type_code", "procurement.ready");
     if ((already ?? 0) > 0) return;
 
-    const { data: job } = await svc.from("jobs").select("number").eq("id", jobId).maybeSingle();
+    const { data: job } = await svc
+      .from("jobs")
+      .select("number, customer:customers(name), site:customer_sites(name)")
+      .eq("id", jobId)
+      .maybeSingle();
     const jobLabel = job?.number ?? "A job";
+    const customer = Array.isArray(job?.customer) ? job?.customer[0] : job?.customer;
+    const site = Array.isArray(job?.site) ? job?.site[0] : job?.site;
+    const quoteTotal = Number((quote.pricing_snapshot as { totalExGST?: number } | null)?.totalExGST ?? 0);
 
     await enqueueNotification({
       supabase: svc,
@@ -78,6 +85,14 @@ export async function notifyProcurementReadyIfEligible(
       title: `Ready for procurement — ${jobLabel}`,
       body: `${jobLabel} (quote ${quote.ref}) is ready to start — raise the PO.`,
       href: `/procurement/${jobId}`,
+      emailDetails: [
+        { label: "Job", value: job?.number ?? "" },
+        { label: "Customer", value: customer?.name ?? "" },
+        { label: "Site", value: site?.name ?? "" },
+        { label: "Quote", value: quote.ref ?? "" },
+        { label: "Quote total", value: quoteTotal > 0 ? `$${quoteTotal.toFixed(2)} ex GST` : "" },
+      ],
+      ctaLabel: job?.number ? `Open procurement for ${job.number}` : "Open procurement",
     });
   } catch (err) {
     console.error("[procurement-ready] notify failed", { jobId, err });

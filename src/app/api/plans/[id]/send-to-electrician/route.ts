@@ -127,7 +127,15 @@ export async function POST(
     audience: { allActive: true },
     title: `Plans sent to ${plan.state} electrician`,
     body: `${planLabel} → ${electricianLabel}`,
-    href: `/plans`,
+    // Deep-link to the linked job when there is one — /plans is a haystack.
+    href: jobId ? `/jobs/${jobId}` : `/plans`,
+    emailDetails: [
+      { label: "Plan", value: `${planLabel}${plan.revision ? ` (Rev ${plan.revision})` : ""}` },
+      { label: "State", value: plan.state ?? "" },
+      { label: "Sent to", value: `${electricianLabel}${contact.email ? ` — ${contact.email}` : ""}` },
+      { label: "Job", value: jobNumber ?? "" },
+    ],
+    ctaLabel: jobNumber ? `View Job ${jobNumber}` : "Open plans",
   });
 
   if (jobId) {
@@ -142,6 +150,13 @@ export async function POST(
         title: `Job moved to "Plans sent to electrician"`,
         body: jobNumber ? `${jobNumber} — ${planLabel}` : planLabel,
         href: `/jobs/${jobId}`,
+        emailDetails: [
+          { label: "Job", value: jobNumber ?? "" },
+          { label: "Plan", value: planLabel },
+          { label: "Electrician", value: electricianLabel },
+          { label: "New status", value: "Plans sent to electrician" },
+        ],
+        ctaLabel: jobNumber ? `View Job ${jobNumber}` : "View job",
       });
     } catch (err) {
       console.error(`[plans/send-to-electrician] auto-transition failed for job ${jobId}:`, err);

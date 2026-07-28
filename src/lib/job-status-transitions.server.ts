@@ -96,15 +96,24 @@ export async function autoTransitionJobStatusServer(
         site?.name && customer?.name
           ? `${customer.name} — ${site.name}`
           : (customer?.name ?? site?.name ?? "");
+      const jobNum = jobFull?.number ?? jobId.slice(0, 8);
       await enqueueNotification({
         supabase,
         typeCode: notif.typeCode,
         refType: "job",
         refId: jobId,
         audience: { allActive: true },
-        title: notif.title(jobFull?.number ?? jobId.slice(0, 8)),
+        title: notif.title(jobNum),
         body: where || undefined,
         href: `/jobs/${jobId}`,
+        emailDetails: [
+          { label: "Job", value: jobFull?.number ?? "" },
+          { label: "Customer", value: customer?.name ?? "" },
+          { label: "Site", value: site?.name ?? "" },
+          { label: "Reference", value: jobFull?.reference ?? "" },
+          { label: "Status", value: targetStatus.name },
+        ],
+        ctaLabel: jobFull?.number ? `View Job ${jobFull.number}` : "View job",
       });
     } catch (err) {
       console.error(`[Auto-transition server] notify failed for ${jobId} → ${targetStatus.name}:`, err);

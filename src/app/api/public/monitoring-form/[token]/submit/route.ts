@@ -239,6 +239,20 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ token: str
     title: `${prefill.siteName} signed their monitoring instructions`,
     body: `Security Monitoring Response Instructions v${request.version} signed by ${signerName.trim()} (${signerPosition.trim()})`,
     href: `/sites/${request.site_id}`,
+    emailDetails: [
+      { label: "Site", value: prefill.siteName ?? "" },
+      { label: "Document", value: `Security Monitoring Response Instructions v${request.version}` },
+      { label: "Signed by", value: `${signerName.trim()} (${signerPosition.trim()})` },
+      {
+        label: "Signed at",
+        value: new Date().toLocaleString("en-AU", {
+          timeZone: "Australia/Brisbane",
+          dateStyle: "medium",
+          timeStyle: "short",
+        }),
+      },
+    ],
+    ctaLabel: "View site",
   });
 
   // ── Email the signer their copy ───────────────────────────────────────────
