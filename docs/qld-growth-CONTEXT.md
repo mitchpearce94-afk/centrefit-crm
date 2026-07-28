@@ -91,6 +91,9 @@ automation does prospecting grunt work; Mitchell does relationship calls.
   date params, sorted newest-first, cut client-side
 - **Sunshine Coast NOT polled** — robots.txt disallows all; PlanningAlerts API
   is the compliant substitute if wanted later
+- Deep links: Development.i (all four incl. GC) = `/Home/FilterDirect?filters=DANumber=<RAW ref, never URL-encoded>`;
+  Logan = `devet.loganhub.com.au/#/applications/<ref with - → />`;
+  Moreton Bay = `/DA-Tracker/<numeric applicationId>` (not the DA/YYYY/N file ref)
 - Enrichment (phase 1.5, not built): QBCC contractor register via
   data.qld.gov.au CKAN datastore (resource 25608781-…) — applicant → licence/ABN
 - First live run 2026-07-28: 19 leads incl. 2 childcare (Logan), 3 shopping
