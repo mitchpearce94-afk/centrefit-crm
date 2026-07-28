@@ -59,8 +59,11 @@ export async function resendSignupEmail(
     .maybeSingle();
   const plan = data as unknown as PlanRow | null;
   if (!plan) throw new Error("Plan not found");
-  if (plan.status !== "pending_mandate") {
-    throw new Error(`Plan is ${plan.status} — only pending_mandate plans can be re-sent`);
+  // Drafts use this same path as their FIRST send — sending flips them to
+  // pending_mandate below so the auto-chase crons pick them up from then on.
+  const isDraftFirstSend = plan.status === "draft";
+  if (plan.status !== "pending_mandate" && !isDraftFirstSend) {
+    throw new Error(`Plan is ${plan.status} — only draft or pending_mandate plans can be sent`);
   }
   if (plan.gc_mandate_id) {
     throw new Error("Mandate already signed — activation is what's stuck, not the signup");
@@ -127,6 +130,8 @@ export async function resendSignupEmail(
       // Manual resends also stamp this — a staff-sent email resets the
       // auto-chase cool-off so the customer isn't hit twice in one week.
       last_signup_reminder_at: now,
+      // First send of a draft graduates it into the normal pending flow.
+      ...(isDraftFirstSend ? { status: "pending_mandate" } : {}),
     })
     .eq("id", planId);
   if (opts.reminder) {
@@ -148,7 +153,9 @@ export async function resendSignupEmail(
     refType: "recurring_plan",
     refId: planId,
     audience: { allActive: true },
-    title: `Mandate signup ${opts.reminder ? "auto-reminder" : "re-sent"}: ${siteLabel}`,
+    title: isDraftFirstSend
+      ? `Mandate signup sent (draft released): ${siteLabel}`
+      : `Mandate signup ${opts.reminder ? "auto-reminder" : "re-sent"}: ${siteLabel}`,
     body: `Sent to ${primary.email} with a fresh GoCardless link.`,
     href: `/invoices/recurring/${planId}`,
   });

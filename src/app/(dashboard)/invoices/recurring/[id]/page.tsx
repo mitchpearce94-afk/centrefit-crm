@@ -9,12 +9,14 @@ import { EditStartDateButton } from "./edit-start-date-button";
 import { AuthoriseXeroButton } from "./authorise-xero-button";
 import { RetryActivationButton } from "./retry-activation-button";
 import { ResendSignupButton } from "./resend-signup-button";
+import { ChaseNotes } from "./chase-notes";
 import { accountCodeLabel } from "@/lib/xero/account-codes";
 import { getAuthedClient } from "@/lib/xero/client";
 import { getRepeatingInvoice, type RepeatingInvoiceState } from "@/lib/xero/repeating-invoices";
 import { nextMonthlyOccurrence } from "@/lib/recurring/next-occurrence";
 
 const STATUS_LABEL: Record<string, string> = {
+  draft: "Draft — Not Sent",
   pending_mandate: "Awaiting Mandate",
   active: "Active",
   paused: "Paused",
@@ -22,6 +24,7 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "Failed",
 };
 const STATUS_COLOURS: Record<string, string> = {
+  draft: "#a78bfa",
   pending_mandate: "#fb923c",
   active: "#22c55e",
   paused: "#94a3b8",
@@ -45,7 +48,7 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
         gc_customer_id, gc_mandate_id, xero_repeating_invoice_id, xero_contact_id,
         activation_error, activation_attempts, last_activation_attempt_at,
         remandate_billing_request_id, remandate_signup_url, remandate_requested_at, remandate_completed_at,
-        created_at, notes,
+        created_at, notes, mandate_chase_notes,
         customers(id, name),
         customer_sites(id, name, address, suburb, state, postcode, customer_id),
         recurring_plan_items(id, service_id, service_name, description, price_inc_gst, frequency, account_code, quantity)
@@ -259,7 +262,7 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
             {plan.first_invoice_date
               ? new Date(plan.first_invoice_date).toLocaleDateString("en-AU")
               : <span className="text-muted-foreground">When mandate verifies</span>}
-            {plan.status === "pending_mandate" && (
+            {(plan.status === "pending_mandate" || plan.status === "draft") && (
               <EditStartDateButton planId={plan.id} currentDate={plan.first_invoice_date ?? null} />
             )}
           </dd>
@@ -268,6 +271,18 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
           <dt className="text-muted-foreground">Alias email used</dt>
           <dd className="font-mono text-xs">{plan.alias_email ?? "—"}</dd>
         </dl>
+        {plan.status === "draft" && plan.signup_link_url && (
+          <div className="mt-3 rounded-md border border-violet-500/30 bg-violet-500/5 p-3">
+            <p className="text-xs text-violet-300 mb-2">
+              Draft — the customer has <span className="font-semibold">not</span> been emailed the
+              signup link yet. Everything is provisioned; hit Send when you&apos;re ready (e.g. once
+              the job&apos;s completed) and a fresh GoCardless link goes out.
+            </p>
+            <div className="flex gap-2 items-center">
+              {!plan.gc_mandate_id && <ResendSignupButton planId={plan.id} mode="send" />}
+            </div>
+          </div>
+        )}
         {plan.status === "pending_mandate" && plan.signup_link_url && (
           <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
             <p className="text-xs text-amber-300 mb-2">
@@ -292,6 +307,9 @@ export default async function RecurringPlanDetailPage({ params }: { params: Prom
               {!plan.gc_mandate_id && <ResendSignupButton planId={plan.id} />}
             </div>
           </div>
+        )}
+        {(plan.status === "draft" || plan.status === "pending_mandate") && (
+          <ChaseNotes planId={plan.id} initialNotes={plan.mandate_chase_notes ?? ""} />
         )}
         {plan.notes && (
           <div className="mt-3 rounded-md border border-border bg-muted/30 p-3">

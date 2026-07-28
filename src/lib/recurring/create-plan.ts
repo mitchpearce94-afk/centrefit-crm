@@ -63,6 +63,14 @@ export interface CreateRecurringPlansInput {
   /** Send the consolidated mandate-signup email. Public flow may opt to skip. */
   sendEmail?: boolean;
   /**
+   * Insert plans as status 'draft' instead of 'pending_mandate'. Everything
+   * else (GC billing request, signup link) is still provisioned, but the
+   * customer is NOT emailed and the pending-mandate crons ignore the plan
+   * until staff hit "Send signup email" (which flips it to pending_mandate).
+   * Caller should pass sendEmail: false alongside.
+   */
+  asDraft?: boolean;
+  /**
    * Attach an existing GoCardless mandate instead of going through the
    * billing-request → customer-signs → webhook cycle. When set:
    *   - No billing request is created.
@@ -104,7 +112,7 @@ export async function createRecurringPlansForSites(
   const {
     supabase, customer, customerSitesById, primary, servicesById,
     sites, firstInvoiceDate, yearlyFirstInvoiceDate = null, createdByStaffId, appUrl, sendEmail = true,
-    existingMandateId,
+    existingMandateId, asDraft = false,
   } = input;
 
   // If staff picked an existing mandate, verify it exists + is usable BEFORE
@@ -132,7 +140,7 @@ export async function createRecurringPlansForSites(
       .insert({
         customer_id: customer.id,
         site_id: siteId,
-        status: "pending_mandate",
+        status: asDraft ? "draft" : "pending_mandate",
         created_by: createdByStaffId,
         first_invoice_date: firstInvoiceDate,
         yearly_first_invoice_date: yearlyFirstInvoiceDate,

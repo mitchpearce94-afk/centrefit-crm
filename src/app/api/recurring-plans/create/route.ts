@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
     yearlyFirstInvoiceDate?: string | null;
     sites?: Array<{ siteId?: string | null; items?: Array<{ serviceId: string; quantity?: number }> }>;
     existingMandateId?: string | null;
+    saveAsDraft?: boolean;
   };
   try {
     body = await req.json();
@@ -36,6 +37,11 @@ export async function POST(req: NextRequest) {
   }
   if (body.existingMandateId && !/^MD[A-Z0-9]+$/i.test(body.existingMandateId)) {
     return NextResponse.json({ error: "existingMandateId must look like 'MD000123…'" }, { status: 400 });
+  }
+  // Draft + existing mandate are mutually exclusive — attaching a mandate
+  // activates immediately, so there is nothing to "send later".
+  if (body.saveAsDraft && body.existingMandateId) {
+    return NextResponse.json({ error: "saveAsDraft cannot be combined with existingMandateId" }, { status: 400 });
   }
   for (const s of body.sites) {
     if (!s.items || s.items.length === 0) {
@@ -136,8 +142,9 @@ export async function POST(req: NextRequest) {
       yearlyFirstInvoiceDate,
       createdByStaffId: staff?.id ?? null,
       appUrl,
-      sendEmail: !body.existingMandateId,
+      sendEmail: !body.existingMandateId && !body.saveAsDraft,
       existingMandateId: body.existingMandateId ?? undefined,
+      asDraft: !!body.saveAsDraft,
     });
 
     // Notify the staffer who initiated the wizard. Different message
@@ -145,6 +152,7 @@ export async function POST(req: NextRequest) {
     // mandate) or is waiting on signup.
     if (staff?.id && result.plans.length > 0) {
       const isExisting = !!body.existingMandateId;
+      const isDraft = !!body.saveAsDraft;
       await enqueueNotification({
         supabase,
         typeCode: isExisting ? "mandate.active" : "recurring_plan.signup_link_sent",
@@ -153,17 +161,25 @@ export async function POST(req: NextRequest) {
         audience: { staffId: staff.id },
         title: isExisting
           ? `${customer.name} recurring billing activated`
-          : "Mandate link sent",
+          : isDraft
+            ? `${customer.name} plan saved as draft`
+            : "Mandate link sent",
         body: isExisting
           ? `${result.plans.length} plan${result.plans.length > 1 ? "s" : ""} attached to existing mandate ${body.existingMandateId}.`
-          : `Mandate signup link${result.plans.length > 1 ? "s" : ""} emailed to ${primary.email}.`,
+          : isDraft
+            ? "Signup email NOT sent — send it from the plan page when the job's done."
+            : `Mandate signup link${result.plans.length > 1 ? "s" : ""} emailed to ${primary.email}.`,
         href: `/invoices/recurring/${result.plans[0].planId}`,
         emailDetails: [
           { label: "Customer", value: customer.name ?? "" },
           { label: "Plans", value: String(result.plans.length) },
           {
-            label: isExisting ? "Mandate" : "Sent to",
-            value: isExisting ? (body.existingMandateId ?? "") : (primary.email ?? ""),
+            label: isExisting ? "Mandate" : isDraft ? "Status" : "Sent to",
+            value: isExisting
+              ? (body.existingMandateId ?? "")
+              : isDraft
+                ? "Draft — not sent to customer"
+                : (primary.email ?? ""),
           },
           { label: "First invoice", value: firstInvoiceDate ?? "" },
         ],

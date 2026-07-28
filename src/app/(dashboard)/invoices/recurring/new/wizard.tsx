@@ -80,9 +80,11 @@ export function NewRecurringPlanWizard({
   const [yearlyFirstInvoiceDate, setYearlyFirstInvoiceDate] = useState<string>("");
 
   // Mandate attachment mode. Default = send signup link to the customer
-  // (existing flow). Alternative = attach an existing GC mandate the
-  // customer has already signed.
-  const [mandateMode, setMandateMode] = useState<"signup" | "existing">("signup");
+  // (existing flow). Alternatives: attach an existing GC mandate the
+  // customer has already signed, or save as a DRAFT — everything provisioned
+  // but the signup email held back until staff send it from the plan page
+  // (e.g. once the job completes).
+  const [mandateMode, setMandateMode] = useState<"signup" | "existing" | "draft">("signup");
   const [existingMandateId, setExistingMandateId] = useState<string>("");
 
   // The backing customer, derived from the first picked site.
@@ -160,7 +162,7 @@ export function NewRecurringPlanWizard({
       toast("Each site needs at least one service", "error");
       return;
     }
-    if (mandateMode === "signup" && !owner.contactEmail) {
+    if ((mandateMode === "signup" || mandateMode === "draft") && !owner.contactEmail) {
       toast("Site owner has no contact email — set one before creating a plan", "error");
       return;
     }
@@ -185,6 +187,7 @@ export function NewRecurringPlanWizard({
             })),
           })),
           existingMandateId: mandateMode === "existing" ? existingMandateId.trim() : null,
+          saveAsDraft: mandateMode === "draft",
         }),
       });
       const json = await res.json();
@@ -368,6 +371,10 @@ export function NewRecurringPlanWizard({
               Submitting will create {drafts.length} GoCardless customer{drafts.length === 1 ? "" : "s"} (with `+sitename` email aliases), generate {drafts.length} mandate signup link{drafts.length === 1 ? "" : "s"}, and email everything in one consolidated message to <span className="font-mono">{owner.contactEmail}</span>.
               Each site&apos;s Xero RepeatingInvoice fires automatically once that site&apos;s mandate is active.
             </p>
+          ) : mandateMode === "draft" ? (
+            <p className="text-xs text-muted-foreground">
+              Submitting will set everything up ({drafts.length} plan{drafts.length === 1 ? "" : "s"}, GoCardless customer + signup link) but <span className="font-medium text-foreground">NOT email the customer</span>. The plan sits as a draft — hit &quot;Send signup email&quot; on the plan page when you&apos;re ready (e.g. once the job is completed).
+            </p>
           ) : (
             <p className="text-xs text-muted-foreground">
               Submitting will attach {drafts.length} plan{drafts.length === 1 ? "" : "s"} to existing mandate{" "}
@@ -383,7 +390,9 @@ export function NewRecurringPlanWizard({
               ? "Creating..."
               : mandateMode === "signup"
                 ? "Create plan & send mandate links"
-                : "Create plan & attach mandate"}
+                : mandateMode === "draft"
+                  ? "Save as draft (send later)"
+                  : "Create plan & attach mandate"}
           </button>
         </section>
       )}
@@ -598,8 +607,8 @@ function MandateSourcePicker({
   onMandateIdChange,
 }: {
   customerId: string;
-  mode: "signup" | "existing";
-  onModeChange: (m: "signup" | "existing") => void;
+  mode: "signup" | "existing" | "draft";
+  onModeChange: (m: "signup" | "existing" | "draft") => void;
   mandateId: string;
   onMandateIdChange: (id: string) => void;
 }) {
@@ -628,9 +637,9 @@ function MandateSourcePicker({
       .finally(() => setLoading(false));
   }, [mode, loadedFor, customerId, toast]);
 
-  // Reset mandate selection if mode flips back to signup.
+  // Reset mandate selection if mode flips away from "existing".
   useEffect(() => {
-    if (mode === "signup") {
+    if (mode !== "existing") {
       onMandateIdChange("");
       setShowPaste(false);
     }
@@ -668,12 +677,18 @@ function MandateSourcePicker({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <ModeButton
           active={mode === "signup"}
           title="Send signup link"
           subtitle="Customer signs a new mandate via GoCardless. Email goes out automatically."
           onClick={() => onModeChange("signup")}
+        />
+        <ModeButton
+          active={mode === "draft"}
+          title="Save as draft"
+          subtitle="Set everything up but hold the signup email — send it from the plan page when the job's done."
+          onClick={() => onModeChange("draft")}
         />
         <ModeButton
           active={mode === "existing"}

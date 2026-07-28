@@ -90,10 +90,10 @@ export async function POST(
     }
   }
 
-  // Pending / failed (with no mandate) → hard delete. Items cascade.
+  // Draft / pending / failed (with no mandate) → hard delete. Items cascade.
   // If we just cancelled a mandate above, also hard-delete since these are
   // pre-active states; the cancelled-mandate audit trail lives in GC.
-  if (plan.status === "pending_mandate" || plan.status === "failed") {
+  if (plan.status === "draft" || plan.status === "pending_mandate" || plan.status === "failed") {
     const { error } = await supabase.from("recurring_plans").delete().eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({

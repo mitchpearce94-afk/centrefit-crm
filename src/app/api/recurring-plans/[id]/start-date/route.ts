@@ -33,7 +33,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     .eq("id", id)
     .maybeSingle();
   if (!plan) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
-  if (plan.status !== "pending_mandate") {
+  if (plan.status !== "pending_mandate" && plan.status !== "draft") {
     return NextResponse.json(
       { error: `Cannot edit start date on a ${plan.status} plan — change the schedule directly in Xero.` },
       { status: 409 },

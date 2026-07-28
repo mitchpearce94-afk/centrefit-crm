@@ -7,6 +7,7 @@ import { ListSearch } from "@/components/ui/list-search";
 import { brisbaneDateISO } from "@/lib/dates";
 
 const STATUS_LABEL: Record<string, string> = {
+  draft: "Draft — Not Sent",
   pending_mandate: "Awaiting Mandate",
   active: "Active",
   paused: "Paused",
@@ -14,6 +15,7 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "Failed",
 };
 const STATUS_COLOURS: Record<string, string> = {
+  draft: "#a78bfa",
   pending_mandate: "#fb923c",
   active: "#22c55e",
   paused: "#94a3b8",
@@ -123,7 +125,7 @@ interface PlanRow {
   recurring_plan_items: PlanItemRow[];
 }
 
-type Tab = "active" | "pending" | "paused" | "failed" | "cancelled";
+type Tab = "active" | "pending" | "draft" | "paused" | "failed" | "cancelled";
 
 export default async function RecurringInvoicesPage({
   searchParams,
@@ -180,6 +182,7 @@ export default async function RecurringInvoicesPage({
   const monthlyMRR = streamMRR.security + streamMRR.sim + streamMRR.nbn + streamMRR.other;
 
   const activeList = list.filter((p) => p.status === "active");
+  const draftList = list.filter((p) => p.status === "draft");
   const pendingList = list.filter((p) => p.status === "pending_mandate");
   const pausedList = list.filter((p) => p.status === "paused");
   const failedList = list.filter((p) => p.status === "failed");
@@ -203,6 +206,7 @@ export default async function RecurringInvoicesPage({
   const filtered =
     searchList ??
     (tab === "pending" ? pendingList
+    : tab === "draft" ? draftList
     : tab === "paused" ? pausedList
     : tab === "failed" ? failedList
     : tab === "cancelled" ? cancelledList
@@ -268,6 +272,7 @@ export default async function RecurringInvoicesPage({
         {[
           { key: "active", label: "Active", count: activeList.length },
           { key: "pending", label: "Awaiting Mandate", count: pendingList.length, accent: pendingList.length > 0 },
+          ...(draftList.length > 0 ? [{ key: "draft", label: "Drafts", count: draftList.length }] : []),
           { key: "failed", label: "Failed", count: failedList.length, accent: failedList.length > 0 },
           { key: "paused", label: "Paused", count: pausedList.length },
           { key: "cancelled", label: "Cancelled", count: cancelledList.length },
