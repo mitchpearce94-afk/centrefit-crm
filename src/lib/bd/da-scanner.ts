@@ -150,7 +150,9 @@ async function scanDevelopmenti(source: string, host: string, sinceMs: number): 
       application_type: str(p.application_type) ?? str(p.category_desc),
       lodged_date: toIsoDate(p.date_received),
       decision_status: str(p.progress) ?? str(p.decision_desc),
-      url: `https://${host}/Home/FilterDirect?filters=DANumber=${encodeURIComponent(appNo)}`,
+      // Raw concatenation, NO encoding — Development.i's filter parser wants
+      // literal slashes in refs like 1077/2020/MAMC/E (PlanningAlerts format).
+      url: `https://${host}/Home/FilterDirect?filters=DANumber=${appNo}`,
       matched_keywords: matched,
     });
   }
@@ -213,7 +215,7 @@ async function scanGoldCoast(sinceMs: number): Promise<ScanResult> {
       application_type: str(p.applicationType),
       lodged_date: Number.isFinite(receivedMs) ? toIsoDate(receivedMs) : null,
       decision_status: str(p.stage),
-      url: `https://${host}/`,
+      url: `https://${host}/Home/FilterDirect?filters=DANumber=${appNo}`,
       matched_keywords: matched,
     });
   }
@@ -271,7 +273,9 @@ async function scanLogan(sinceMs: number): Promise<ScanResult> {
       application_type: str(p.applicationClass) ?? str(p.developmentType),
       lodged_date: toIsoDate(p.lodgementDate),
       decision_status: str(p.decisionStatus),
-      url: "https://devet.loganhub.com.au/",
+      // DevET's per-application hash route uses slash-form refs
+      // (BW-11870-2026 → BW/11870/2026) — PlanningAlerts' Logan format.
+      url: `https://devet.loganhub.com.au/#/applications/${appNo.replace(/-/g, "/")}`,
       matched_keywords: matched,
     });
   }
@@ -302,6 +306,7 @@ async function scanMoretonBay(sinceMs: number): Promise<ScanResult> {
     considered++;
     const appNo = str(p.fileId) ?? str(p.applicationId);
     if (!appNo) continue;
+    const numericId = str(p.applicationId);
     const description = str(p.description);
     const haystack = [description, str(p.formattedTitle), str(p.applicationType)]
       .filter(Boolean)
@@ -318,7 +323,10 @@ async function scanMoretonBay(sinceMs: number): Promise<ScanResult> {
       application_type: str(p.applicationType),
       lodged_date: toIsoDate(p.lodgedDate),
       decision_status: str(p.status),
-      url: "https://www.moretonbay.qld.gov.au/Services/Building-Development/DA-Tracker",
+      // Per-application page needs the NUMERIC id, not the DA/YYYY/N file ref.
+      url: numericId
+        ? `https://www.moretonbay.qld.gov.au/Services/Building-Development/DA-Tracker/${numericId}`
+        : "https://www.moretonbay.qld.gov.au/Services/Building-Development/DA-Tracker",
       matched_keywords: matched,
     });
   }
