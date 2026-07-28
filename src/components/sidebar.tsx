@@ -69,6 +69,11 @@ export function Sidebar({
     if (item.flag === null) return true;
     return allowed.has(item.flag);
   });
+  // BD pipeline is admin-only (Mitchell's growth work) — role-gated rather
+  // than a new permission flag while it's a one-person tool.
+  if (staff?.role === "admin") {
+    visibleNav.push({ name: "BD Leads", href: "/bd-leads", icon: BriefcaseIcon, flag: null });
+  }
 
   async function handleSignOut() {
     const supabase = createClient();

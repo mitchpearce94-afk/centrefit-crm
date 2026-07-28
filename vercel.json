@@ -24,6 +24,10 @@
     {
       "path": "/api/cron/pending-mandate-watchdog",
       "schedule": "15 22 * * *"
+    },
+    {
+      "path": "/api/cron/da-scanner",
+      "schedule": "0 18 * * *"
     }
   ]
 }
