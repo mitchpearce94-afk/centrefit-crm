@@ -15,12 +15,21 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Centrefit CRM",
   description: "Centrefit Group operations platform",
+  appleWebApp: {
+    capable: true,
+    title: "Centrefit",
+    statusBarStyle: "black-translucent",
+  },
+  icons: {
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  themeColor: "#0b1220",
 };
 
 // Inline script that runs before paint so the chosen theme class is on

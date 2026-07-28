@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -8,8 +8,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 const REASON_MESSAGES: Record<string, string> = {
   idle: "Signed out — your session was idle for too long. Sign in again to continue.",
-  expired: "Signed out — your session reached the 12 hour maximum. Sign in again to continue.",
+  expired: "Signed out — your session reached its maximum length. Sign in again to continue.",
 };
+
+// Devices that have completed a passkey sign-in get the one-tap unlock as the
+// primary action on the next visit (the "open the app, Face ID, you're in"
+// flow — Mitchell 2026-07-28). localStorage, not a cookie: purely a UI hint,
+// zero auth weight.
+const PASSKEY_DEVICE_KEY = "cf-passkey-device";
 
 // useSearchParams() forces this client component into a Suspense boundary at
 // build time per Next.js 16. The reason banner is the only thing that reads
@@ -32,8 +38,20 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // null = not yet known (pre-hydration); avoids a layout flash.
+  const [passkeyDevice, setPasskeyDevice] = useState<boolean | null>(null);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const autoPrompted = useRef(false);
   const router = useRouter();
   const supabase = createClient();
+
+  useEffect(() => {
+    try {
+      setPasskeyDevice(localStorage.getItem(PASSKEY_DEVICE_KEY) === "1");
+    } catch {
+      setPasskeyDevice(false);
+    }
+  }, []);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -57,22 +75,51 @@ export default function LoginPage() {
   // One-tap passkey sign-in (Windows Hello / Face ID / Touch ID). The
   // discoverable-credential ceremony resolves the account itself — no email
   // needed — and middleware treats it as MFA-satisfied (no TOTP step).
-  async function handlePasskey() {
-    setLoading(true);
-    setError(null);
+  // `silent` = the automatic attempt on page load; failures there stay quiet
+  // (browsers may require a tap first) and the button remains.
+  async function handlePasskey(silent = false) {
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     const { error } = await supabase.auth.signInWithPasskey();
     if (error) {
-      setError(
-        error.message.toLowerCase().includes("cancel")
-          ? "Passkey sign-in was cancelled."
-          : `Passkey sign-in failed: ${error.message}. Use your password instead, then add a passkey from Account.`,
-      );
-      setLoading(false);
+      if (!silent) {
+        const msg = error.message.toLowerCase();
+        setError(
+          msg.includes("cancel")
+            ? "Passkey sign-in was cancelled."
+            : `Passkey sign-in failed: ${error.message}. Use your password instead, then add a passkey from Account.`,
+        );
+        // Revoked/unknown credential — stop preferring the one-tap flow here.
+        if (msg.includes("not_found") || msg.includes("not found")) {
+          try {
+            localStorage.removeItem(PASSKEY_DEVICE_KEY);
+          } catch {}
+          setPasskeyDevice(false);
+        }
+        setLoading(false);
+      }
     } else {
+      try {
+        localStorage.setItem(PASSKEY_DEVICE_KEY, "1");
+      } catch {}
       router.push("/");
       router.refresh();
     }
   }
+
+  // Auto-prompt once on devices that have used a passkey before — waking the
+  // installed app after idle becomes: open → Face ID sheet → in.
+  useEffect(() => {
+    if (passkeyDevice && !autoPrompted.current) {
+      autoPrompted.current = true;
+      void handlePasskey(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [passkeyDevice]);
+
+  const passwordFormVisible = passkeyDevice === false || showPasswordForm;
 
   return (
     <div className="relative flex min-h-dvh items-center justify-center px-4 overflow-hidden">
@@ -102,7 +149,7 @@ export default function LoginPage() {
         </div>
 
         <div className="surface-card-elevated p-6">
-          <form onSubmit={handleLogin} className="space-y-4">
+          <div className="space-y-4">
             {!error && (
               <Suspense fallback={null}>
                 <ReasonBanner />
@@ -114,76 +161,107 @@ export default function LoginPage() {
               </div>
             )}
 
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-xs font-medium text-muted-foreground uppercase tracking-wider"
-              >
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                autoComplete="email"
-                className="mt-1.5 block w-full rounded-md border border-border bg-input px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                placeholder="you@centrefit.com.au"
-              />
-            </div>
+            {/* Passkey-first on devices that have used one */}
+            {passkeyDevice === true && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handlePasskey()}
+                  disabled={loading}
+                  className="w-full rounded-md bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md disabled:opacity-50"
+                >
+                  {loading ? "Waiting for your device…" : "Unlock with Face ID / passkey"}
+                </button>
+                {!passwordFormVisible && (
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordForm(true)}
+                    className="block w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Use email &amp; password instead
+                  </button>
+                )}
+              </>
+            )}
 
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-xs font-medium text-muted-foreground uppercase tracking-wider"
-              >
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-                className="mt-1.5 block w-full rounded-md border border-border bg-input px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
+            {passwordFormVisible && (
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div>
+                  <label
+                    htmlFor="email"
+                    className="block text-xs font-medium text-muted-foreground uppercase tracking-wider"
+                  >
+                    Email
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                    className="mt-1.5 block w-full rounded-md border border-border bg-input px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="you@centrefit.com.au"
+                  />
+                </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md disabled:opacity-50"
-            >
-              {loading ? "Signing in…" : "Sign in"}
-            </button>
+                <div>
+                  <label
+                    htmlFor="password"
+                    className="block text-xs font-medium text-muted-foreground uppercase tracking-wider"
+                  >
+                    Password
+                  </label>
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                    className="mt-1.5 block w-full rounded-md border border-border bg-input px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
 
-            <Link
-              href="/forgot-password"
-              className="block text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Forgot your password?
-            </Link>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md disabled:opacity-50"
+                >
+                  {loading ? "Signing in…" : "Sign in"}
+                </button>
 
-            <div className="flex items-center gap-3 pt-1">
-              <span className="h-px flex-1 bg-border" />
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">or</span>
-              <span className="h-px flex-1 bg-border" />
-            </div>
+                <Link
+                  href="/forgot-password"
+                  className="block text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Forgot your password?
+                </Link>
+              </form>
+            )}
 
-            <button
-              type="button"
-              onClick={handlePasskey}
-              disabled={loading}
-              className="w-full rounded-md border border-border bg-transparent px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
-            >
-              Sign in with a passkey
-            </button>
-            <p className="text-center text-[10px] text-muted-foreground -mt-2">
-              Face ID, Windows Hello or your password manager — add one from Account after signing in.
-            </p>
-          </form>
+            {passkeyDevice === false && (
+              <>
+                <div className="flex items-center gap-3 pt-1">
+                  <span className="h-px flex-1 bg-border" />
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">or</span>
+                  <span className="h-px flex-1 bg-border" />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handlePasskey()}
+                  disabled={loading}
+                  className="w-full rounded-md border border-border bg-transparent px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+                >
+                  Sign in with a passkey
+                </button>
+                <p className="text-center text-[10px] text-muted-foreground -mt-2">
+                  Face ID, Windows Hello or your password manager — add one from Account after signing in.
+                </p>
+              </>
+            )}
+          </div>
         </div>
 
         <p className="mt-6 text-center text-[11px] text-muted-foreground">

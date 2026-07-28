@@ -21,6 +21,12 @@ import { NextResponse, type NextRequest } from "next/server";
 // keeps its own unlock regardless.
 const IDLE_TIMEOUT_MS = 4 * 60 * 60 * 1000;    // 4 hours
 const MAX_SESSION_MS = 12 * 60 * 60 * 1000;    // 12 hours
+// Passkey-authenticated sessions get a longer hard cap (Mitchell 2026-07-28):
+// a passkey login is possession + biometric in one phishing-resistant ceremony
+// and re-auth after idle is a one-tap Face ID, so the phone experience is
+// "open and you're in" without weakening the password+TOTP posture — those
+// sessions keep the 12h cap. Idle stays 4h for everyone.
+const PASSKEY_MAX_SESSION_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
 const LAST_ACTIVITY_COOKIE = "cf-last-activity";
 const SESSION_STARTED_COOKIE = "cf-session-started";
@@ -135,13 +141,14 @@ export async function updateSession(request: NextRequest) {
   const onMfaSetup = pathname === "/login/mfa-setup";
   let needsVerify = false;
   let needsEnrol = false;
+  let passkeyAuthed = false;
   if (user) {
     const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     // A passkey sign-in is possession + biometric in one phishing-resistant
     // ceremony — treated as MFA-satisfied, no TOTP step. Detected from the
     // session's AMR claim (entries may be strings or {method} objects).
     const methods = (aal?.currentAuthenticationMethods ?? []) as Array<string | { method: string }>;
-    const passkeyAuthed = methods.some((m) => {
+    passkeyAuthed = methods.some((m) => {
       const name = typeof m === "string" ? m : m?.method ?? "";
       return name.includes("passkey") || name.includes("webauthn");
     });
@@ -199,9 +206,10 @@ export async function updateSession(request: NextRequest) {
       return redirectToLogin(request, "idle");
     }
 
-    // Hard-cap check — independent of activity. If the user has been on this
-    // session for 12 hours straight, force a fresh login.
-    if (sessionStarted && now - sessionStarted > MAX_SESSION_MS) {
+    // Hard-cap check — independent of activity. Password+TOTP sessions cap at
+    // 12h; passkey sessions at 14 days (see PASSKEY_MAX_SESSION_MS).
+    const maxSessionMs = passkeyAuthed ? PASSKEY_MAX_SESSION_MS : MAX_SESSION_MS;
+    if (sessionStarted && now - sessionStarted > maxSessionMs) {
       await supabase.auth.signOut();
       return redirectToLogin(request, "expired");
     }
