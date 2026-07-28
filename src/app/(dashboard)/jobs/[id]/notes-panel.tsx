@@ -13,6 +13,11 @@ interface Attachment {
   size?: number;
 }
 
+// Videos skip client-side compression, so cap them before upload — phone
+// clips over this are rejected with a toast rather than failing mid-upload.
+const MAX_VIDEO_MB = 100;
+const MAX_VIDEO_BYTES = MAX_VIDEO_MB * 1024 * 1024;
+
 export function NotesPanel({
   jobId,
   notes,
@@ -120,6 +125,10 @@ export function NotesPanel({
                       <div key={i} className="h-9 w-9 rounded border border-border bg-muted overflow-hidden shrink-0">
                         {att.type?.startsWith("image") ? (
                           <img src={att.url} alt={att.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                        ) : att.type?.startsWith("video") ? (
+                          <div className="flex h-full w-full items-center justify-center bg-foreground/80 text-background">
+                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                          </div>
                         ) : (
                           <div className="flex h-full w-full items-center justify-center text-[8px] font-medium text-muted-foreground uppercase">
                             {att.name?.split(".").pop() ?? "file"}
@@ -205,6 +214,10 @@ export function NotesPanel({
                                   decoding="async"
                                   className="h-full w-full object-cover"
                                 />
+                              ) : att.type?.startsWith("video") ? (
+                                <div className="flex h-full w-full items-center justify-center bg-foreground/80 text-background">
+                                  <svg className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                                </div>
                               ) : (
                                 <div className="flex h-full w-full items-center justify-center text-[8px] font-medium text-muted-foreground uppercase">
                                   {att.name?.split(".").pop() ?? "file"}
@@ -364,8 +377,13 @@ function NoteDetail({
   // note (collaborative job notes) — e.g. a second tech dropping their photos
   // onto the note the first tech created, instead of starting a fresh one.
   async function handleAddPhotos(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
+    let files = Array.from(e.target.files ?? []);
     if (e.target) e.target.value = ""; // allow re-picking the same file
+    const oversize = files.filter((f) => f.type.startsWith("video/") && f.size > MAX_VIDEO_BYTES);
+    if (oversize.length > 0) {
+      toast(`${oversize.length === 1 ? "1 video is" : `${oversize.length} videos are`} over ${MAX_VIDEO_MB}MB and was skipped.`, "error");
+      files = files.filter((f) => !oversize.includes(f));
+    }
     if (files.length === 0) return;
 
     let done = 0;
@@ -616,6 +634,16 @@ function NoteDetail({
               const confirming = confirmingAtt === i;
               return (
                 <div key={i} className="relative group">
+                  {att.type?.startsWith("video") ? (
+                    /* No wrapping <a> — it would hijack the player controls. */
+                    <video
+                      src={att.url}
+                      controls
+                      preload="metadata"
+                      playsInline
+                      className="h-40 max-w-full rounded-md border border-border bg-black"
+                    />
+                  ) : (
                   <a href={att.url} target="_blank" rel="noopener noreferrer" className="block">
                     {att.type?.startsWith("image") ? (
                       <img
@@ -636,6 +664,7 @@ function NoteDetail({
                       </div>
                     )}
                   </a>
+                  )}
                   <button
                     type="button"
                     onClick={(e) => {
@@ -665,7 +694,7 @@ function NoteDetail({
         <input
           ref={addFileRef}
           type="file"
-          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+          accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
           multiple
           onChange={handleAddPhotos}
           className="hidden"
@@ -677,7 +706,7 @@ function NoteDetail({
           className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground transition-colors disabled:opacity-50"
         >
           <AttachIcon className="h-3.5 w-3.5" />
-          {addProgress ? `Uploading ${addProgress.done}/${addProgress.total}…` : "Add photos / files"}
+          {addProgress ? `Uploading ${addProgress.done}/${addProgress.total}…` : "Add photos / videos / files"}
         </button>
       </div>
     </div>
@@ -706,7 +735,12 @@ function NoteForm({
   const supabase = createClient();
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
+    let files = Array.from(e.target.files ?? []);
+    const oversize = files.filter((f) => f.type.startsWith("video/") && f.size > MAX_VIDEO_BYTES);
+    if (oversize.length > 0) {
+      toast(`${oversize.length === 1 ? "1 video is" : `${oversize.length} videos are`} over ${MAX_VIDEO_MB}MB and was skipped.`, "error");
+      files = files.filter((f) => !oversize.includes(f));
+    }
     setSelectedFiles((prev) => [...prev, ...files]);
     const newPreviews = files
       .filter((f) => f.type.startsWith("image/"))
@@ -857,7 +891,7 @@ function NoteForm({
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+          accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
           multiple
           onChange={handleFileSelect}
           className="hidden"

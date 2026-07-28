@@ -758,7 +758,7 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
                 rows={extraStaffUsers.map((u) => ({ user: u.user ?? "", password: u.password ?? "" }))}
                 fields={[
                   { key: "user", placeholder: "Staff user" },
-                  { key: "password", placeholder: "Password" },
+                  { key: "password", placeholder: "Password", generate: true },
                 ]}
                 onChange={(rows) => setExtraStaffUsers(rows as { user: string; password: string }[])}
               />
@@ -1070,6 +1070,7 @@ function SiteAssetEditForm({
   const [installDate, setInstallDate] = useState(asset.install_date ?? "");
   const [warrantyExpiry, setWarrantyExpiry] = useState(asset.warranty_expiry ?? "");
   const [notes, setNotes] = useState(asset.notes ?? "");
+  const [showInKeyInfo, setShowInKeyInfo] = useState(asset.show_in_key_info ?? false);
 
   // Previous-password tracking (#asset-prev-password). Seed from the stored
   // prior value; updated in-session whenever a password is replaced.
@@ -1150,6 +1151,7 @@ function SiteAssetEditForm({
           install_date: installDate || null,
           warranty_expiry: warrantyExpiry || null,
           notes: notes.trim() || null,
+          show_in_key_info: showInKeyInfo,
         })
         .eq("id", asset.id);
       setAutoSave(err ? "error" : "saved");
@@ -1161,7 +1163,7 @@ function SiteAssetEditForm({
   }, [
     assetTypeId, deviceName, manufacturer, model, serial, macAddress, ipAddress,
     subnet, adminUser, staffUser, extraStaffUsers, firmware, rfid, vlans,
-    wifiSsids, locationNote, installDate, warrantyExpiry, notes,
+    wifiSsids, locationNote, installDate, warrantyExpiry, notes, showInKeyInfo,
   ]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -1192,6 +1194,7 @@ function SiteAssetEditForm({
       install_date: installDate || null,
       warranty_expiry: warrantyExpiry || null,
       notes: notes.trim() || null,
+      show_in_key_info: showInKeyInfo,
     };
     const { error: err } = await supabase
       .from("site_assets")
@@ -1419,7 +1422,7 @@ function SiteAssetEditForm({
               rows={extraStaffUsers.map((u) => ({ user: u.user ?? "", password: u.password ?? "" }))}
               fields={[
                 { key: "user", placeholder: "Staff user" },
-                { key: "password", placeholder: "Password" },
+                { key: "password", placeholder: "Password", generate: true },
               ]}
               onChange={(rows) => setExtraStaffUsers(rows as { user: string; password: string }[])}
             />
@@ -1514,6 +1517,20 @@ function SiteAssetEditForm({
         rows={2}
         className={inputClass + " w-full resize-none"}
       />
+
+      {/* Per-asset Key Info opt-in — only offered when the TYPE doesn't
+          already surface it there (e.g. one-off "Other" items). */}
+      {!selectedType?.is_key_info && (
+        <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showInKeyInfo}
+            onChange={(e) => setShowInKeyInfo(e.target.checked)}
+            className="rounded border-border text-primary focus:ring-primary"
+          />
+          Show on the Key Information tab
+        </label>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 pt-1">
         <button
@@ -1625,7 +1642,8 @@ function RepeatList({
 }: {
   title: string;
   rows: Record<string, string>[];
-  fields: { key: string; placeholder: string }[];
+  /** generate: true renders the ⟳ password button beside that field. */
+  fields: { key: string; placeholder: string; generate?: boolean }[];
   onChange: (rows: Record<string, string>[]) => void;
 }) {
   function update(idx: number, key: string, value: string) {
@@ -1660,13 +1678,20 @@ function RepeatList({
           {rows.map((row, idx) => (
             <div key={idx} className="flex items-center gap-1.5">
               {fields.map((f) => (
-                <input
-                  key={f.key}
-                  placeholder={f.placeholder}
-                  value={row[f.key] ?? ""}
-                  onChange={(e) => update(idx, f.key, e.target.value)}
-                  className={inputClass + " flex-1 font-mono"}
-                />
+                <div key={f.key} className="flex flex-1 items-center gap-1">
+                  <input
+                    placeholder={f.placeholder}
+                    value={row[f.key] ?? ""}
+                    onChange={(e) => update(idx, f.key, e.target.value)}
+                    className={inputClass + " flex-1 font-mono"}
+                  />
+                  {f.generate && (
+                    <GeneratePasswordButton
+                      onGenerate={(pwd) => update(idx, f.key, pwd)}
+                      title={`Generate ${f.placeholder.toLowerCase()}`}
+                    />
+                  )}
+                </div>
               ))}
               <button
                 type="button"

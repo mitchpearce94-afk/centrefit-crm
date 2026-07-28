@@ -54,10 +54,12 @@ export function Sidebar({
   user,
   staff,
   allowedFlags,
+  statusBoardHref,
 }: {
   user: User;
   staff: StaffSummary | null;
   allowedFlags: string[];
+  statusBoardHref?: string | null;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -128,6 +130,23 @@ export function Sidebar({
             })}
           </div>
         </nav>
+
+        {statusBoardHref && (
+          <div className="border-t border-border px-3 py-2">
+            <a
+              href={statusBoardHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M9 8h6M9 12h6M9 16h3" />
+              </svg>
+              Status Board
+            </a>
+          </div>
+        )}
 
         <div className="border-t border-border p-3">
           <div className="flex items-center gap-2.5">

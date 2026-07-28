@@ -544,9 +544,10 @@ export function padCallList(rows: CallListRow[] | null | undefined): CallListRow
 }
 
 export function padIfobUsers(rows: IfobUserRow[] | null | undefined): IfobUserRow[] {
+  // 8 rows, not 12 — Mitchell 2026-07-28 (suggestion queue).
   const out = (rows ?? [])
-    .slice(0, 12)
+    .slice(0, 8)
     .map((r) => ({ name: r.name ?? "", pin: r.pin ?? "", app_access: Boolean(r.app_access) }));
-  while (out.length < 12) out.push({ name: "", pin: "", app_access: false });
+  while (out.length < 8) out.push({ name: "", pin: "", app_access: false });
   return out;
 }

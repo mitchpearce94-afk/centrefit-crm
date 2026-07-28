@@ -101,7 +101,13 @@ export function KeyInfoPanel({
     for (const a of assets) {
       if (!a.is_active) continue;
       const t = a.asset_type_id ? typeById.get(a.asset_type_id) ?? null : null;
-      const isKeyInfo = t?.is_key_info || (!t && a.device_type && LEGACY_KEY_INFO_TYPES.has(a.device_type));
+      // Per-asset opt-in (show_in_key_info) lets one-off items — e.g. an
+      // "Other" asset like a WiFi controller — surface here even when their
+      // type isn't a key-info type (Michael, 2026-07-27).
+      const isKeyInfo =
+        a.show_in_key_info ||
+        t?.is_key_info ||
+        (!t && a.device_type && LEGACY_KEY_INFO_TYPES.has(a.device_type));
       if (!isKeyInfo) continue;
 
       // Dedicated Wi-Fi networks: contribute SSID rows, never a device card.
@@ -428,15 +434,20 @@ function KeyInfoCard({ asset, type }: { asset: SiteAsset; type: AssetType | null
   if (asset.subnet) rows.push({ label: "Subnet", value: asset.subnet });
   if (asset.admin_user) rows.push({ label: "Admin user", value: asset.admin_user });
   if (asset.admin_password) rows.push({ label: "Admin password", value: asset.admin_password });
-  if (asset.staff_user) rows.push({ label: "Staff user", value: asset.staff_user });
-  if (asset.staff_password) rows.push({ label: "Staff password", value: asset.staff_password });
-  if (Array.isArray(asset.extra_staff_users)) {
-    asset.extra_staff_users.forEach((u, i) => {
-      if (u.user) rows.push({ label: `Staff user ${i + 2}`, value: u.user });
-      if (u.password) rows.push({ label: `Staff password ${i + 2}`, value: u.password });
-    });
-  }
   if (asset.firmware) rows.push({ label: "Firmware", value: asset.firmware });
+
+  // Staff logins get their own aligned table (username | password per row)
+  // instead of interleaving with device rows — with 3+ NVR users the flat
+  // grid split user/password pairs across rows (Michael, 2026-07-27).
+  const staffLogins: { user?: string; password?: string }[] = [];
+  if (asset.staff_user || asset.staff_password) {
+    staffLogins.push({ user: asset.staff_user ?? undefined, password: asset.staff_password ?? undefined });
+  }
+  if (Array.isArray(asset.extra_staff_users)) {
+    for (const u of asset.extra_staff_users) {
+      if (u.user || u.password) staffLogins.push(u);
+    }
+  }
 
   // One-click block for pasting into a ticket or handover doc — the "easy to
   // copy" half of Mitchell's 07-03 suggestion.
@@ -445,6 +456,9 @@ function KeyInfoCard({ asset, type }: { asset: SiteAsset; type: AssetType | null
       .filter(Boolean)
       .join(" "),
     ...rows.map((r) => `${r.label}: ${r.value}`),
+    ...(staffLogins.length > 0
+      ? ["Staff logins:", ...staffLogins.map((u) => `  ${u.user ?? "—"} / ${u.password ?? "—"}`)]
+      : []),
     ...(Array.isArray(asset.vlans) && asset.vlans.length > 0
       ? ["VLANs:", ...asset.vlans.map((v) => `  ${v.id ?? "—"} ${v.name ?? ""}${v.notes ? ` · ${v.notes}` : ""}`)]
       : []),
@@ -464,7 +478,7 @@ function KeyInfoCard({ asset, type }: { asset: SiteAsset; type: AssetType | null
             </p>
           )}
         </div>
-        {rows.length > 0 && <CopyAllButton value={copyAllText} />}
+        {(rows.length > 0 || staffLogins.length > 0) && <CopyAllButton value={copyAllText} />}
       </div>
       <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
         {rows.map((row) => (
@@ -476,10 +490,36 @@ function KeyInfoCard({ asset, type }: { asset: SiteAsset; type: AssetType | null
             </dd>
           </div>
         ))}
-        {rows.length === 0 && (
+        {rows.length === 0 && staffLogins.length === 0 && (
           <p className="text-muted-foreground italic">No values recorded yet.</p>
         )}
       </dl>
+
+      {staffLogins.length > 0 && (
+        <div className="mt-3 border-t border-border pt-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+            Staff logins
+          </p>
+          <div className="space-y-1">
+            <div className="grid grid-cols-2 gap-x-4 text-[10px] uppercase tracking-wider text-muted-foreground">
+              <span>Username</span>
+              <span>Password</span>
+            </div>
+            {staffLogins.map((u, i) => (
+              <div key={i} className="grid grid-cols-2 gap-x-4 items-center text-xs">
+                <span className="font-mono break-all flex items-center gap-1.5">
+                  {u.user ?? "—"}
+                  {u.user && <CopyButton value={u.user} label={`Staff user ${i + 1}`} />}
+                </span>
+                <span className="font-mono break-all flex items-center gap-1.5">
+                  {u.password ?? "—"}
+                  {u.password && <CopyButton value={u.password} label={`Staff password ${i + 1}`} />}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {Array.isArray(asset.vlans) && asset.vlans.length > 0 && (
         <div className="mt-3 border-t border-border pt-3">

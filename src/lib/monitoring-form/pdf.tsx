@@ -438,7 +438,7 @@ export async function generateMonitoringFormPdfBuffer(input: MonitoringPdfInput)
             <Text style={[s.smallText, { marginTop: 6 }]}>
               An internet service is required prior to system installation. Client-supplied, or Centrefit
               Communications can supply a business NBN plan ({prefill.fees.nbn.name}) at
-              ${fmtAud(prefill.fees.nbn.priceIncGst)}/month ongoing — Bronze SLA remote support and VPN access included.
+              ${fmtAud(prefill.fees.nbn.priceExGst)} ex GST (${fmtAud(prefill.fees.nbn.priceIncGst)} inc)/month ongoing — Bronze SLA remote support and VPN access included.
             </Text>
           ) : null}
         </Section>

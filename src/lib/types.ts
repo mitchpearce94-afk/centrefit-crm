@@ -137,6 +137,9 @@ export interface SiteAsset {
   warranty_expiry: string | null;
   notes: string | null;
   is_active: boolean;
+  // Per-asset opt-in to the site Key Information tab, for assets whose TYPE
+  // isn't a key-info type (e.g. one-off "Other" items like a WiFi controller).
+  show_in_key_info: boolean;
   created_at: string;
   updated_at: string;
 }

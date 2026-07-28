@@ -42,11 +42,17 @@ export default async function DashboardLayout({
     ? PERMISSION_FLAGS.filter((f) => hasPermission(perms, f))
     : [];
 
+  // Public New Build status board — token lives in Vercel env only, so the
+  // link simply doesn't render in environments without it.
+  const statusBoardHref = process.env.STATUS_BOARD_TOKEN
+    ? `/status-board/${process.env.STATUS_BOARD_TOKEN}`
+    : null;
+
   return (
     <ToastProvider>
       <IdleLogout />
       <div className="flex h-dvh overflow-hidden">
-        <Sidebar user={user} staff={staff ?? null} allowedFlags={allowedFlags} />
+        <Sidebar user={user} staff={staff ?? null} allowedFlags={allowedFlags} statusBoardHref={statusBoardHref} />
         <main className="flex-1 overflow-y-auto overflow-x-hidden pb-mobile-nav lg:pb-0">
           {/* Mobile fallback top bar — visible on screens that haven't yet
               migrated to <PageHeader>. Once a page renders its own
@@ -84,7 +90,7 @@ export default async function DashboardLayout({
           </div>
           <div className="p-4 md:p-6">{children}</div>
         </main>
-        <MobileNav user={user} staff={staff ?? null} allowedFlags={allowedFlags} />
+        <MobileNav user={user} staff={staff ?? null} allowedFlags={allowedFlags} statusBoardHref={statusBoardHref} />
       </div>
     </ToastProvider>
   );

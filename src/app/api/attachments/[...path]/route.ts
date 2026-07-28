@@ -25,6 +25,20 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   const sb = createServiceRoleClient();
+
+  // Videos need byte-range support (iOS Safari refuses to play without 206
+  // responses, and buffering a whole clip into serverless memory is wasteful).
+  // Redirect to a short-lived signed URL — Supabase's CDN handles Range natively.
+  if (/\.(mp4|mov|m4v|webm|avi|mkv|3gp)$/i.test(objectPath)) {
+    const { data: signed, error: signErr } = await sb.storage
+      .from("job-attachments")
+      .createSignedUrl(objectPath, 3600);
+    if (signErr || !signed?.signedUrl) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    return NextResponse.redirect(signed.signedUrl, 302);
+  }
+
   const { data, error } = await sb.storage.from("job-attachments").download(objectPath);
   if (error || !data) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

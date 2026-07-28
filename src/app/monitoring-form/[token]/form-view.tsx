@@ -494,8 +494,8 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
           <div className="mf-note" style={{ marginTop: 14 }}>
             An internet service is required prior to the system being installed. This can be supplied by
             you, or Centrefit Communications can supply a business NBN plan ({prefill.fees.nbn.name}) at
-            ${fmtAud(prefill.fees.nbn.priceIncGst)}/month ongoing — Bronze SLA remote support and VPN
-            access included.
+            ${fmtAud(prefill.fees.nbn.priceExGst)} ex GST (${fmtAud(prefill.fees.nbn.priceIncGst)} inc)
+            /month ongoing — Bronze SLA remote support and VPN access included.
           </div>
         )}
       </Section>

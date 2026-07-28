@@ -39,7 +39,7 @@ export default async function DashboardPage({
   // Build filtered job query
   let jobQuery = supabase
     .from("jobs")
-    .select("id, number, reference, due_date, updated_at, customer:customers(name), status:statuses(name, colour, phase), category_2:categories!category_2_id(id, name), job_staff(staff_id)")
+    .select("id, number, reference, due_date, updated_at, customer:customers(name), site:customer_sites(name), status:statuses(name, colour, phase), category_2:categories!category_2_id(id, name), job_staff(staff_id)")
     .not("status_id", "in", `(${completionIds})`)
     .order("updated_at", { ascending: false });
 
@@ -250,7 +250,7 @@ export default async function DashboardPage({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-mono text-sm font-semibold">{j.number}</p>
-                  <p className="text-sm text-muted-foreground truncate">{j.customer?.name ?? "—"}</p>
+                  <p className="text-sm text-muted-foreground truncate">{j.site?.name ?? j.customer?.name ?? "—"}</p>
                 </div>
                 {j.status && (
                   <span
@@ -393,7 +393,7 @@ export default async function DashboardPage({
                   >
                     <div className="min-w-0">
                       <span className="font-mono text-sm font-semibold text-foreground">{job.number}</span>
-                      <span className="ml-2 text-sm text-muted-foreground truncate">{job.customer?.name}</span>
+                      <span className="ml-2 text-sm text-muted-foreground truncate">{job.site?.name ?? job.customer?.name}</span>
                     </div>
                     {job.status && (
                       <span

@@ -75,6 +75,7 @@ interface AssetRow {
   manufacturer: string | null;
   model: string | null;
   is_active: boolean;
+  show_in_key_info: boolean;
   wifi_ssids: WifiNetwork[] | null;
   asset_type: { slug: string; name: string; category: string; is_key_info: boolean } | null;
 }
@@ -113,7 +114,7 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
       .single(),
     sb
       .from("site_assets")
-      .select("device_name, manufacturer, model, is_active, wifi_ssids, asset_type:asset_types!asset_type_id(slug, name, category, is_key_info)")
+      .select("device_name, manufacturer, model, is_active, show_in_key_info, wifi_ssids, asset_type:asset_types!asset_type_id(slug, name, category, is_key_info)")
       .eq("site_id", siteId)
       .eq("is_active", true),
     sb.from("datasheets").select("id, model, manufacturer, product_name, match_models, storage_path, source_url"),
@@ -177,7 +178,7 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
         storagePath: sheet.storage_path,
         publicUrl: sheetLink(sheet),
       });
-    } else if (asset.asset_type?.is_key_info) {
+    } else if (asset.asset_type?.is_key_info || asset.show_in_key_info) {
       // Core equipment (NVR/router/switch/WAP-class types) with no library
       // datasheet still appears — silently dropping a site's recorder made
       // the pack read as incomplete. Peripheral unmatched gear is skipped.
