@@ -183,7 +183,7 @@ async function scanGoldCoast(sinceMs: number): Promise<ScanResult> {
     const data = await res.json();
     const rows: Record<string, unknown>[] = Array.isArray(data)
       ? data
-      : data?.rows ?? data?.Results ?? data?.results ?? [];
+      : data?.applications ?? data?.rows ?? data?.Results ?? data?.results ?? [];
     if (rows.length === 0) break;
     collected.push(...rows);
     const oldest = rows[rows.length - 1];
