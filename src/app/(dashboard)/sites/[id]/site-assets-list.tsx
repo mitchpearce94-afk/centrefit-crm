@@ -6,51 +6,10 @@ import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
 import type { AssetType, SiteAsset } from "@/lib/types";
 import { ImportBomToAssetsButton } from "../../jobs/[id]/import-bom-to-assets-button";
+import { generatePassword } from "@/lib/passwords";
 
 const inputClass =
   "rounded-md border border-border bg-input px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
-
-// Password generator — Mitchell's rules:
-//  - 12 chars
-//  - At least one lowercase, uppercase, digit, special
-//  - Exclude ambiguous glyphs: i, I, l (lower), 0, o, O, j (lower)
-// Crypto.getRandomValues for unbiased selection (no Math.random).
-const PWD_LOWER = "abcdefghkmnpqrstuvwxyz";       // no i, j, l, o
-const PWD_UPPER = "ABCDEFGHJKLMNPQRSTUVWXYZ";     // no I, O
-const PWD_DIGITS = "123456789";                    // no 0
-const PWD_SPECIAL = "!@#$%^&*-_+=";
-const PWD_ALL = PWD_LOWER + PWD_UPPER + PWD_DIGITS + PWD_SPECIAL;
-const PWD_LENGTH = 12;
-
-// Rejection-sampled random int in [0, max). Avoids modulo bias.
-function randomInt(max: number): number {
-  const buf = new Uint32Array(1);
-  const limit = Math.floor(0xffffffff / max) * max;
-  for (;;) {
-    crypto.getRandomValues(buf);
-    if (buf[0] < limit) return buf[0] % max;
-  }
-}
-function pickFrom(pool: string): string {
-  return pool.charAt(randomInt(pool.length));
-}
-
-function generatePassword(): string {
-  const chars: string[] = [
-    pickFrom(PWD_LOWER),
-    pickFrom(PWD_UPPER),
-    pickFrom(PWD_DIGITS),
-    pickFrom(PWD_SPECIAL),
-  ];
-  while (chars.length < PWD_LENGTH) chars.push(pickFrom(PWD_ALL));
-  // Fisher-Yates shuffle so the guaranteed-category chars aren't pinned to
-  // the first four positions.
-  for (let i = chars.length - 1; i > 0; i--) {
-    const j = randomInt(i + 1);
-    [chars[i], chars[j]] = [chars[j], chars[i]];
-  }
-  return chars.join("");
-}
 
 function GeneratePasswordButton({
   onGenerate,

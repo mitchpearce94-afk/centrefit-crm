@@ -38,6 +38,7 @@ import {
 import { parseCsv, normaliseRow, type NormalisedRow } from "@/lib/vault/csv-import";
 import type { VaultEntryPayload } from "@/lib/vault/crypto";
 import { computeTotp, secondsRemainingInTotpStep } from "@/lib/vault/totp";
+import { generatePassword } from "@/lib/passwords";
 
 export function VaultShell({ isSetup }: { isSetup: boolean }) {
   const isUnlocked = useVaultSession((s) => s.isUnlocked());
@@ -1277,13 +1278,10 @@ function EntryForm({
     }
   }
 
-  function generatePassword() {
-    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
-    const bytes = new Uint8Array(20);
-    crypto.getRandomValues(bytes);
-    let out = "";
-    for (let i = 0; i < bytes.length; i++) out += alphabet[bytes[i] % alphabet.length];
-    setPassword(out);
+  // Same generator as site-asset Key Info passwords (Mitchell, 2026-07-29):
+  // 12 chars, guaranteed character mix, ambiguous glyphs excluded.
+  function generateVaultPassword() {
+    setPassword(generatePassword());
   }
 
   return (
@@ -1312,7 +1310,7 @@ function EntryForm({
           className="block flex-1 rounded-md border border-border bg-input px-2.5 py-1.5 text-sm font-mono"
           autoComplete="off"
         />
-        <button type="button" onClick={generatePassword}
+        <button type="button" onClick={generateVaultPassword}
           className="rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-accent">
           Generate
         </button>
