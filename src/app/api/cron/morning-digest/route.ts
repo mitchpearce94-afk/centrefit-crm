@@ -180,8 +180,26 @@ export async function GET(req: NextRequest) {
     ? Math.max(...planRows.map((p) => Math.floor((nowMs - new Date(p.created_at).getTime()) / DAY_MS)))
     : 0;
 
+  // Email triage ledger (Phase 3) — last 24h. Null when the engine has never
+  // run, so the digest section stays absent until then.
+  const { data: triageRows } = await svc
+    .from("email_triage")
+    .select("classification, action_taken")
+    .gte("created_at", new Date(nowMs - 24 * 3600_000).toISOString());
+  const emailTriage = (triageRows ?? []).length
+    ? {
+        mode: (process.env.TRIAGE_MODE === "live" ? "live" : "observe") as "live" | "observe",
+        billsForwarded: triageRows!.filter((r) => r.classification === "bill").length,
+        flagged: triageRows!.filter((r) => r.classification === "action").length,
+        fyi: triageRows!.filter((r) => r.classification === "fyi").length,
+        noise: triageRows!.filter((r) => r.classification === "noise").length,
+        errors: triageRows!.filter((r) => r.action_taken === "error").length,
+      }
+    : null;
+
   const hasContent =
-    tasks.length > 0 || overdueRows.length > 0 || unsentRows.length > 0 || planRows.length > 0;
+    tasks.length > 0 || overdueRows.length > 0 || unsentRows.length > 0 || planRows.length > 0 ||
+    !!(emailTriage && (emailTriage.billsForwarded || emailTriage.flagged || emailTriage.errors));
   if (!hasContent) {
     // Silence IS the all-clear (D3).
     return NextResponse.json({ ok: true, sent: false, reason: "nothing actionable" });
@@ -201,6 +219,7 @@ export async function GET(req: NextRequest) {
     overdueInvoices: { count: overdueRows.length, total: overdueTotal, top },
     unsentInvoices: { count: unsentRows.length, total: unsentTotal },
     pendingMandates: { count: planRows.length, monthlyValue: mandateMonthly, oldestDays: oldestMandateDays },
+    emailTriage,
     appBaseUrl,
   });
   if (!result.ok) {

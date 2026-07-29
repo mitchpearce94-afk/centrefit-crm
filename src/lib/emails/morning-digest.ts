@@ -28,6 +28,15 @@ export interface MorningDigestInput {
   overdueInvoices: { count: number; total: number; top: DigestInvoiceLine[] };
   unsentInvoices: { count: number; total: number };
   pendingMandates: { count: number; monthlyValue: number; oldestDays: number };
+  /** Email triage ledger over the last 24h — null until Phase 3 is live. */
+  emailTriage: {
+    mode: "observe" | "live";
+    billsForwarded: number;
+    flagged: number;
+    fyi: number;
+    noise: number;
+    errors: number;
+  } | null;
   appBaseUrl: string;
 }
 
@@ -125,6 +134,21 @@ export async function sendMorningDigestEmail(
             row(
               `<strong>${input.pendingMandates.count}</strong> unsigned mandate${input.pendingMandates.count === 1 ? "" : "s"} — $${fmt(input.pendingMandates.monthlyValue)}/mo not being collected`,
               `oldest ${input.pendingMandates.oldestDays}d · <a href="${input.appBaseUrl}/invoices/recurring?tab=pending" style="color:#3b82f6;text-decoration:none">Open →</a>`,
+            ),
+          )
+        : ""
+    }
+    ${
+      input.emailTriage && (input.emailTriage.billsForwarded || input.emailTriage.flagged || input.emailTriage.errors)
+        ? section(
+            `Email triage · last 24h${input.emailTriage.mode === "observe" ? " (observe mode — nothing touched)" : ""}`,
+            row(
+              [
+                input.emailTriage.billsForwarded ? `<strong>${input.emailTriage.billsForwarded}</strong> bill${input.emailTriage.billsForwarded === 1 ? "" : "s"} ${input.emailTriage.mode === "live" ? "forwarded to Xero" : "spotted"}` : null,
+                input.emailTriage.flagged ? `<strong>${input.emailTriage.flagged}</strong> flagged for you` : null,
+                input.emailTriage.errors ? `<span style="color:#dc2626"><strong>${input.emailTriage.errors}</strong> error${input.emailTriage.errors === 1 ? "" : "s"}</span>` : null,
+              ].filter(Boolean).join(" · "),
+              `${input.emailTriage.fyi + input.emailTriage.noise} filed quietly`,
             ),
           )
         : ""

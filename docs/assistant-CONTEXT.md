@@ -54,17 +54,31 @@ client-credentials flow, application permissions `Mail.Read` + `Mail.Send` +
 ApplicationAccessPolicy. Secrets in Vercel env. Sweep cron every 30 min during
 business hours; processed message-ids recorded so nothing is classified twice.
 
-**D6 — Triage tiers.**
-Claude classifies each new message (start claude-haiku-4-5, escalate model if
-accuracy disappoints; ANTHROPIC_API_KEY already in Vercel from receipts):
-- **AUTO** — safe, reversible, non-customer-facing actions executed
-  immediately and logged: supplier bills/invoices → forward to the Xero Bills
-  inbox and file; billing-email-change requests → update CRM + Xero contact
-  via API. Every auto-action lands in an audit ledger AND next morning's
-  digest.
-- **FLAG** — needs Mitchell: becomes a task on My List with a deep link to the
-  email (web outlook deeplink).
-- **FYI / NOISE** — no task. Categorised in the mailbox, never deleted.
+**D6 — Triage tiers.** (Revised 2026-07-29 during build.)
+Claude classifies each new message on `claude-opus-5` at low effort —
+classification quality gates auto-actions, so it gets the default model, not
+haiku (ANTHROPIC_API_KEY already in Vercel from receipts). Ambiguity always
+downgrades to FLAG, in the prompt AND every error path:
+- **BILL (auto)** — supplier bills/invoices → forwarded to the Xero Bills
+  inbox (`XERO_BILLS_EMAIL`) with attachments, categorised in the mailbox.
+  The ONLY executing auto-action in V1.
+- **FLAG** — needs Mitchell: becomes a My List task (source `email`) with the
+  Outlook webLink as the deep link.
+- **FYI / NOISE** — categorised in the mailbox, never deleted, no task.
+Every decision lands in the `email_triage` ledger and rolls up into the
+morning digest.
+
+**D6b — Billing-email-change auto-apply: DEFERRED, not dropped.**
+The original D6 had "billing email change → auto-update CRM + Xero contact".
+V1 ships it as FLAG only — confidently matching a free-text email to the
+right customer/site and writing to two systems deserves its own build with
+its own confirmation UX. Explicit sub-phase (Phase 3b), not a silent trim.
+
+**D6c — Rollout: observe first.**
+`TRIAGE_MODE` env var, default `observe`: classify + ledger only, zero
+side-effects. Mitchell reviews the ledger's judgement, then flips to `live`
+in Vercel. First run per mailbox only stamps the watermark — the backlog is
+never swept, only new mail.
 
 **D7 — Hard safety rails on auto-actions (non-negotiable).**
 No outbound email to a CUSTOMER is ever sent automatically (2026-05-11 rule).
