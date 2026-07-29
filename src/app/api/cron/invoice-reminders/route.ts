@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { getAuthedClient } from "@/lib/xero/client";
-import { fetchXeroInvoice } from "@/lib/xero/invoices";
+import { fetchXeroInvoice, fetchXeroOnlineInvoiceUrl } from "@/lib/xero/invoices";
 import { isXeroRateLimited, captureXeroRateLimit } from "@/lib/xero/rate-limit";
 import { sendInvoiceReminderEmail } from "@/lib/emails/invoice-reminder";
 import { logDocumentActivity } from "@/lib/activity/log";
@@ -200,9 +200,20 @@ export async function GET(req: NextRequest) {
       break;
     }
     let latest;
+    let payUrl: string | null = invoice.xero_online_url;
     try {
       const { client, conn } = await getAuthedClient();
       latest = await fetchXeroInvoice(client, conn.tenant_id, invoice.xero_invoice_id!);
+      // Synced-from-Xero invoices have no stored pay link — backfill it so the
+      // reminder carries a "View & Pay" button. Best-effort; a miss falls back
+      // to the bank-details copy.
+      if (!payUrl) {
+        try {
+          payUrl = await fetchXeroOnlineInvoiceUrl(client, conn.tenant_id, invoice.xero_invoice_id!);
+        } catch (err) {
+          console.error(`[invoice-reminders] couldn't fetch online invoice URL for ${invoice.id}:`, err);
+        }
+      }
     } catch (err) {
       await captureXeroRateLimit(svc, err);
       results.push({ id: invoice.id, ref, kind, ok: false, error: `xero verify failed: ${err instanceof Error ? err.message : String(err)}` });
@@ -218,6 +229,7 @@ export async function GET(req: NextRequest) {
     await svc
       .from("invoices")
       .update({
+        ...(payUrl && !invoice.xero_online_url ? { xero_online_url: payUrl } : {}),
         amount_due: latest.amountDue,
         amount_paid: latest.amountPaid,
         status: normalisedStatus,
@@ -251,7 +263,7 @@ export async function GET(req: NextRequest) {
       amountDue: latest.amountDue,
       dueDate: invoice.due_date,
       daysOverdue,
-      payUrl: invoice.xero_online_url,
+      payUrl,
       invoiceId: invoice.id,
       reminderNumber,
     });

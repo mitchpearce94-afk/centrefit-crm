@@ -179,6 +179,37 @@ export async function updateXeroInvoiceLines({
 }
 
 /**
+ * Fetch the OnlineInvoiceUrl (pay-now link) for an invoice. Only exists for
+ * AUTHORISED/PAID invoices — Xero has no online view of drafts. The CRM only
+ * stores this at authorise time, so invoices that entered via Xero-side sync
+ * (legacy imports, webhook, backfills) have a null xero_online_url until a
+ * send/reminder flow backfills it with this call.
+ */
+export async function fetchXeroOnlineInvoiceUrl(
+  xero: XeroClient,
+  tenantId: string,
+  xeroInvoiceId: string,
+): Promise<string | null> {
+  const online = await xero.accountingApi.getOnlineInvoice(tenantId, xeroInvoiceId);
+  return online.body.onlineInvoices?.[0]?.onlineInvoiceUrl ?? null;
+}
+
+/**
+ * Download the invoice PDF exactly as Xero renders it — branding theme, bank
+ * details and all — for attaching to our Resend emails.
+ */
+export async function fetchXeroInvoicePdf(
+  xero: XeroClient,
+  tenantId: string,
+  xeroInvoiceId: string,
+): Promise<Buffer> {
+  const res = await xero.accountingApi.getInvoiceAsPdf(tenantId, xeroInvoiceId, {
+    headers: { accept: "application/pdf" },
+  });
+  return res.body;
+}
+
+/**
  * Promote a DRAFT invoice to AUTHORISED and fetch the resulting
  * OnlineInvoiceUrl (pay-now link). Called from the CRM's Authorise button.
  */
@@ -195,8 +226,7 @@ export async function authoriseXeroInvoice(
 
   let onlineUrl: string | null = null;
   try {
-    const online = await xero.accountingApi.getOnlineInvoice(tenantId, xeroInvoiceId);
-    onlineUrl = online.body.onlineInvoices?.[0]?.onlineInvoiceUrl ?? null;
+    onlineUrl = await fetchXeroOnlineInvoiceUrl(xero, tenantId, xeroInvoiceId);
   } catch {
     // Not fatal — invoice is authorised; Mitchell can grab the URL from Xero.
   }

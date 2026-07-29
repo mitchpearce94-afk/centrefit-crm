@@ -44,6 +44,10 @@ export async function sendInvoiceEmail(input: SendInvoiceEmailInput): Promise<{ 
     input.invoiceType === "recurring" ? "Recurring billing invoice" :
     "Invoice";
 
+  // Never claim an attachment that isn't there — sends without a PDF (e.g.
+  // Xero fetch failed but we still had the pay link) get link-first copy.
+  const hasPdf = !!input.pdfBuffer;
+
   const payButton = input.payUrl
     ? `
       <tr><td align="center" style="padding:28px 32px 8px;text-align:center">
@@ -51,7 +55,7 @@ export async function sendInvoiceEmail(input: SendInvoiceEmailInput): Promise<{ 
           View &amp; Pay Invoice
         </a>
         <p style="font-size:11px;color:#94a3b8;margin:14px 0 0;text-align:center;line-height:1.5">
-          Secure online payment via Xero. The PDF is also attached for your records.
+          Secure online payment via Xero.${hasPdf ? " The PDF is also attached for your records." : ""}
         </p>
       </td></tr>`
     : "";
@@ -63,9 +67,9 @@ export async function sendInvoiceEmail(input: SendInvoiceEmailInput): Promise<{ 
       <h1 style="font-size:20px;font-weight:600;color:#0f172a;margin:0 0 4px;letter-spacing:-0.3px">${typeLabel} from Centrefit</h1>
       <p style="font-size:13px;color:#475569;margin:14px 0 0;line-height:1.6">${greeting}</p>
       <p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">
-        Please find your invoice attached. Total: <strong>${totalStr}</strong>${input.dueDate ? `, due <strong>${dueStr}</strong>` : ""}.
+        ${hasPdf ? "Please find your invoice attached." : `Here is your invoice <strong>${input.invoiceRef}</strong>.`} Total: <strong>${totalStr}</strong>${input.dueDate ? `, due <strong>${dueStr}</strong>` : ""}.
       </p>
-      ${input.payUrl ? `<p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">You can pay online via the link below — or transfer to the bank details on the PDF.</p>` : ""}
+      ${input.payUrl ? `<p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">You can pay online via the link below — or transfer to the bank details on the ${hasPdf ? "attached PDF" : "invoice"}.</p>` : ""}
     </td></tr>
     ${payButton}
     ${emailFooter("Reply to this email for any account questions.")}
