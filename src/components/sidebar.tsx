@@ -74,6 +74,11 @@ export function Sidebar({
   if (staff?.role === "admin") {
     visibleNav.push({ name: "BD Leads", href: "/bd-leads", icon: BriefcaseIcon, flag: null });
   }
+  // My List is PRIVATE to Mitchell — not even other admins (assistant-CONTEXT
+  // D1). The page 404s for anyone else; this just hides the door.
+  if (user.email?.toLowerCase() === "mitchell@centrefit.com.au") {
+    visibleNav.unshift({ name: "My List", href: "/my-list", icon: ListCheckIcon, flag: null });
+  }
 
   async function handleSignOut() {
     const supabase = createClient();
@@ -289,6 +294,17 @@ function VaultIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
+function ListCheckIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h11" />
+      <path d="M3 12h11" />
+      <path d="M3 18h11" />
+      <path d="m17 11 2 2 4-4" />
     </svg>
   );
 }

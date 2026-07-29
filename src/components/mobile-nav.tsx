@@ -81,6 +81,10 @@ export function MobileNav({
   const allowed = new Set(allowedFlags);
   const visibleTabs = filterByFlags(TABS, allowed);
   const visibleMoreLinks = filterByFlags(MORE_LINKS, allowed);
+  // My List is PRIVATE to Mitchell (assistant-CONTEXT D1) — first in More.
+  if (user.email?.toLowerCase() === "mitchell@centrefit.com.au") {
+    visibleMoreLinks.unshift({ name: "My List", href: "/my-list", icon: ListCheckIcon, flag: null });
+  }
 
   const isMore = !visibleTabs.some((t) =>
     t.href === "/" ? pathname === "/" : pathname.startsWith(t.href),
@@ -228,6 +232,17 @@ export function MobileNav({
 }
 
 // ── Icons ───────────────────────────────────────────────────────────────────
+
+function ListCheckIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h11" />
+      <path d="M3 12h11" />
+      <path d="M3 18h11" />
+      <path d="m17 11 2 2 4-4" />
+    </svg>
+  );
+}
 
 function HomeIcon({ className }: { className?: string }) {
   return (
