@@ -65,3 +65,49 @@ export async function setMessageCategories(
     { method: "PATCH", body: JSON.stringify({ categories }) },
   );
 }
+
+export async function markMessageRead(mailbox: string, messageId: string): Promise<void> {
+  await graphFetch<void>(
+    `/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}`,
+    { method: "PATCH", body: JSON.stringify({ isRead: true }) },
+  );
+}
+
+// Per-run cache of the "Assistant" folder id per mailbox.
+const folderCache = new Map<string, string>();
+
+/**
+ * Get-or-create the top-level "Assistant" folder where live-mode triage files
+ * noise (Mitchell's call 2026-07-29: noise = tag + mark read + move; nothing
+ * is ever deleted).
+ */
+export async function getAssistantFolderId(mailbox: string): Promise<string> {
+  const cached = folderCache.get(mailbox);
+  if (cached) return cached;
+
+  const existing = await graphFetch<{ value: Array<{ id: string; displayName: string }> }>(
+    `/users/${encodeURIComponent(mailbox)}/mailFolders?$filter=displayName eq 'Assistant'&$select=id,displayName`,
+  );
+  let id = existing.value?.[0]?.id;
+  if (!id) {
+    const created = await graphFetch<{ id: string }>(
+      `/users/${encodeURIComponent(mailbox)}/mailFolders`,
+      { method: "POST", body: JSON.stringify({ displayName: "Assistant" }) },
+    );
+    id = created.id;
+  }
+  folderCache.set(mailbox, id);
+  return id;
+}
+
+/** Move a message. NOTE: Graph assigns a NEW message id after a move — apply categories/read flags BEFORE moving. */
+export async function moveMessage(
+  mailbox: string,
+  messageId: string,
+  destinationFolderId: string,
+): Promise<void> {
+  await graphFetch<void>(
+    `/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}/move`,
+    { method: "POST", body: JSON.stringify({ destinationId: destinationFolderId }) },
+  );
+}

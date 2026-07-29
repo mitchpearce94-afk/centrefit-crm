@@ -64,7 +64,10 @@ downgrades to FLAG, in the prompt AND every error path:
   The ONLY executing auto-action in V1.
 - **FLAG** — needs Mitchell: becomes a My List task (source `email`) with the
   Outlook webLink as the deep link.
-- **FYI / NOISE** — categorised in the mailbox, never deleted, no task.
+- **FYI** — categorised only; stays visible and unread in the inbox
+  (Mitchell's call 2026-07-29 — safest while trust builds).
+- **NOISE** — categorised + marked read + moved to a top-level "Assistant"
+  folder per mailbox. Never deleted; the folder keeps everything.
 Every decision lands in the `email_triage` ledger and rolls up into the
 morning digest.
 

@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
-import { listInboxMessagesSince, forwardMessage, setMessageCategories } from "@/lib/msgraph/messages";
+import {
+  listInboxMessagesSince,
+  forwardMessage,
+  setMessageCategories,
+  markMessageRead,
+  getAssistantFolderId,
+  moveMessage,
+} from "@/lib/msgraph/messages";
 import { classifyEmail, type TriageVerdict } from "@/lib/triage/classify";
 
 /**
@@ -150,7 +157,15 @@ export async function GET(req: NextRequest) {
           } else {
             actionTaken = "categorised";
           }
+          // Category first — a move re-issues the message id (Graph quirk).
           await setMessageCategories(mailbox, msg.id, [CATEGORY_BY_CLASS[verdict.classification]]);
+          // Noise: tag + mark read + file to the Assistant folder (Mitchell,
+          // 2026-07-29). FYI stays visible and unread in the inbox.
+          if (verdict.classification === "noise") {
+            await markMessageRead(mailbox, msg.id);
+            await moveMessage(mailbox, msg.id, await getAssistantFolderId(mailbox));
+            actionTaken = "filed_as_noise";
+          }
         } catch (err) {
           actionTaken = "error";
           actionError = err instanceof Error ? err.message : String(err);
