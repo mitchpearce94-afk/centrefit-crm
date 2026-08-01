@@ -170,6 +170,53 @@ function ConstellationCanvas() {
   return <canvas ref={ref} className="cfp-canvas" aria-hidden="true" />;
 }
 
+// ── Split-word display headings ────────────────────────────────────────────
+// Each word sits in an overflow-hidden slot and rises into place with a
+// stagger when the heading's reveal fires — the editorial text treatment.
+
+function SplitWords({ text }: { text: string }) {
+  return (
+    <h2 className="cfp-h2" data-reveal="split" aria-label={text}>
+      {text.split(" ").map((w, i) => (
+        <span key={i} className="cfp-w" aria-hidden="true">
+          <span className="cfp-wi" style={{ transitionDelay: `${i * 0.055}s` }}>{w}</span>
+        </span>
+      ))}
+    </h2>
+  );
+}
+
+// ── Marquee band ───────────────────────────────────────────────────────────
+
+const MARQUEE_ITEMS = [
+  "Security",
+  "CCTV",
+  "Access Control",
+  "Data & Wi-Fi",
+  "Audio",
+  "Business Internet",
+  "24/7 Monitoring",
+];
+
+function Marquee({ reverse = false }: { reverse?: boolean }) {
+  return (
+    <div className="cfp-marquee" aria-hidden="true">
+      <div className={`cfp-marquee-track${reverse ? " cfp-marquee-reverse" : ""}`}>
+        {[0, 1].map((k) => (
+          <div className="cfp-marquee-seg" key={k}>
+            {MARQUEE_ITEMS.map((m) => (
+              <span key={m} className="cfp-marquee-item">
+                {m}
+                <span className="cfp-marquee-dot">·</span>
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Stat counter ───────────────────────────────────────────────────────────
 
 function StatCounter({ value, label }: { value: string; label: string }) {
@@ -317,7 +364,58 @@ export function ProposalView(props: Props) {
       }
     }
 
-    // 4. Dot-nav active section.
+    // 4. Inertia wheel scroll (desktop fine pointers). Lerps native
+    // window.scrollTo rather than transform-hijacking the page, so every
+    // fixed/sticky element (progress bar, dots, the quote's respond bar,
+    // modals) keeps working untouched. Horizontal trackpad gestures, pinch
+    // zoom and line-mode wheels stay fully native.
+    if (!reduced && window.matchMedia("(pointer: fine)").matches) {
+      let target = 0;
+      let current = 0;
+      let raf = 0;
+      let active = false;
+      const loop = () => {
+        current += (target - current) * 0.1;
+        if (Math.abs(target - current) < 0.6) {
+          current = target;
+          active = false;
+        }
+        window.scrollTo(0, current);
+        if (active) raf = requestAnimationFrame(loop);
+      };
+      const onWheel = (e: WheelEvent) => {
+        if (e.ctrlKey) return;
+        if (e.deltaMode !== 0) return;
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+        e.preventDefault();
+        if (!active) {
+          target = window.scrollY;
+          current = window.scrollY;
+        }
+        target += e.deltaY;
+        const max = document.documentElement.scrollHeight - window.innerHeight;
+        target = Math.max(0, Math.min(target, max));
+        if (!active) {
+          active = true;
+          raf = requestAnimationFrame(loop);
+        }
+      };
+      const onNativeScroll = () => {
+        if (!active) {
+          target = window.scrollY;
+          current = window.scrollY;
+        }
+      };
+      window.addEventListener("wheel", onWheel, { passive: false });
+      window.addEventListener("scroll", onNativeScroll, { passive: true });
+      cleanups.push(() => {
+        window.removeEventListener("wheel", onWheel);
+        window.removeEventListener("scroll", onNativeScroll);
+        cancelAnimationFrame(raf);
+      });
+    }
+
+    // 5. Dot-nav active section.
     const sections = NAV_SECTIONS
       .map((s) => document.getElementById(s.id))
       .filter((el): el is HTMLElement => el !== null);
@@ -454,12 +552,27 @@ export function ProposalView(props: Props) {
         </div>
       </section>
 
+      {/* ── Statement ── */}
+      <section className="cfp-statement">
+        <div className="cfp-container">
+          <p className="cfp-statement-line" data-reveal>One team.</p>
+          <p className="cfp-statement-line cfp-statement-outline" data-reveal style={{ transitionDelay: ".14s" }}>
+            End to end.
+          </p>
+          <p className="cfp-statement-line" data-reveal style={{ transitionDelay: ".28s" }}>
+            <span className="cfp-shimmer">Around the clock.</span>
+          </p>
+        </div>
+      </section>
+
+      <Marquee />
+
       {/* ── Who we are ── */}
       <section className="cfp-section" id="who">
         <span className="cfp-watermark" data-drift="0.09">01</span>
         <div className="cfp-container cfp-z">
           <p className="cfp-kicker" data-reveal>WHO WE ARE</p>
-          <h2 className="cfp-h2" data-reveal="wipe">Technology for spaces where people gather.</h2>
+          <SplitWords text="Technology for spaces where people gather." />
           {WHO_WE_ARE.map((p, i) => (
             <p key={i} className="cfp-para" data-reveal style={{ transitionDelay: `${0.08 * (i + 1)}s` }}>
               {p}
@@ -491,14 +604,14 @@ export function ProposalView(props: Props) {
         <span className="cfp-watermark" data-drift="0.11">02</span>
         <div className="cfp-container cfp-z">
           <p className="cfp-kicker" data-reveal>WHY CENTREFIT</p>
-          <h2 className="cfp-h2" data-reveal="wipe">What we do differently.</h2>
-          <div className="cfp-diffs">
+          <SplitWords text="What we do differently." />
+          <p className="cfp-para" data-reveal>Keep scrolling — each one stacks on the last.</p>
+          <div className="cfp-stack">
             {DIFFERENTIATORS.map((d, i) => (
               <div
                 key={d.title}
-                className="cfp-diff"
-                data-reveal={i % 2 === 0 ? "left" : "right"}
-                style={{ transitionDelay: `${0.05 * i}s` }}
+                className="cfp-stack-card"
+                style={{ top: `calc(clamp(72px, 11vh, 110px) + ${i * 18}px)` }}
               >
                 <span className="cfp-diff-num">{String(i + 1).padStart(2, "0")}</span>
                 <div>
@@ -516,7 +629,7 @@ export function ProposalView(props: Props) {
         <span className="cfp-watermark" data-drift="0.09">03</span>
         <div className="cfp-container cfp-z">
           <p className="cfp-kicker" data-reveal>AFTER THE INSTALL</p>
-          <h2 className="cfp-h2" data-reveal="wipe">Support that doesn&apos;t clock off.</h2>
+          <SplitWords text="Support that doesn't clock off." />
           <p className="cfp-para" data-reveal>
             The installation is where most contractors finish. It&apos;s where we start — every
             Centrefit site is backed by the team that built it.
@@ -548,7 +661,7 @@ export function ProposalView(props: Props) {
         <span className="cfp-watermark" data-drift="0.11">04</span>
         <div className="cfp-container cfp-z">
           <p className="cfp-kicker" data-reveal>CONNECTIVITY</p>
-          <h2 className="cfp-h2" data-reveal="wipe">Business internet, managed by us.</h2>
+          <SplitWords text="Business internet, managed by us." />
           <p className="cfp-para" data-reveal>
             We&apos;re an internet provider as well as an integrator — one team for the connection,
             the network and everything running on it. Every plan is business-grade NBN with no
@@ -583,12 +696,14 @@ export function ProposalView(props: Props) {
         </div>
       </section>
 
+      <Marquee reverse />
+
       {/* ── Testimonials ── */}
       <section className="cfp-section" id="clients">
         <span className="cfp-watermark" data-drift="0.09">05</span>
         <div className="cfp-container cfp-z">
           <p className="cfp-kicker" data-reveal>WHAT OUR CLIENTS SAY</p>
-          <h2 className="cfp-h2" data-reveal="wipe">Don&apos;t take our word for it.</h2>
+          <SplitWords text="Don't take our word for it." />
         </div>
         <div className="cfp-container-wide cfp-z">
           <div className="cfp-testimonials">
@@ -826,6 +941,96 @@ const CSS = `
   @media (prefers-reduced-motion: reduce) {
     [data-reveal], [data-reveal="wipe"] { opacity: 1; transform: none; clip-path: none; transition: none; }
   }
+
+  /* ── Split-word headings ── */
+  [data-reveal="split"] { opacity: 1; transform: none; transition: none; }
+  .cfp-w {
+    display: inline-block;
+    overflow: hidden;
+    vertical-align: top;
+    margin-right: .26em;
+    padding-bottom: .06em;
+  }
+  .cfp-wi {
+    display: inline-block;
+    transform: translateY(118%) rotate(3deg);
+    transition: transform .9s cubic-bezier(.2,.65,.25,1);
+  }
+  [data-reveal="split"].cfp-in .cfp-wi { transform: none; }
+  @media (prefers-reduced-motion: reduce) { .cfp-wi { transform: none; transition: none; } }
+
+  /* ── Statement ── */
+  .cfp-statement {
+    min-height: 92svh;
+    display: flex;
+    align-items: center;
+    position: relative;
+    z-index: 2;
+    border-top: 1px solid rgba(30,41,59,.65);
+    padding: clamp(56px, 8vw, 96px) 0;
+  }
+  .cfp-statement-line {
+    font-size: clamp(46px, 10.5vw, 132px);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.04;
+    color: #fff;
+    margin: 0;
+  }
+  .cfp-statement-outline {
+    color: transparent;
+    -webkit-text-stroke: 2px rgba(148,163,184,.65);
+  }
+
+  /* ── Marquee ── */
+  .cfp-marquee {
+    position: relative;
+    z-index: 2;
+    overflow: hidden;
+    border-top: 1px solid rgba(30,41,59,.8);
+    border-bottom: 1px solid rgba(30,41,59,.8);
+    padding: 20px 0;
+    background: rgba(15,23,42,.4);
+  }
+  .cfp-marquee-track {
+    display: flex;
+    width: max-content;
+    animation: cfp-marquee 32s linear infinite;
+  }
+  .cfp-marquee-reverse { animation-direction: reverse; }
+  .cfp-marquee-seg { display: flex; flex-shrink: 0; }
+  .cfp-marquee-item {
+    display: flex;
+    align-items: center;
+    font-size: clamp(16px, 2.4vw, 24px);
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #526078;
+    white-space: nowrap;
+  }
+  .cfp-marquee-dot { color: #3b82f6; margin: 0 clamp(18px, 3vw, 36px); }
+  @keyframes cfp-marquee {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  @media (prefers-reduced-motion: reduce) { .cfp-marquee-track { animation: none; } }
+
+  /* ── Sticky stack (differentiators) ── */
+  .cfp-stack { display: flex; flex-direction: column; margin-top: 20px; }
+  .cfp-stack-card {
+    position: sticky;
+    display: flex;
+    gap: clamp(18px, 3vw, 40px);
+    align-items: flex-start;
+    background: linear-gradient(180deg, #16233c, #0e1a30);
+    border: 1px solid rgba(71,85,105,.55);
+    border-radius: 18px;
+    padding: clamp(24px, 4vw, 40px);
+    margin-bottom: 26vh;
+    box-shadow: 0 -18px 50px -30px rgba(0,0,0,.8), 0 24px 60px -30px rgba(0,0,0,.6);
+  }
+  .cfp-stack-card:last-child { margin-bottom: 0; }
 
   /* ── Watermark numerals ── */
   .cfp-watermark {
@@ -1066,15 +1271,7 @@ const CSS = `
     .cfp-award-licences { text-align: left; max-width: none; }
   }
 
-  /* ── Differentiators ── */
-  .cfp-diffs { display: flex; flex-direction: column; }
-  .cfp-diff {
-    display: flex;
-    gap: clamp(16px, 3vw, 38px);
-    padding: 30px 0;
-    border-bottom: 1px solid rgba(30,41,59,.9);
-  }
-  .cfp-diff:last-child { border-bottom: none; }
+  /* ── Differentiators (inside the sticky stack) ── */
   .cfp-diff-num {
     font-size: clamp(26px, 3.6vw, 40px);
     font-weight: 800;
