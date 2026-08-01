@@ -246,10 +246,6 @@ function StatCounter({ value, label }: { value: string; label: string }) {
         if (!entries[0].isIntersecting || started.current) return;
         started.current = true;
         io.disconnect();
-        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-          setN(target);
-          return;
-        }
         const t0 = performance.now();
         const dur = 1500;
         const tick = (t: number) => {
@@ -296,30 +292,34 @@ export function ProposalView(props: Props) {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const cleanups: Array<() => void> = [];
 
-    // 1. Reveal-on-scroll.
+    // 1. Reveal-on-scroll — runs for everyone. One-shot, short, contained
+    // transitions aren't the motion that bothers vestibular-sensitive users,
+    // and Windows machines report reduced-motion via "Animation effects:
+    // off" without the user ever choosing it (Edge/Chrome follow that
+    // toggle; Firefox doesn't — which made the same page look different
+    // per browser). Only CONTINUOUS scroll-coupled motion honours the flag.
     const revealEls = Array.from(root.querySelectorAll<HTMLElement>("[data-reveal]"));
-    if (reduced) {
-      revealEls.forEach((el) => el.classList.add("cfp-in"));
-    } else {
-      const io = new IntersectionObserver(
-        (entries) => {
-          for (const e of entries) {
-            if (e.isIntersecting) {
-              (e.target as HTMLElement).classList.add("cfp-in");
-              io.unobserve(e.target);
-            }
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            (e.target as HTMLElement).classList.add("cfp-in");
+            io.unobserve(e.target);
           }
-        },
-        { threshold: 0.12, rootMargin: "0px 0px -36px 0px" },
-      );
-      revealEls.forEach((el) => io.observe(el));
-      cleanups.push(() => io.disconnect());
-    }
+        }
+      },
+      { threshold: 0.12, rootMargin: "0px 0px -36px 0px" },
+    );
+    revealEls.forEach((el) => io.observe(el));
+    cleanups.push(() => io.disconnect());
 
-    // 2. Scroll driver — progress bar + hero parallax + watermark drift.
+    // 2. Scroll driver. The progress bar is a position indicator (tracks the
+    // user's own scrolling 1:1) and runs for everyone; hero parallax and
+    // watermark drift are the continuous scroll-coupled layers and stay
+    // static under reduced motion.
     const hero = root.querySelector<HTMLElement>(".cfp-hero");
     const driftEls = Array.from(root.querySelectorAll<HTMLElement>("[data-drift]"));
-    if (!reduced) {
+    {
       let ticking = false;
       const frame = () => {
         ticking = false;
@@ -327,6 +327,7 @@ export function ProposalView(props: Props) {
         const max = doc.scrollHeight - window.innerHeight;
         const pageP = max > 0 ? Math.min(1, window.scrollY / max) : 0;
         root.style.setProperty("--pageP", String(pageP));
+        if (reduced) return;
         if (hero) {
           const sp = Math.min(1, Math.max(0, window.scrollY / (window.innerHeight * 0.9)));
           hero.style.setProperty("--sp", String(sp));
@@ -949,9 +950,6 @@ const CSS = `
     transform: none;
     clip-path: inset(0 0 0 0);
   }
-  @media (prefers-reduced-motion: reduce) {
-    [data-reveal], [data-reveal="wipe"] { opacity: 1; transform: none; clip-path: none; transition: none; }
-  }
 
   /* ── Split-word headings ── */
   [data-reveal="split"] { opacity: 1; transform: none; transition: none; }
@@ -968,7 +966,6 @@ const CSS = `
     transition: transform .9s cubic-bezier(.2,.65,.25,1);
   }
   [data-reveal="split"].cfp-in .cfp-wi { transform: none; }
-  @media (prefers-reduced-motion: reduce) { .cfp-wi { transform: none; transition: none; } }
 
   /* ── Statement ── */
   .cfp-statement {
@@ -1132,10 +1129,9 @@ const CSS = `
     from { opacity: 0; transform: translateY(34px) scale(1.06); filter: blur(6px); }
     to   { opacity: 1; transform: none; filter: blur(0); }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .cfp-hero-item { animation: none; opacity: 1; }
-    .cfp-hero-inner { transform: none; opacity: 1; }
-  }
+  /* Under reduced motion the scroll driver never advances --sp, so the
+     parallax transform above stays at identity — no override needed. The
+     one-shot entrance animation runs for everyone. */
 
   .cfp-kicker {
     font-size: 11px;
