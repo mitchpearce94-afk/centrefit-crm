@@ -85,7 +85,11 @@ export async function POST(req: NextRequest) {
   const clientName = quote.customer?.name || quote.client_name;
   const isProgress = quote.quote_type === "progress";
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${req.nextUrl.origin}`;
-  const respondUrl = `${baseUrl}/quote-response/${responseToken}`;
+  // Proposals lead with the interactive web proposal (PDF attached as the
+  // printable fallback); plain quotes keep the classic response page.
+  const respondUrl = asProposal
+    ? `${baseUrl}/proposal/${responseToken}`
+    : `${baseUrl}/quote-response/${responseToken}`;
 
   // Build the full scope so we can attach a PDF mirroring what the customer
   // would see in the in-CRM preview.
@@ -176,8 +180,12 @@ export async function POST(req: NextRequest) {
 
   const docLabel = asProposal ? "Proposal" : "Quotation";
   const attachmentBlurb = asProposal
-    ? "Your project proposal is attached as a PDF and is also available online via the link below — who we are, how we support you, and your detailed quotation including the full scope of works, pricing breakdown, ongoing costs and applicable standards."
+    ? "Your project proposal is best experienced online via the button below — who we are, how we support you, and your detailed quotation with the full scope of works and pricing, ready to review and accept in one place. A PDF copy is attached for your records."
     : "Your detailed quotation is attached as a PDF and is also available online via the link below — including the full scope of works, pricing breakdown, ongoing costs and applicable standards.";
+  const reviewLine = asProposal
+    ? "Click below to view your proposal — or reply to this email with any questions."
+    : "Please review the attached PDF, then click below to view it online and accept or decline.";
+  const buttonLabel = asProposal ? "View Your Proposal" : "View Quote &amp; Respond Online";
 
   const emailHtml = emailLayout(`
   ${emailHeader({ rightLabel: docLabel, rightValue: quote.ref })}
@@ -190,7 +198,7 @@ export async function POST(req: NextRequest) {
       Thanks for the opportunity to quote ${quote.site_name ? `<strong>${quote.site_name}</strong>` : "your project"}. ${attachmentBlurb}
     </p>
     <p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">
-      Please review the attached PDF, then click below to view it online and accept or decline.
+      ${reviewLine}
     </p>
   </td></tr>
 
@@ -202,7 +210,7 @@ export async function POST(req: NextRequest) {
   <!-- View / respond button — centred via td align="center" + inline-block link -->
   <tr><td align="center" style="padding:28px 32px 8px;text-align:center">
     <a href="${respondUrl}" style="display:inline-block;background:#3b82f6;color:#ffffff;text-align:center;padding:14px 28px;border-radius:10px;font-size:14px;font-weight:700;text-decoration:none;letter-spacing:0.3px;mso-padding-alt:0">
-      View Quote &amp; Respond Online
+      ${buttonLabel}
     </a>
     <p style="font-size:11px;color:#94a3b8;margin:14px 0 0;text-align:center;line-height:1.5">
       You can review the full quote and accept or decline at the link above. Valid for 30 days.
