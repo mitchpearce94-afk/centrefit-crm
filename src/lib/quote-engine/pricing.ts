@@ -45,6 +45,8 @@ export interface QuoteSummary {
     fixedProfit: number
     extrasProfit: number
     base: number
+    /** Share of the 5% uplift carried by PP2 so PP1+PP2 = display total. */
+    uplift: number
     total: number
   }
   discount: { percent: number; amount: number }
@@ -130,7 +132,6 @@ export function calculateQuoteSummary(
   const pp2FixedProfit = fixedCostsSell - fixedCostsCost
   const pp2ExtrasProfit = extrasSell - extrasCost
   const pp2Base = pp2PartsProfit + pp2LabourProfit + pp2FixedProfit + pp2ExtrasProfit
-  const pp2Total = pp2Base
   const targetExGST = pp1Total + pp2Base
 
   // 5% uplift
@@ -143,6 +144,14 @@ export function calculateQuoteSummary(
   const displayExGST = discountPercent > 0 ? targetExGST : fullPriceExGST
   const displayGst = displayExGST * GST_RATE
   const displayIncGST = displayExGST + displayGst
+
+  // PP1 + PP2 must sum to the CUSTOMER-FACING total (Mitchell, 2026-08-01 —
+  // every no-discount progress quote previously showed PP1+PP2 ≈ 4.76% short
+  // of its own headline total). PP1 stays at cost recovery on acceptance;
+  // whatever the display total carries above target (the 5% uplift when no
+  // discount is applied) lands in PP2, the profit payment.
+  const pp2Total = displayExGST - pp1Total
+  const pp2Uplift = pp2Total - pp2Base
 
   return {
     materials: {
@@ -182,6 +191,7 @@ export function calculateQuoteSummary(
       fixedProfit: pp2FixedProfit,
       extrasProfit: pp2ExtrasProfit,
       base: pp2Base,
+      uplift: pp2Uplift,
       total: pp2Total,
     },
     discount: { percent: discountPercent, amount: discountAmount },

@@ -2877,6 +2877,9 @@ export function QuoteWizard({
                   <div className="flex justify-between"><span className="text-muted-foreground">Labour Profit</span><span className="font-mono">${fmt(summary.pp2.labourProfit)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Fixed Profit</span><span className="font-mono">${fmt(summary.pp2.fixedProfit)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Extras Profit</span><span className="font-mono">${fmt(summary.pp2.extrasProfit)}</span></div>
+                  {summary.pp2.uplift > 0.005 && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">Uplift</span><span className="font-mono">${fmt(summary.pp2.uplift)}</span></div>
+                  )}
                   <div className="flex justify-between border-t border-border pt-2 font-medium"><span>PP2 Total</span><span className="font-mono">${fmt(summary.pp2.total)}</span></div>
                 </div>
               </div>

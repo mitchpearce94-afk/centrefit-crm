@@ -367,6 +367,9 @@ export default async function QuoteDetailPage({
                   <div className="flex justify-between"><span className="text-muted-foreground">Labour</span><span className="font-mono">${fmt(pricing.pp2.labourProfit)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Fixed</span><span className="font-mono">${fmt(pricing.pp2.fixedProfit)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Extras</span><span className="font-mono">${fmt(pricing.pp2.extrasProfit)}</span></div>
+                  {((pricing.pp2 as { uplift?: number }).uplift ?? 0) > 0.005 && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">Uplift</span><span className="font-mono">${fmt((pricing.pp2 as { uplift?: number }).uplift ?? 0)}</span></div>
+                  )}
                   <div className="flex justify-between border-t border-border pt-2 font-medium"><span>PP2 Total (ex GST)</span><span className="font-mono">${fmt(pricing.pp2.total)}</span></div>
                 </div>
               </div>

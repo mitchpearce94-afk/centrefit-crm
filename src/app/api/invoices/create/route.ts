@@ -159,7 +159,15 @@ export async function POST(req: NextRequest) {
         );
       }
       const isPP1 = body.type === "progress_pp1";
-      const amount = isPP1 ? Number(pricing.pp1?.total ?? 0) : Number(pricing.pp2?.total ?? 0);
+      // PP2 completes the accepted quote's total: bill (total − PP1), not the
+      // stored pp2.total — snapshots saved before 2026-08-01 carried a pp2
+      // that was 5% (the uplift) short of the headline total the customer
+      // accepted.
+      const totalEx = Number(pricing.totalExGST ?? 0);
+      const pp1Ex = Number(pricing.pp1?.total ?? 0);
+      const pp2Derived =
+        totalEx > 0 && pp1Ex > 0 ? Number((totalEx - pp1Ex).toFixed(2)) : Number(pricing.pp2?.total ?? 0);
+      const amount = isPP1 ? pp1Ex : pp2Derived;
       if (amount <= 0) {
         return NextResponse.json(
           { error: `No ${isPP1 ? "PP1" : "PP2"} amount in the quote pricing snapshot` },

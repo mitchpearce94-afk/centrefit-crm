@@ -48,8 +48,19 @@ export async function tryCreatePP2ForJob(
 
   for (const quote of quotes) {
     try {
-      const pricing = quote.pricing_snapshot as { pp2?: { total: number } } | null;
-      const amount = Number(pricing?.pp2?.total ?? 0);
+      const pricing = quote.pricing_snapshot as
+        | { totalExGST?: number; pp1?: { total: number }; pp2?: { total: number } }
+        | null;
+      // PP2 completes the accepted quote's total: bill (total − PP1), not the
+      // stored pp2.total — snapshots saved before 2026-08-01 carried a pp2
+      // that was 5% (the uplift) short of reconciling with the headline
+      // total the customer accepted.
+      const totalEx = Number(pricing?.totalExGST ?? 0);
+      const pp1Ex = Number(pricing?.pp1?.total ?? 0);
+      const amount =
+        totalEx > 0 && pp1Ex > 0
+          ? Number((totalEx - pp1Ex).toFixed(2))
+          : Number(pricing?.pp2?.total ?? 0);
       if (amount <= 0) {
         result.skipped.push({ quoteId: quote.id, reason: "No PP2 amount in pricing snapshot" });
         continue;
