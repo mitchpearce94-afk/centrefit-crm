@@ -14,8 +14,13 @@
  * light beams, periodic comet streaks, a cursor spotlight and gradient
  * shimmer through the display type. All hand-rolled: one <canvas>, one rAF
  * scroll driver, IntersectionObservers and CSS — no animation libraries.
- * Every effect collapses to static content under prefers-reduced-motion, and
- * the ambient layers fade out once the customer reaches the quotation.
+ *
+ * Motion policy: ambient self-contained animation (canvas, beams, shimmer,
+ * marquee) runs for everyone — many Windows machines report reduced-motion
+ * via "Animation effects: off" without the user choosing it, and a frozen
+ * background reads as broken. SCROLL-COUPLED motion (inertia scroll, hero
+ * parallax, watermark drift, staged reveals) still honours
+ * prefers-reduced-motion. Ambient layers fade out at the quotation.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -67,8 +72,7 @@ const NAV_SECTIONS = [
 // ── Ambient constellation canvas ───────────────────────────────────────────
 // Fixed full-viewport canvas behind the story: slow-drifting nodes joined by
 // distance-faded lines. Density scales with viewport area (capped), DPR is
-// capped at 2, the loop pauses when the tab is hidden, and reduced-motion
-// users get no canvas at all.
+// capped at 2, and the loop pauses when the tab is hidden.
 
 function ConstellationCanvas() {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -76,7 +80,11 @@ function ConstellationCanvas() {
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // Deliberately NOT gated on prefers-reduced-motion: many Windows machines
+    // report it via "Animation effects: off" without the user ever choosing
+    // it, and a frozen background reads as broken. The ambient drift is slow
+    // and dim; the scroll-coupled motion (parallax, inertia, drift) is what
+    // stays disabled for reduced-motion users.
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
@@ -569,7 +577,7 @@ export function ProposalView(props: Props) {
 
       {/* ── Who we are ── */}
       <section className="cfp-section" id="who">
-        <span className="cfp-watermark" data-drift="0.09">01</span>
+        <div className="cfp-wm" aria-hidden="true"><span className="cfp-watermark" data-drift="0.09">01</span></div>
         <div className="cfp-container cfp-z">
           <p className="cfp-kicker" data-reveal>WHO WE ARE</p>
           <SplitWords text="Technology for spaces where people gather." />
@@ -601,7 +609,7 @@ export function ProposalView(props: Props) {
 
       {/* ── Differentiators ── */}
       <section className="cfp-section" id="why">
-        <span className="cfp-watermark" data-drift="0.11">02</span>
+        <div className="cfp-wm" aria-hidden="true"><span className="cfp-watermark" data-drift="0.11">02</span></div>
         <div className="cfp-container cfp-z">
           <p className="cfp-kicker" data-reveal>WHY CENTREFIT</p>
           <SplitWords text="What we do differently." />
@@ -626,7 +634,7 @@ export function ProposalView(props: Props) {
 
       {/* ── Support ── */}
       <section className="cfp-section" id="support">
-        <span className="cfp-watermark" data-drift="0.09">03</span>
+        <div className="cfp-wm" aria-hidden="true"><span className="cfp-watermark" data-drift="0.09">03</span></div>
         <div className="cfp-container cfp-z">
           <p className="cfp-kicker" data-reveal>AFTER THE INSTALL</p>
           <SplitWords text="Support that doesn't clock off." />
@@ -658,7 +666,7 @@ export function ProposalView(props: Props) {
 
       {/* ── NBN ── */}
       <section className="cfp-section cfp-glow" id="connectivity">
-        <span className="cfp-watermark" data-drift="0.11">04</span>
+        <div className="cfp-wm" aria-hidden="true"><span className="cfp-watermark" data-drift="0.11">04</span></div>
         <div className="cfp-container cfp-z">
           <p className="cfp-kicker" data-reveal>CONNECTIVITY</p>
           <SplitWords text="Business internet, managed by us." />
@@ -700,7 +708,7 @@ export function ProposalView(props: Props) {
 
       {/* ── Testimonials ── */}
       <section className="cfp-section" id="clients">
-        <span className="cfp-watermark" data-drift="0.09">05</span>
+        <div className="cfp-wm" aria-hidden="true"><span className="cfp-watermark" data-drift="0.09">05</span></div>
         <div className="cfp-container cfp-z">
           <p className="cfp-kicker" data-reveal>WHAT OUR CLIENTS SAY</p>
           <SplitWords text="Don't take our word for it." />
@@ -835,10 +843,6 @@ const CSS = `
     13%  { transform: rotate(14deg) translateX(120vw); opacity: 0; }
     100% { transform: rotate(14deg) translateX(120vw); opacity: 0; }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .cfp-beam { animation: none; }
-    .cfp-comet { display: none; }
-  }
 
   /* ── Shimmer type ── */
   .cfp-shimmer {
@@ -853,7 +857,6 @@ const CSS = `
     0%, 100% { background-position: 115% 0; }
     45%, 55% { background-position: -15% 0; }
   }
-  @media (prefers-reduced-motion: reduce) { .cfp-shimmer { animation: none; } }
 
   /* ── Scroll progress bar ── */
   .cfp-progress {
@@ -989,32 +992,33 @@ const CSS = `
     overflow: hidden;
     border-top: 1px solid rgba(30,41,59,.8);
     border-bottom: 1px solid rgba(30,41,59,.8);
-    padding: 20px 0;
+    padding: clamp(26px, 4vw, 38px) 0;
     background: rgba(15,23,42,.4);
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
   }
   .cfp-marquee-track {
     display: flex;
     width: max-content;
-    animation: cfp-marquee 32s linear infinite;
+    animation: cfp-marquee 36s linear infinite;
   }
   .cfp-marquee-reverse { animation-direction: reverse; }
   .cfp-marquee-seg { display: flex; flex-shrink: 0; }
   .cfp-marquee-item {
     display: flex;
     align-items: center;
-    font-size: clamp(16px, 2.4vw, 24px);
+    font-size: clamp(14px, 1.9vw, 20px);
     font-weight: 700;
     letter-spacing: 3px;
     text-transform: uppercase;
     color: #526078;
     white-space: nowrap;
   }
-  .cfp-marquee-dot { color: #3b82f6; margin: 0 clamp(18px, 3vw, 36px); }
+  .cfp-marquee-dot { color: #3b82f6; margin: 0 clamp(20px, 3.2vw, 40px); }
   @keyframes cfp-marquee {
     from { transform: translateX(0); }
     to   { transform: translateX(-50%); }
   }
-  @media (prefers-reduced-motion: reduce) { .cfp-marquee-track { animation: none; } }
 
   /* ── Sticky stack (differentiators) ── */
   .cfp-stack { display: flex; flex-direction: column; margin-top: 20px; }
@@ -1027,24 +1031,32 @@ const CSS = `
     border: 1px solid rgba(71,85,105,.55);
     border-radius: 18px;
     padding: clamp(24px, 4vw, 40px);
-    margin-bottom: 26vh;
+    margin-bottom: 16vh;
     box-shadow: 0 -18px 50px -30px rgba(0,0,0,.8), 0 24px 60px -30px rgba(0,0,0,.6);
   }
   .cfp-stack-card:last-child { margin-bottom: 0; }
 
   /* ── Watermark numerals ── */
+  /* The wrapper does the clipping so the SECTION can stay overflow:visible —
+     overflow:hidden on the section itself kills position:sticky for the
+     stacking card deck inside it. */
+  .cfp-wm {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
   .cfp-watermark {
     position: absolute;
     top: -20px;
-    right: -8px;
+    right: clamp(56px, 6vw, 110px);
     font-size: clamp(150px, 24vw, 300px);
     font-weight: 800;
     line-height: 1;
     color: transparent;
     -webkit-text-stroke: 1.5px rgba(148,163,184,.13);
-    pointer-events: none;
     user-select: none;
-    z-index: 0;
   }
 
   /* ── Glass panels ── */
@@ -1079,7 +1091,6 @@ const CSS = `
     from { transform: translate3d(-2%, -1.5%, 0) scale(1) rotate(-1deg); }
     to   { transform: translate3d(2%, 2%, 0) scale(1.07) rotate(1deg); }
   }
-  @media (prefers-reduced-motion: reduce) { .cfp-hero::before { animation: none; } }
 
   .cfp-hero-bar { position: relative; z-index: 2; padding-top: clamp(20px, 3.5vw, 36px); }
   .cfp-hero-bar-inner { display: flex; justify-content: space-between; align-items: center; }
@@ -1176,7 +1187,6 @@ const CSS = `
     0%, 100% { transform: translateY(0); }
     50%      { transform: translateY(7px); }
   }
-  @media (prefers-reduced-motion: reduce) { .cfp-scroll-cue svg { animation: none; } }
 
   /* ── Stats ── */
   .cfp-stats {
@@ -1206,17 +1216,18 @@ const CSS = `
   }
 
   /* ── Sections ── */
+  /* overflow stays visible — hidden here would break position:sticky for the
+     stacking deck. Clipping is handled per-layer (.cfp-wm). */
   .cfp-section {
     position: relative;
     padding: clamp(72px, 11vw, 132px) 0;
-    overflow: hidden;
     border-top: 1px solid rgba(30,41,59,.65);
   }
   .cfp-glow::after {
     content: "";
     position: absolute;
-    inset: -10%;
-    background: radial-gradient(45% 40% at 82% 15%, rgba(59,130,246,.13), transparent 62%);
+    inset: 0;
+    background: radial-gradient(50% 45% at 80% 12%, rgba(59,130,246,.13), transparent 62%);
     pointer-events: none;
     z-index: 0;
   }
