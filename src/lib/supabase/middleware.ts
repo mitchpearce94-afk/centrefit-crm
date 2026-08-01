@@ -80,6 +80,7 @@ const PUBLIC_PATH_PREFIXES = [
   "/api/cron/",
   "/api/public/",
   "/quote-response",
+  "/proposal/",
   "/recurring-thanks",
   "/status-board",
   "/monitoring-form",
