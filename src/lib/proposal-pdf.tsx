@@ -461,12 +461,16 @@ export function ProposalDocument({ quote, scope }: { quote: QuoteForPdf; scope: 
   // Franchise quotes often duplicate the client name into site_name — only
   // append the site when it adds information, so merge fields never double up.
   const siteName = distinctSiteName(quote);
-  const siteLabel = siteName ? `${quote.clientName} ${siteName}` : quote.clientName;
+  // In headings/titles the pair reads with an em dash; in prose sentences the
+  // site name alone reads best ("your investment for Snap Fitness Diggers
+  // Rest"), falling back to the client name when there's no distinct site.
+  const docLabel = siteName ? `${quote.clientName} — ${siteName}` : quote.clientName;
+  const proseLabel = siteName ?? quote.clientName;
   const siteAddress = formatAuAddress(quote.siteAddress);
   const systems = scope.systems.map((sys) => sys.name);
 
   return (
-    <Document title={`Proposal ${quote.ref} — ${siteLabel}`} author="Centrefit Group">
+    <Document title={`Proposal ${quote.ref} — ${docLabel}`} author="Centrefit Group">
 
       {/* ── Cover — constellation + centred hero ── */}
       <Page size="A4" style={s.cover}>
@@ -714,7 +718,7 @@ export function ProposalDocument({ quote, scope }: { quote: QuoteForPdf; scope: 
           <Text style={s.buildKicker}>YOUR QUOTATION FOLLOWS</Text>
           <Text style={s.buildTitle}>Let&apos;s build it.</Text>
           <Text style={s.buildText}>
-            {`The pages that follow set out the full scope of works and your investment for ${siteLabel}. Questions at any point — call ${COMPANY.phone} and talk directly to the team who'll build it.`}
+            {`The pages that follow set out the full scope of works and your investment for ${proseLabel}. Questions at any point — call ${COMPANY.phone} and talk directly to the team who'll build it.`}
           </Text>
         </View>
         <Footer />

@@ -158,7 +158,7 @@ export default async function QuoteDetailPage({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-medium text-muted-foreground uppercase">PP1 — On Acceptance</p>
-                  <p className="text-xl font-bold font-mono mt-1">${pricing ? fmt(pricing.pp1.total * 1.1) : "—"}</p>
+                  <p className="text-xl font-bold font-mono mt-1">${pricing ? fmt(Math.round(pricing.pp1.total * 110) / 100) : "—"}</p>
                   {pp1Inv?.xero_invoice_number && (
                     <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{pp1Inv.xero_invoice_number}</p>
                   )}
@@ -172,7 +172,7 @@ export default async function QuoteDetailPage({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-medium text-muted-foreground uppercase">PP2 — On Completion</p>
-                  <p className="text-xl font-bold font-mono mt-1">${pricing ? fmt(pricing.pp2.total * 1.1) : "—"}</p>
+                  <p className="text-xl font-bold font-mono mt-1">${pricing ? fmt(pricing.totalIncGST - Math.round(pricing.pp1.total * 110) / 100) : "—"}</p>
                   {pp2Inv?.xero_invoice_number && (
                     <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{pp2Inv.xero_invoice_number}</p>
                   )}

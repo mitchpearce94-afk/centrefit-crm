@@ -463,12 +463,12 @@ export function QuoteActions({
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
                       <div style={{ background: "#f8fafc", borderRadius: "10px", border: "1px solid #e2e8f0", padding: "20px" }}>
                         <p style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "1px", color: "#64748b", margin: "0 0 8px" }}>Payment 1 — Due on Acceptance</p>
-                        <p style={{ fontSize: "24px", fontWeight: 700, color: "#0f172a", fontFamily: "monospace", margin: 0 }}>${fmt(pricing.pp1.total * 1.1)}</p>
+                        <p style={{ fontSize: "24px", fontWeight: 700, color: "#0f172a", fontFamily: "monospace", margin: 0 }}>${fmt(Math.round(pricing.pp1.total * 110) / 100)}</p>
                         <p style={{ fontSize: "11px", color: "#94a3b8", margin: "4px 0 0" }}>inc GST</p>
                       </div>
                       <div style={{ background: "#f8fafc", borderRadius: "10px", border: "1px solid #e2e8f0", padding: "20px" }}>
                         <p style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "1px", color: "#64748b", margin: "0 0 8px" }}>Payment 2 — Due on Completion</p>
-                        <p style={{ fontSize: "24px", fontWeight: 700, color: "#0f172a", fontFamily: "monospace", margin: 0 }}>${fmt(pricing.pp2.total * 1.1)}</p>
+                        <p style={{ fontSize: "24px", fontWeight: 700, color: "#0f172a", fontFamily: "monospace", margin: 0 }}>${fmt(pricing.totalIncGST - Math.round(pricing.pp1.total * 110) / 100)}</p>
                         <p style={{ fontSize: "11px", color: "#94a3b8", margin: "4px 0 0" }}>inc GST</p>
                       </div>
                     </div>

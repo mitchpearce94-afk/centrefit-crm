@@ -20,7 +20,9 @@
  * via "Animation effects: off" without the user choosing it, and a frozen
  * background reads as broken. SCROLL-COUPLED motion (inertia scroll, hero
  * parallax, watermark drift, staged reveals) still honours
- * prefers-reduced-motion. Ambient layers fade out at the quotation.
+ * prefers-reduced-motion. The quote section's opaque paper background covers
+ * the ambient layers — they are never faded, so scrolling back up from the
+ * quote returns to a fully alive story.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -778,6 +780,10 @@ const CSS = `
       linear-gradient(180deg, #0b1220 0%, #0f172a 45%, #0b1220 100%);
     -webkit-font-smoothing: antialiased;
     --pageP: 0;
+    /* Pre-reveal slide-in elements (translateX ±56px) poke past the viewport
+       on phones and made the whole page pan sideways. clip (NOT hidden —
+       hidden would kill position:sticky for the card deck) fences them in. */
+    overflow-x: clip;
   }
   .cfp-container { max-width: 1060px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px); }
   .cfp-container-wide { max-width: 1180px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px); }
@@ -802,7 +808,9 @@ const CSS = `
     background: radial-gradient(560px at var(--mx, -999px) var(--my, -999px), rgba(59,130,246,.08), transparent 70%);
     transition: opacity 1s ease;
   }
-  .cfp-arrived .cfp-canvas, .cfp-arrived .cfp-spotlight { opacity: 0; }
+  /* The ambient layers stay on for the whole scroll — the quote section's
+     opaque paper covers them anyway, and fading them out latched them off
+     for good when the customer scrolled back UP into the story. */
   @media (pointer: coarse) { .cfp-spotlight { display: none; } }
 
   .cfp-beams { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }

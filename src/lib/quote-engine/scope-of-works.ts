@@ -208,11 +208,16 @@ function applySystemOverride(block: ScopeSystemBlock, ov?: ScopeOverrides): Scop
 
 /**
  * Admin-set role descriptions are written in the plural ("Request-to-exit
- * push buttons"). When a quote has exactly one of the item, singularise the
- * trailing word so "(1) … buttons" never ships to a customer.
+ * push buttons", "FES20 / equivalent electric strikers + door loops"). When a
+ * quote has exactly one of the item, singularise every plural-looking word so
+ * "(1) … strikers + door loops" never ships to a customer. All-caps words
+ * (UPS, GPS, FES20) are left alone — trailing S is part of the acronym.
  */
-function singularizeLastWord(desc: string): string {
-  return desc.replace(/([A-Za-z]+)\s*$/, (word) => {
+const SINGULARIZE_STOP = new Set(['this', 'is', 'as', 'has', 'its', 'was', 'does', 'goes', 'gas', 'lens', 'wireless', 'access']);
+
+function singularizeWords(desc: string): string {
+  return desc.replace(/[A-Za-z]+/g, (word) => {
+    if (/^[A-Z0-9]+$/.test(word) || SINGULARIZE_STOP.has(word.toLowerCase())) return word;
     if (/(ch|sh|s|x|z)es$/i.test(word)) return word.replace(/es$/i, '');
     if (/[a-z]ies$/i.test(word)) return word.replace(/ies$/i, 'y');
     if (/[^su]s$/i.test(word)) return word.replace(/s$/i, '');
@@ -234,7 +239,7 @@ function roleBullet(
 ): string {
   const desc = roleDescriptions?.[slug]?.trim();
   if (desc && desc.length > 0) {
-    return `<strong>(${count}) ${count === 1 ? singularizeLastWord(desc) : desc}</strong>`;
+    return `<strong>(${count}) ${count === 1 ? singularizeWords(desc) : desc}</strong>`;
   }
   return fallback;
 }
@@ -402,7 +407,7 @@ export function generateScopeOfWorks(
     const items: string[] = [
       `<strong>(${speakers}) ceiling/wall-mounted ${plural(speakers, 'speaker')}</strong> covering main gym, free-weights and reception`,
       amplifiers > 0
-        ? `${amplifiers === 1 ? '' : `(${amplifiers}) `}${plural(amplifiers, 'rack-mounted mixer-amplifier')} on 100V line audio`
+        ? `<strong>(${amplifiers}) ${plural(amplifiers, 'rack-mounted mixer-amplifier')}</strong> on 100V line audio`
         : `Rack-mounted mixer-amplifier on 100V line audio`,
       `All speaker cabling, terminations and faceplates`,
     ];
@@ -578,7 +583,9 @@ export function generateScopeOfWorks(
     const parts: string[] = [];
     if (doorStrikes > 0) parts.push(`electronic door ${plural(doorStrikes, 'strike')}`);
     if (magLocks > 0) parts.push(`magnetic ${plural(magLocks, 'lock')}`);
-    locksmithItems.push(`<strong>Fitting of all ${parts.join(' and ')}</strong> — invoiced directly by the locksmith to the customer`);
+    // "all" only reads right against plurals — a single device gets "the".
+    const determiner = doorStrikes + magLocks === 1 ? 'the' : 'all';
+    locksmithItems.push(`<strong>Fitting of ${determiner} ${parts.join(' and ')}</strong> — invoiced directly by the locksmith to the customer`);
   }
 
   const baseByOthers: ScopeByOthersBlock[] = [];
@@ -618,7 +625,19 @@ export function generateScopeOfWorks(
   // inside the per-item bullets only ("(7) IP cameras…"). Lead paragraph
   // stays. Per-system countSummary is emptied at the return below for the
   // same reason.
-  const systemNames = systems.map((s) => s.name.toLowerCase()).join(', ');
+  // Lowercase the system names for prose, but keep acronyms (CCTV, AV, TV)
+  // and brand names intact, and join the list with a final "and".
+  const PROSE_PROPER = new Set(['Nightlife', 'FelixGate']);
+  const proseCase = (name: string) =>
+    name
+      .split(' ')
+      .map((w) => (/^[A-Z0-9&/.-]+$/.test(w) || PROSE_PROPER.has(w) ? w : w.toLowerCase()))
+      .join(' ');
+  const casedNames = systems.map((s) => proseCase(s.name));
+  const systemNames =
+    casedNames.length > 1
+      ? `${casedNames.slice(0, -1).join(', ')} and ${casedNames[casedNames.length - 1]}`
+      : (casedNames[0] ?? '');
   const autoLead = systems.length > 0
     ? `Centrefit Group will supply, install and commission the ${systemNames} systems for this site. All cabling, terminations, configuration and customer staff training are included. Trade work outside our scope (electrical, antenna, door strikes) is called out as "By others" below.`
     : 'No items currently selected — add products to the BOM to populate this scope.';
@@ -643,7 +662,7 @@ export function generateScopeOfWorks(
 
   const baseStandards = [
     'AS/NZS 2201.1-2007 (Intruder alarm systems)',
-    'AS 4806 (CCTV — management & operation)',
+    'AS 4806.1 (CCTV — management & operation)',
     'AS/NZS 62676.1.2:2020 (Video surveillance)',
     'AS/NZS IEC 60839.11.1:2019 (Electronic access control)',
     'AS/CA S009:2020 (Customer cabling — wiring rules)',

@@ -550,6 +550,10 @@ export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDo
   });
   const siteName = distinctSiteName(quote);
   const siteAddress = formatAuAddress(quote.siteAddress);
+  // Round PP1 once, derive PP2 from the inc-GST total — rounding each payment
+  // independently can leave the pair a cent off the displayed total.
+  const pp1Inc = quote.pricing.pp1 ? Math.round(quote.pricing.pp1.total * 110) / 100 : 0;
+  const pp2Inc = quote.pricing.pp1 && quote.pricing.pp2 ? quote.pricing.totalIncGST - pp1Inc : 0;
 
   return (
       <Page size="A4" style={styles.page}>
@@ -680,12 +684,12 @@ export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDo
             <View style={styles.paymentRow}>
               <View style={styles.paymentBox}>
                 <Text style={styles.paymentLabel}>PAYMENT 1 — DUE ON ACCEPTANCE</Text>
-                <Text style={styles.paymentValue}>${fmtMoney(quote.pricing.pp1.total * 1.1)}</Text>
+                <Text style={styles.paymentValue}>${fmtMoney(pp1Inc)}</Text>
                 <Text style={styles.paymentTail}>inc GST</Text>
               </View>
               <View style={styles.paymentBox}>
                 <Text style={styles.paymentLabel}>PAYMENT 2 — DUE ON COMPLETION</Text>
-                <Text style={styles.paymentValue}>${fmtMoney(quote.pricing.pp2.total * 1.1)}</Text>
+                <Text style={styles.paymentValue}>${fmtMoney(pp2Inc)}</Text>
                 <Text style={styles.paymentTail}>inc GST</Text>
               </View>
             </View>

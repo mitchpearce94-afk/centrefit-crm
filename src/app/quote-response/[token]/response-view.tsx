@@ -48,6 +48,11 @@ export function QuoteResponseView(props: Props) {
     day: "numeric", month: "long", year: "numeric",
   });
 
+  // Round PP1 once, derive PP2 from the inc-GST total — rounding each payment
+  // independently can leave the pair a cent off the displayed total.
+  const pp1Inc = pricing.pp1 ? Math.round(pricing.pp1.total * 110) / 100 : 0;
+  const pp2Inc = pricing.pp1 && pricing.pp2 ? pricing.totalIncGST - pp1Inc : 0;
+
   async function respond(action: "accept" | "decline") {
     setBusy(action);
     setError(null);
@@ -245,12 +250,12 @@ export function QuoteResponseView(props: Props) {
           <div className="qr-pp-grid">
             <div style={{ flex: 1, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "14px", textAlign: "center" }}>
               <p style={{ fontSize: "10px", color: "#64748b", letterSpacing: "1px", textTransform: "uppercase", fontWeight: 700, margin: 0 }}>Payment 1 — On Acceptance</p>
-              <p style={{ fontSize: "20px", color: "#0f172a", fontWeight: 700, margin: "5px 0 0", fontFamily: "Consolas, monospace" }}>${fmt(pricing.pp1.total * 1.1)}</p>
+              <p style={{ fontSize: "20px", color: "#0f172a", fontWeight: 700, margin: "5px 0 0", fontFamily: "Consolas, monospace" }}>${fmt(pp1Inc)}</p>
               <p style={{ fontSize: "10px", color: "#94a3b8", margin: "2px 0 0" }}>inc GST</p>
             </div>
             <div style={{ flex: 1, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "14px", textAlign: "center" }}>
               <p style={{ fontSize: "10px", color: "#64748b", letterSpacing: "1px", textTransform: "uppercase", fontWeight: 700, margin: 0 }}>Payment 2 — On Completion</p>
-              <p style={{ fontSize: "20px", color: "#0f172a", fontWeight: 700, margin: "5px 0 0", fontFamily: "Consolas, monospace" }}>${fmt(pricing.pp2.total * 1.1)}</p>
+              <p style={{ fontSize: "20px", color: "#0f172a", fontWeight: 700, margin: "5px 0 0", fontFamily: "Consolas, monospace" }}>${fmt(pp2Inc)}</p>
               <p style={{ fontSize: "10px", color: "#94a3b8", margin: "2px 0 0" }}>inc GST</p>
             </div>
           </div>
