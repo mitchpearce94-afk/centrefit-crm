@@ -404,9 +404,9 @@ const s = StyleSheet.create({
     marginTop: 14,
     alignItems: "center",
   },
-  buildKicker: { fontSize: 7.5, color: SLATE_500, letterSpacing: 2.4, fontFamily: "Helvetica-Bold", marginBottom: 10 },
-  buildTitle: { fontSize: 30, fontFamily: "Helvetica-Bold", color: WHITE, letterSpacing: -0.5, marginBottom: 10 },
-  buildText: { fontSize: 9.5, color: BODY, lineHeight: 1.6, textAlign: "center", maxWidth: 380 },
+  buildKicker: { fontSize: 7.5, color: SLATE_500, letterSpacing: 2.4, fontFamily: "Helvetica-Bold", marginBottom: 12 },
+  buildTitle: { fontSize: 30, fontFamily: "Helvetica-Bold", color: WHITE, letterSpacing: -0.5, lineHeight: 1.15, marginBottom: 14 },
+  buildText: { fontSize: 9.5, color: BODY, lineHeight: 1.6, textAlign: "center", maxWidth: 380, marginTop: 2 },
 });
 
 // ── Shared pieces ──────────────────────────────────────────────────────────
@@ -714,9 +714,7 @@ export function ProposalDocument({ quote, scope }: { quote: QuoteForPdf; scope: 
           <Text style={s.buildKicker}>YOUR QUOTATION FOLLOWS</Text>
           <Text style={s.buildTitle}>Let&apos;s build it.</Text>
           <Text style={s.buildText}>
-            The pages that follow set out the full scope of works and your investment
-            for {siteLabel}. Questions at any point — call {COMPANY.phone} and talk directly
-            to the team who&apos;ll build it.
+            {`The pages that follow set out the full scope of works and your investment for ${siteLabel}. Questions at any point — call ${COMPANY.phone} and talk directly to the team who'll build it.`}
           </Text>
         </View>
         <Footer />
