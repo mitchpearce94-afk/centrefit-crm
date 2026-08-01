@@ -21,7 +21,8 @@ Font.registerHyphenationCallback((word) => [word]);
 import fs from "fs";
 import path from "path";
 import type { ScopeDocument } from "@/lib/quote-engine";
-import { QuotePage, type QuoteForPdf } from "./quote-pdf";
+import { QuotePage, distinctSiteName, type QuoteForPdf } from "./quote-pdf";
+import { formatAuAddress } from "@/lib/format-address";
 
 const loadAsset = (file: string): Buffer | null => {
   try { return fs.readFileSync(path.join(process.cwd(), "public", file)); } catch { return null; }
@@ -152,6 +153,7 @@ const s = StyleSheet.create({
   coverKicker: { fontSize: 10, color: FAINT, letterSpacing: 4, fontFamily: "Helvetica-Bold", marginBottom: 12 },
   coverTitle: { fontSize: 34, fontFamily: "Helvetica-Bold", letterSpacing: -0.5, lineHeight: 1.15 },
   coverTitleAccent: { color: "#cbd5e1" },
+  coverAddress: { fontSize: 11, color: FAINT, marginTop: 8 },
   coverRule: { width: 46, height: 3, backgroundColor: "#ffffff", marginTop: 18, marginBottom: 18 },
   coverLead: { fontSize: 11, color: "#cbd5e1", lineHeight: 1.7, width: "85%", marginBottom: 18 },
   chipRow: { flexDirection: "row", flexWrap: "wrap" },
@@ -382,7 +384,11 @@ export function ProposalDocument({ quote, scope }: { quote: QuoteForPdf; scope: 
     month: "long",
     year: "numeric",
   });
-  const siteLabel = quote.siteName ? `${quote.clientName} ${quote.siteName}` : quote.clientName;
+  // Franchise quotes often duplicate the client name into site_name — only
+  // append the site when it adds information, so merge fields never double up.
+  const siteName = distinctSiteName(quote);
+  const siteLabel = siteName ? `${quote.clientName} ${siteName}` : quote.clientName;
+  const siteAddress = formatAuAddress(quote.siteAddress);
   const systems = scope.systems.map((sys) => sys.name);
 
   return (
@@ -400,9 +406,10 @@ export function ProposalDocument({ quote, scope }: { quote: QuoteForPdf; scope: 
 
         <Text style={s.coverKicker}>PROJECT PROPOSAL</Text>
         <Text style={s.coverTitle}>{quote.clientName}</Text>
-        {!!quote.siteName && (
-          <Text style={[s.coverTitle, s.coverTitleAccent]}>{quote.siteName}</Text>
+        {!!siteName && (
+          <Text style={[s.coverTitle, s.coverTitleAccent]}>{siteName}</Text>
         )}
+        {!!siteAddress && <Text style={s.coverAddress}>{siteAddress}</Text>}
         <View style={s.coverRule} />
         <Text style={s.coverLead}>
           A complete technology fit-out for {siteLabel} — designed, installed, commissioned
@@ -481,7 +488,7 @@ export function ProposalDocument({ quote, scope }: { quote: QuoteForPdf; scope: 
         <View style={s.awardBand}>
           <View>
             <Text style={s.awardKicker}>AWARDED</Text>
-            <Text style={s.awardTitle}>Liftbrands Australasia — Supplier of the Year 2022</Text>
+            <Text style={s.awardTitle}>Lift Brands Australasia — Supplier of the Year 2022</Text>
           </View>
           <Text style={s.awardRight}>{COMPANY.licences}</Text>
         </View>

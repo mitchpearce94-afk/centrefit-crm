@@ -20,6 +20,7 @@ import type {
   ScopeByOthersBlock,
   ScopeOngoingCost,
 } from "@/lib/quote-engine";
+import { formatAuAddress } from "@/lib/format-address";
 
 // Load the brand logo once at module init. Files in /public are available on
 // Vercel serverless via process.cwd().
@@ -60,21 +61,35 @@ function fmtMoney(n: number): string {
 }
 
 /**
+ * Some quotes carry the client name duplicated into site_name (franchise
+ * sites like "Snap Fitness Forster" / "Snap Fitness Forster"). Returns the
+ * site name only when it adds information, so headings never double up.
+ */
+export function distinctSiteName(quote: Pick<QuoteForPdf, "clientName" | "siteName">): string | null {
+  const site = quote.siteName?.trim();
+  if (!site) return null;
+  return site.toLowerCase() === quote.clientName.trim().toLowerCase() ? null : site;
+}
+
+/**
  * Strip <strong> wrappers from an item string into a list of segments so we
- * can apply bold styling within React-PDF (which doesn't render HTML).
+ * can apply bold styling within React-PDF (which doesn't render HTML). Any
+ * other markup (e.g. <span> colour wrappers saved into old scope overrides)
+ * is stripped rather than printed literally.
  */
 function tokenize(text: string): { text: string; bold: boolean }[] {
   const out: { text: string; bold: boolean }[] = [];
   const re = /<strong>(.*?)<\/strong>/g;
+  const clean = (s: string) => s.replace(/<[^>]+>/g, "");
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
-    if (m.index > last) out.push({ text: text.slice(last, m.index), bold: false });
-    out.push({ text: m[1], bold: true });
+    if (m.index > last) out.push({ text: clean(text.slice(last, m.index)), bold: false });
+    out.push({ text: clean(m[1]), bold: true });
     last = m.index + m[0].length;
   }
-  if (last < text.length) out.push({ text: text.slice(last), bold: false });
-  return out;
+  if (last < text.length) out.push({ text: clean(text.slice(last)), bold: false });
+  return out.filter((seg) => seg.text.length > 0);
 }
 
 // ── Rich-text (manual scope) → PDF blocks ────────────────────────────────────
@@ -533,6 +548,8 @@ export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDo
     month: "long",
     year: "numeric",
   });
+  const siteName = distinctSiteName(quote);
+  const siteAddress = formatAuAddress(quote.siteAddress);
 
   return (
       <Page size="A4" style={styles.page}>
@@ -553,13 +570,13 @@ export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDo
         {/* Title + Client */}
         <Text style={styles.docH1}>
           {quote.clientName}
-          {quote.siteName ? ` — ${quote.siteName}` : ""}
+          {siteName ? ` — ${siteName}` : ""}
         </Text>
         <View style={styles.clientBand}>
           <View style={styles.clientCol}>
             <Text style={styles.clientLabel}>PREPARED FOR</Text>
             <Text style={styles.clientStrong}>{quote.clientName}</Text>
-            {!!quote.siteAddress && <Text style={styles.clientValue}>{quote.siteAddress}</Text>}
+            {!!siteAddress && <Text style={styles.clientValue}>{siteAddress}</Text>}
           </View>
           <View style={[styles.clientCol, { alignItems: "flex-end" }]}>
             <Text style={styles.clientLabel}>PREPARED BY</Text>

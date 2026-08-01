@@ -207,6 +207,20 @@ function applySystemOverride(block: ScopeSystemBlock, ov?: ScopeOverrides): Scop
 // ── Main entry point ───────────────────────────────────────────────────────
 
 /**
+ * Admin-set role descriptions are written in the plural ("Request-to-exit
+ * push buttons"). When a quote has exactly one of the item, singularise the
+ * trailing word so "(1) … buttons" never ships to a customer.
+ */
+function singularizeLastWord(desc: string): string {
+  return desc.replace(/([A-Za-z]+)\s*$/, (word) => {
+    if (/(ch|sh|s|x|z)es$/i.test(word)) return word.replace(/es$/i, '');
+    if (/[a-z]ies$/i.test(word)) return word.replace(/ies$/i, 'y');
+    if (/[^su]s$/i.test(word)) return word.replace(/s$/i, '');
+    return word;
+  });
+}
+
+/**
  * Lookup helper: return the user-set role description if present and
  * non-empty, otherwise fall back to the hardcoded bullet text. Lets admins
  * tweak default bullet wording per role via Settings → Scope Roles without
@@ -220,7 +234,7 @@ function roleBullet(
 ): string {
   const desc = roleDescriptions?.[slug]?.trim();
   if (desc && desc.length > 0) {
-    return `<strong>(${count}) ${desc}</strong>`;
+    return `<strong>(${count}) ${count === 1 ? singularizeLastWord(desc) : desc}</strong>`;
   }
   return fallback;
 }
@@ -301,7 +315,7 @@ export function generateScopeOfWorks(
       countSummary: counts.join(' · '),
       subSummary: panels > 0 ? '24/7 monitored' : undefined,
       lead: panels > 0
-        ? 'Bosch Solution 6000 alarm with full intrusion and member-detection coverage, 24/7 monitoring, and external siren/strobe. Fully automated to the lights and music control.'
+        ? 'Bosch Solution 6000 alarm with full intrusion and member-detection coverage, 24/7 monitoring, and external siren/strobe. Fully integrated with lighting and music control.'
         : 'Intrusion and member-detection sensors with cabling and full commissioning.',
       items,
       included: true,
@@ -415,10 +429,11 @@ export function generateScopeOfWorks(
 
     const items: string[] = [];
     if (totalTVs > 0) {
-      const mountBreakdown = [
-        wallTvMounts > 0 ? `${wallTvMounts} wall` : null,
-        ceilingTvMounts > 0 ? `${ceilingTvMounts} ceiling` : null,
-      ].filter(Boolean).join(', ');
+      // Wall/ceiling split is only worth printing when both types are present
+      // — "(12 wall)" on a wall-only job read as stray template output.
+      const mountBreakdown = wallTvMounts > 0 && ceilingTvMounts > 0
+        ? `${wallTvMounts} wall, ${ceilingTvMounts} ceiling`
+        : '';
       const mountDesc = totalTvMounts > 0
         ? `, mounted on <strong>${totalTvMounts} Centrefit-supplied ${plural(totalTvMounts, 'TV mount')}</strong>${mountBreakdown ? ` (${mountBreakdown})` : ''}`
         : '';
@@ -515,39 +530,16 @@ export function generateScopeOfWorks(
     };
   })();
 
-  // ── System: Miscellaneous (catch-all for untagged / unhandled BOM items) ─
-  // Ensures nothing on the BOM goes silent in the SoW. Lists product name +
-  // qty for any line whose role isn't in HANDLED_ROLES. Quantities are
-  // aggregated per product so duplicates collapse into one line.
-  const miscSystem: ScopeSystemBlock | null = (() => {
-    if (r.unhandled.length === 0) return null;
-    const aggregate = new Map<string, { productName: string; sku: string | null; quantity: number }>();
-    for (const u of r.unhandled) {
-      const existing = aggregate.get(u.productId);
-      if (existing) existing.quantity += u.quantity;
-      else aggregate.set(u.productId, { productName: u.productName, sku: u.sku, quantity: u.quantity });
-    }
-    const lines = Array.from(aggregate.values()).sort((a, b) =>
-      a.productName.localeCompare(b.productName),
-    );
-    if (lines.length === 0) return null;
-    return {
-      id: 'misc',
-      name: 'Additional items',
-      iconLabel: '·',
-      countSummary: `${lines.length} ${plural(lines.length, 'item')}`,
-      lead: 'Additional items on this quote — supplied and installed as part of the package.',
-      items: lines.map(
-        (l) => `<strong>(${l.quantity}) ${l.productName}</strong>${l.sku ? ` <span style="color:#94a3b8">(${l.sku})</span>` : ""}`,
-      ),
-      included: true,
-      isCustom: false,
-    };
-  })();
+  // NOTE: the old "Additional items" catch-all block (untagged BOM lines with
+  // product name + SKU) was removed 2026-08-01 on Mark's review — it exposed
+  // internal parts detail to the customer and printed raw <span> markup in
+  // the PDF. Untagged consumables are covered by each system's generic
+  // cabling/termination wording. Saved `systems.misc` overrides on older
+  // quotes are ignored (overrides only apply to blocks that exist).
 
   // Apply per-system overrides + filter nulls + add custom systems
   const baseSystems: ScopeSystemBlock[] = [
-    securitySystem, accessSystem, cctvSystem, audioSystem, avSystem, dataSystem, nightlifeSystem, tailgateSystem, miscSystem,
+    securitySystem, accessSystem, cctvSystem, audioSystem, avSystem, dataSystem, nightlifeSystem, tailgateSystem,
   ].filter((b): b is ScopeSystemBlock => b !== null)
    .map((b) => applySystemOverride(b, overrides));
 
@@ -628,7 +620,7 @@ export function generateScopeOfWorks(
   // same reason.
   const systemNames = systems.map((s) => s.name.toLowerCase()).join(', ');
   const autoLead = systems.length > 0
-    ? `Centrefit Group will supply, install and commission the ${systemNames} systems for this site. All cabling, terminations, configuration and customer-staff training are included. Trade work outside our scope (electrical, antenna, door strikes) is called out as "By others" below.`
+    ? `Centrefit Group will supply, install and commission the ${systemNames} systems for this site. All cabling, terminations, configuration and customer staff training are included. Trade work outside our scope (electrical, antenna, door strikes) is called out as "By others" below.`
     : 'No items currently selected — add products to the BOM to populate this scope.';
   const summary: ScopeSummary = {
     lead: overrides?.summaryLead ?? autoLead,

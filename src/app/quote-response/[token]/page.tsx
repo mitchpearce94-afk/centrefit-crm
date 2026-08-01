@@ -1,6 +1,7 @@
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { headers } from "next/headers";
 import { generateScopeOfWorks, manualScopeDocument } from "@/lib/quote-engine";
+import { formatAuAddress } from "@/lib/format-address";
 import { logDocumentActivity, shouldLogView } from "@/lib/activity/log";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
 import { QuoteResponseView } from "./response-view";
@@ -122,6 +123,13 @@ export default async function QuoteResponsePage({
     });
   }
 
+  // Franchise quotes often duplicate the client name into site_name — only
+  // pass the site when it adds information, so the heading never doubles up.
+  const distinctSite =
+    quote.site_name && quote.site_name.trim().toLowerCase() !== clientName.trim().toLowerCase()
+      ? quote.site_name
+      : null;
+
   return (
     <QuoteResponseView
       token={token}
@@ -130,8 +138,8 @@ export default async function QuoteResponsePage({
       quoteStatus={quote.status}
       isProgress={quote.quote_type === "progress"}
       clientName={clientName}
-      siteName={quote.site_name}
-      siteAddress={quote.site_address}
+      siteName={distinctSite}
+      siteAddress={formatAuAddress(quote.site_address) || null}
       createdAt={quote.created_at}
       pricing={pricing}
       scope={scope}
