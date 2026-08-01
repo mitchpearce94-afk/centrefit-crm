@@ -741,11 +741,10 @@ export function ProposalView(props: Props) {
           <h2 className="cfp-transition-title" data-reveal="zoom">
             <span className="cfp-shimmer">Let&apos;s build it.</span>
           </h2>
+          {/* One template literal per sentence — the compiler drops spaces
+              between JSX expressions and adjacent text ("5115and"). */}
           <p className="cfp-para" data-reveal>
-            The full scope of works and your investment
-            {siteName ? ` for ${siteName}` : ""} — ready to review and accept below.
-            Questions at any point — call {COMPANY.phone} and talk directly to the team
-            who&apos;ll build it. Prefer paper?{" "}
+            {`The full scope of works and your investment${siteName ? ` for ${siteName}` : ""} — ready to review and accept below. Questions at any point — call ${COMPANY.phone} and talk directly to the team who'll build it. Prefer paper?`}{" "}
             <a className="cfp-pdf-link" href={`/api/quotes/by-token/${token}/pdf`} target="_blank" rel="noopener noreferrer">
               Download the PDF copy
             </a>
