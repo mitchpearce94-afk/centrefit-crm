@@ -1208,7 +1208,7 @@ const CSS = `
     letter-spacing: -0.02em;
     line-height: 1;
     font-variant-numeric: tabular-nums;
-    text-shadow: 0 0 34px rgba(96,165,250,.45);
+    text-shadow: 0 0 60px rgba(96,165,250,.16), 0 0 120px rgba(96,165,250,.10);
   }
   .cfp-stat-label { font-size: 10.5px; font-weight: 700; letter-spacing: 1.6px; color: #64748b; }
   @media (max-width: 640px) {
