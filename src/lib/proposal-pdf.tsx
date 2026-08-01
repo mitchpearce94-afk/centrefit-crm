@@ -141,6 +141,20 @@ function GlowWash({ width, height, cx, cy, rx, ry, opacity = 0.22 }: { width: nu
   );
 }
 
+/**
+ * Full-page ambient background wrapper. React-PDF paginates bare full-height
+ * SVGs onto their own pages (they overflow the padded content box) — a
+ * `fixed` absolutely-positioned View is the canonical way to pin layers
+ * behind the page content instead.
+ */
+function AmbientLayer({ children }: { children: React.ReactNode }) {
+  return (
+    <View fixed style={{ position: "absolute", top: 0, left: 0, width: A4W, height: A4H }}>
+      {children}
+    </View>
+  );
+}
+
 // A4 in points.
 const A4W = 595.28;
 const A4H = 841.89;
@@ -456,9 +470,11 @@ export function ProposalDocument({ quote, scope }: { quote: QuoteForPdf; scope: 
 
       {/* ── Cover — constellation + centred hero ── */}
       <Page size="A4" style={s.cover}>
-        <Constellation width={A4W} height={A4H} count={46} seed={7} />
-        <GlowWash width={A4W} height={A4H} cx={455} cy={120} rx={280} ry={210} opacity={0.2} />
-        <GlowWash width={A4W} height={A4H} cx={90} cy={730} rx={240} ry={190} opacity={0.12} />
+        <AmbientLayer>
+          <GlowWash width={A4W} height={A4H} cx={455} cy={120} rx={280} ry={210} opacity={0.2} />
+          <GlowWash width={A4W} height={A4H} cx={90} cy={730} rx={240} ry={190} opacity={0.12} />
+          <Constellation width={A4W} height={A4H} count={46} seed={7} />
+        </AmbientLayer>
 
         <View style={s.coverBar}>
           {LOGO_WHITE ? (
@@ -519,8 +535,10 @@ export function ProposalDocument({ quote, scope }: { quote: QuoteForPdf; scope: 
 
       {/* ── Statement + stats + services ── */}
       <Page size="A4" style={s.page}>
-        <Constellation width={A4W} height={A4H} count={34} seed={21} />
-        <GlowWash width={A4W} height={A4H} cx={480} cy={640} rx={260} ry={220} opacity={0.14} />
+        <AmbientLayer>
+          <GlowWash width={A4W} height={A4H} cx={480} cy={640} rx={260} ry={220} opacity={0.14} />
+          <Constellation width={A4W} height={A4H} count={34} seed={21} />
+        </AmbientLayer>
         <InnerHeader refText={quote.ref} />
 
         <View style={s.statementWrap}>
@@ -545,7 +563,9 @@ export function ProposalDocument({ quote, scope }: { quote: QuoteForPdf; scope: 
       {/* ── Who we are ── */}
       <Page size="A4" style={s.page}>
         <Watermark n="01" />
-        <GlowWash width={A4W} height={A4H} cx={470} cy={140} rx={250} ry={190} opacity={0.12} />
+        <AmbientLayer>
+          <GlowWash width={A4W} height={A4H} cx={470} cy={140} rx={250} ry={190} opacity={0.12} />
+        </AmbientLayer>
         <InnerHeader refText={quote.ref} />
         <Text style={s.kicker}>WHO WE ARE</Text>
         <Text style={s.h1}>Technology for spaces where people gather.</Text>
@@ -629,7 +649,9 @@ export function ProposalDocument({ quote, scope }: { quote: QuoteForPdf; scope: 
       {/* ── NBN plans ── */}
       <Page size="A4" style={s.page}>
         <Watermark n="04" />
-        <GlowWash width={A4W} height={A4H} cx={480} cy={110} rx={250} ry={180} opacity={0.14} />
+        <AmbientLayer>
+          <GlowWash width={A4W} height={A4H} cx={480} cy={110} rx={250} ry={180} opacity={0.14} />
+        </AmbientLayer>
         <InnerHeader refText={quote.ref} />
         <Text style={s.kicker}>CONNECTIVITY</Text>
         <Text style={s.h1}>Business internet, managed by us.</Text>
@@ -672,7 +694,9 @@ export function ProposalDocument({ quote, scope }: { quote: QuoteForPdf; scope: 
       {/* ── Testimonials + Let's build it ── */}
       <Page size="A4" style={s.page}>
         <Watermark n="05" />
-        <GlowWash width={A4W} height={A4H} cx={300} cy={700} rx={280} ry={200} opacity={0.15} />
+        <AmbientLayer>
+          <GlowWash width={A4W} height={A4H} cx={300} cy={700} rx={280} ry={200} opacity={0.15} />
+        </AmbientLayer>
         <InnerHeader refText={quote.ref} />
         <Text style={s.kicker}>WHAT OUR CLIENTS SAY</Text>
         <Text style={s.h1}>Don&apos;t take our word for it.</Text>
