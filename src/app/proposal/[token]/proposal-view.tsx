@@ -8,10 +8,14 @@
  * existing Accept/Decline flow (QuoteResponseView) — the sticky respond bar
  * stays offstage until the customer reaches the quotation section.
  *
- * The "journey" layer is deliberately library-free: one rAF scroll driver
- * feeds CSS custom properties (hero parallax, page progress, watermark
- * drift), IntersectionObservers handle reveals + the active dot-nav section,
- * and everything collapses to static content under prefers-reduced-motion.
+ * v3 "alive" pass (huly.io-inspired): the whole story runs on a dark canvas
+ * with an ambient constellation network drawn behind every section (drifting
+ * nodes + connecting lines — one interconnected system, literally), sweeping
+ * light beams, periodic comet streaks, a cursor spotlight and gradient
+ * shimmer through the display type. All hand-rolled: one <canvas>, one rAF
+ * scroll driver, IntersectionObservers and CSS — no animation libraries.
+ * Every effect collapses to static content under prefers-reduced-motion, and
+ * the ambient layers fade out once the customer reaches the quotation.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -60,9 +64,113 @@ const NAV_SECTIONS = [
   { id: "quote", label: "Your quote" },
 ];
 
+// ── Ambient constellation canvas ───────────────────────────────────────────
+// Fixed full-viewport canvas behind the story: slow-drifting nodes joined by
+// distance-faded lines. Density scales with viewport area (capped), DPR is
+// capped at 2, the loop pauses when the tab is hidden, and reduced-motion
+// users get no canvas at all.
+
+function ConstellationCanvas() {
+  const ref = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    type Node = { x: number; y: number; vx: number; vy: number; r: number };
+    let nodes: Node[] = [];
+    let w = 0;
+    let h = 0;
+    let raf = 0;
+    let running = true;
+
+    const seed = () => {
+      const count = Math.max(26, Math.min(90, Math.round((w * h) / 16000)));
+      nodes = Array.from({ length: count }, () => ({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 0.22,
+        vy: (Math.random() - 0.5) * 0.22,
+        r: 0.8 + Math.random() * 1.2,
+      }));
+    };
+
+    const resize = () => {
+      w = window.innerWidth;
+      h = window.innerHeight;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      seed();
+    };
+
+    const LINK = 130;
+    const step = () => {
+      if (!running) return;
+      ctx.clearRect(0, 0, w, h);
+      for (const n of nodes) {
+        n.x += n.vx;
+        n.y += n.vy;
+        if (n.x < -20) n.x = w + 20;
+        if (n.x > w + 20) n.x = -20;
+        if (n.y < -20) n.y = h + 20;
+        if (n.y > h + 20) n.y = -20;
+      }
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[i].x - nodes[j].x;
+          const dy = nodes[i].y - nodes[j].y;
+          const d = Math.hypot(dx, dy);
+          if (d < LINK) {
+            const a = (1 - d / LINK) * 0.34;
+            ctx.strokeStyle = `rgba(96,165,250,${a.toFixed(3)})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(nodes[i].x, nodes[i].y);
+            ctx.lineTo(nodes[j].x, nodes[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+      for (const n of nodes) {
+        ctx.fillStyle = "rgba(148,163,184,0.75)";
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      raf = requestAnimationFrame(step);
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        running = false;
+        cancelAnimationFrame(raf);
+      } else if (!running) {
+        running = true;
+        raf = requestAnimationFrame(step);
+      }
+    };
+
+    resize();
+    raf = requestAnimationFrame(step);
+    window.addEventListener("resize", resize);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      running = false;
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", resize);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
+  return <canvas ref={ref} className="cfp-canvas" aria-hidden="true" />;
+}
+
 // ── Stat counter ───────────────────────────────────────────────────────────
-// Parses "10+", "100+", "3", "24/7" → animates the leading integer once the
-// tile scrolls into view, keeps the suffix ("+", "/7") static.
 
 function StatCounter({ value, label }: { value: string; label: string }) {
   const m = value.match(/^(\d+)(.*)$/);
@@ -122,9 +230,9 @@ export function ProposalView(props: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [activeSection, setActiveSection] = useState("top");
 
-  // One effect wires the whole journey: reveal observers, the rAF scroll
-  // driver (page progress bar, hero parallax, watermark drift) and the
-  // dot-nav active-section tracker.
+  // One effect wires the journey: reveal observers, the rAF scroll driver
+  // (page progress, hero parallax, watermark drift), the cursor spotlight
+  // and the dot-nav active-section tracker.
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
@@ -189,7 +297,27 @@ export function ProposalView(props: Props) {
       });
     }
 
-    // 3. Dot-nav active section.
+    // 3. Cursor spotlight (fine pointers only).
+    if (!reduced && window.matchMedia("(pointer: fine)").matches) {
+      const spot = root.querySelector<HTMLElement>(".cfp-spotlight");
+      if (spot) {
+        let raf = 0;
+        const onMove = (e: PointerEvent) => {
+          cancelAnimationFrame(raf);
+          raf = requestAnimationFrame(() => {
+            spot.style.setProperty("--mx", `${e.clientX}px`);
+            spot.style.setProperty("--my", `${e.clientY}px`);
+          });
+        };
+        window.addEventListener("pointermove", onMove, { passive: true });
+        cleanups.push(() => {
+          window.removeEventListener("pointermove", onMove);
+          cancelAnimationFrame(raf);
+        });
+      }
+    }
+
+    // 4. Dot-nav active section.
     const sections = NAV_SECTIONS
       .map((s) => document.getElementById(s.id))
       .filter((el): el is HTMLElement => el !== null);
@@ -208,7 +336,8 @@ export function ProposalView(props: Props) {
   }, []);
 
   // The quote's sticky Accept/Decline bar slides in only once the customer
-  // reaches the quotation section — it shouldn't hover over the story.
+  // reaches the quotation section; the ambient layers fade out at the same
+  // moment so the document reads like clean paper.
   const quoteRefEl = useRef<HTMLDivElement>(null);
   const [quoteReached, setQuoteReached] = useState(false);
   useEffect(() => {
@@ -228,8 +357,12 @@ export function ProposalView(props: Props) {
   }, []);
 
   return (
-    <div className="cfp-root" ref={rootRef}>
+    <div className={`cfp-root${quoteReached ? " cfp-arrived" : ""}`} ref={rootRef}>
       <style>{CSS}</style>
+
+      {/* Ambient layers — behind everything, fade out at the quote */}
+      <ConstellationCanvas />
+      <div className="cfp-spotlight" aria-hidden="true" />
 
       {/* Scroll progress bar */}
       <div className="cfp-progress" aria-hidden="true" />
@@ -251,6 +384,13 @@ export function ProposalView(props: Props) {
 
       {/* ── Hero ── */}
       <header className="cfp-hero" id="top">
+        <div className="cfp-beams" aria-hidden="true">
+          <div className="cfp-beam" />
+          <div className="cfp-beam cfp-beam2" />
+          <div className="cfp-comet" />
+          <div className="cfp-comet cfp-comet2" />
+        </div>
+
         <div className="cfp-hero-bar">
           <div className="cfp-container cfp-hero-bar-inner">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -268,7 +408,7 @@ export function ProposalView(props: Props) {
               PROJECT PROPOSAL
             </p>
             <h1 className="cfp-hero-title cfp-hero-item" style={{ animationDelay: "0.18s" }}>
-              {clientName}
+              <span className="cfp-shimmer">{clientName}</span>
               {siteName && <span className="cfp-hero-site">{siteName}</span>}
             </h1>
             {siteAddress && (
@@ -315,7 +455,7 @@ export function ProposalView(props: Props) {
       </section>
 
       {/* ── Who we are ── */}
-      <section className="cfp-section cfp-light" id="who">
+      <section className="cfp-section" id="who">
         <span className="cfp-watermark" data-drift="0.09">01</span>
         <div className="cfp-container cfp-z">
           <p className="cfp-kicker" data-reveal>WHO WE ARE</p>
@@ -329,7 +469,7 @@ export function ProposalView(props: Props) {
           <p className="cfp-sublabel" data-reveal>WHO WE&apos;VE BUILT FOR</p>
           <div className="cfp-brands">
             {COMPANY.brands.map((b, i) => (
-              <div key={b.name} className="cfp-brand" data-reveal="zoom" style={{ transitionDelay: `${0.07 * i}s` }}>
+              <div key={b.name} className="cfp-brand cfp-glass" data-reveal="zoom" style={{ transitionDelay: `${0.07 * i}s` }}>
                 <span className="cfp-brand-name">{b.name}</span>
                 <span className="cfp-brand-count">{b.count}</span>
               </div>
@@ -347,7 +487,7 @@ export function ProposalView(props: Props) {
       </section>
 
       {/* ── Differentiators ── */}
-      <section className="cfp-section cfp-white" id="why">
+      <section className="cfp-section" id="why">
         <span className="cfp-watermark" data-drift="0.11">02</span>
         <div className="cfp-container cfp-z">
           <p className="cfp-kicker" data-reveal>WHY CENTREFIT</p>
@@ -372,7 +512,7 @@ export function ProposalView(props: Props) {
       </section>
 
       {/* ── Support ── */}
-      <section className="cfp-section cfp-light" id="support">
+      <section className="cfp-section" id="support">
         <span className="cfp-watermark" data-drift="0.09">03</span>
         <div className="cfp-container cfp-z">
           <p className="cfp-kicker" data-reveal>AFTER THE INSTALL</p>
@@ -383,7 +523,7 @@ export function ProposalView(props: Props) {
           </p>
           <div className="cfp-cards">
             {SUPPORT_CARDS.map((c, i) => (
-              <div key={c.title} className="cfp-card" data-reveal="zoom" style={{ transitionDelay: `${0.09 * i}s` }}>
+              <div key={c.title} className="cfp-card cfp-glass" data-reveal="zoom" style={{ transitionDelay: `${0.09 * i}s` }}>
                 <h3 className="cfp-card-title">{c.title}</h3>
                 <p className="cfp-card-body">{c.body}</p>
               </div>
@@ -394,7 +534,7 @@ export function ProposalView(props: Props) {
           <h3 className="cfp-h3" data-reveal>One relationship, the whole stack.</h3>
           <div className="cfp-pills">
             {OFFERINGS.map((o, i) => (
-              <div key={o.name} className="cfp-pill" data-reveal="zoom" style={{ transitionDelay: `${0.05 * i}s` }}>
+              <div key={o.name} className="cfp-pill cfp-glass" data-reveal="zoom" style={{ transitionDelay: `${0.05 * i}s` }}>
                 <span className="cfp-pill-name">{o.name}</span>
                 <span className="cfp-pill-desc">{o.desc}</span>
               </div>
@@ -404,19 +544,19 @@ export function ProposalView(props: Props) {
       </section>
 
       {/* ── NBN ── */}
-      <section className="cfp-section cfp-dark cfp-glow" id="connectivity">
-        <span className="cfp-watermark cfp-watermark-dark" data-drift="0.11">04</span>
+      <section className="cfp-section cfp-glow" id="connectivity">
+        <span className="cfp-watermark" data-drift="0.11">04</span>
         <div className="cfp-container cfp-z">
-          <p className="cfp-kicker cfp-kicker-dark" data-reveal>CONNECTIVITY</p>
-          <h2 className="cfp-h2 cfp-h2-dark" data-reveal="wipe">Business internet, managed by us.</h2>
-          <p className="cfp-para cfp-para-dark" data-reveal>
+          <p className="cfp-kicker" data-reveal>CONNECTIVITY</p>
+          <h2 className="cfp-h2" data-reveal="wipe">Business internet, managed by us.</h2>
+          <p className="cfp-para" data-reveal>
             We&apos;re an internet provider as well as an integrator — one team for the connection,
             the network and everything running on it. Every plan is business-grade NBN with no
             lock-in and no setup fee, supported in Australia by the people who built your site.
           </p>
           <div className="cfp-nbn">
             {NBN_PLANS.map((p, i) => (
-              <div key={p.name} className="cfp-nbn-row" data-reveal={i % 2 === 0 ? "left" : "right"} style={{ transitionDelay: `${0.05 * i}s` }}>
+              <div key={p.name} className="cfp-nbn-row cfp-glass" data-reveal={i % 2 === 0 ? "left" : "right"} style={{ transitionDelay: `${0.05 * i}s` }}>
                 <div className="cfp-nbn-plan">
                   <span className="cfp-nbn-name">{p.name}</span>
                   <span className="cfp-nbn-fit">{p.fit}</span>
@@ -444,7 +584,7 @@ export function ProposalView(props: Props) {
       </section>
 
       {/* ── Testimonials ── */}
-      <section className="cfp-section cfp-white" id="clients">
+      <section className="cfp-section" id="clients">
         <span className="cfp-watermark" data-drift="0.09">05</span>
         <div className="cfp-container cfp-z">
           <p className="cfp-kicker" data-reveal>WHAT OUR CLIENTS SAY</p>
@@ -453,7 +593,7 @@ export function ProposalView(props: Props) {
         <div className="cfp-container-wide cfp-z">
           <div className="cfp-testimonials">
             {TESTIMONIALS.map((t, i) => (
-              <figure key={t.who} className="cfp-tcard" data-reveal="zoom" style={{ transitionDelay: `${0.08 * i}s` }}>
+              <figure key={t.who} className="cfp-tcard cfp-glass" data-reveal="zoom" style={{ transitionDelay: `${0.08 * i}s` }}>
                 <span className="cfp-tmark">&ldquo;</span>
                 <blockquote className="cfp-tquote">{t.quote}</blockquote>
                 <figcaption className="cfp-twho">— {t.who}</figcaption>
@@ -465,13 +605,17 @@ export function ProposalView(props: Props) {
       </section>
 
       {/* ── Transition into the quote ── */}
-      <section className="cfp-transition cfp-glow">
+      <section className="cfp-transition">
+        <div className="cfp-beams" aria-hidden="true">
+          <div className="cfp-beam" />
+          <div className="cfp-comet" />
+        </div>
         <div className="cfp-container cfp-z">
-          <p className="cfp-kicker cfp-kicker-dark" data-reveal>YOUR QUOTATION</p>
+          <p className="cfp-kicker" data-reveal>YOUR QUOTATION</p>
           <h2 className="cfp-transition-title" data-reveal="zoom">
-            Let&apos;s build it.
+            <span className="cfp-shimmer">Let&apos;s build it.</span>
           </h2>
-          <p className="cfp-para cfp-para-dark" data-reveal>
+          <p className="cfp-para" data-reveal>
             The full scope of works and your investment
             {siteName ? ` for ${siteName}` : ""} — ready to review and accept below.
             Questions at any point — call {COMPANY.phone} and talk directly to the team
@@ -500,19 +644,101 @@ export function ProposalView(props: Props) {
 // ── Styles ─────────────────────────────────────────────────────────────────
 
 const CSS = `
-  html:has(.cfp-root) { scroll-behavior: smooth; }
+  html:has(.cfp-root) { scroll-behavior: smooth; background: #0b1220; }
   @media (prefers-reduced-motion: reduce) { html:has(.cfp-root) { scroll-behavior: auto; } }
 
   .cfp-root {
     font-family: var(--font-geist-sans), 'Segoe UI', system-ui, -apple-system, sans-serif;
-    color: #0f172a;
-    background: #0f172a;
+    color: #e2e8f0;
+    background:
+      radial-gradient(90% 60% at 50% 0%, #12203a 0%, transparent 60%),
+      linear-gradient(180deg, #0b1220 0%, #0f172a 45%, #0b1220 100%);
     -webkit-font-smoothing: antialiased;
     --pageP: 0;
   }
   .cfp-container { max-width: 1060px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px); }
   .cfp-container-wide { max-width: 1180px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px); }
-  .cfp-z { position: relative; z-index: 1; }
+  .cfp-z { position: relative; z-index: 2; }
+
+  /* ── Ambient layers ── */
+  .cfp-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0;
+    pointer-events: none;
+    opacity: .8;
+    transition: opacity 1s ease;
+  }
+  .cfp-spotlight {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: radial-gradient(560px at var(--mx, -999px) var(--my, -999px), rgba(59,130,246,.08), transparent 70%);
+    transition: opacity 1s ease;
+  }
+  .cfp-arrived .cfp-canvas, .cfp-arrived .cfp-spotlight { opacity: 0; }
+  @media (pointer: coarse) { .cfp-spotlight { display: none; } }
+
+  .cfp-beams { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+  .cfp-beam {
+    position: absolute;
+    top: 22%;
+    left: -20vmax;
+    width: 150vmax;
+    height: 170px;
+    background: linear-gradient(90deg, transparent, rgba(59,130,246,.10), rgba(147,197,253,.15), rgba(59,130,246,.10), transparent);
+    filter: blur(34px);
+    transform: rotate(-16deg);
+    animation: cfp-beam-float 15s ease-in-out infinite alternate;
+  }
+  .cfp-beam2 { top: 62%; height: 120px; opacity: .75; animation-duration: 20s; animation-delay: -7s; }
+  @keyframes cfp-beam-float {
+    from { transform: rotate(-16deg) translateX(-5%) translateY(-12px); }
+    to   { transform: rotate(-14deg) translateX(5%) translateY(12px); }
+  }
+  .cfp-comet {
+    position: absolute;
+    top: 16%;
+    left: -320px;
+    width: 280px;
+    height: 2px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, transparent, rgba(147,197,253,.95));
+    filter: drop-shadow(0 0 8px rgba(147,197,253,.9));
+    transform: rotate(14deg);
+    animation: cfp-comet 8.5s linear infinite;
+    animation-delay: 1.2s;
+    opacity: 0;
+  }
+  .cfp-comet2 { top: 58%; animation-duration: 11s; animation-delay: 5.4s; }
+  @keyframes cfp-comet {
+    0%   { transform: rotate(14deg) translateX(0); opacity: 0; }
+    3%   { opacity: .9; }
+    13%  { transform: rotate(14deg) translateX(120vw); opacity: 0; }
+    100% { transform: rotate(14deg) translateX(120vw); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cfp-beam { animation: none; }
+    .cfp-comet { display: none; }
+  }
+
+  /* ── Shimmer type ── */
+  .cfp-shimmer {
+    background: linear-gradient(110deg, #ffffff 32%, #93c5fd 46%, #e0edff 50%, #93c5fd 54%, #ffffff 68%);
+    background-size: 230% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: cfp-shimmer 7s ease-in-out infinite;
+  }
+  @keyframes cfp-shimmer {
+    0%, 100% { background-position: 115% 0; }
+    45%, 55% { background-position: -15% 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { .cfp-shimmer { animation: none; } }
 
   /* ── Scroll progress bar ── */
   .cfp-progress {
@@ -523,6 +749,7 @@ const CSS = `
     transform-origin: 0 50%;
     transform: scaleX(var(--pageP));
     background: linear-gradient(90deg, #3b82f6, #93c5fd);
+    box-shadow: 0 0 12px rgba(59,130,246,.55);
     z-index: 60;
     pointer-events: none;
   }
@@ -543,20 +770,25 @@ const CSS = `
     position: relative;
     width: 10px; height: 10px;
     border-radius: 50%;
-    border: 2px solid rgba(148,163,184,.55);
+    border: 2px solid rgba(148,163,184,.5);
     background: transparent;
     cursor: pointer;
     padding: 0;
-    transition: transform .3s ease, background .3s ease, border-color .3s ease;
+    transition: transform .3s ease, background .3s ease, border-color .3s ease, box-shadow .3s ease;
   }
   .cfp-dot:hover { border-color: #3b82f6; }
-  .cfp-dot-active { background: #3b82f6; border-color: #3b82f6; transform: scale(1.35); }
+  .cfp-dot-active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    transform: scale(1.35);
+    box-shadow: 0 0 12px rgba(59,130,246,.8);
+  }
   .cfp-dot-label {
     position: absolute;
     right: 22px;
     top: 50%;
     transform: translateY(-50%);
-    background: #0f172a;
+    background: #1e293b;
     color: #e2e8f0;
     font-size: 11px;
     font-weight: 600;
@@ -567,7 +799,7 @@ const CSS = `
     opacity: 0;
     pointer-events: none;
     transition: opacity .25s ease;
-    box-shadow: 0 4px 14px rgba(15,23,42,.25);
+    box-shadow: 0 4px 14px rgba(0,0,0,.4);
   }
   .cfp-dot:hover .cfp-dot-label { opacity: 1; }
 
@@ -604,12 +836,19 @@ const CSS = `
     font-weight: 800;
     line-height: 1;
     color: transparent;
-    -webkit-text-stroke: 1.5px rgba(15,23,42,.08);
+    -webkit-text-stroke: 1.5px rgba(148,163,184,.13);
     pointer-events: none;
     user-select: none;
     z-index: 0;
   }
-  .cfp-watermark-dark { -webkit-text-stroke-color: rgba(148,163,184,.13); }
+
+  /* ── Glass panels ── */
+  .cfp-glass {
+    background: linear-gradient(180deg, rgba(30,41,59,.55), rgba(15,23,42,.6));
+    border: 1px solid rgba(71,85,105,.45);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
 
   /* ── Hero ── */
   .cfp-hero {
@@ -617,7 +856,6 @@ const CSS = `
     min-height: 100svh;
     display: flex;
     flex-direction: column;
-    background: #0f172a;
     color: #fff;
     overflow: hidden;
     --sp: 0;
@@ -627,22 +865,9 @@ const CSS = `
     position: absolute;
     inset: -25%;
     background:
-      radial-gradient(42% 36% at 78% 12%, rgba(59,130,246,.28), transparent 62%),
-      radial-gradient(36% 42% at 12% 88%, rgba(99,102,241,.16), transparent 60%),
-      radial-gradient(30% 30% at 50% 50%, rgba(148,163,184,.07), transparent 70%);
+      radial-gradient(42% 36% at 76% 14%, rgba(59,130,246,.26), transparent 62%),
+      radial-gradient(36% 42% at 14% 86%, rgba(99,102,241,.16), transparent 60%);
     animation: cfp-drift 16s ease-in-out infinite alternate;
-    pointer-events: none;
-  }
-  .cfp-hero::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(148,163,184,.06) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(148,163,184,.06) 1px, transparent 1px);
-    background-size: 54px 54px;
-    -webkit-mask-image: radial-gradient(75% 75% at 50% 42%, #000 15%, transparent 100%);
-    mask-image: radial-gradient(75% 75% at 50% 42%, #000 15%, transparent 100%);
     pointer-events: none;
   }
   @keyframes cfp-drift {
@@ -651,7 +876,7 @@ const CSS = `
   }
   @media (prefers-reduced-motion: reduce) { .cfp-hero::before { animation: none; } }
 
-  .cfp-hero-bar { position: relative; z-index: 1; padding-top: clamp(20px, 3.5vw, 36px); }
+  .cfp-hero-bar { position: relative; z-index: 2; padding-top: clamp(20px, 3.5vw, 36px); }
   .cfp-hero-bar-inner { display: flex; justify-content: space-between; align-items: center; }
   .cfp-hero-logo { height: clamp(30px, 4.5vw, 38px); width: auto; }
   .cfp-hero-meta { text-align: right; display: flex; flex-direction: column; gap: 2px; }
@@ -660,7 +885,7 @@ const CSS = `
 
   .cfp-hero-body {
     position: relative;
-    z-index: 1;
+    z-index: 2;
     flex: 1;
     display: flex;
     align-items: center;
@@ -705,7 +930,7 @@ const CSS = `
   }
   .cfp-hero-site { display: block; color: #64748b; }
   .cfp-hero-address { font-size: clamp(14px, 2vw, 18px); color: #94a3b8; margin: 18px 0 0; }
-  .cfp-hero-rule { width: 56px; height: 3px; background: #fff; margin: 28px auto; }
+  .cfp-hero-rule { width: 56px; height: 3px; background: linear-gradient(90deg, #3b82f6, #93c5fd); margin: 28px auto; border-radius: 2px; box-shadow: 0 0 14px rgba(59,130,246,.6); }
   .cfp-hero-lead {
     font-size: clamp(15px, 2.2vw, 19px);
     color: #cbd5e1;
@@ -720,13 +945,15 @@ const CSS = `
     padding: 7px 16px;
     font-size: 12.5px;
     color: #e2e8f0;
-    background: rgba(30,41,59,.4);
-    backdrop-filter: blur(2px);
+    background: rgba(30,41,59,.5);
+    backdrop-filter: blur(4px);
+    transition: border-color .3s ease, box-shadow .3s ease;
   }
+  .cfp-chip:hover { border-color: #3b82f6; box-shadow: 0 0 18px -4px rgba(59,130,246,.5); }
 
   .cfp-scroll-cue {
     position: relative;
-    z-index: 1;
+    z-index: 2;
     align-self: center;
     margin-bottom: 28px;
     color: #64748b;
@@ -748,8 +975,9 @@ const CSS = `
 
   /* ── Stats ── */
   .cfp-stats {
-    background: #0f172a;
-    border-top: 1px solid #1e293b;
+    position: relative;
+    z-index: 2;
+    border-top: 1px solid rgba(30,41,59,.9);
     padding: clamp(48px, 8vw, 88px) 0;
   }
   .cfp-stats-grid {
@@ -765,6 +993,7 @@ const CSS = `
     letter-spacing: -0.02em;
     line-height: 1;
     font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 34px rgba(96,165,250,.45);
   }
   .cfp-stat-label { font-size: 10.5px; font-weight: 700; letter-spacing: 1.6px; color: #64748b; }
   @media (max-width: 640px) {
@@ -772,17 +1001,19 @@ const CSS = `
   }
 
   /* ── Sections ── */
-  .cfp-section { position: relative; padding: clamp(72px, 11vw, 132px) 0; overflow: hidden; }
-  .cfp-light { background: #f8fafc; }
-  .cfp-white { background: #ffffff; }
-  .cfp-dark  { background: #0f172a; }
-  .cfp-glow  { position: relative; }
-  .cfp-glow::before {
+  .cfp-section {
+    position: relative;
+    padding: clamp(72px, 11vw, 132px) 0;
+    overflow: hidden;
+    border-top: 1px solid rgba(30,41,59,.65);
+  }
+  .cfp-glow::after {
     content: "";
     position: absolute;
     inset: -10%;
-    background: radial-gradient(45% 40% at 82% 15%, rgba(59,130,246,.14), transparent 62%);
+    background: radial-gradient(45% 40% at 82% 15%, rgba(59,130,246,.13), transparent 62%);
     pointer-events: none;
+    z-index: 0;
   }
 
   .cfp-h2 {
@@ -790,45 +1021,44 @@ const CSS = `
     font-weight: 800;
     letter-spacing: -0.02em;
     line-height: 1.12;
-    color: #0f172a;
+    color: #ffffff;
     margin: 0 0 24px;
   }
-  .cfp-h3 { font-size: clamp(19px, 2.6vw, 25px); font-weight: 700; letter-spacing: -0.01em; color: #0f172a; margin: 0 0 18px; }
-  .cfp-h2-dark { color: #fff; }
-  .cfp-kicker-dark { color: #64748b; }
+  .cfp-h3 { font-size: clamp(19px, 2.6vw, 25px); font-weight: 700; letter-spacing: -0.01em; color: #ffffff; margin: 0 0 18px; }
   .cfp-para {
     font-size: clamp(15px, 2vw, 17.5px);
-    color: #334155;
+    color: #b7c3d6;
     line-height: 1.75;
     max-width: 760px;
     margin: 0 0 16px;
   }
-  .cfp-para-dark { color: #cbd5e1; }
-  .cfp-sublabel { font-size: 11px; font-weight: 700; letter-spacing: 2.2px; color: #94a3b8; margin: 48px 0 18px; }
+  .cfp-sublabel { font-size: 11px; font-weight: 700; letter-spacing: 2.2px; color: #64748b; margin: 48px 0 18px; }
 
-  .cfp-brands { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 40px; }
+  .cfp-brands { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 40px; }
   .cfp-brand {
     display: flex; flex-direction: column; gap: 3px;
-    background: #fff;
-    border: 1px solid #e2e8f0;
     border-radius: 12px;
     padding: 18px 20px;
+    transition: transform .3s ease, border-color .3s ease;
   }
-  .cfp-brand-name { font-size: 16px; font-weight: 700; color: #0f172a; }
+  .cfp-brand:hover { transform: translateY(-4px); border-color: rgba(96,165,250,.55); }
+  .cfp-brand-name { font-size: 16px; font-weight: 700; color: #fff; }
   .cfp-brand-count { font-size: 13px; color: #64748b; }
   @media (max-width: 640px) { .cfp-brands { grid-template-columns: repeat(2, 1fr); gap: 10px; } }
 
   .cfp-award {
-    background: #0f172a;
+    position: relative;
     border-radius: 16px;
     padding: 26px 30px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 24px;
-    box-shadow: 0 18px 44px -18px rgba(15,23,42,.45);
+    background: linear-gradient(180deg, rgba(30,41,59,.75), rgba(15,23,42,.85));
+    border: 1px solid rgba(96,165,250,.35);
+    box-shadow: 0 0 60px -18px rgba(59,130,246,.45), inset 0 1px 0 rgba(148,163,184,.15);
   }
-  .cfp-award-kicker { font-size: 10px; font-weight: 700; letter-spacing: 2px; color: #94a3b8; margin: 0 0 5px; }
+  .cfp-award-kicker { font-size: 10px; font-weight: 700; letter-spacing: 2px; color: #93c5fd; margin: 0 0 5px; }
   .cfp-award-title { font-size: clamp(15px, 2.2vw, 19px); font-weight: 700; color: #fff; margin: 0; }
   .cfp-award-licences { font-size: 12px; color: #94a3b8; text-align: right; max-width: 46%; line-height: 1.6; margin: 0; }
   @media (max-width: 640px) {
@@ -842,39 +1072,50 @@ const CSS = `
     display: flex;
     gap: clamp(16px, 3vw, 38px);
     padding: 30px 0;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid rgba(30,41,59,.9);
   }
   .cfp-diff:last-child { border-bottom: none; }
   .cfp-diff-num {
     font-size: clamp(26px, 3.6vw, 40px);
     font-weight: 800;
-    color: #dbe4f0;
     line-height: 1.05;
     min-width: 60px;
     font-variant-numeric: tabular-nums;
+    background: linear-gradient(180deg, #93c5fd, #3b82f6);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
-  .cfp-diff-title { font-size: clamp(17px, 2.5vw, 22px); font-weight: 700; color: #0f172a; margin: 0 0 7px; }
-  .cfp-diff-body { font-size: clamp(14px, 1.9vw, 16px); color: #475569; line-height: 1.7; margin: 0; max-width: 740px; }
+  .cfp-diff-title { font-size: clamp(17px, 2.5vw, 22px); font-weight: 700; color: #fff; margin: 0 0 7px; }
+  .cfp-diff-body { font-size: clamp(14px, 1.9vw, 16px); color: #a3b2c7; line-height: 1.7; margin: 0; max-width: 740px; }
 
   /* ── Support cards + pills ── */
   .cfp-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 34px; }
   .cfp-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-top: 3px solid #0f172a;
+    position: relative;
     border-radius: 14px;
     padding: 24px;
-    transition: transform .35s ease, box-shadow .35s ease;
+    overflow: hidden;
+    transition: transform .35s ease, border-color .35s ease, box-shadow .35s ease;
   }
-  .cfp-card:hover { transform: translateY(-6px); box-shadow: 0 22px 44px -20px rgba(15,23,42,.28); }
-  .cfp-card-title { font-size: 16.5px; font-weight: 700; color: #0f172a; margin: 0 0 8px; }
-  .cfp-card-body { font-size: 14px; color: #475569; line-height: 1.65; margin: 0; }
+  .cfp-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #3b82f6, rgba(147,197,253,.3), transparent);
+  }
+  .cfp-card:hover {
+    transform: translateY(-6px);
+    border-color: rgba(96,165,250,.55);
+    box-shadow: 0 18px 50px -18px rgba(59,130,246,.4);
+  }
+  .cfp-card-title { font-size: 16.5px; font-weight: 700; color: #fff; margin: 0 0 8px; }
+  .cfp-card-body { font-size: 14px; color: #a3b2c7; line-height: 1.65; margin: 0; }
   @media (max-width: 760px) { .cfp-cards { grid-template-columns: 1fr; } }
 
   .cfp-pills { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
   .cfp-pill {
-    border: 1px solid #e2e8f0;
-    background: #fff;
     border-radius: 12px;
     padding: 18px 20px;
     display: flex;
@@ -882,9 +1123,9 @@ const CSS = `
     gap: 3px;
     transition: transform .3s ease, border-color .3s ease;
   }
-  .cfp-pill:hover { transform: translateY(-3px); border-color: #94a3b8; }
-  .cfp-pill-name { font-size: 14.5px; font-weight: 700; color: #0f172a; }
-  .cfp-pill-desc { font-size: 13px; color: #64748b; line-height: 1.55; }
+  .cfp-pill:hover { transform: translateY(-3px); border-color: rgba(96,165,250,.5); }
+  .cfp-pill-name { font-size: 14.5px; font-weight: 700; color: #fff; }
+  .cfp-pill-desc { font-size: 13px; color: #8fa0b8; line-height: 1.55; }
   @media (max-width: 640px) { .cfp-pills { grid-template-columns: 1fr; } }
 
   /* ── NBN ── */
@@ -895,16 +1136,17 @@ const CSS = `
     gap: 16px;
     align-items: center;
     padding: 20px 24px;
-    border: 1px solid #1e293b;
     border-radius: 14px;
-    background: rgba(30,41,59,.35);
-    backdrop-filter: blur(2px);
-    transition: transform .3s ease, border-color .3s ease, background .3s ease;
+    transition: transform .3s ease, border-color .3s ease, box-shadow .3s ease;
   }
-  .cfp-nbn-row:hover { transform: translateX(6px); border-color: #3b82f6; background: rgba(30,41,59,.6); }
+  .cfp-nbn-row:hover {
+    transform: translateX(6px);
+    border-color: rgba(96,165,250,.6);
+    box-shadow: 0 0 40px -12px rgba(59,130,246,.5);
+  }
   .cfp-nbn-plan, .cfp-nbn-speed, .cfp-nbn-price { display: flex; flex-direction: column; gap: 2px; }
   .cfp-nbn-name { font-size: 16.5px; font-weight: 700; color: #fff; }
-  .cfp-nbn-fit { font-size: 12px; color: #94a3b8; line-height: 1.45; }
+  .cfp-nbn-fit { font-size: 12px; color: #8fa0b8; line-height: 1.45; }
   .cfp-nbn-mbps { font-size: 15px; font-weight: 700; color: #e2e8f0; font-variant-numeric: tabular-nums; }
   .cfp-nbn-evening { font-size: 11.5px; color: #64748b; }
   .cfp-nbn-price { text-align: right; align-items: flex-end; }
@@ -915,22 +1157,24 @@ const CSS = `
     .cfp-nbn-speed { grid-column: 1 / -1; flex-direction: row; gap: 10px; align-items: baseline; }
   }
   .cfp-footnote { font-size: 12px; color: #64748b; line-height: 1.6; margin: 18px 0 0; max-width: 820px; }
-  .cfp-standards { font-size: 11px; letter-spacing: .4px; color: #475569; margin: 38px 0 0; line-height: 1.7; }
+  .cfp-standards { font-size: 11px; letter-spacing: .4px; color: #526078; margin: 38px 0 0; line-height: 1.7; }
 
   /* ── Testimonials ── */
   .cfp-testimonials { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; margin-top: 10px; }
   .cfp-tcard {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
     border-radius: 16px;
     padding: 28px;
     margin: 0;
-    transition: transform .35s ease, box-shadow .35s ease;
+    transition: transform .35s ease, border-color .35s ease, box-shadow .35s ease;
   }
-  .cfp-tcard:hover { transform: translateY(-5px) rotate(-.4deg); box-shadow: 0 22px 48px -22px rgba(15,23,42,.25); }
-  .cfp-tmark { font-size: 40px; font-weight: 800; color: #cbd5e1; line-height: 1; display: block; margin-bottom: 8px; }
-  .cfp-tquote { font-size: 15px; color: #334155; line-height: 1.7; font-style: italic; margin: 0; }
-  .cfp-twho { font-size: 13px; font-weight: 700; color: #0f172a; margin-top: 16px; }
+  .cfp-tcard:hover {
+    transform: translateY(-5px) rotate(-.4deg);
+    border-color: rgba(96,165,250,.45);
+    box-shadow: 0 20px 54px -22px rgba(59,130,246,.35);
+  }
+  .cfp-tmark { font-size: 40px; font-weight: 800; color: #3b82f6; line-height: 1; display: block; margin-bottom: 8px; opacity: .8; }
+  .cfp-tquote { font-size: 15px; color: #c3cede; line-height: 1.7; font-style: italic; margin: 0; }
+  .cfp-twho { font-size: 13px; font-weight: 700; color: #fff; margin-top: 16px; }
   .cfp-swipe-hint { display: none; }
   @media (max-width: 720px) {
     .cfp-testimonials {
@@ -952,7 +1196,7 @@ const CSS = `
       font-size: 11px;
       font-weight: 600;
       letter-spacing: 1px;
-      color: #94a3b8;
+      color: #64748b;
       text-align: center;
       margin: 14px 0 0;
     }
@@ -961,15 +1205,14 @@ const CSS = `
   /* ── Transition band ── */
   .cfp-transition {
     position: relative;
-    background: #0f172a;
     padding: clamp(88px, 14vw, 170px) 0;
-    border-bottom: 1px solid #1e293b;
+    border-top: 1px solid rgba(30,41,59,.65);
     overflow: hidden;
     text-align: center;
   }
-  .cfp-transition .cfp-para-dark { margin-left: auto; margin-right: auto; }
+  .cfp-transition .cfp-para { margin-left: auto; margin-right: auto; }
   .cfp-transition-title {
-    font-size: clamp(40px, 8vw, 92px);
+    font-size: clamp(44px, 9vw, 104px);
     font-weight: 800;
     letter-spacing: -0.025em;
     line-height: 1.05;
@@ -980,7 +1223,8 @@ const CSS = `
   .cfp-transition-cue svg { animation: cfp-bob 2.2s ease-in-out infinite; }
   .cfp-pdf-link { color: #93c5fd; text-decoration: underline; text-underline-offset: 3px; }
 
-  /* ── Quote section — sticky respond bar stays offstage until reached ── */
+  /* ── Quote section — clean paper after the dark story ── */
+  .cfp-quote { position: relative; z-index: 2; background: #f1f5f9; }
   .cfp-quote .qr-sticky { transition: transform .5s cubic-bezier(.2,.8,.2,1); }
   .cfp-offstage .qr-sticky { transform: translateY(140%); }
   @media (prefers-reduced-motion: reduce) {
