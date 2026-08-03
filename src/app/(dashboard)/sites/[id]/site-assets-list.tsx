@@ -405,6 +405,7 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
   const [wifiPassword, setWifiPassword] = useState("");
 
   const serialRef = useRef<HTMLInputElement>(null);
+  const rfidRef = useRef<HTMLInputElement>(null);
   const macRef = useRef<HTMLInputElement>(null);
   const ipRef = useRef<HTMLInputElement>(null);
   const wifiSsidRef = useRef<HTMLInputElement>(null);
@@ -502,7 +503,16 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
   function handleSerialKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") {
       e.preventDefault();
-      // If the device has a MAC field worth filling, jump there; otherwise save
+      // RFID devices (duress pendants): the tag scan comes straight after the
+      // serial scan — without RFID in the chain it landed in the MAC field
+      // (Michael 2026-07-30).
+      if (selectedType?.has_rfid) rfidRef.current?.focus();
+      else macRef.current?.focus();
+    }
+  }
+  function handleRfidKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
       macRef.current?.focus();
     }
   }
@@ -728,9 +738,11 @@ function QuickAddRow({ siteId, assetTypes }: { siteId: string; assetTypes: Asset
 
       {selectedType?.has_rfid && (
         <input
-          placeholder="RFID number"
+          ref={rfidRef}
+          placeholder="RFID number  (scan → Enter)"
           value={rfid}
           onChange={(e) => setRfid(e.target.value)}
+          onKeyDown={handleRfidKey}
           className={inputClass + " w-full font-mono"}
           autoComplete="off"
           spellCheck={false}
@@ -1209,9 +1221,28 @@ function SiteAssetEditForm({
     router.refresh();
   }
 
+  // Barcode scanners append Enter after every code, and Enter in a form input
+  // is an implicit submit — which saved AND closed this editor after the first
+  // scanned field, forcing a re-open for the rest (duress pendants need Serial
+  // then RFID — Michael 2026-07-30). Enter now advances to the next field;
+  // only the Update button submits.
+  function handleFormKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
+    const el = e.target as HTMLElement;
+    if (e.key !== "Enter" || el.tagName !== "INPUT") return;
+    e.preventDefault();
+    const fields = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>(
+        "input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
+      ),
+    );
+    const idx = fields.indexOf(el);
+    if (idx >= 0 && idx < fields.length - 1) fields[idx + 1]?.focus();
+  }
+
   return (
     <form
       onSubmit={handleSubmit}
+      onKeyDown={handleFormKeyDown}
       className="mt-2 rounded-lg border border-primary/30 bg-card p-3 space-y-2"
     >
       {error && <p className="text-xs text-destructive">{error}</p>}

@@ -272,6 +272,9 @@ function WorkEntryForm({
   const savingRef = useRef(false);
   const dirtyRef = useRef(false);
   const mountedRef = useRef(false);
+  // True while a debounce timer is armed — the unmount/hide flush uses this to
+  // know there are keystrokes the timer hasn't persisted yet.
+  const pendingRef = useRef(false);
 
   // Material management — product catalog selector
   const [productCatalog, setProductCatalog] = useState<{ id: string; name: string; sku: string; category: string }[]>([]);
@@ -441,7 +444,8 @@ function WorkEntryForm({
   useEffect(() => {
     if (!mountedRef.current) { mountedRef.current = true; return; }
     if (!content.trim() && !entryIdRef.current) return;
-    const t = setTimeout(() => { dirtyRef.current = true; void persist(); }, 800);
+    pendingRef.current = true;
+    const t = setTimeout(() => { pendingRef.current = false; dirtyRef.current = true; void persist(); }, 800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content, workDate, callOut, labourHours, materials]);
@@ -449,10 +453,35 @@ function WorkEntryForm({
   // Photos: upload + save shortly after they're added.
   useEffect(() => {
     if (selectedFiles.length === 0) return;
-    const t = setTimeout(() => { dirtyRef.current = true; void persist(); }, 300);
+    pendingRef.current = true;
+    const t = setTimeout(() => { pendingRef.current = false; dirtyRef.current = true; void persist(); }, 300);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFiles]);
+
+  // Flush, don't drop. The debounce cleanups above CANCEL an armed timer, and
+  // this form unmounts on any tab switch or navigation — so the last <800ms of
+  // typing (or an entire brand-new entry typed quickly) was silently lost
+  // (Michael 2026-07-30). Unmount and page-hide now run the save the timer
+  // would have. persist() reads latest.current, so the values are current even
+  // though the flush fires from a cleanup.
+  useEffect(() => {
+    const flush = () => {
+      if (!pendingRef.current && !dirtyRef.current) return;
+      pendingRef.current = false;
+      dirtyRef.current = true;
+      void persist();
+    };
+    const onVisibility = () => { if (document.hidden) flush(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleDone() {
     await persist();
