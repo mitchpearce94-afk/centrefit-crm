@@ -76,8 +76,13 @@ const NAV_SECTIONS = [
 // distance-faded lines. Density scales with viewport area (capped), DPR is
 // capped at 2, and the loop pauses when the tab is hidden.
 
-function ConstellationCanvas() {
+type CNode = { x: number; y: number; vx: number; vy: number; r: number };
+
+function ConstellationCanvas({ lite }: { lite: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  // Nodes live outside the effect so a lite-mode flip trims the field
+  // in place — survivors keep drifting from where they are, no jump.
+  const nodesRef = useRef<CNode[]>([]);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -90,28 +95,35 @@ function ConstellationCanvas() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    type Node = { x: number; y: number; vx: number; vy: number; r: number };
-    let nodes: Node[] = [];
     let w = 0;
     let h = 0;
     let raf = 0;
     let running = true;
+    let lastDraw = 0;
+    // Lite: half the nodes, DPR 1, 30fps — the layer stays alive but stops
+    // costing anything a weak GPU notices.
+    const frameGap = lite ? 33 : 0;
 
     const seed = () => {
-      const count = Math.max(26, Math.min(90, Math.round((w * h) / 16000)));
-      nodes = Array.from({ length: count }, () => ({
-        x: Math.random() * w,
-        y: Math.random() * h,
-        vx: (Math.random() - 0.5) * 0.22,
-        vy: (Math.random() - 0.5) * 0.22,
-        r: 0.8 + Math.random() * 1.2,
-      }));
+      const cap = lite ? 45 : 80;
+      const count = Math.max(26, Math.min(cap, Math.round((w * h) / (lite ? 32000 : 16000))));
+      const nodes = nodesRef.current;
+      if (nodes.length > count) nodes.length = count;
+      while (nodes.length < count) {
+        nodes.push({
+          x: Math.random() * w,
+          y: Math.random() * h,
+          vx: (Math.random() - 0.5) * 0.22,
+          vy: (Math.random() - 0.5) * 0.22,
+          r: 0.8 + Math.random() * 1.2,
+        });
+      }
     };
 
     const resize = () => {
       w = window.innerWidth;
       h = window.innerHeight;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = Math.min(window.devicePixelRatio || 1, lite ? 1 : 1.5);
       canvas.width = w * dpr;
       canvas.height = h * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -119,8 +131,18 @@ function ConstellationCanvas() {
     };
 
     const LINK = 130;
-    const step = () => {
+    const LINK2 = LINK * LINK;
+    // Lines are batched into a handful of alpha buckets — one stroke() per
+    // bucket instead of one per pair (hundreds of draw calls → ≤6).
+    const BUCKETS = 6;
+    const segs: number[][] = Array.from({ length: BUCKETS }, () => []);
+
+    const step = (t: number) => {
       if (!running) return;
+      raf = requestAnimationFrame(step);
+      if (t - lastDraw < frameGap) return;
+      lastDraw = t;
+      const nodes = nodesRef.current;
       ctx.clearRect(0, 0, w, h);
       for (const n of nodes) {
         n.x += n.vx;
@@ -130,29 +152,38 @@ function ConstellationCanvas() {
         if (n.y < -20) n.y = h + 20;
         if (n.y > h + 20) n.y = -20;
       }
+      for (const s of segs) s.length = 0;
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
           const dx = nodes[i].x - nodes[j].x;
           const dy = nodes[i].y - nodes[j].y;
-          const d = Math.hypot(dx, dy);
-          if (d < LINK) {
-            const a = (1 - d / LINK) * 0.34;
-            ctx.strokeStyle = `rgba(96,165,250,${a.toFixed(3)})`;
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(nodes[i].x, nodes[i].y);
-            ctx.lineTo(nodes[j].x, nodes[j].y);
-            ctx.stroke();
+          const d2 = dx * dx + dy * dy;
+          if (d2 < LINK2) {
+            const d = Math.sqrt(d2);
+            const b = Math.min(BUCKETS - 1, Math.floor((1 - d / LINK) * BUCKETS));
+            segs[b].push(nodes[i].x, nodes[i].y, nodes[j].x, nodes[j].y);
           }
         }
       }
+      ctx.lineWidth = 1;
+      for (let b = 0; b < BUCKETS; b++) {
+        const s = segs[b];
+        if (!s.length) continue;
+        const a = (((b + 0.5) / BUCKETS) * 0.34).toFixed(3);
+        ctx.strokeStyle = `rgba(96,165,250,${a})`;
+        ctx.beginPath();
+        for (let k = 0; k < s.length; k += 4) {
+          ctx.moveTo(s[k], s[k + 1]);
+          ctx.lineTo(s[k + 2], s[k + 3]);
+        }
+        ctx.stroke();
+      }
+      ctx.fillStyle = "rgba(148,163,184,0.75)";
       for (const n of nodes) {
-        ctx.fillStyle = "rgba(148,163,184,0.75)";
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
         ctx.fill();
       }
-      raf = requestAnimationFrame(step);
     };
 
     const onVisibility = () => {
@@ -175,7 +206,7 @@ function ConstellationCanvas() {
       window.removeEventListener("resize", resize);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, []);
+  }, [lite]);
 
   return <canvas ref={ref} className="cfp-canvas" aria-hidden="true" />;
 }
@@ -283,6 +314,56 @@ export function ProposalView(props: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [activeSection, setActiveSection] = useState("top");
 
+  // Perf governor — one-way downgrade to "lite" ambience when the machine
+  // can't hold ~35fps (office PCs on integrated graphics). Lite keeps the
+  // full story and reveals but drops the layers weak GPUs pay for every
+  // frame: backdrop blur, comets, spotlight, inertia scroll, canvas density.
+  const [lite, setLite] = useState(false);
+  const liteRef = useRef(false);
+  useEffect(() => {
+    let raf = 0;
+    let frames = 0;
+    let slow = 0;
+    let last = 0;
+    const tick = (t: number) => {
+      if (last) {
+        const dt = t - last;
+        // ignore tab-hidden / stall gaps — they aren't render frames
+        if (dt < 250) {
+          frames++;
+          if (dt > 28.5) slow++;
+          if (frames >= 120) {
+            if (slow / frames > 0.4) setLite(true);
+            last = t;
+            return;
+          }
+        }
+      }
+      last = t;
+      raf = requestAnimationFrame(tick);
+    };
+    // wait out the hero entrance so we measure steady-state, not the intro
+    const timer = window.setTimeout(() => {
+      raf = requestAnimationFrame(tick);
+    }, 1800);
+    return () => {
+      window.clearTimeout(timer);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
+  useEffect(() => {
+    liteRef.current = lite;
+    if (lite && rootRef.current) {
+      // park the watermark drift wherever it was — the frame loop stops
+      // updating it in lite mode
+      rootRef.current
+        .querySelectorAll<HTMLElement>("[data-drift]")
+        .forEach((el) => {
+          el.style.transform = "";
+        });
+    }
+  }, [lite]);
+
   // One effect wires the journey: reveal observers, the rAF scroll driver
   // (page progress, hero parallax, watermark drift), the cursor spotlight
   // and the dot-nav active-section tracker.
@@ -332,6 +413,7 @@ export function ProposalView(props: Props) {
           const sp = Math.min(1, Math.max(0, window.scrollY / (window.innerHeight * 0.9)));
           hero.style.setProperty("--sp", String(sp));
         }
+        if (liteRef.current) return;
         const vh = window.innerHeight;
         for (const el of driftEls) {
           const r = el.getBoundingClientRect();
@@ -375,58 +457,7 @@ export function ProposalView(props: Props) {
       }
     }
 
-    // 4. Inertia wheel scroll (desktop fine pointers). Lerps native
-    // window.scrollTo rather than transform-hijacking the page, so every
-    // fixed/sticky element (progress bar, dots, the quote's respond bar,
-    // modals) keeps working untouched. Horizontal trackpad gestures, pinch
-    // zoom and line-mode wheels stay fully native.
-    if (!reduced && window.matchMedia("(pointer: fine)").matches) {
-      let target = 0;
-      let current = 0;
-      let raf = 0;
-      let active = false;
-      const loop = () => {
-        current += (target - current) * 0.1;
-        if (Math.abs(target - current) < 0.6) {
-          current = target;
-          active = false;
-        }
-        window.scrollTo(0, current);
-        if (active) raf = requestAnimationFrame(loop);
-      };
-      const onWheel = (e: WheelEvent) => {
-        if (e.ctrlKey) return;
-        if (e.deltaMode !== 0) return;
-        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
-        e.preventDefault();
-        if (!active) {
-          target = window.scrollY;
-          current = window.scrollY;
-        }
-        target += e.deltaY;
-        const max = document.documentElement.scrollHeight - window.innerHeight;
-        target = Math.max(0, Math.min(target, max));
-        if (!active) {
-          active = true;
-          raf = requestAnimationFrame(loop);
-        }
-      };
-      const onNativeScroll = () => {
-        if (!active) {
-          target = window.scrollY;
-          current = window.scrollY;
-        }
-      };
-      window.addEventListener("wheel", onWheel, { passive: false });
-      window.addEventListener("scroll", onNativeScroll, { passive: true });
-      cleanups.push(() => {
-        window.removeEventListener("wheel", onWheel);
-        window.removeEventListener("scroll", onNativeScroll);
-        cancelAnimationFrame(raf);
-      });
-    }
-
-    // 5. Dot-nav active section.
+    // 4. Dot-nav active section.
     const sections = NAV_SECTIONS
       .map((s) => document.getElementById(s.id))
       .filter((el): el is HTMLElement => el !== null);
@@ -443,6 +474,73 @@ export function ProposalView(props: Props) {
 
     return () => cleanups.forEach((fn) => fn());
   }, []);
+
+  // Inertia wheel scroll (desktop fine pointers). Lerps native scrollTo
+  // rather than transform-hijacking the page, so every fixed/sticky element
+  // (progress bar, dots, the quote's respond bar, modals) keeps working
+  // untouched. Horizontal trackpad gestures, pinch zoom and line-mode wheels
+  // stay fully native. Its own effect so a lite-mode flip unhooks the
+  // non-passive wheel listener entirely — native threaded scrolling comes
+  // back, which is what a struggling machine actually wants.
+  useEffect(() => {
+    if (lite) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced || !window.matchMedia("(pointer: fine)").matches) return;
+    let target = 0;
+    let current = 0;
+    let raf = 0;
+    let active = false;
+    let lastT = 0;
+    const loop = (t: number) => {
+      // Frame-rate-independent lerp: same catch-up per real second whether
+      // the machine renders 30 or 144 frames of it (0.9^(dt/16.7) ≈ the old
+      // 0.1-per-60Hz-frame feel).
+      const dt = lastT ? Math.min(t - lastT, 100) : 16.7;
+      lastT = t;
+      current += (target - current) * (1 - Math.pow(0.9, dt / 16.7));
+      if (Math.abs(target - current) < 0.6) {
+        current = target;
+        active = false;
+      }
+      // behavior:"instant" is load-bearing — the page sets CSS
+      // scroll-behavior:smooth, and a bare scrollTo(x, y) honours it,
+      // restarting a browser smooth-scroll animation every frame. That
+      // compounding made scrolling crawl on slower machines.
+      window.scrollTo({ top: current, behavior: "instant" });
+      if (active) raf = requestAnimationFrame(loop);
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) return;
+      if (e.deltaMode !== 0) return;
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      if (!active) {
+        target = window.scrollY;
+        current = window.scrollY;
+      }
+      target += e.deltaY;
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      target = Math.max(0, Math.min(target, max));
+      if (!active) {
+        active = true;
+        lastT = 0;
+        raf = requestAnimationFrame(loop);
+      }
+    };
+    const onNativeScroll = () => {
+      if (!active) {
+        target = window.scrollY;
+        current = window.scrollY;
+      }
+    };
+    window.addEventListener("wheel", onWheel, { passive: false });
+    window.addEventListener("scroll", onNativeScroll, { passive: true });
+    return () => {
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("scroll", onNativeScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, [lite]);
 
   // The quote's sticky Accept/Decline bar slides in only once the customer
   // reaches the quotation section; the ambient layers fade out at the same
@@ -466,11 +564,14 @@ export function ProposalView(props: Props) {
   }, []);
 
   return (
-    <div className={`cfp-root${quoteReached ? " cfp-arrived" : ""}`} ref={rootRef}>
+    <div
+      className={`cfp-root${quoteReached ? " cfp-arrived" : ""}${lite ? " cfp-lite" : ""}`}
+      ref={rootRef}
+    >
       <style>{CSS}</style>
 
       {/* Ambient layers — behind everything, fade out at the quote */}
-      <ConstellationCanvas />
+      <ConstellationCanvas lite={lite} />
       <div className="cfp-spotlight" aria-hidden="true" />
 
       {/* Scroll progress bar */}
@@ -948,7 +1049,29 @@ const CSS = `
     opacity: 1;
     transform: none;
     clip-path: inset(0 0 0 0);
+    /* release the compositor layer once revealed — dozens of live
+       will-change layers thrash GPU memory on weak machines */
+    will-change: auto;
   }
+
+  /* ── Lite mode — auto-detected on machines that can't hold ~35fps ──
+     The story, reveals, shimmer, marquee and sticky deck all stay; only the
+     per-frame-expensive layers go: backdrop blur re-samples on every scroll
+     frame, comets/spotlight force constant repaints, and the beam float
+     animation keeps a huge blurred layer active. */
+  .cfp-lite .cfp-glass {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: linear-gradient(180deg, rgba(30,41,59,.82), rgba(15,23,42,.9));
+  }
+  .cfp-lite .cfp-chip {
+    backdrop-filter: none;
+    background: rgba(30,41,59,.85);
+  }
+  .cfp-lite .cfp-spotlight { display: none; }
+  .cfp-lite .cfp-comet { display: none; }
+  .cfp-lite .cfp-beam { animation: none; filter: blur(22px); }
+  .cfp-lite .cfp-hero::before { animation: none; }
 
   /* ── Split-word headings ── */
   [data-reveal="split"] { opacity: 1; transform: none; transition: none; }
