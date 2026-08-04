@@ -141,7 +141,9 @@ export async function POST(req: NextRequest) {
   if (action === "accept") {
     const attemptedAt = new Date().toISOString();
     try {
-      await createInvoiceFromAcceptedQuote(supabase, quote.id);
+      // Service role — this route runs as the anonymous CUSTOMER, whose
+      // session can't read xero_connections or insert invoices past RLS.
+      await createInvoiceFromAcceptedQuote(createServiceRoleClient(), quote.id);
       await supabase
         .from("quotes")
         .update({

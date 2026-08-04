@@ -128,7 +128,12 @@ export async function createInvoiceFromAcceptedQuote(
     customer.customer_contacts?.find((c: { is_primary: boolean }) => c.is_primary) ??
     customer.customer_contacts?.[0];
 
-  const { client: xero, conn } = await getAuthedClient();
+  // Use the CALLER's client — the public quote-accept route passes service
+  // role because the customer's anonymous session can't see xero_connections
+  // (SELECT is is_admin()-gated). A bare getAuthedClient() here rebuilt a
+  // cookie client and made every customer-link acceptance fail with "Xero is
+  // not connected" while Settings showed connected (Beecroft, 2026-08-04).
+  const { client: xero, conn } = await getAuthedClient(supabase);
   const xeroContactId = await findOrCreateContact(
     supabase,
     xero,
