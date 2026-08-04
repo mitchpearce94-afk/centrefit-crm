@@ -72,6 +72,7 @@ export {
   renderScopeAsHtml,
   renderScopeAsText,
   parseScopeItem,
+  SCOPE_ROLE_SYSTEM,
   BOMRollup,
 } from './scope-of-works'
 export type {
@@ -81,6 +82,7 @@ export type {
   ScopeOngoingCost,
   ScopeSummary,
   ScopeOverrides,
+  ScopePriceBreakdownLine,
   BOMLineForScope,
   ProductForScope,
 } from './scope-of-works'

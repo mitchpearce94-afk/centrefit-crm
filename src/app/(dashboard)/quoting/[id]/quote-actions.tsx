@@ -151,7 +151,11 @@ export function QuoteActions({
   }
 
   const isProgress = quoteType === "progress";
-  const scopeBom = lineItems.map((li: any) => ({ product_id: li.product_id ?? null, quantity: Number(li.quantity) || 0 }));
+  const scopeBom = lineItems.map((li: any) => ({
+    product_id: li.product_id ?? null,
+    quantity: Number(li.quantity) || 0,
+    sell_price: Number(li.sell_price) || 0,
+  }));
   // Manual quotes render the operator-authored scope text verbatim in the
   // CRM preview window (matches what the customer sees on the response page
   // and in the PDF attachment).
@@ -509,6 +513,7 @@ export function QuoteActions({
           siteInfo={siteInfo}
           initialOverrides={scopeOverrides}
           roleDescriptions={roleDescriptions}
+          totalExGST={Number(pricing?.totalExGST) || 0}
           onClose={() => setShowScopeEditor(false)}
         />
       )}

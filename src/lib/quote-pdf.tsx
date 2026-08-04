@@ -330,6 +330,20 @@ const styles = StyleSheet.create({
   bullet: { color: "#047857", fontSize: 11, marginRight: 6, marginTop: 1 },
   bulletText: { fontSize: 9, color: "#475569", flex: 1, lineHeight: 1.4 },
 
+  // Client price breakdown
+  pbBlock: { borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 8, marginTop: 10, marginBottom: 10, overflow: "hidden" },
+  pbHead: { backgroundColor: "#f8fafc", borderBottomWidth: 1, borderBottomColor: "#e2e8f0", paddingVertical: 7, paddingHorizontal: 14 },
+  pbHeadText: { fontSize: 9, fontFamily: "Helvetica-Bold", color: "#0f172a", letterSpacing: 1.2 },
+  pbHeadSub: { fontSize: 7.5, color: "#64748b", marginTop: 1 },
+  pbBody: { paddingVertical: 6, paddingHorizontal: 14 },
+  pbRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", paddingVertical: 4, borderBottomWidth: 0.5, borderBottomColor: "#e2e8f0", borderBottomStyle: "dashed" },
+  pbRowLast: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", paddingVertical: 4 },
+  pbName: { fontSize: 9, color: "#0f172a" },
+  pbPrice: { fontSize: 9, fontFamily: "Helvetica-Bold", color: "#475569" },
+  pbTotalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", paddingTop: 6, marginTop: 2, borderTopWidth: 1, borderTopColor: "#e2e8f0" },
+  pbTotalLabel: { fontSize: 9.5, fontFamily: "Helvetica-Bold", color: "#0f172a" },
+  pbTotalValue: { fontSize: 9.5, fontFamily: "Helvetica-Bold", color: "#0f172a" },
+
   // By Others
   byOthersHead: {
     backgroundColor: "#fef3c7",
@@ -626,6 +640,28 @@ export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDo
               <SystemBlock key={sys.id} sys={sys} />
             ))}
           </>
+        )}
+
+        {/* Client price breakdown (optional, from scope overrides) */}
+        {!!scope.priceBreakdown && (
+          <View style={styles.pbBlock} wrap={false}>
+            <View style={styles.pbHead}>
+              <Text style={styles.pbHeadText}>PRICE BREAKDOWN</Text>
+              <Text style={styles.pbHeadSub}>Per system, ex GST — supply, installation and commissioning included</Text>
+            </View>
+            <View style={styles.pbBody}>
+              {scope.priceBreakdown.lines.map((l, i) => (
+                <View key={l.id} style={i === scope.priceBreakdown!.lines.length - 1 ? styles.pbRowLast : styles.pbRow}>
+                  <Text style={styles.pbName}>{l.name}</Text>
+                  <Text style={styles.pbPrice}>${fmtMoney(l.price)}</Text>
+                </View>
+              ))}
+              <View style={styles.pbTotalRow}>
+                <Text style={styles.pbTotalLabel}>Total (ex GST)</Text>
+                <Text style={styles.pbTotalValue}>${fmtMoney(scope.priceBreakdown.total)}</Text>
+              </View>
+            </View>
+          </View>
         )}
 
         {/* By the Customer's Trades */}

@@ -7,6 +7,7 @@ import { useToast } from "@/components/ui/toast";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import {
   generateScopeOfWorks,
+  SCOPE_ROLE_SYSTEM,
   type ScopeOverrides,
   type SiteInfo,
   type ScopeSystemBlock,
@@ -70,12 +71,22 @@ function htmlToItems(html: string): string[] {
 interface Props {
   quoteId: string;
   status: string;
-  bom: { product_id: string | null; quantity: number }[];
+  bom: { product_id: string | null; quantity: number; sell_price?: number }[];
   productScopeRoles: { id: string; scope_role: string }[];
   siteInfo: SiteInfo;
   initialOverrides: ScopeOverrides | null;
   roleDescriptions: Record<string, string>;
+  /** Quote total ex GST — the price breakdown lines must sum to this. */
+  totalExGST: number;
   onClose: () => void;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+function fmtMoney(n: number): string {
+  return n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 interface SystemEdit extends ScopeSystemBlock {
@@ -114,7 +125,7 @@ interface ListBlockEdit {
  *   - Revert any of the above to the auto-generated value
  */
 export function ScopeEditor({
-  quoteId, status, bom, productScopeRoles, siteInfo, initialOverrides, roleDescriptions, onClose,
+  quoteId, status, bom, productScopeRoles, siteInfo, initialOverrides, roleDescriptions, totalExGST, onClose,
 }: Props) {
   const router = useRouter();
   const supabase = createClient();
@@ -203,6 +214,95 @@ export function ScopeEditor({
       initialOverrides.summaryLead !== auto.summary.lead,
   );
   const [saving, setSaving] = useState(false);
+
+  // ── Client price breakdown ────────────────────────────────────────────────
+  // Off by default. When on, each ticked system becomes a priced line on the
+  // quote. A line's price is either typed (manual) or auto: the system's own
+  // BOM materials plus an equal share of everything unattributed — labour,
+  // margin, cabling, extras, discounts. The auto shares are derived so the
+  // lines ALWAYS sum to the quote total ex GST; infrastructure (cabinets)
+  // attributes to Data & Wireless via SCOPE_ROLE_SYSTEM.
+  const [pbEnabled, setPbEnabled] = useState(!!initialOverrides?.priceBreakdown?.lines?.length);
+  const [pbRows, setPbRows] = useState<Record<string, { ticked: boolean; manual: string }>>(() => {
+    const stored = initialOverrides?.priceBreakdown?.lines;
+    if (stored?.length) {
+      // Saved prices reload as manual values — they don't silently move if the
+      // BOM changed since. "Reset to even split" recalculates.
+      return Object.fromEntries(stored.map((l) => [l.id, { ticked: true, manual: String(l.price) }]));
+    }
+    return {};
+  });
+
+  // Per-system BOM material sell (ex GST), attributed by scope_role.
+  const attributed = useMemo(() => {
+    const roleById = new Map(productScopeRoles.map((p) => [p.id, p.scope_role]));
+    const sums: Record<string, number> = {};
+    for (const line of bom) {
+      if (!line.product_id) continue;
+      const role = roleById.get(line.product_id);
+      const sysId = role ? SCOPE_ROLE_SYSTEM[role] : undefined;
+      if (!sysId) continue;
+      sums[sysId] = (sums[sysId] ?? 0) + (Number(line.sell_price) || 0) * (Number(line.quantity) || 0);
+    }
+    return sums;
+  }, [bom, productScopeRoles]);
+
+  function pbRow(id: string): { ticked: boolean; manual: string } {
+    return pbRows[id] ?? { ticked: false, manual: "" };
+  }
+
+  function togglePbEnabled(on: boolean) {
+    setPbEnabled(on);
+    if (on && Object.keys(pbRows).length === 0) {
+      // First enable: tick every included system, all on auto split.
+      setPbRows(Object.fromEntries(
+        systems.filter((s) => s.included).map((s) => [s.id, { ticked: true, manual: "" }]),
+      ));
+    }
+  }
+
+  function patchPbRow(id: string, patch: Partial<{ ticked: boolean; manual: string }>) {
+    setPbRows((prev) => {
+      const current = prev[id] ?? { ticked: false, manual: "" };
+      return { ...prev, [id]: { ...current, ...patch } };
+    });
+  }
+
+  /** Resolve every ticked line to a price. Auto lines split the unattributed
+   *  remainder equally; the last auto line absorbs rounding residue so the
+   *  column sums to the quote total exactly. */
+  const pbResolved = useMemo(() => {
+    const ticked = systems.filter((s) => s.included && pbRow(s.id).ticked);
+    const rows = ticked.map((s) => {
+      const raw = pbRow(s.id).manual.trim();
+      const parsed = raw === "" ? null : Number(raw);
+      const manual = parsed !== null && isFinite(parsed) ? parsed : null;
+      return { id: s.id, name: s.name, manual };
+    });
+    const manualSum = rows.reduce((t, r) => t + (r.manual ?? 0), 0);
+    const autos = rows.filter((r) => r.manual === null);
+    const attributedAutoSum = autos.reduce((t, r) => t + (attributed[r.id] ?? 0), 0);
+    const share = autos.length > 0 ? (totalExGST - manualSum - attributedAutoSum) / autos.length : 0;
+    const out = rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      auto: r.manual === null,
+      price: r.manual !== null ? round2(r.manual) : round2((attributed[r.id] ?? 0) + share),
+    }));
+    if (autos.length > 0) {
+      const sum = out.reduce((t, r) => t + r.price, 0);
+      const residual = round2(totalExGST - sum);
+      if (residual !== 0) {
+        const last = out.map((r) => r.auto).lastIndexOf(true);
+        out[last] = { ...out[last], price: round2(out[last].price + residual) };
+      }
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [systems, pbRows, attributed, totalExGST]);
+
+  const pbSum = round2(pbResolved.reduce((t, r) => t + r.price, 0));
+  const pbBalanced = Math.abs(pbSum - totalExGST) < 0.005;
 
   function patchSummaryLead(v: string) {
     setSummaryLead(v);
@@ -322,6 +422,12 @@ export function ScopeEditor({
 
     if (hideHardExclusion) ov.hideHardExclusion = true;
     if (summaryLeadDirty) ov.summaryLead = summaryLead;
+
+    // Price breakdown — persist the RESOLVED lines (name + final price) so
+    // renderers never need pricing context. Disabled or zero ticked = omitted.
+    if (pbEnabled && pbResolved.length > 0) {
+      ov.priceBreakdown = { lines: pbResolved.map(({ id, name, price }) => ({ id, name, price })) };
+    }
 
     return Object.keys(ov).length > 0 ? ov : null;
   }
@@ -498,6 +604,102 @@ export function ScopeEditor({
               )}
             </div>
           ))}
+
+          {/* Client price breakdown — off by default */}
+          {systems.some((s) => s.included) && (
+            <div className={`rounded-lg border ${pbEnabled ? "border-border bg-card" : "border-dashed border-border bg-muted/20"}`}>
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={pbEnabled}
+                    onChange={(e) => togglePbEnabled(e.target.checked)}
+                    disabled={readOnly}
+                    className="h-4 w-4 rounded accent-primary"
+                  />
+                  <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-foreground text-[11px] font-bold text-background">$</span>
+                  <span className="text-sm font-semibold text-foreground">Client price breakdown</span>
+                </label>
+                {pbEnabled && !readOnly && (
+                  <button
+                    onClick={() => setPbRows((prev) => Object.fromEntries(Object.entries(prev).map(([k, v]) => [k, { ...v, manual: "" }])))}
+                    className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Reset to even split
+                  </button>
+                )}
+              </div>
+              {!pbEnabled && (
+                <p className="px-4 py-2.5 text-[11px] text-muted-foreground">
+                  Off — the quote shows one total only. Tick to print a per-system price table
+                  (ex GST) on the quote.
+                </p>
+              )}
+              {pbEnabled && (
+                <div className="p-4 space-y-1.5">
+                  <p className="text-[11px] text-muted-foreground mb-2">
+                    Tick the systems to price. Empty price = auto: the system&apos;s own materials plus an
+                    equal share of labour and shared costs, so the lines always sum to the quote total.
+                    Type a price to lock a line — the auto lines re-balance around it. Infrastructure
+                    (comms cabinets) is counted inside Data &amp; Wireless.
+                  </p>
+                  {systems.filter((s) => s.included).map((s) => {
+                    const row = pbRow(s.id);
+                    const resolved = pbResolved.find((r) => r.id === s.id);
+                    return (
+                      <div key={s.id} className={`flex items-center gap-3 px-2 py-1.5 rounded-md ${row.ticked ? "" : "opacity-60"}`}>
+                        <input
+                          type="checkbox"
+                          checked={row.ticked}
+                          onChange={(e) => patchPbRow(s.id, { ticked: e.target.checked })}
+                          disabled={readOnly}
+                          className="h-4 w-4 rounded accent-primary"
+                        />
+                        <span className="flex-1 text-xs text-foreground">{s.name}</span>
+                        {row.ticked && (
+                          <>
+                            {resolved?.auto && (
+                              <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary">Auto</span>
+                            )}
+                            {!resolved?.auto && !readOnly && (
+                              <button
+                                onClick={() => patchPbRow(s.id, { manual: "" })}
+                                title="Back to auto split"
+                                className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                              >
+                                ⟳ auto
+                              </button>
+                            )}
+                            <div className="relative">
+                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">$</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={row.manual}
+                                placeholder={resolved ? fmtMoney(resolved.price) : ""}
+                                onChange={(e) => patchPbRow(s.id, { manual: e.target.value })}
+                                readOnly={readOnly}
+                                className="w-32 rounded-md border border-border bg-input pl-5 pr-2 py-1.5 text-right text-xs font-mono text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <div className={`flex items-center justify-between gap-3 px-2 pt-2.5 mt-1 border-t border-border text-xs ${pbBalanced ? "text-foreground" : "text-amber-400"}`}>
+                    <span className="font-semibold">
+                      {pbBalanced
+                        ? "Lines total = quote total"
+                        : `Lines are $${fmtMoney(Math.abs(pbSum - totalExGST))} ${pbSum > totalExGST ? "over" : "under"} the quote total`}
+                    </span>
+                    <span className="font-mono font-semibold">${fmtMoney(pbSum)} / ${fmtMoney(totalExGST)} ex GST</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* By Others blocks (electrician / locksmith) — include/exclude + edit items */}
           {byOthers.length > 0 && (

@@ -49,6 +49,12 @@ export interface ScopeSummary {
   rows: { name: string; qty: string }[];
 }
 
+export interface ScopePriceBreakdownLine {
+  id: string;      // system id ('security_alarm', 'cctv', …)
+  name: string;    // display name at save time
+  price: number;   // ex GST, resolved in the editor — renderers just display
+}
+
 export interface ScopeDocument {
   summary: ScopeSummary;
   systems: ScopeSystemBlock[];
@@ -57,6 +63,8 @@ export interface ScopeDocument {
   ongoingCosts: ScopeOngoingCost[];
   assumptions: string[];
   standards: string[];
+  /** Optional client-facing per-system price breakdown (from overrides). */
+  priceBreakdown?: { lines: ScopePriceBreakdownLine[]; total: number };
 }
 
 // ── Override format (v2) ───────────────────────────────────────────────────
@@ -94,7 +102,36 @@ export interface ScopeOverrides {
     lead?: string;
     items?: string[];
   }>;
+  /**
+   * Client-facing per-system price breakdown (ex GST). Off unless present.
+   * Lines are stored fully resolved (name + price) at save time so renderers
+   * never need pricing context; the editor recalculates auto-split values
+   * live from the BOM when reopened.
+   */
+  priceBreakdown?: { lines: ScopePriceBreakdownLine[] };
 }
+
+/**
+ * Which scope system each product scope_role's cost belongs to, for the price
+ * breakdown auto-split. Roles not listed here (cabling, mounting_bracket,
+ * subscriptions, untagged) are shared costs — the editor spreads them, along
+ * with labour and margin, equally across the ticked breakdown lines.
+ * Infrastructure (comms cabinets/racks) deliberately rolls into 'data' —
+ * Mitchell 2026-08-04: cabinet pricing belongs in the Data & Wireless line.
+ */
+export const SCOPE_ROLE_SYSTEM: Record<string, string> = {
+  alarm_panel: 'security_alarm', motion_sensor: 'security_alarm', reed_switch: 'security_alarm',
+  duress_button: 'security_alarm', duress_pendant: 'security_alarm', duress_intercom: 'security_alarm',
+  rf_receiver: 'security_alarm', light_siren: 'security_alarm',
+  door_strike: 'access_control', mag_lock: 'access_control', rex_button: 'access_control',
+  access_control_system: 'access_control', card_reader: 'access_control', standalone_keypad: 'access_control',
+  camera: 'cctv', nvr: 'cctv', monitor: 'cctv', camera_mount: 'cctv',
+  speaker: 'audio', amplifier: 'audio',
+  modulator: 'av', tv_mount_wall: 'av', tv_mount_ceiling: 'av',
+  router: 'data', network_switch: 'data', wap: 'data', cabinet: 'data',
+  tailgate_system: 'tailgate',
+  nightlife: 'nightlife',
+};
 
 // ── BOM rollup ─────────────────────────────────────────────────────────────
 
@@ -676,6 +713,11 @@ export function generateScopeOfWorks(
     ? []
     : (overrides?.standards?.items ?? baseStandards);
 
+  const pbLines = overrides?.priceBreakdown?.lines;
+  const priceBreakdown = pbLines && pbLines.length > 0
+    ? { lines: pbLines, total: pbLines.reduce((s, l) => s + (Number(l.price) || 0), 0) }
+    : undefined;
+
   return {
     summary,
     systems: systems.map((s) => ({ ...s, countSummary: '' })),
@@ -684,6 +726,7 @@ export function generateScopeOfWorks(
     ongoingCosts,
     assumptions,
     standards,
+    priceBreakdown,
   };
 }
 
@@ -778,6 +821,12 @@ export function renderScopeAsText(scope: ScopeDocument): string {
     }
   }
 
+  if (scope.priceBreakdown) {
+    lines.push('PRICE BREAKDOWN (EX GST)');
+    for (const l of scope.priceBreakdown.lines) lines.push(`    ${l.name} — $${l.price.toFixed(2)}`);
+    lines.push(`    Total — $${scope.priceBreakdown.total.toFixed(2)}`, '');
+  }
+
   if (scope.hardExclusion) lines.push(scope.hardExclusion, '');
 
   if (scope.ongoingCosts.length > 0) {
@@ -854,6 +903,26 @@ export function renderScopeAsHtml(scope: ScopeDocument): string {
       </div>
     </div>`).join('');
 
+  const fmtPrice = (n: number) => n.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const priceBreakdownHtml = scope.priceBreakdown ? `
+    <div style="border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-top:14px;margin-bottom:12px;background:#fff">
+      <div style="padding:10px 18px;border-bottom:1px solid #e2e8f0;background:#f8fafc">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#0f172a">Price Breakdown</div>
+        <div style="font-size:9.5px;color:#64748b;margin-top:1px">Per system, ex GST — supply, installation and commissioning included</div>
+      </div>
+      <div style="padding:8px 18px 12px">
+        ${scope.priceBreakdown.lines.map((l) => `
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:5px 0;border-bottom:1px dashed #e2e8f0;font-size:11px">
+          <span style="color:#0f172a;font-weight:500">${l.name}</span>
+          <span style="color:#475569;font-family:Consolas,Menlo,monospace;font-weight:600">$${fmtPrice(l.price)}</span>
+        </div>`).join('')}
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:7px 0 0;font-size:11.5px">
+          <span style="color:#0f172a;font-weight:700">Total (ex GST)</span>
+          <span style="color:#0f172a;font-family:Consolas,Menlo,monospace;font-weight:700">$${fmtPrice(scope.priceBreakdown.total)}</span>
+        </div>
+      </div>
+    </div>` : '';
+
   const hardExclusionHtml = scope.hardExclusion
     ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 16px;margin-bottom:12px;font-size:11px;color:#991b1b;text-align:center;font-weight:700;letter-spacing:0.5px">${escape(scope.hardExclusion)}</div>`
     : '';
@@ -884,5 +953,5 @@ export function renderScopeAsHtml(scope: ScopeDocument): string {
       <p style="font-size:9.5px;color:#94a3b8;line-height:1.5;margin:0">${scope.standards.join(' · ')}</p>
     </div>` : '';
 
-  return `${summaryHtml}${systemsHtml ? `<div style="margin-top:8px">${systemsHtml}</div>` : ''}${byOthersHtml ? `<div style="margin-top:14px">${byOthersHtml}</div>` : ''}${hardExclusionHtml}${ongoingHtml}${assumptionsHtml}${standardsHtml}`;
+  return `${summaryHtml}${systemsHtml ? `<div style="margin-top:8px">${systemsHtml}</div>` : ''}${priceBreakdownHtml}${byOthersHtml ? `<div style="margin-top:14px">${byOthersHtml}</div>` : ''}${hardExclusionHtml}${ongoingHtml}${assumptionsHtml}${standardsHtml}`;
 }
