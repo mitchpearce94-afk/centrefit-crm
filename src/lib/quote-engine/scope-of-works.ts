@@ -125,10 +125,13 @@ export const SCOPE_ROLE_SYSTEM: Record<string, string> = {
   rf_receiver: 'security_alarm', light_siren: 'security_alarm',
   door_strike: 'access_control', mag_lock: 'access_control', rex_button: 'access_control',
   access_control_system: 'access_control', card_reader: 'access_control', standalone_keypad: 'access_control',
-  camera: 'cctv', nvr: 'cctv', monitor: 'cctv', camera_mount: 'cctv',
+  camera: 'cctv', nvr: 'cctv', monitor: 'cctv', camera_mount: 'cctv', hdd: 'cctv',
   speaker: 'audio', amplifier: 'audio',
   modulator: 'av', tv_mount_wall: 'av', tv_mount_ceiling: 'av',
+  // Mitchell 2026-08-04: HDDs are CCTV kit; patch panels, cabling and fibre
+  // all belong in the Data & Wireless line rather than the shared pool.
   router: 'data', network_switch: 'data', wap: 'data', cabinet: 'data',
+  patch_panel: 'data', cabling: 'data', fibre: 'data',
   tailgate_system: 'tailgate',
   nightlife: 'nightlife',
 };
