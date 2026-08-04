@@ -20,6 +20,7 @@ import type {
   ScopeByOthersBlock,
   ScopeOngoingCost,
 } from "@/lib/quote-engine";
+import { parseScopeItem } from "@/lib/quote-engine";
 import { formatAuAddress } from "@/lib/format-address";
 
 // Load the brand logo once at module init. Files in /public are available on
@@ -325,6 +326,7 @@ const styles = StyleSheet.create({
   systemBody: { paddingHorizontal: 12, paddingVertical: 8 },
   systemLead: { fontSize: 9.5, marginBottom: 6, lineHeight: 1.55 },
   bulletRow: { flexDirection: "row", marginVertical: 1.5, paddingLeft: 4 },
+  paraRow: { flexDirection: "row", marginVertical: 3, paddingLeft: 4 },
   bullet: { color: "#047857", fontSize: 11, marginRight: 6, marginTop: 1 },
   bulletText: { fontSize: 9, color: "#475569", flex: 1, lineHeight: 1.4 },
 
@@ -468,17 +470,25 @@ const styles = StyleSheet.create({
 // ── Component pieces ───────────────────────────────────────────────────────
 
 function BulletItem({ html, bulletColor = "#047857", textColor = "#475569" }: { html: string; bulletColor?: string; textColor?: string }) {
-  const segments = tokenize(html);
+  // <p>-wrapped items are paragraph-style scope lines — no bullet dot.
+  const { text, para } = parseScopeItem(html);
+  const segments = tokenize(text);
+  const body = (
+    <Text style={[styles.bulletText, { color: textColor }]}>
+      {segments.map((seg, i) => (
+        <Text key={i} style={seg.bold ? { fontFamily: "Helvetica-Bold", color: "#0f172a" } : {}}>
+          {seg.text}
+        </Text>
+      ))}
+    </Text>
+  );
+  if (para) {
+    return <View style={styles.paraRow}>{body}</View>;
+  }
   return (
     <View style={styles.bulletRow}>
       <Text style={[styles.bullet, { color: bulletColor }]}>•</Text>
-      <Text style={[styles.bulletText, { color: textColor }]}>
-        {segments.map((seg, i) => (
-          <Text key={i} style={seg.bold ? { fontFamily: "Helvetica-Bold", color: "#0f172a" } : {}}>
-            {seg.text}
-          </Text>
-        ))}
-      </Text>
+      {body}
     </View>
   );
 }
@@ -493,7 +503,6 @@ function SystemBlock({ sys }: { sys: ScopeSystemBlock }) {
         </View>
         <View style={{ alignItems: "flex-end" }}>
           {!!sys.countSummary && <Text style={styles.systemCountsStrong}>{sys.countSummary}</Text>}
-          {!!sys.subSummary && <Text style={styles.systemCounts}>{sys.subSummary}</Text>}
         </View>
       </View>
       <View style={styles.systemBody}>

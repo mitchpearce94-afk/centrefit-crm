@@ -17,9 +17,13 @@ export interface ScopeSystemBlock {
   name: string;          // 'Security & Alarm'
   iconLabel: string;     // single-character glyph for the icon pill: 'S', 'A', 'C', '♪', '▶', '≣', 'T'
   countSummary: string;  // '1 panel · 8 PIRs · 4 reed · 1 button · 3 pendants'
-  subSummary?: string;   // '24/7 monitored'
   lead: string;          // single paragraph of plain-English explanation
-  items: string[];       // bullet list (HTML allowed for <strong> emphasis on counts)
+  /**
+   * Scope lines. HTML allowed for <strong> emphasis on counts. An item
+   * wrapped in <p>…</p> renders as a plain paragraph (no bullet dot) —
+   * see parseScopeItem(); everything else renders as a bullet.
+   */
+  items: string[];
   included: boolean;     // false → omit from the doc (override or empty BOM)
   isCustom: boolean;     // user-added via the editor
 }
@@ -318,7 +322,6 @@ export function generateScopeOfWorks(
       name: 'Security & Alarm',
       iconLabel: 'S',
       countSummary: counts.join(' · '),
-      subSummary: panels > 0 ? '24/7 monitored' : undefined,
       lead: panels > 0
         ? 'Bosch Solution 6000 alarm with full intrusion and member-detection coverage, 24/7 monitoring, and external siren/strobe. Fully integrated with lighting and music control.'
         : 'Intrusion and member-detection sensors with cabling and full commissioning.',
@@ -355,7 +358,6 @@ export function generateScopeOfWorks(
       name: 'Access Control',
       iconLabel: 'A',
       countSummary: counts.join(' · '),
-      subSummary: accessControllers > 0 ? 'UniFi Access + app' : 'Door automation + app',
       lead: accessControllers > 0
         ? 'UniFi Access controller integrated with the alarm panel and member-management app — central control of all doors, readers and keypads on site.'
         : 'Door automation integrated with the alarm and member-management app for unlocking outside staffed hours.',
@@ -388,7 +390,6 @@ export function generateScopeOfWorks(
       name: 'CCTV / Digital Surveillance',
       iconLabel: 'C',
       countSummary: counts.join(' · '),
-      subSummary: 'Full 24/7 coverage',
       lead: 'High-resolution camera array covering all entry points, gym floor, change rooms and back-of-house, recording continuously to the on-site NVR with mobile-app remote viewing.',
       items,
       included: true,
@@ -483,7 +484,6 @@ export function generateScopeOfWorks(
       name: 'Data & Wireless',
       iconLabel: 'D',
       countSummary: counts.join(' · '),
-      subSummary: cabinets > 0 ? 'Comms rack + Wi-Fi' : 'Wi-Fi',
       lead: routers > 0
         ? 'Server cabinet, gigabit managed switching, UPS power and UniFi-managed Wi-Fi covering the whole site.'
         : 'Server cabinet, gigabit managed switching, UPS power and managed Wi-Fi covering the whole site.',
@@ -501,7 +501,6 @@ export function generateScopeOfWorks(
       name: 'Nightlife',
       iconLabel: 'N',
       countSummary: `${nightlifeUnits} ${plural(nightlifeUnits, 'unit')}`,
-      subSummary: 'Streaming + member kiosk',
       lead: 'Nightlife streaming server and member-activity kiosk — supplied by Nightlife and billed directly. Centrefit installs, integrates and commissions on-site.',
       items: [
         `<strong>(${nightlifeUnits}) Nightlife ${plural(nightlifeUnits, 'component')}</strong> — server + kiosk per the Nightlife spec`,
@@ -521,7 +520,6 @@ export function generateScopeOfWorks(
       name: 'FelixGate Tailgating',
       iconLabel: 'T',
       countSummary: `${tailgates} ${plural(tailgates, 'system')}`,
-      subSummary: 'Tailgating detection',
       lead: 'Tailgating detection at the front entrance. A counting sensor and profile camera count every person walking through the door and cross-reference against the gym\'s member access system to flag unauthorised entries. Each event uploads a 15-second video clip (5 seconds before, 10 seconds after) to the FelixGate cloud portal for review.',
       items: [
         `<strong>(${tailgates}) FelixGate counting sensor + profile camera</strong> installed at the front entrance`,
@@ -743,6 +741,17 @@ function htmlToPlainText(html: string): string {
     .trim();
 }
 
+/**
+ * Split a scope item into text + display style. Items wrapped in <p>…</p>
+ * (authored via the scope editor's paragraph mode) render as plain
+ * paragraphs; everything else renders as a bullet. All renderers — PDF,
+ * customer HTML, plain text, wizard preview — share this convention.
+ */
+export function parseScopeItem(item: string): { text: string; para: boolean } {
+  const m = item.trim().match(/^<p>([\s\S]*)<\/p>$/i);
+  return m ? { text: m[1], para: true } : { text: item, para: false };
+}
+
 /** Plain-text renderer — used for Xero invoice line descriptions. */
 export function renderScopeAsText(scope: ScopeDocument): string {
   const lines: string[] = [];
@@ -751,14 +760,20 @@ export function renderScopeAsText(scope: ScopeDocument): string {
   for (const sys of scope.systems) {
     lines.push(`${sys.name.toUpperCase()}${sys.countSummary ? `  (${sys.countSummary})` : ''}`);
     if (sys.lead) lines.push(`  ${stripHtml(sys.lead)}`);
-    for (const item of sys.items) lines.push(`    • ${stripHtml(item)}`);
+    for (const item of sys.items) {
+      const { text, para } = parseScopeItem(item);
+      lines.push(para ? `    ${stripHtml(text)}` : `    • ${stripHtml(text)}`);
+    }
     lines.push('');
   }
 
   if (scope.byOthers.length > 0) {
     for (const blk of scope.byOthers) {
       lines.push(blk.name.toUpperCase());
-      for (const item of blk.items) lines.push(`    • ${stripHtml(item)}`);
+      for (const item of blk.items) {
+        const { text, para } = parseScopeItem(item);
+        lines.push(para ? `    ${stripHtml(text)}` : `    • ${stripHtml(text)}`);
+      }
       lines.push('');
     }
   }
@@ -805,16 +820,19 @@ export function renderScopeAsHtml(scope: ScopeDocument): string {
         </div>
         <div style="font-size:10px;color:#475569;text-align:right">
           ${sys.countSummary ? `<strong style="color:#0f172a;font-family:Consolas,Menlo,monospace;font-size:11px">${escape(sys.countSummary)}</strong>` : ''}
-          ${sys.subSummary ? `<br>${escape(sys.subSummary)}` : ''}
         </div>
       </div>
       <div style="padding:12px 18px 14px">
         ${sys.lead ? `<p style="font-size:11.5px;color:#0f172a;margin:0 0 8px;line-height:1.55">${escape(sys.lead)}</p>` : ''}
-        ${sys.items.length > 0 ? `<ul style="list-style:none;padding:0;margin:0">${sys.items.map((it) => `
+        ${sys.items.length > 0 ? `<ul style="list-style:none;padding:0;margin:0">${sys.items.map((it) => {
+          const { text, para } = parseScopeItem(it);
+          return para ? `
+          <li style="padding:6px 0;font-size:11px;color:#475569;line-height:1.55">${escape(text)}</li>` : `
           <li style="padding:4px 0 4px 14px;position:relative;font-size:11px;color:#475569;line-height:1.5">
             <span style="position:absolute;left:0;top:11px;width:5px;height:5px;border-radius:50%;background:#047857"></span>
-            ${escape(it)}
-          </li>`).join('')}</ul>` : ''}
+            ${escape(text)}
+          </li>`;
+        }).join('')}</ul>` : ''}
       </div>
     </div>`).join('');
 
@@ -824,11 +842,15 @@ export function renderScopeAsHtml(scope: ScopeDocument): string {
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#92400e">${escape(blk.name)}</div>
       </div>
       <div style="padding:12px 18px;background:#fffbeb;border-left:1px solid #fde68a;border-right:1px solid #fde68a;border-bottom:1px solid #fde68a;border-radius:0 0 10px 10px">
-        <ul style="list-style:none;padding:0;margin:0">${blk.items.map((it) => `
+        <ul style="list-style:none;padding:0;margin:0">${blk.items.map((it) => {
+          const { text, para } = parseScopeItem(it);
+          return para ? `
+          <li style="padding:6px 0;font-size:11px;color:#78350f;line-height:1.55">${escape(text)}</li>` : `
           <li style="padding:5px 0 5px 14px;position:relative;font-size:11px;color:#78350f;line-height:1.55">
             <span style="position:absolute;left:0;top:12px;width:5px;height:5px;border-radius:50%;background:#b45309"></span>
-            ${escape(it)}
-          </li>`).join('')}</ul>
+            ${escape(text)}
+          </li>`;
+        }).join('')}</ul>
       </div>
     </div>`).join('');
 

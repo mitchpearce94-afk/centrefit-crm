@@ -17,6 +17,7 @@ import {
   checkMandatoryLabour,
   calculateQuoteSummary,
   generateScopeOfWorks,
+  parseScopeItem,
 } from "@/lib/quote-engine";
 import type {
   DeviceCounts,
@@ -2389,12 +2390,15 @@ export function QuoteWizard({
                         <div className="px-3 py-2">
                           {sys.lead && <p className="text-[11px] text-foreground/80 mb-1.5 leading-relaxed">{sys.lead}</p>}
                           <ul className="space-y-1">
-                            {sys.items.map((it, i) => (
-                              <li key={i} className="text-[11px] text-muted-foreground leading-relaxed pl-3 relative">
-                                <span className="absolute left-0 top-2 h-1 w-1 rounded-full bg-emerald-500" />
-                                <span dangerouslySetInnerHTML={{ __html: it }} />
-                              </li>
-                            ))}
+                            {sys.items.map((it, i) => {
+                              const { text, para } = parseScopeItem(it);
+                              return (
+                                <li key={i} className={`text-[11px] text-muted-foreground leading-relaxed relative ${para ? "" : "pl-3"}`}>
+                                  {!para && <span className="absolute left-0 top-2 h-1 w-1 rounded-full bg-emerald-500" />}
+                                  <span dangerouslySetInnerHTML={{ __html: text }} />
+                                </li>
+                              );
+                            })}
                           </ul>
                         </div>
                       </div>
@@ -2407,12 +2411,15 @@ export function QuoteWizard({
                           <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-300">{blk.name}</span>
                         </div>
                         <ul className="px-3 py-2 space-y-1">
-                          {blk.items.map((it, i) => (
-                            <li key={i} className="text-[11px] text-amber-200/90 leading-relaxed pl-3 relative">
-                              <span className="absolute left-0 top-2 h-1 w-1 rounded-full bg-amber-500" />
-                              <span dangerouslySetInnerHTML={{ __html: it }} />
-                            </li>
-                          ))}
+                          {blk.items.map((it, i) => {
+                            const { text, para } = parseScopeItem(it);
+                            return (
+                              <li key={i} className={`text-[11px] text-amber-200/90 leading-relaxed relative ${para ? "" : "pl-3"}`}>
+                                {!para && <span className="absolute left-0 top-2 h-1 w-1 rounded-full bg-amber-500" />}
+                                <span dangerouslySetInnerHTML={{ __html: text }} />
+                              </li>
+                            );
+                          })}
                         </ul>
                       </div>
                     ))}

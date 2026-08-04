@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import {
   generateScopeOfWorks,
   type ScopeOverrides,
@@ -12,6 +13,59 @@ import {
   type ScopeByOthersBlock,
   type ScopeOngoingCost,
 } from "@/lib/quote-engine";
+
+// ── items[] ↔ rich-text HTML ───────────────────────────────────────────────
+// Scope items are stored as an array of strings: a plain string renders as a
+// bullet, a "<p>…</p>" string renders as a paragraph (see parseScopeItem in
+// the engine). The rich-text editor works on one HTML document, so we convert
+// on the way in and back out. Consecutive bullets group into a single <ul>.
+
+function itemsToHtml(items: string[]): string {
+  const out: string[] = [];
+  let bullets: string[] = [];
+  const flush = () => {
+    if (bullets.length) {
+      out.push(`<ul>${bullets.map((b) => `<li><p>${b}</p></li>`).join("")}</ul>`);
+      bullets = [];
+    }
+  };
+  for (const item of items) {
+    const m = item.trim().match(/^<p>([\s\S]*)<\/p>$/i);
+    if (m) {
+      flush();
+      out.push(`<p>${m[1]}</p>`);
+    } else {
+      bullets.push(item);
+    }
+  }
+  flush();
+  return out.join("");
+}
+
+function htmlToItems(html: string): string[] {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const items: string[] = [];
+  const pushPara = (inner: string) => {
+    const trimmed = inner.replace(/<br\s*\/?>/gi, " ").trim();
+    if (trimmed) items.push(`<p>${trimmed}</p>`);
+  };
+  for (const node of Array.from(doc.body.children)) {
+    const tag = node.tagName;
+    if (tag === "UL" || tag === "OL") {
+      // Tiptap wraps each li's content in a <p>; nested lists flatten to
+      // sequential bullets — scope docs don't do sub-bullets.
+      for (const li of Array.from(node.querySelectorAll("li"))) {
+        const inner = (li.querySelector(":scope > p")?.innerHTML ?? li.innerHTML).trim();
+        if (inner) items.push(inner);
+      }
+    } else if (/^H[1-6]$/.test(tag)) {
+      pushPara(`<strong>${node.innerHTML}</strong>`);
+    } else {
+      pushPara(node.innerHTML);
+    }
+  }
+  return items;
+}
 
 interface Props {
   quoteId: string;
@@ -27,11 +81,15 @@ interface Props {
 interface SystemEdit extends ScopeSystemBlock {
   /** True when the user has edited away from the auto state. */
   isDirty?: boolean;
+  /** Rich-text working copy of `items` — kept in sync via htmlToItems. */
+  itemsHtml: string;
 }
 
 interface ByOthersEdit extends ScopeByOthersBlock {
   /** True when the items list has been edited away from the auto state. */
   isDirty?: boolean;
+  /** Rich-text working copy of `items` — kept in sync via htmlToItems. */
+  itemsHtml: string;
 }
 
 interface ListBlockEdit {
@@ -87,6 +145,7 @@ export function ScopeEditor({
         ...(applied ?? autoSys),
         included: !overrideMissing,
         isDirty: !!applied && (applied.lead !== autoSys.lead || JSON.stringify(applied.items) !== JSON.stringify(autoSys.items)),
+        itemsHtml: itemsToHtml((applied ?? autoSys).items),
       } satisfies SystemEdit;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -104,6 +163,7 @@ export function ScopeEditor({
         ...(applied ?? autoBlk),
         included: includedIds.has(autoBlk.id),
         isDirty: !!applied && JSON.stringify(applied.items) !== JSON.stringify(autoBlk.items),
+        itemsHtml: itemsToHtml((applied ?? autoBlk).items),
       };
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -157,19 +217,38 @@ export function ScopeEditor({
     setSystems((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch, isDirty: true } : s)));
   }
 
+  // The rich editor is the source of truth while typing: we store its HTML
+  // verbatim (so the editor's external-sync effect never fights the cursor)
+  // and derive the persisted items[] from it on every change.
+  function patchSystemItemsHtml(id: string, html: string) {
+    setSystems((prev) =>
+      prev.map((s) =>
+        s.id === id ? { ...s, itemsHtml: html, items: htmlToItems(html), isDirty: true } : s,
+      ),
+    );
+  }
+
   function toggleByOthers(id: string, included: boolean) {
     setByOthers((prev) => prev.map((b) => (b.id === id ? { ...b, included } : b)));
   }
 
-  function patchByOthersItems(id: string, items: string[]) {
-    setByOthers((prev) => prev.map((b) => (b.id === id ? { ...b, items, isDirty: true } : b)));
+  function patchByOthersItemsHtml(id: string, html: string) {
+    setByOthers((prev) =>
+      prev.map((b) =>
+        b.id === id ? { ...b, itemsHtml: html, items: htmlToItems(html), isDirty: true } : b,
+      ),
+    );
   }
 
   function revertByOthers(id: string) {
     const autoBlk = auto.byOthers.find((b) => b.id === id);
     if (!autoBlk) return;
     setByOthers((prev) =>
-      prev.map((b) => (b.id === id ? { ...autoBlk, included: true, isDirty: false } : b)),
+      prev.map((b) =>
+        b.id === id
+          ? { ...autoBlk, included: true, isDirty: false, itemsHtml: itemsToHtml(autoBlk.items) }
+          : b,
+      ),
     );
   }
 
@@ -183,7 +262,7 @@ export function ScopeEditor({
     setSystems((prev) =>
       prev.map((s) =>
         s.id === id
-          ? { ...autoSys, included: true, isDirty: false }
+          ? { ...autoSys, included: true, isDirty: false, itemsHtml: itemsToHtml(autoSys.items) }
           : s,
       ),
     );
@@ -396,17 +475,24 @@ export function ScopeEditor({
                   </div>
                   <div>
                     <label className="block text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1">
-                      Items (one per line)
+                      Items — bullet-list lines get a dot on the quote, paragraph lines don&apos;t
                     </label>
-                    <textarea
-                      value={sys.items.join("\n")}
-                      onChange={(e) => patchSystem(sys.id, { items: e.target.value.split("\n").filter((l) => l.trim().length > 0 || true) })}
-                      onBlur={(e) => patchSystem(sys.id, { items: e.target.value.split("\n").map((l) => l.trim()).filter(Boolean) })}
-                      readOnly={readOnly}
-                      rows={Math.max(3, sys.items.length + 1)}
-                      placeholder="One bullet per line. Use <strong>...</strong> for bold."
-                      className="w-full rounded-md border border-border bg-input px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary font-mono"
-                    />
+                    {readOnly ? (
+                      <textarea
+                        value={sys.items.join("\n")}
+                        readOnly
+                        rows={Math.max(3, sys.items.length + 1)}
+                        className="w-full rounded-md border border-border bg-input px-3 py-2 text-xs text-foreground font-mono"
+                      />
+                    ) : (
+                      <RichTextEditor
+                        value={sys.itemsHtml}
+                        onChange={(html) => patchSystemItemsHtml(sys.id, html)}
+                        minHeight={110}
+                        placeholder="Bullets or paragraphs — switch with the toolbar"
+                        className="text-xs"
+                      />
+                    )}
                   </div>
                 </div>
               )}
@@ -455,17 +541,24 @@ export function ScopeEditor({
                     {blk.included && (
                       <div className="p-3">
                         <label className="block text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1">
-                          Items (one per line)
+                          Items — bullet-list lines get a dot on the quote, paragraph lines don&apos;t
                         </label>
-                        <textarea
-                          value={blk.items.join("\n")}
-                          onChange={(e) => patchByOthersItems(blk.id, e.target.value.split("\n").filter((l) => l.trim().length > 0 || true))}
-                          onBlur={(e) => patchByOthersItems(blk.id, e.target.value.split("\n").map((l) => l.trim()).filter(Boolean))}
-                          readOnly={readOnly}
-                          rows={Math.max(2, blk.items.length + 1)}
-                          placeholder="One bullet per line. Use <strong>...</strong> for bold."
-                          className="w-full rounded-md border border-border bg-input px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary font-mono"
-                        />
+                        {readOnly ? (
+                          <textarea
+                            value={blk.items.join("\n")}
+                            readOnly
+                            rows={Math.max(2, blk.items.length + 1)}
+                            className="w-full rounded-md border border-border bg-input px-3 py-2 text-xs text-foreground font-mono"
+                          />
+                        ) : (
+                          <RichTextEditor
+                            value={blk.itemsHtml}
+                            onChange={(html) => patchByOthersItemsHtml(blk.id, html)}
+                            minHeight={90}
+                            placeholder="Bullets or paragraphs — switch with the toolbar"
+                            className="text-xs"
+                          />
+                        )}
                       </div>
                     )}
                   </div>

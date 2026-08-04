@@ -71,6 +71,7 @@ export {
   manualScopeDocument,
   renderScopeAsHtml,
   renderScopeAsText,
+  parseScopeItem,
   BOMRollup,
 } from './scope-of-works'
 export type {
