@@ -162,6 +162,49 @@ export const CCTV_PLAYBACK_PROCEDURE: Procedure = {
   ],
 };
 
+/**
+ * DMSS mobile app + account setup. Authored from Mitchell's "CCTV on Phone"
+ * doc (2026-08-04), tightened for the pack. Included alongside the playback
+ * guide whenever the site has CCTV.
+ */
+export const CCTV_MOBILE_PROCEDURE: Procedure = {
+  key: "cctv_mobile",
+  title: "CCTV on Your Phone — DMSS App Setup",
+  version: "V1.0",
+  intro:
+    "Your cameras can be viewed live (and played back, where enabled) from your phone using the Dahua DMSS app. Each staff member who needs access creates their own free DMSS account, and Centrefit then shares the site's cameras to that account — so access can be granted or removed per person at any time without changing anything on site.",
+  steps: [
+    {
+      title: "Step 1 — Install the app",
+      body: "Download DMSS from the Apple App Store or Google Play Store on the phone that will be viewing the cameras. The icon is a blue square with a white camera lens.",
+    },
+    {
+      title: "Step 2 — First launch",
+      body: "Open the app. Tap OK when asked about finding devices on your local network, and ALLOW alerts and notifications so camera events can reach your phone. Swipe through the short tutorial and tap the blue arrow on the last slide.",
+    },
+    {
+      title: "Step 3 — Set your region",
+      body: "Choose your region carefully — select Australia (or the country you are in) and tap Done in the top right. The region can't easily be changed later without recreating the account.",
+    },
+    {
+      title: "Step 4 — Accept the service agreement",
+      body: "Tap Service Agreement Policy, review it, and tap Next.",
+    },
+    {
+      title: "Step 5 — Create your account",
+      body: "Tap Me in the bottom-right corner of the app, then Log in, then Sign Up. Enter your email address (or mobile number) and choose a password — it must be 8–32 characters and use at least two of: letters, numbers and special characters. Tap Get Verification Code, enter the code sent to your email or phone, and complete the sign-up.",
+    },
+    {
+      title: "Step 6 — Have your cameras connected",
+      body: "Once your account is created and verified, call Centrefit on (07) 3188 5115 or email support@centrefit.com.au with your name, your facility, and the email or mobile number you signed up with. We will deliver the site's cameras to your new account — they will appear on the app's Home screen.",
+    },
+    {
+      title: "Staff changes",
+      body: "Please don't share one DMSS login between multiple people — accounts are free, and individual accounts mean access can be removed per person. When a staff member with camera access leaves, contact Centrefit and we will disconnect the cameras from their account.",
+    },
+  ],
+};
+
 // ── Compliance statement ────────────────────────────────────────────────────
 // Canonical licence constants live in the monitoring-form spec (Mitchell
 // confirmed 2026-07-05: the security paperwork's set wins; the old handover

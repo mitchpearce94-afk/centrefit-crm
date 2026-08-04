@@ -19,6 +19,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ACCEPTANCE_STATEMENT,
   ALARM_PANEL_SLUGS,
+  CCTV_MOBILE_PROCEDURE,
   CCTV_PLAYBACK_PROCEDURE,
   DURESS_SLUGS,
   DURESS_TESTING_PROCEDURE,
@@ -58,6 +59,11 @@ export interface WifiNetwork {
   notes: string | null;
 }
 
+export interface CctvUser {
+  user: string;
+  password: string;
+}
+
 export interface HandoverInput {
   siteName: string;
   clientName: string;
@@ -66,6 +72,8 @@ export interface HandoverInput {
   entries: HandoverEntry[];
   wifi: WifiNetwork[];
   procedures: Procedure[];
+  /** Staff logins from the site's CCTV/NVR Key Information assets. */
+  cctvUsers: CctvUser[];
 }
 
 // ── Data gathering ──────────────────────────────────────────────────────────
@@ -77,6 +85,9 @@ interface AssetRow {
   is_active: boolean;
   show_in_key_info: boolean;
   wifi_ssids: WifiNetwork[] | null;
+  staff_user: string | null;
+  staff_password: string | null;
+  extra_staff_users: { user?: string | null; password?: string | null }[] | null;
   asset_type: { slug: string; name: string; category: string; is_key_info: boolean } | null;
 }
 
@@ -114,7 +125,7 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
       .single(),
     sb
       .from("site_assets")
-      .select("device_name, manufacturer, model, is_active, show_in_key_info, wifi_ssids, asset_type:asset_types!asset_type_id(slug, name, category, is_key_info)")
+      .select("device_name, manufacturer, model, is_active, show_in_key_info, wifi_ssids, staff_user, staff_password, extra_staff_users, asset_type:asset_types!asset_type_id(slug, name, category, is_key_info)")
       .eq("site_id", siteId)
       .eq("is_active", true),
     sb.from("datasheets").select("id, model, manufacturer, product_name, match_models, storage_path, source_url"),
@@ -220,8 +231,22 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
     entries.some((e) => e.model.includes("NVR"));
   const procedures: Procedure[] = [
     ...(hasDuress ? [DURESS_TESTING_PROCEDURE] : []),
-    ...(hasCctv ? [CCTV_PLAYBACK_PROCEDURE] : []),
+    ...(hasCctv ? [CCTV_PLAYBACK_PROCEDURE, CCTV_MOBILE_PROCEDURE] : []),
   ];
+
+  // Staff logins from CCTV-class assets (the NVR's Key Information) — printed
+  // with the playback guide so "credentials provided at handover" is literal.
+  // Router/switch staff creds deliberately excluded: this block is CCTV only.
+  const cctvUsers: CctvUser[] = [];
+  for (const a of assets) {
+    if (a.asset_type?.slug !== "nvr" && a.asset_type?.category !== "cctv") continue;
+    if (a.staff_user || a.staff_password) {
+      cctvUsers.push({ user: a.staff_user ?? "—", password: a.staff_password ?? "—" });
+    }
+    for (const u of a.extra_staff_users ?? []) {
+      if (u?.user || u?.password) cctvUsers.push({ user: u.user ?? "—", password: u.password ?? "—" });
+    }
+  }
 
   return {
     siteName: site.name as string,
@@ -231,6 +256,7 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
     entries,
     wifi: [...wifiBySsid.values()],
     procedures,
+    cctvUsers,
   };
 }
 
@@ -362,6 +388,31 @@ async function renderBodyBack(input: HandoverInput): Promise<Buffer> {
               <Text style={[s.body, { marginTop: 3 }]}>{step.body}</Text>
             </View>
           ))}
+
+          {/* Staff recorder logins from Key Information — printed with the
+              playback guide so its "credentials provided at handover" line
+              is literally true. */}
+          {proc.key === "cctv_playback" && input.cctvUsers.length > 0 && (
+            <View style={{ marginTop: 18, borderWidth: 1, borderColor: INK, borderRadius: 6, padding: 12 }} wrap={false}>
+              <Text style={{ fontSize: 9, fontFamily: "Helvetica-Bold", letterSpacing: 1, marginBottom: 4 }}>
+                YOUR CCTV STAFF LOGINS
+              </Text>
+              <Text style={{ fontSize: 8, color: MUTED, marginBottom: 8 }}>
+                Use these to log in to the recorder for playback. Keep this page secure — anyone with
+                these details can view your cameras and recorded footage.
+              </Text>
+              <View style={{ flexDirection: "row", paddingBottom: 3, borderBottomWidth: 0.75, borderBottomColor: INK }}>
+                <Text style={{ flex: 1, fontSize: 7.5, color: MUTED, fontFamily: "Helvetica-Bold" }}>USERNAME</Text>
+                <Text style={{ width: 160, fontSize: 7.5, color: MUTED, fontFamily: "Helvetica-Bold" }}>PASSWORD</Text>
+              </View>
+              {input.cctvUsers.map((u, i) => (
+                <View key={i} style={{ flexDirection: "row", paddingVertical: 3.5, borderBottomWidth: i < input.cctvUsers.length - 1 ? 0.5 : 0, borderBottomColor: LINE }}>
+                  <Text style={{ flex: 1, fontSize: 9.5, fontFamily: "Courier" }}>{u.user}</Text>
+                  <Text style={{ width: 160, fontSize: 9.5, fontFamily: "Courier" }}>{u.password}</Text>
+                </View>
+              ))}
+            </View>
+          )}
         </Page>
       ))}
 
