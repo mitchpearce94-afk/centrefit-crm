@@ -43,6 +43,8 @@ export const PRODUCT_BLURBS: Record<string, string> = {
     "Datasheet for the GSM duress intercom on the wall for members to use in emergency situations.",
   PRM240: "Datasheet for the audio amplifier in the server cabinet.",
   "UCG-Fiber": "Specifications for the UniFi Cloud Gateway Fiber network router.",
+  "UCK-G2-PLUS":
+    "Specifications for the UniFi Cloud Key — the on-site network controller that allows Centrefit to securely manage the facility's network switch remotely.",
   "U7 Pro": "Specifications for the UniFi WiFi access points installed in the facility.",
   "USW-48-PoE": "Specifications for the UniFi PoE network switch in the server cabinet.",
   "USW-Pro-Max-48-PoE": "Specifications for the UniFi PoE network switch in the server cabinet.",
@@ -68,6 +70,7 @@ export const ENTRY_ORDER: string[] = [
   "USW-48-PoE",
   "USW-Pro-Max-48-PoE",
   "DGS-1210 Series",
+  "UCK-G2-PLUS",
   "UCG-Fiber",
   "DSL-X3052E",
   "GSM Duress Intercom",
