@@ -60,6 +60,36 @@ export async function POST(
     );
   }
 
+  // Guard: refuse if ANOTHER job's rows share this Xero PO id. A cross-linked
+  // stamp means deleting the PO here would nuke a live PO that other job is
+  // relying on — Xero reuses the numbers of deleted draft POs, so a stale or
+  // mis-stamped id can end up pointing at somebody else's order (see the
+  // Moorooka/Beveridge PO-0471 incident, 2026-08-05).
+  const { data: crossRows, error: crossErr } = await supabase
+    .from("job_procurement_items")
+    .select("job_id, job:jobs(number)")
+    .eq("xero_po_id", xeroPoId)
+    .neq("job_id", jobId);
+  if (crossErr) return NextResponse.json({ error: crossErr.message }, { status: 500 });
+  if (crossRows && crossRows.length > 0) {
+    const jobNumbers = Array.from(
+      new Set(
+        crossRows.map((r) => {
+          const job = r.job as { number: string } | { number: string }[] | null;
+          return Array.isArray(job) ? job[0]?.number : job?.number;
+        }),
+      ),
+    )
+      .filter(Boolean)
+      .join(", ");
+    return NextResponse.json(
+      {
+        error: `Can't reset — this Xero PO is also linked to job${jobNumbers.includes(",") ? "s" : ""} ${jobNumbers || "(unknown)"}. Untangle the cross-linked lines first so resetting here can't delete another job's PO.`,
+      },
+      { status: 409 },
+    );
+  }
+
   // Delete the draft PO in Xero first. If this fails (e.g. already billed),
   // we leave the local rows untouched so state stays consistent with Xero.
   try {
