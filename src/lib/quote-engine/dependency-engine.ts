@@ -495,7 +495,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, pendant, { id: ruleId(), trigger_code: 'rf_receiver', trigger_condition: 'compound', trigger_value: 0, trigger_site_field: 'site_sqm', trigger_site_op: '>', trigger_site_value: 400, quantity_mode: 'fixed', quantity_value: 5, description: 'Duress pendants (5x) for sites > 400 sqm', preset, is_active: true })
 
   // === DURESS ===
-  pushRule(rules, find('Duress Faceplate', 'WEL2210R-DURE'), { id: ruleId(), trigger_code: 'duress_button', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Duress faceplate per duress button', preset, is_active: true, elec_supplied_phase: 'fit_off' })
+  pushRule(rules, find('Duress Faceplate', 'WEL2210R-DURE'), { id: ruleId(), trigger_code: 'duress_button', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Duress faceplate per duress button', preset, is_active: true })
   pushRule(rules, find('ECA2010', 'ECA2010'), { id: ruleId(), trigger_code: 'duress_intercom', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'GSM intercom unit per duress intercom point', preset, is_active: true })
   pushRule(rules, find('OPTUS Mobile SIM', null), { id: ruleId(), trigger_code: 'duress_intercom', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'OPTUS SIM per duress intercom', preset, is_active: true })
 
@@ -591,7 +591,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
 
   // Clipsal mounting brackets
   const bracketTriggerCode = 'pir_360_roof + pir_wall + speaker_roof_black + speaker_roof_white + speaker_wall_black + speaker_wall_white + camera_black + camera_white + duress_button + wap + duress_intercom + rf_receiver'
-  pushRule(rules, find('Mounting Bracket', 'CLI155N'), { id: ruleId(), trigger_code: bracketTriggerCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Clipsal mounting brackets — 1 per PIR, speaker, camera, duress, WAP, RF receiver', preset, is_active: true })
+  pushRule(rules, find('Mounting Bracket', 'CLI155N'), { id: ruleId(), trigger_code: bracketTriggerCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Clipsal mounting brackets — 1 per PIR, speaker, camera, duress, WAP, RF receiver', preset, is_active: true, elec_supplied_phase: 'rough_in' })
 
   // Bosch PIR wall brackets — sold in packs of 3. CEIL(pir_wall / 3)
   pushRule(rules, find('PIR Wall Mounts Pack of 3', 'B335-3'), { id: ruleId(), trigger_code: 'pir_wall', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 1, quantity_divisor: 3, description: 'PIR wall brackets — CEIL(pir_wall / 3) packs of 3', preset, is_active: true })
