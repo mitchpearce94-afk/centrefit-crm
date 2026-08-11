@@ -17,6 +17,20 @@ const REASON_MESSAGES: Record<string, string> = {
 // zero auth weight.
 const PASSKEY_DEVICE_KEY = "cf-passkey-device";
 
+// Remember-me: the checkbox state persists per device (localStorage) and the
+// live choice rides to the server as the cf-remember cookie, which middleware
+// bakes into the new session's enforcement stamps at first request. Ticked =
+// that login gets a 14-day idle window + 14-day cap instead of 4h/12h.
+const REMEMBER_PREF_KEY = "cf-remember-pref";
+const REMEMBER_COOKIE = "cf-remember";
+const REMEMBER_MAX_AGE_S = 60 * 60 * 24 * 14; // 14 days
+
+function writeRememberCookie(on: boolean) {
+  document.cookie = on
+    ? `${REMEMBER_COOKIE}=1; path=/; max-age=${REMEMBER_MAX_AGE_S}; samesite=lax`
+    : `${REMEMBER_COOKIE}=; path=/; max-age=0; samesite=lax`;
+}
+
 // useSearchParams() forces this client component into a Suspense boundary at
 // build time per Next.js 16. The reason banner is the only thing that reads
 // query params, so it lives in its own child component and we render `null`
@@ -41,6 +55,7 @@ export default function LoginPage() {
   // null = not yet known (pre-hydration); avoids a layout flash.
   const [passkeyDevice, setPasskeyDevice] = useState<boolean | null>(null);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [remember, setRemember] = useState(false);
   const autoPrompted = useRef(false);
   const router = useRouter();
   const supabase = createClient();
@@ -51,7 +66,22 @@ export default function LoginPage() {
     } catch {
       setPasskeyDevice(false);
     }
+    try {
+      const pref = localStorage.getItem(REMEMBER_PREF_KEY) === "1";
+      setRemember(pref);
+      // Sync the cookie to the stored preference so the silent passkey
+      // auto-prompt (which can sign in before any click) honours it too.
+      writeRememberCookie(pref);
+    } catch {}
   }, []);
+
+  function toggleRemember(on: boolean) {
+    setRemember(on);
+    try {
+      localStorage.setItem(REMEMBER_PREF_KEY, on ? "1" : "0");
+    } catch {}
+    writeRememberCookie(on);
+  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -160,6 +190,18 @@ export default function LoginPage() {
                 {error}
               </div>
             )}
+
+            {/* Applies to whichever sign-in method is used below. The choice
+                sticks per device, so tick it once on your own machine. */}
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => toggleRemember(e.target.checked)}
+                className="rounded border-border text-primary focus:ring-primary"
+              />
+              <span className="text-xs text-muted-foreground">Keep me signed in for 14 days on this device</span>
+            </label>
 
             {/* Passkey-first on devices that have used one */}
             {passkeyDevice === true && (

@@ -27,6 +27,14 @@ const MAX_SESSION_MS = 12 * 60 * 60 * 1000;    // 12 hours
 // "open and you're in" without weakening the password+TOTP posture — those
 // sessions keep the 12h cap. Idle stays 4h for everyone.
 const PASSKEY_MAX_SESSION_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+// "Keep me signed in" (Mitchell 2026-08-11): sessions started with the
+// remember-me box ticked get a 14-day idle window AND 14-day cap — tick it on
+// a trusted device and the CRM stops logging you out every morning. MFA is
+// still required at sign-in and the vault keeps its own 15-min unlock. The
+// choice is baked into the session-started stamp (":r" suffix) so it's scoped
+// to that login, not to whatever the cookie says later.
+const REMEMBER_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+const REMEMBER_COOKIE = "cf-remember";
 
 const LAST_ACTIVITY_COOKIE = "cf-last-activity";
 const SESSION_STARTED_COOKIE = "cf-session-started";
@@ -189,39 +197,50 @@ export async function updateSession(request: NextRequest) {
     } = await supabase.auth.getSession();
     const sid = sessionIdFromJwt(session?.access_token) ?? user.id;
 
-    const readStamp = (raw: string | undefined): number | null => {
+    // Stamp format "sessionId:timestamp[:r]" — ":r" marks a session started
+    // with remember-me ticked.
+    const readStamp = (raw: string | undefined): { ts: number; remembered: boolean } | null => {
       if (!raw) return null;
-      const [cookieSid, ts] = raw.split(":");
+      const [cookieSid, ts, flag] = raw.split(":");
       if (cookieSid !== sid) return null;
       const n = Number(ts);
-      return Number.isFinite(n) ? n : null;
+      return Number.isFinite(n) ? { ts: n, remembered: flag === "r" } : null;
     };
 
     const lastActivity = readStamp(request.cookies.get(LAST_ACTIVITY_COOKIE)?.value);
     const sessionStarted = readStamp(request.cookies.get(SESSION_STARTED_COOKIE)?.value);
 
+    // Remembered: from the baked session-started stamp, or — on the session's
+    // very first request, before the stamp exists — from the login form's
+    // preference cookie, which is about to be baked in below.
+    const remembered = sessionStarted
+      ? sessionStarted.remembered
+      : request.cookies.get(REMEMBER_COOKIE)?.value === "1";
+    const rememberSuffix = remembered ? ":r" : "";
+
     // Idle check — first request of a login session has no stamp yet, so we
-    // skip and set it below.
-    if (lastActivity && now - lastActivity > IDLE_TIMEOUT_MS) {
+    // skip and set it below. Remembered sessions idle out at 14 days.
+    const idleMs = remembered ? REMEMBER_MS : IDLE_TIMEOUT_MS;
+    if (lastActivity && now - lastActivity.ts > idleMs) {
       await supabase.auth.signOut();
       return redirectToLogin(request, "idle");
     }
 
     // Hard-cap check — independent of activity. Password+TOTP sessions cap at
-    // 12h; passkey sessions at 14 days (see PASSKEY_MAX_SESSION_MS).
-    const maxSessionMs = passkeyAuthed ? PASSKEY_MAX_SESSION_MS : MAX_SESSION_MS;
-    if (sessionStarted && now - sessionStarted > maxSessionMs) {
+    // 12h; passkey and remembered sessions at 14 days.
+    const maxSessionMs = remembered || passkeyAuthed ? Math.max(PASSKEY_MAX_SESSION_MS, REMEMBER_MS) : MAX_SESSION_MS;
+    if (sessionStarted && now - sessionStarted.ts > maxSessionMs) {
       await supabase.auth.signOut();
       return redirectToLogin(request, "expired");
     }
 
     // Bump activity (sliding window) and set session-started on first request.
-    supabaseResponse.cookies.set(LAST_ACTIVITY_COOKIE, `${sid}:${now}`, {
+    supabaseResponse.cookies.set(LAST_ACTIVITY_COOKIE, `${sid}:${now}${rememberSuffix}`, {
       ...COOKIE_OPTIONS,
       maxAge: ENFORCEMENT_COOKIE_MAX_AGE_S,
     });
     if (!sessionStarted) {
-      supabaseResponse.cookies.set(SESSION_STARTED_COOKIE, `${sid}:${now}`, {
+      supabaseResponse.cookies.set(SESSION_STARTED_COOKIE, `${sid}:${now}${rememberSuffix}`, {
         ...COOKIE_OPTIONS,
         maxAge: ENFORCEMENT_COOKIE_MAX_AGE_S,
       });

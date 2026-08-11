@@ -16,6 +16,11 @@ import { createClient } from "@/lib/supabase/client";
 // Keep in lockstep with IDLE_TIMEOUT_MS in src/lib/supabase/middleware.ts
 // (4h since 2026-07-06 — MFA made the 30-min window unnecessary friction).
 const IDLE_MS = 4 * 60 * 60 * 1000;
+// Remember-me sessions idle out at 14 days instead — mirror REMEMBER_MS in
+// the middleware. The cf-remember cookie is the login form's device
+// preference (JS-readable by design); the middleware stamp stays the
+// authority, this just stops the client guard firing early.
+const REMEMBER_IDLE_MS = 14 * 24 * 60 * 60 * 1000;
 
 const ACTIVITY_EVENTS = ["mousemove", "keydown", "click", "scroll", "touchstart"] as const;
 
@@ -39,7 +44,8 @@ export function IdleLogout() {
     // timer on wake — so a laptop closed overnight sailed straight back in.
     // Waking or refocusing now CHECKS the elapsed time instead of forgiving it.
     const check = () => {
-      if (Date.now() - lastActivityRef.current > IDLE_MS) void trigger();
+      const remembered = document.cookie.split("; ").includes("cf-remember=1");
+      if (Date.now() - lastActivityRef.current > (remembered ? REMEMBER_IDLE_MS : IDLE_MS)) void trigger();
     };
     const activity = () => {
       lastActivityRef.current = Date.now();
