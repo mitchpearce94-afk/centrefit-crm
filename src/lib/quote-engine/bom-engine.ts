@@ -42,6 +42,40 @@ export function generateBOM(
       (p) => p.device_type === deviceType.code
     )
 
+    // Reed switches split on the plan builder's Cabled tickbox (all templates,
+    // Mitchell 2026-08-11): cabled units are the WIRED DFMWSS60W, uncabled
+    // ones the RF RFDW-SM. siteInfo.reed_switch_uncabled carries the untick
+    // count; quotes with no plan default to all-cabled (wired).
+    if (deviceType.code === 'reed_switch') {
+      const uncabled = Math.min(count, siteInfo.reed_switch_uncabled || 0)
+      const cabled = count - uncabled
+      const bySku = (sku: string) =>
+        products.find((p) => p.sku?.toUpperCase() === sku && p.is_active !== false)
+      const pushReed = (product: Product | undefined, qty: number, notes: string) => {
+        if (qty <= 0) return
+        const prod = product ?? defaultProduct
+        bomItems.push({
+          device_type_code: deviceType.code,
+          device_type_legend: deviceType.legend,
+          category: deviceType.category,
+          product_id: prod?.id || null,
+          product_name: prod?.name || `[No product set for ${deviceType.legend}]`,
+          sku: prod?.sku || '',
+          supplier: prod?.supplier || '',
+          quantity: qty,
+          cost_price: prod?.cost_price || 0,
+          markup: prod?.markup || DEFAULT_MARKUP,
+          sell_price: prod?.sell_price || 0,
+          notes,
+          auto_added: false,
+          rule_description: null,
+        })
+      }
+      pushReed(bySku('DFMWSS60W'), cabled, '')
+      pushReed(bySku('RFDW-SM'), uncabled, 'wireless (RF)')
+      return
+    }
+
     // Wall speakers come in boxes of 2 (both colour variants)
     const isWallSpeaker = deviceType.code === 'speaker_wall_black' || deviceType.code === 'speaker_wall_white'
     const orderQty = isWallSpeaker ? Math.ceil(count / 2) : count
