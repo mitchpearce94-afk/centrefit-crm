@@ -55,6 +55,7 @@ export {
   isElecSupplied,
   getSnapFitnessRules,
   getBasicRules,
+  getPlanetFitnessRules,
   getDefaultDependencyRules,
 } from './dependency-engine'
 export type {

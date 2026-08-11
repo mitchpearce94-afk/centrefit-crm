@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
-import { DEVICE_TYPES, getSnapFitnessRules, getBasicRules } from "@/lib/quote-engine";
+import { DEVICE_TYPES, getSnapFitnessRules, getBasicRules, getPlanetFitnessRules } from "@/lib/quote-engine";
 import type { DependencyRule } from "@/lib/quote-engine";
 
 interface DbRule {
@@ -176,7 +176,7 @@ export function RulesManager({
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(initialTemplateId);
 
   async function seedRulesFromEngine() {
-    if (!confirm("Re-seed both Snap Fitness and Total Fusion templates from the code-defined ruleset? This wipes all existing dependency rules and replaces them.")) return;
+    if (!confirm("Re-seed the Snap Fitness, Total Fusion and Planet Fitness templates from the code-defined ruleset? This wipes all existing dependency rules and replaces them.")) return;
     setSeeding(true);
     try {
       const { data: fullProducts } = await supabase.from("quote_products").select("*").eq("is_active", true);
@@ -187,9 +187,11 @@ export function RulesManager({
       }
       const snapTemplate = templates.find((t) => t.slug === "snap_fitness");
       const basicTemplate = templates.find((t) => t.slug === "total_fusion") ?? templates.find((t) => t.slug === "basic");
+      const pfTemplate = templates.find((t) => t.slug === "planet_fitness");
       const snapRules = snapTemplate ? getSnapFitnessRules(fullProducts).map((r) => ({ ...r, _templateId: snapTemplate.id })) : [];
       const basicRules = basicTemplate ? getBasicRules(fullProducts).map((r) => ({ ...r, _templateId: basicTemplate.id })) : [];
-      const allRules = [...snapRules, ...basicRules];
+      const pfRules = pfTemplate ? getPlanetFitnessRules(fullProducts).map((r) => ({ ...r, _templateId: pfTemplate.id })) : [];
+      const allRules = [...snapRules, ...basicRules, ...pfRules];
       await supabase.from("quote_dependency_rules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
       const rows = allRules
         .filter((r) => r.auto_add_product_id)

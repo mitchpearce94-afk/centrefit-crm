@@ -124,6 +124,12 @@ function resolveTriggerCount(triggerCode: string | null, deviceCounts: DeviceCou
     if (SITE_INFO_FIELDS.includes(code)) {
       return sum + (Number((siteInfo as Record<string, unknown>)[code]) || 0)
     }
+    // ALL reed switches including uncabled/RF ones — RF reeds still consume
+    // panel zones, so zone-expansion rules count them while cable/siren
+    // formulas (plain reed_switch) keep the uncabled subtraction below.
+    if (code === 'reed_switch_all') {
+      return sum + (deviceCounts.reed_switch || 0)
+    }
     const expanded = LEGACY_CODE_ALIASES[code] ?? [code]
     let codeSum = 0
     for (const ec of expanded) {
@@ -197,6 +203,19 @@ function calculateCustomQuantity(key: string, deviceCounts: DeviceCounts, siteIn
       // Glass doors take the AMAB4300 armature instead (mag_lock_glass count
       // comes from the plan builder's per-device Glass Door tickbox).
       return Math.max(0, (dc.mag_lock || 0) - (si.mag_lock_glass || 0))
+    }
+
+    case 'pf_small_cf_boards': {
+      // Planet Fitness small CF connector boards. The large CF board carries
+      // the first 704B + first 710B; every extra module needs its own small
+      // board. Mirrors the PF 704B tiers (ALL reeds + duress — RF reeds take
+      // zones) and the PF 710B formula (1 default + 1 per 4 CABLED reeds).
+      const allReeds = dc.reed_switch || 0
+      const cabledReeds = Math.max(0, allReeds - (si.reed_switch_uncabled || 0))
+      const zones = allReeds + (dc.duress_button || 0)
+      const boards704 = zones <= 0 ? 0 : zones <= 12 ? 1 : zones <= 20 ? 2 : zones <= 28 ? 3 : 4
+      const boards710 = 1 + Math.ceil(cabledReeds / 4)
+      return Math.max(0, boards704 - 1) + Math.max(0, boards710 - 1)
     }
 
     // ── Ubiquiti switch / patch-panel sizing (2026-06-02) ──
@@ -632,6 +651,51 @@ export function getBasicRules(products: Product[]): DependencyRule[] {
 
   const totalDataCode = 'camera_black + camera_white + tailgate_system + wap + data_point'
   pushRule(rules, find('Cat6 UTP Cable 305m', 'ECC6UB305B'), { id: ruleId(), trigger_code: totalDataCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 50, quantity_divisor: 305, description: 'Cat6 cable for all data devices — CEIL(total × 50m / 305m boxes)', preset, is_active: true, elec_supplied_phase: 'rough_in' })
+
+  return rules
+}
+
+// ── Planet Fitness rules ──
+// Mirrors the DB ruleset built 2026-08-11. PF quirks: no Nightlife, Cloud Key
+// instead of a router (PF supply their own), reed switches drive the panel
+// modules (RF reeds still count as zones — reed_switch_all), fixed AV package.
+
+export function getPlanetFitnessRules(products: Product[]): DependencyRule[] {
+  _ruleIdCounter = 0
+  const rules: DependencyRule[] = []
+  const preset = 'planet_fitness'
+  const find = (name: string | null, sku: string | null) => fp(products, name, sku)
+
+  // 704B zone expansion — ALL reeds (incl. RF) + duress buttons, tiered like Snap's PIRs
+  const zoneTrigger = 'reed_switch_all + duress_button'
+  const cm704b = find('CM704B', 'CM704B')
+  pushRule(rules, cm704b, { id: ruleId(), trigger_code: zoneTrigger, trigger_condition: 'range', trigger_min: 1, trigger_max: 12, quantity_mode: 'fixed', quantity_value: 1, description: 'Zone expansion (1x) for 1-12 reeds + duress buttons', preset, is_active: true })
+  pushRule(rules, cm704b, { id: ruleId(), trigger_code: zoneTrigger, trigger_condition: 'range', trigger_min: 13, trigger_max: 20, quantity_mode: 'fixed', quantity_value: 2, description: 'Zone expansion (2x) for 13-20 reeds + duress buttons', preset, is_active: true })
+  pushRule(rules, cm704b, { id: ruleId(), trigger_code: zoneTrigger, trigger_condition: 'range', trigger_min: 21, trigger_max: 28, quantity_mode: 'fixed', quantity_value: 3, description: 'Zone expansion (3x) for 21-28 reeds + duress buttons', preset, is_active: true })
+  pushRule(rules, cm704b, { id: ruleId(), trigger_code: zoneTrigger, trigger_condition: 'range', trigger_min: 29, trigger_max: 36, quantity_mode: 'fixed', quantity_value: 4, description: 'Zone expansion (4x) for 29-36 reeds + duress buttons', preset, is_active: true })
+
+  // 710B output boards — 1 default + 1 per 4 cabled reeds (reed sirens)
+  pushRule(rules, find('CM710B', 'CM710B'), { id: ruleId(), trigger_code: 'reed_switch', trigger_condition: 'always', quantity_mode: 'formula', quantity_formula: '<=0:1,<=4:2,<=8:3,<=12:4,<=16:5,<=20:6', quantity_value: 7, description: '710B output boards — 1 default + 1 per 4 reed switches (sirens)', preset, is_active: true })
+
+  // Small CF boards — 1 per extra 704B/710B beyond the first of each
+  pushRule(rules, find('SMALL 8-16 PIR Connector Board', 'CFSML2022'), { id: ruleId(), trigger_code: zoneTrigger, trigger_condition: 'always', quantity_mode: 'custom', quantity_custom_key: 'pf_small_cf_boards', description: 'Small CF boards — 1 per extra 704B/710B beyond the first of each (firsts live on the large CF board)', preset, is_active: true })
+
+  // Flush piezo per cabled reed switch
+  pushRule(rules, find('Flush Mounted Piezo', 'DFMWP05'), { id: ruleId(), trigger_code: 'reed_switch', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Flush piezo (DFMWP05) per cabled reed switch', preset, is_active: true })
+
+  // Cloud Key instead of a router — PF supply their own router
+  pushRule(rules, find('Cloud Key', 'NHU-UCK-G2-SSD'), { id: ruleId(), trigger_code: 'cardio_count + tv_count + camera_black + camera_white + tailgate_system + wap + data_point', trigger_condition: 'greater_than_or_equal', trigger_value: 1, quantity_mode: 'fixed', quantity_value: 1, description: 'Ubiquiti Cloud Key+ — PF have their own router, key manages UniFi gear', preset, is_active: true })
+
+  // PF AV package — always on
+  const pfAlways = { trigger_code: null, trigger_condition: 'always', preset, is_active: true }
+  pushRule(rules, find('15m HDMI Cable', 'CB8W-RC-HDMI-10'), { ...pfAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '15m HDMI cable (1x) — PF AV' })
+  pushRule(rules, find('HDMI 1x2 Splitter', 'CBAT-HDMI-TO-HDMIX2'), { ...pfAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'HDMI 1x2 splitter CBAT-HDMI-TO-HDMIX2 (1x) — PF AV' })
+  pushRule(rules, find('HDMI 2.0 Cable 1m', 'CB8W-HDMI2R1'), { ...pfAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'HDMI 2.0 1m cables (2x) — PF AV' })
+  pushRule(rules, find('HDMI Extender over Ethernet', 'KVA-VE-800A'), { ...pfAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'HDMI over Ethernet extender KVA-VE-800A (1x) — PF AV' })
+  pushRule(rules, find('32E1N1100L', '32E1N1100L'), { ...pfAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Philips 32" monitor (1x) — PF AV' })
+  pushRule(rules, find('FHD LED Monitor', 'DHI-LM22-H200'), { ...pfAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '22" LM22 monitor (1x) — PF AV' })
+  pushRule(rules, find('AR100A', 'TIXX-AR100A'), { ...pfAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'TIXX AR100A articulated mount (1x) — PF AV' })
+  pushRule(rules, find('TiXX Articulated Wall Mount', 'TIXX-AR400'), { ...pfAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'TIXX AR400 articulated mount (1x) — PF AV' })
 
   return rules
 }
