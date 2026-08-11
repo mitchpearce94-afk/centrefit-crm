@@ -338,7 +338,7 @@ export function QuoteWizard({
     concrete_mount_black: 0, concrete_mount_white: 0,
     cardio_count: 0, tv_count: 0, ceiling_tv_count: 0,
     wall_tv_mount_count: 0, ceiling_tv_mount_count: 0,
-    separate_studio_zone: false,
+    separate_studio_zone: false, mag_lock_glass: 0,
   });
 
   // Step 2: Devices
@@ -547,6 +547,7 @@ export function QuoteWizard({
       ...(plan.site_info ? {
         door_count: (plan.site_info.door_count as number) || prev.door_count,
         reed_switch_uncabled: (plan.site_info.reed_switch_uncabled as number) || 0,
+        mag_lock_glass: (plan.site_info.mag_lock_glass as number) || 0,
       } : {}),
       state: plan.state || prev.state || 'QLD',
     }));
@@ -1228,6 +1229,8 @@ export function QuoteWizard({
       wall_tv_mount_count: siteInfo.wall_tv_mount_count || 0,
       ceiling_tv_mount_count: siteInfo.ceiling_tv_mount_count || 0,
       separate_studio_zone: siteInfo.separate_studio_zone || false,
+      mag_lock_glass: siteInfo.mag_lock_glass || 0,
+      reed_switch_uncabled: siteInfo.reed_switch_uncabled || 0,
       device_counts: deviceCounts,
       labour_data: {
         ...effectiveLabourData,
@@ -1772,7 +1775,7 @@ export function QuoteWizard({
           <h3 className="text-sm font-semibold mt-6">Site Info</h3>
           <p className="text-xs text-muted-foreground -mt-2">Used by dependency rules for ancillary products.</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {([["site_sqm","Site Area (sqm)"],["door_count","Door Count"],["external_camera_count","External Cameras"],["concrete_mount_black","Concrete Mounts (Black)"],["concrete_mount_white","Concrete Mounts (White)"],["cardio_count","Cardio Machines"],["tv_count","Wall TVs"],["ceiling_tv_count","Ceiling TVs"],["wall_tv_mount_count","Wall TV Mounts"],["ceiling_tv_mount_count","Ceiling TV Mounts"]] as [keyof SiteInfo, string][]).map(([field, label]) => (
+            {([["site_sqm","Site Area (sqm)"],["door_count","Door Count"],["external_camera_count","External Cameras"],["concrete_mount_black","Concrete Mounts (Black)"],["concrete_mount_white","Concrete Mounts (White)"],["cardio_count","Cardio Machines"],["tv_count","Wall TVs"],["ceiling_tv_count","Ceiling TVs"],["wall_tv_mount_count","Wall TV Mounts"],["ceiling_tv_mount_count","Ceiling TV Mounts"],["mag_lock_glass","Glass-Door Mag Locks"]] as [keyof SiteInfo, string][]).map(([field, label]) => (
               <div key={field}>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">{label}</label>
                 <input type="number" min="0" value={(siteInfo[field] as number) || ""} onChange={(e) => setSI(field, parseInt(e.target.value) || 0)} className={inputClass} />

@@ -101,7 +101,7 @@ const SITE_INFO_FIELDS = [
   'concrete_mount_black', 'concrete_mount_white',
   'cardio_count', 'tv_count', 'ceiling_tv_count',
   'wall_tv_mount_count', 'ceiling_tv_mount_count',
-  'separate_studio_zone',
+  'separate_studio_zone', 'mag_lock_glass',
 ]
 
 // ── Resolve trigger code → numeric count ──
@@ -190,6 +190,13 @@ function calculateCustomQuantity(key: string, deviceCounts: DeviceCounts, siteIn
       // 0 readers → 2, 1 reader → 3, 2 readers → 3, 3 readers → 4.
       const readers = dc.card_reader || 0
       return 2 + Math.ceil(readers / 2)
+    }
+
+    case 'mag_lock_standard_mount': {
+      // FEM4300-MP-BLK mounting plates for mag locks on NON-glass doors.
+      // Glass doors take the AMAB4300 armature instead (mag_lock_glass count
+      // comes from the plan builder's per-device Glass Door tickbox).
+      return Math.max(0, (dc.mag_lock || 0) - (si.mag_lock_glass || 0))
     }
 
     // ── Ubiquiti switch / patch-panel sizing (2026-06-02) ──

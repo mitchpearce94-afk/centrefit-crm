@@ -38,6 +38,9 @@ export interface SiteInfo {
   separate_studio_zone?: boolean;
   state?: string;
   reed_switch_uncabled?: number;
+  // Mag locks on glass doors (plan builder Glass Door tickbox) — drives the
+  // AMAB4300 armature vs FEM4300-MP-BLK mounting plate dependency rules.
+  mag_lock_glass?: number;
 }
 
 // ---------------------------------------------------------------------------

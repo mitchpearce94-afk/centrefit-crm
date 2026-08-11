@@ -54,6 +54,8 @@ export interface PlacedDevice {
   concreteMounted?: boolean;
   provisional?: boolean;
   cabled?: boolean;
+  /** Mag locks only: mounted on a glass door (armature plate instead of mounting plate). */
+  glassDoor?: boolean;
   /**
    * For data outlets (Cat6 / RG6): how many physical points at this
    * marker. Rendered as a small ×N badge so the electrician knows how

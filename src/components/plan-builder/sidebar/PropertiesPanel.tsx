@@ -11,7 +11,7 @@ export default function PropertiesPanel() {
     titleBlock, updateTitleBlock,
     clientLogo, setClientLogo,
     rotateDevice, deleteDevice, setCommsRack,
-    setSpeakerZone, setDataCount, setConcreteMounted, setProvisional, setCabled,
+    setSpeakerZone, setDataCount, setConcreteMounted, setProvisional, setCabled, setGlassDoor,
   } = usePlanStore();
 
   const selectedDevice = selectedDeviceId ? devices.find(d => d.instanceId === selectedDeviceId) : null;
@@ -19,6 +19,7 @@ export default function PropertiesPanel() {
   const isCommsRack = selectedDevice?.instanceId === commsRackId;
   const isSpeaker = selectedDef?.cableType === 'speaker';
   const isReedSwitch = selectedDevice?.deviceId === 'reed-switch';
+  const isMagLock = selectedDevice?.deviceId === 'mag-lock';
   const isDataOutlet = selectedDevice?.deviceId === 'cat6-data' || selectedDevice?.deviceId === 'rg6-coax';
 
   return (
@@ -82,6 +83,14 @@ export default function PropertiesPanel() {
                       onChange={e => setCabled(selectedDevice.instanceId, e.target.checked)}
                       className="accent-green-500 cursor-pointer" />
                     <span className="text-gray-300">Cabled</span>
+                  </label>
+                )}
+                {isMagLock && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={!!selectedDevice.glassDoor}
+                      onChange={e => setGlassDoor(selectedDevice.instanceId, e.target.checked)}
+                      className="accent-cyan-500 cursor-pointer" />
+                    <span className="text-gray-300">Glass Door</span>
                   </label>
                 )}
               </div>

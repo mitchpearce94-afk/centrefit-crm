@@ -58,6 +58,8 @@ export default async function EditQuotePage({
       wall_tv_mount_count: quote.wall_tv_mount_count ?? 0,
       ceiling_tv_mount_count: quote.ceiling_tv_mount_count ?? 0,
       separate_studio_zone: quote.separate_studio_zone ?? false,
+      mag_lock_glass: quote.mag_lock_glass ?? 0,
+      reed_switch_uncabled: quote.reed_switch_uncabled ?? 0,
     },
     deviceCounts: quote.device_counts || {},
     labourData: quote.labour_data || null,

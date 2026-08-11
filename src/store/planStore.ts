@@ -103,6 +103,7 @@ interface PlanState {
   setConcreteMounted: (instanceId: string, value: boolean) => void;
   setProvisional: (instanceId: string, value: boolean) => void;
   setCabled: (instanceId: string, value: boolean) => void;
+  setGlassDoor: (instanceId: string, value: boolean) => void;
   addWhitewashRect: (x: number, y: number, width: number, height: number) => void;
   removeWhitewashRect: (id: string) => void;
   addFloor: (name: string) => void;
@@ -658,6 +659,11 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   setCabled: (instanceId, value) => {
     const state = get();
     set({ devices: state.devices.map(d => d.instanceId === instanceId ? { ...d, cabled: value } : d), isDirty: true });
+  },
+
+  setGlassDoor: (instanceId, value) => {
+    const state = get();
+    set({ devices: state.devices.map(d => d.instanceId === instanceId ? { ...d, glassDoor: value } : d), isDirty: true });
   },
 
   updateTitleBlock: (info) => {

@@ -69,7 +69,7 @@ export interface QuoteExportData {
   };
   deviceCounts: Record<string, number>;
   customProducts: CustomProductEntry[];
-  siteInfo: { door_count: number; concrete_mount_black?: number; concrete_mount_white?: number; reed_switch_uncabled?: number };
+  siteInfo: { door_count: number; concrete_mount_black?: number; concrete_mount_white?: number; reed_switch_uncabled?: number; mag_lock_glass?: number };
   floors: Array<{ name: string; deviceCounts: Record<string, number> }>;
 }
 
@@ -91,6 +91,7 @@ export function generateQuoteExport(): QuoteExportData {
   let concreteMountBlack = 0;
   let concreteMountWhite = 0;
   let reedSwitchUncabled = 0;
+  let magLockGlass = 0;
 
   for (const floor of syncedFloors) {
     const floorCounts: Record<string, number> = {};
@@ -122,6 +123,8 @@ export function generateQuoteExport(): QuoteExportData {
       }
       // Count uncabled reed switches (cabled defaults to true)
       if (device.deviceId === 'reed-switch' && device.cabled === false) reedSwitchUncabled++;
+      // Count glass-door mag locks (armature plate instead of mounting plate)
+      if (device.deviceId === 'mag-lock' && device.glassDoor) magLockGlass++;
     }
 
     const floorTgSystems = Math.max(floorTgCameras, floorTgSensors);
@@ -164,7 +167,7 @@ export function generateQuoteExport(): QuoteExportData {
     },
     deviceCounts: globalCounts,
     customProducts,
-    siteInfo: { door_count: doorCount, concrete_mount_black: concreteMountBlack, concrete_mount_white: concreteMountWhite, reed_switch_uncabled: reedSwitchUncabled },
+    siteInfo: { door_count: doorCount, concrete_mount_black: concreteMountBlack, concrete_mount_white: concreteMountWhite, reed_switch_uncabled: reedSwitchUncabled, mag_lock_glass: magLockGlass },
     floors: floorBreakdowns,
   };
 }
