@@ -349,7 +349,13 @@ export function JobInvoices({
       toast("Job has no linked customer", "error");
       return;
     }
-    const priced = rows.filter((r) => r.description.trim() && Number(r.unitAmount) > 0);
+    // A priced row normally needs its own text, but the FIRST priced row may
+    // be left blank when the narrative above exists — the API folds the
+    // narrative into that line, so its own description is optional. (Kills
+    // the "type a '.', then delete it off the Xero draft" dance.)
+    const narrative = description.trim();
+    const pricedAll = rows.filter((r) => Number(r.unitAmount) > 0);
+    const priced = pricedAll.filter((r, i) => r.description.trim() !== "" || (narrative !== "" && i === 0));
     const toLine = (r: LineItemDraft) => ({
       description: r.description.trim(),
       quantity: Number(r.quantity) || 1,
@@ -373,7 +379,7 @@ export function JobInvoices({
       lineItems = priced.map(toLine);
     }
     if (lineItems.length === 0) {
-      toast("Add at least one line item with a description and amount", "error");
+      toast("Add at least one line item with an amount — the first line's description is optional when the write-up above is filled in", "error");
       return;
     }
 
@@ -612,6 +618,7 @@ export function JobInvoices({
                   Merged into the first priced line item below, so the invoice shows
                   one line with the proof of work and the price — no separate $0 line.
                   Pre-filled with the job description, completed checklist, and work-log entries. Edit freely.
+                  The first priced row&apos;s own description can stay blank — this text becomes that line.
                 </p>
                 <textarea
                   value={description}

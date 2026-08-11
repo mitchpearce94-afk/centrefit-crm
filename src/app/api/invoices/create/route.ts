@@ -78,10 +78,12 @@ export async function POST(req: NextRequest) {
     // invoices render (scope text + price on one line).
     if (headerDescription.trim()) {
       const [first, ...rest] = pricedLines;
+      // First row's own description is optional — when blank, the narrative
+      // alone is the line text (no stray separator, no "." placeholder).
       lineItems = [
         {
           ...first,
-          description: `${headerDescription.trim()}\n\n${first.description}`,
+          description: [headerDescription.trim(), first.description?.trim()].filter(Boolean).join("\n\n"),
         },
         ...rest,
       ];
