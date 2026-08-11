@@ -1433,11 +1433,15 @@ function OffersPanel({
     if (!Number.isFinite(val) || val < 0) { toast("Invalid cost", "error"); return; }
 
     if (editTarget) {
+      if (!formSupplierId) { toast("Pick a supplier", "error"); return; }
       setBusyId(editTarget.id);
       const costChanged = Math.abs(val - editTarget.cost_price) > 0.001;
+      // Changing supplier_id on the preferred offer is safe — the DB sync
+      // trigger mirrors the new supplier onto the product row.
       const { error } = await supabase
         .from("product_supplier_offers")
         .update({
+          supplier_id: formSupplierId,
           supplier_sku: formSku.trim() || null,
           supplier_item_name: formName.trim() || null,
           cost_price: val,
@@ -1446,7 +1450,7 @@ function OffersPanel({
         .eq("id", editTarget.id);
       setBusyId(null);
       if (error) { toast(error.message, "error"); return; }
-      toast(`${supplierName(editTarget.supplier_id)} offer updated`);
+      toast(`${supplierName(formSupplierId)} offer updated`);
     } else {
       if (!formSupplierId) { toast("Pick a supplier", "error"); return; }
       setBusyId("new");
@@ -1558,14 +1562,14 @@ function OffersPanel({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">Supplier</label>
-              {editTarget ? (
-                <div className="rounded border border-border bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">{supplierName(editTarget.supplier_id)}</div>
-              ) : (
-                <select value={formSupplierId} onChange={(e) => setFormSupplierId(e.target.value)} className="w-full rounded border border-border bg-input px-2 py-1.5 text-xs focus:border-primary focus:outline-none">
-                  <option value="">Pick a supplier…</option>
-                  {availableSuppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              )}
+              {/* Editable in both modes. Suppliers that already have another
+                  offer on this product are excluded (one offer per supplier). */}
+              <select value={formSupplierId} onChange={(e) => setFormSupplierId(e.target.value)} className="w-full rounded border border-border bg-input px-2 py-1.5 text-xs focus:border-primary focus:outline-none">
+                <option value="">Pick a supplier…</option>
+                {suppliers
+                  .filter((s) => !takenSupplierIds.has(s.id) || s.id === editTarget?.supplier_id)
+                  .map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
             </div>
             <div>
               <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">Cost (ex GST)</label>
