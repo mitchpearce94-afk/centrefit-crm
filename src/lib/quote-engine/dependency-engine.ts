@@ -526,7 +526,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('OPTUS Mobile SIM', null), { id: ruleId(), trigger_code: 'duress_intercom', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'OPTUS SIM per duress intercom', preset, is_active: true })
 
   // === SECURITY CABLE ===
-  const totalSecurityCode = 'pir_360_roof + pir_wall + reed_switch + alarm_panel + door_strike + mag_lock + duress_button + duress_intercom + light_siren + siren_piezo + rf_receiver'
+  const totalSecurityCode = 'pir_360_roof + pir_wall + reed_switch + alarm_panel + door_strike + mag_lock + duress_button + duress_intercom + light_siren + siren_piezo + rf_receiver + break_glass'
   const secCableTrigger = { trigger_code: totalSecurityCode, trigger_condition: 'greater_than', trigger_value: 0, preset, is_active: true }
 
   pushRule(rules, find('6 Core Security Cable', 'EC6C14020300B'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'ceil_formula', quantity_multiplier: 45, quantity_divisor: 300, description: '6-core security cable — CEIL(total_security_devices × 45m / 300m rolls)', elec_supplied_phase: 'rough_in' })
@@ -616,8 +616,8 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('Snap Plug', 'EMP-CAT6UTPST'), { ...cabinetTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Cat6 snap-in plugs (1 pack)' })
 
   // Clipsal mounting brackets
-  const bracketTriggerCode = 'pir_360_roof + pir_wall + speaker_roof_black + speaker_roof_white + speaker_wall_black + speaker_wall_white + camera_black + camera_white + duress_button + wap + duress_intercom + rf_receiver'
-  pushRule(rules, find('Mounting Bracket', 'CLI155N'), { id: ruleId(), trigger_code: bracketTriggerCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Clipsal mounting brackets — 1 per PIR, speaker, camera, duress, WAP, RF receiver', preset, is_active: true, elec_supplied_phase: 'rough_in' })
+  const bracketTriggerCode = 'pir_360_roof + pir_wall + speaker_roof_black + speaker_roof_white + speaker_wall_black + speaker_wall_white + camera_black + camera_white + duress_button + wap + duress_intercom + rf_receiver + break_glass'
+  pushRule(rules, find('Mounting Bracket', 'CLI155N'), { id: ruleId(), trigger_code: bracketTriggerCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Clipsal mounting brackets — 1 per PIR, speaker, camera, duress, WAP, RF receiver, break glass', preset, is_active: true, elec_supplied_phase: 'rough_in' })
 
   // Bosch PIR wall brackets — sold in packs of 3. CEIL(pir_wall / 3)
   pushRule(rules, find('PIR Wall Mounts Pack of 3', 'B335-3'), { id: ruleId(), trigger_code: 'pir_wall', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 1, quantity_divisor: 3, description: 'PIR wall brackets — CEIL(pir_wall / 3) packs of 3', preset, is_active: true })
