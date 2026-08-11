@@ -202,7 +202,10 @@ export async function GET(req: NextRequest) {
     let latest;
     let payUrl: string | null = invoice.xero_online_url;
     try {
-      const { client, conn } = await getAuthedClient();
+      // Cron runs anonymously — MUST pass the service-role client or RLS hides
+      // the Xero connection row and every send dies on "Xero is not connected"
+      // (this exact bug silently killed all auto reminders 2026-06-10 → 08-11).
+      const { client, conn } = await getAuthedClient(svc);
       latest = await fetchXeroInvoice(client, conn.tenant_id, invoice.xero_invoice_id!);
       // Synced-from-Xero invoices have no stored pay link — backfill it so the
       // reminder carries a "View & Pay" button. Best-effort; a miss falls back
