@@ -572,7 +572,9 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   // === AV SYSTEM (always on every Snap Fitness job) ===
   const avAlways = { trigger_code: null, trigger_condition: 'always', preset, is_active: true }
 
-  pushRule(rules, find('Modulator', 'EPS-HDM1001M4'), { ...avAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'HDMI modulators (2x) for AV distribution' })
+  // 4-channel CFDM4C (China import 2026-08) replaced 2x single-channel
+  // EPS-HDM1001M4 units — one box now covers the site's channels.
+  pushRule(rules, find('4 Channels HDMI Digital Modulator', 'CFDM4C'), { ...avAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '4-channel HDMI modulator (1x) for AV distribution' })
   pushRule(rules, find('3 Way Splitter', 'KSP3F'), { ...avAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '3-way splitter for AV distribution' })
   pushRule(rules, find('DA44', 'DA44'), { ...avAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'DA44 amplifier for AV distribution' })
   pushRule(rules, find('PSK18M', 'PSK18M'), { ...avAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Kingray 18V power supply for DA44 amplifier' })
