@@ -151,6 +151,22 @@ export default function LoginPage() {
 
   const passwordFormVisible = passkeyDevice === false || showPasswordForm;
 
+  // Applies to whichever sign-in method is used. The choice sticks per
+  // device, so tick it once on your own machine. Rendered between the
+  // password field and the Sign in button, or under the passkey button
+  // when the password form is hidden.
+  const rememberCheckbox = (
+    <label className="flex items-center justify-center gap-2 cursor-pointer select-none">
+      <input
+        type="checkbox"
+        checked={remember}
+        onChange={(e) => toggleRemember(e.target.checked)}
+        className="rounded border-border text-primary focus:ring-primary"
+      />
+      <span className="text-xs text-muted-foreground">Keep me signed in for 14 days</span>
+    </label>
+  );
+
   return (
     <div className="relative flex min-h-dvh items-center justify-center px-4 overflow-hidden">
       {/* Ambient gradient backdrop */}
@@ -191,18 +207,6 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Applies to whichever sign-in method is used below. The choice
-                sticks per device, so tick it once on your own machine. */}
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={remember}
-                onChange={(e) => toggleRemember(e.target.checked)}
-                className="rounded border-border text-primary focus:ring-primary"
-              />
-              <span className="text-xs text-muted-foreground">Keep me signed in for 14 days on this device</span>
-            </label>
-
             {/* Passkey-first on devices that have used one */}
             {passkeyDevice === true && (
               <>
@@ -215,13 +219,16 @@ export default function LoginPage() {
                   {loading ? "Waiting for your device…" : "Unlock with Face ID / passkey"}
                 </button>
                 {!passwordFormVisible && (
-                  <button
-                    type="button"
-                    onClick={() => setShowPasswordForm(true)}
-                    className="block w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    Use email &amp; password instead
-                  </button>
+                  <>
+                    {rememberCheckbox}
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordForm(true)}
+                      className="block w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Use email &amp; password instead
+                    </button>
+                  </>
                 )}
               </>
             )}
@@ -264,6 +271,8 @@ export default function LoginPage() {
                     className="mt-1.5 block w-full rounded-md border border-border bg-input px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
+
+                {rememberCheckbox}
 
                 <button
                   type="submit"
