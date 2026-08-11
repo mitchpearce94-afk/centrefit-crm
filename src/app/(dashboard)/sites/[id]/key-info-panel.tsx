@@ -16,6 +16,12 @@ export interface KeyInfoPhoto {
   created_at: string;
 }
 
+/** One security-system user: their name + alarm PIN. Stored on customer_sites.ifob_users. */
+export interface IfobUser {
+  name: string;
+  pin: string;
+}
+
 // Downscale a photo in the browser before upload so Key Info stays snappy —
 // full-res phone shots were making the tab lag (Michael, 2026-06-04). Caps the
 // longest edge at 1600px and re-encodes JPEG. Returns null (upload original)
@@ -77,12 +83,14 @@ export function KeyInfoPanel({
   assetTypes,
   photos,
   notes,
+  ifobUsers,
 }: {
   siteId: string;
   assets: SiteAsset[];
   assetTypes: AssetType[];
   photos: KeyInfoPhoto[];
   notes: string | null;
+  ifobUsers: IfobUser[];
 }) {
   const typeById = useMemo(() => {
     const m = new Map<string, AssetType>();
@@ -176,6 +184,8 @@ export function KeyInfoPanel({
   return (
     <div className="space-y-6">
       <NotesSection siteId={siteId} initialNotes={notes} />
+
+      <IfobUsersSection siteId={siteId} initialUsers={ifobUsers} />
 
       {isEmpty ? (
         <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -296,6 +306,135 @@ function NotesSection({ siteId, initialNotes }: { siteId: string; initialNotes: 
       ) : (
         <p className="text-xs text-muted-foreground italic">
           Nothing here yet — codes, ISP details, access instructions, anything a tech should know.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * iFob users for the security system — name + alarm PIN per user. Lives on
+ * customer_sites.ifob_users and prints on the handover pack's Security
+ * System Users box.
+ */
+function IfobUsersSection({ siteId, initialUsers }: { siteId: string; initialUsers: IfobUser[] }) {
+  const router = useRouter();
+  const supabase = createClient();
+  const { toast } = useToast();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<IfobUser[]>(initialUsers);
+  const [saving, setSaving] = useState(false);
+
+  function startEditing() {
+    setDraft(initialUsers.length > 0 ? initialUsers.map((u) => ({ ...u })) : [{ name: "", pin: "" }]);
+    setEditing(true);
+  }
+
+  function patchRow(i: number, patch: Partial<IfobUser>) {
+    setDraft((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  }
+
+  async function save() {
+    const cleaned = draft
+      .map((u) => ({ name: u.name.trim(), pin: u.pin.trim() }))
+      .filter((u) => u.name || u.pin);
+    setSaving(true);
+    const { error } = await supabase
+      .from("customer_sites")
+      .update({ ifob_users: cleaned, updated_at: new Date().toISOString() })
+      .eq("id", siteId);
+    setSaving(false);
+    if (error) {
+      toast(error.message, "error");
+      return;
+    }
+    toast("iFob users saved");
+    setEditing(false);
+    router.refresh();
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-baseline gap-2">
+          <h2 className="text-sm font-semibold">iFob users</h2>
+          <span className="text-[11px] text-muted-foreground">security system — printed on the handover pack</span>
+        </div>
+        {!editing && (
+          <button type="button" onClick={startEditing} className="text-xs text-primary hover:underline">
+            {initialUsers.length > 0 ? "Edit" : "+ Add users"}
+          </button>
+        )}
+      </div>
+
+      {editing ? (
+        <div className="space-y-2">
+          {draft.map((u, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                value={u.name}
+                onChange={(e) => patchRow(i, { name: e.target.value })}
+                placeholder="Name"
+                autoFocus={i === draft.length - 1 && !u.name}
+                className="flex-1 min-w-0 rounded-md border border-border bg-input px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <input
+                value={u.pin}
+                onChange={(e) => patchRow(i, { pin: e.target.value })}
+                placeholder="PIN"
+                inputMode="numeric"
+                className="w-24 sm:w-32 rounded-md border border-border bg-input px-3 py-2 text-sm font-mono focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={() => setDraft((rows) => rows.filter((_, idx) => idx !== i))}
+                title="Remove user"
+                className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:text-red-400 hover:bg-accent transition-colors"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => setDraft((rows) => [...rows, { name: "", pin: "" }])}
+            className="text-xs text-primary hover:underline"
+          >
+            + Add another user
+          </button>
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : initialUsers.length > 0 ? (
+        <div className="divide-y divide-border/60">
+          {initialUsers.map((u, i) => (
+            <div key={i} className="flex items-center gap-2 py-1.5">
+              <span className="flex-1 min-w-0 truncate text-sm">{u.name || "—"}</span>
+              <span className="font-mono text-sm text-muted-foreground">{u.pin || "—"}</span>
+              {u.pin && <CopyButton value={u.pin} label={`${u.name || "user"} PIN`} />}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground italic">
+          No iFob users yet — add each person&apos;s name and their security system PIN.
         </p>
       )}
     </div>

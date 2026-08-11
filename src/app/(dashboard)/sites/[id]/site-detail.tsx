@@ -393,6 +393,7 @@ export function SiteDetail({
               assetTypes={assetTypes}
               photos={keyInfoPhotos}
               notes={site.key_info_notes ?? null}
+              ifobUsers={site.ifob_users ?? []}
             />
           )}
 

@@ -64,6 +64,11 @@ export interface CctvUser {
   password: string;
 }
 
+export interface IfobUser {
+  name: string;
+  pin: string;
+}
+
 export interface HandoverInput {
   siteName: string;
   clientName: string;
@@ -74,6 +79,8 @@ export interface HandoverInput {
   procedures: Procedure[];
   /** Staff logins from the site's CCTV/NVR Key Information assets. */
   cctvUsers: CctvUser[];
+  /** Security-system users (name + alarm PIN) from customer_sites.ifob_users. */
+  ifobUsers: IfobUser[];
 }
 
 // ── Data gathering ──────────────────────────────────────────────────────────
@@ -248,6 +255,11 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
     }
   }
 
+  // Security-system users from Key Info (name + alarm PIN).
+  const ifobUsers: IfobUser[] = (Array.isArray(site.ifob_users) ? (site.ifob_users as IfobUser[]) : [])
+    .filter((u) => u && (u.name || u.pin))
+    .map((u) => ({ name: u.name ?? "—", pin: u.pin ?? "—" }));
+
   return {
     siteName: site.name as string,
     clientName: (site.invoice_name as string | null) ?? customer?.name ?? (site.name as string),
@@ -257,6 +269,7 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
     wifi: [...wifiBySsid.values()],
     procedures,
     cctvUsers,
+    ifobUsers,
   };
 }
 
@@ -437,6 +450,30 @@ async function renderBodyBack(input: HandoverInput): Promise<Buffer> {
           that lets members join without seeing the password, contact Centrefit or generate one from
           your CRM Key Information page.
         </Text>
+
+        {/* Security-system users from Key Info — each staff member's alarm PIN,
+            handed over in print the same way the CCTV logins are. */}
+        {input.ifobUsers.length > 0 && (
+          <View style={{ marginTop: 16, borderWidth: 1, borderColor: INK, borderRadius: 6, padding: 12 }} wrap={false}>
+            <Text style={{ fontSize: 9, fontFamily: "Helvetica-Bold", letterSpacing: 1, marginBottom: 4 }}>
+              SECURITY SYSTEM USERS
+            </Text>
+            <Text style={{ fontSize: 8, color: MUTED, marginBottom: 8 }}>
+              Each iFob user&apos;s PIN code for the security system. Keep this page secure — anyone with
+              a PIN can arm and disarm your facility.
+            </Text>
+            <View style={{ flexDirection: "row", paddingBottom: 3, borderBottomWidth: 0.75, borderBottomColor: INK }}>
+              <Text style={{ flex: 1, fontSize: 7.5, color: MUTED, fontFamily: "Helvetica-Bold" }}>NAME</Text>
+              <Text style={{ width: 160, fontSize: 7.5, color: MUTED, fontFamily: "Helvetica-Bold" }}>PIN CODE</Text>
+            </View>
+            {input.ifobUsers.map((u, i) => (
+              <View key={i} style={{ flexDirection: "row", paddingVertical: 3.5, borderBottomWidth: i < input.ifobUsers.length - 1 ? 0.5 : 0, borderBottomColor: LINE }}>
+                <Text style={{ flex: 1, fontSize: 9.5 }}>{u.name}</Text>
+                <Text style={{ width: 160, fontSize: 9.5, fontFamily: "Courier" }}>{u.pin}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         <Text style={s.sectionTitle}>Compliance Statement</Text>
         {complianceStatement(CF_SECURITY_LICENCE, CF_ASIAL_MEMBERSHIP).map((line, i) => (

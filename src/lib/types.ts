@@ -99,6 +99,9 @@ export interface CustomerSite {
   // Free-text block on the Key Info tab — codes, ISP details, anything a tech
   // needs that doesn't fit an asset field (Mitchell suggestion 2026-07-03).
   key_info_notes: string | null;
+  // iFob users for the security system — name + alarm PIN per user. Edited on
+  // Key Info, printed on the handover pack's Security System Users box.
+  ifob_users: { name: string; pin: string }[] | null;
   // Xero billing-entity override: when set, invoices bill to this contact name
   // instead of the site name (Bravofit accounts-team requirement, 2026-07-04).
   invoice_name: string | null;
