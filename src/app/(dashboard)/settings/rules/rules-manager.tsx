@@ -31,6 +31,7 @@ interface DbRule {
   quantity_custom_key: string | null;
   auto_add_product_id: string | null;
   sort_order: number;
+  elec_supplied_phase: string | null;
 }
 
 interface ProductOption {
@@ -202,6 +203,7 @@ export function RulesManager({
           quantity_site_field: rule.quantity_site_field ?? null, quantity_multiplier: rule.quantity_multiplier ?? null,
           quantity_divisor: rule.quantity_divisor ?? null, quantity_formula: rule.quantity_formula ?? null,
           quantity_custom_key: rule.quantity_custom_key ?? null, auto_add_product_id: rule.auto_add_product_id ?? null,
+          elec_supplied_phase: rule.elec_supplied_phase ?? null,
           sort_order: i,
         }));
       let inserted = 0;
@@ -453,6 +455,12 @@ export function RulesManager({
                 <div className="flex-1 min-w-0">
                   <RuleSentence rule={rule} products={products} />
                   <p className="text-[10px] text-muted-foreground/60 mt-1">{rule.description}</p>
+                  {rule.elec_supplied_phase && (
+                    <span className="inline-flex items-center gap-1 mt-1.5 rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-400"
+                      title="Skipped on quotes where the electrician covers this phase — they supply this item">
+                      ⚡ Elec supplies — skipped when elec does {rule.elec_supplied_phase === "rough_in" ? "Rough In" : "Fit Off"}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <button onClick={() => toggleUniversal(rule.id, rule.is_universal)}
@@ -510,6 +518,7 @@ function RuleForm({ rule, products, templateId, templateSlug, onSaved, onCancel 
   const [quantityFormula, setQuantityFormula] = useState(rule?.quantity_formula || "");
   const [productId, setProductId] = useState(rule?.auto_add_product_id || "");
   const [sortOrder, setSortOrder] = useState(rule?.sort_order?.toString() || "0");
+  const [elecSuppliedPhase, setElecSuppliedPhase] = useState(rule?.elec_supplied_phase || "");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -524,6 +533,7 @@ function RuleForm({ rule, products, templateId, templateSlug, onSaved, onCancel 
       quantity_mode: quantityMode, quantity_value: quantityValue ? parseInt(quantityValue) : null,
       quantity_divisor: quantityDivisor ? parseInt(quantityDivisor) : null, quantity_formula: quantityFormula || null,
       auto_add_product_id: productId || null, sort_order: parseInt(sortOrder) || 0, is_active: true,
+      elec_supplied_phase: elecSuppliedPhase || null,
     };
     if (isEditing && rule) {
       const { error } = await supabase.from("quote_dependency_rules").update(payload).eq("id", rule.id);
@@ -641,6 +651,16 @@ function RuleForm({ rule, products, templateId, templateSlug, onSaved, onCancel 
               <input value={quantityFormula} onChange={(e) => setQuantityFormula(e.target.value)} className={inputClass} placeholder="e.g. ceil(cardio + tvs / 8)" />
             </div>
           )}
+
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Supplied by the electrician?</label>
+            <select value={elecSuppliedPhase} onChange={(e) => setElecSuppliedPhase(e.target.value)} className={inputClass}>
+              <option value="">No — Centrefit always supplies this</option>
+              <option value="rough_in">Yes — skip when electrician does Rough In (cable etc.)</option>
+              <option value="fit_off">Yes — skip when electrician does Fit Off (faceplates etc.)</option>
+            </select>
+            <p className="text-[10px] text-muted-foreground mt-1">When a quote has the matching electrician toggle on, this item is left off the BOM — the sparky supplies it.</p>
+          </div>
         </div>
       </div>
 

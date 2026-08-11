@@ -52,6 +52,7 @@ export type {
 export {
   evaluateDependencyRules,
   autoAddItemsToBOM,
+  isElecSupplied,
   getSnapFitnessRules,
   getBasicRules,
   getDefaultDependencyRules,
@@ -59,6 +60,7 @@ export {
 export type {
   DependencyRule,
   AutoAddItem,
+  ElecMaterialOptions,
 } from './dependency-engine'
 
 // Pricing

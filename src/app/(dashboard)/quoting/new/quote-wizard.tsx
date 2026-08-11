@@ -11,6 +11,9 @@ import {
   DEFAULT_EXTRAS,
   PRODUCT_CATEGORIES,
   generateBOM,
+  evaluateDependencyRules,
+  autoAddItemsToBOM,
+  isElecSupplied,
   calculateBOMTotals,
   calculateLabour,
   recalcLabour,
@@ -103,6 +106,7 @@ interface RuleRow {
   quantity_custom_key: string | null;
   auto_add_product_id: string | null;
   sort_order: number;
+  elec_supplied_phase: "rough_in" | "fit_off" | null;
 }
 
 function rulesForTemplate(allRules: RuleRow[], templateId: string | null, products: Product[]): DependencyRule[] {
@@ -143,6 +147,7 @@ function rulesForTemplate(allRules: RuleRow[], templateId: string | null, produc
         auto_add_product_sku: product?.sku ?? null,
         auto_add_product_name: product?.name ?? null,
         sort_order: r.sort_order,
+        elec_supplied_phase: r.elec_supplied_phase ?? null,
       };
     });
 }
@@ -923,7 +928,7 @@ export function QuoteWizard({
     if (quoteMode === "plan") {
       if (newStep === 2 && !bomGenerated) {
         const rules = rulesForTemplate(allRules, templateId, products);
-        setBomItems(generateBOM(deviceCounts, products, rules, siteInfo));
+        setBomItems(generateBOM(deviceCounts, products, rules, siteInfo, { elecDoingRoughIn, elecDoingFitOff }));
         setBomGenerated(true);
       }
       if (newStep === 3 && !labourData) {
@@ -958,9 +963,39 @@ export function QuoteWizard({
       if (!ok) return;
     }
     const rules = rulesForTemplate(allRules, templateId, products);
-    setBomItems(generateBOM(deviceCounts, products, rules, siteInfo));
+    setBomItems(generateBOM(deviceCounts, products, rules, siteInfo, { elecDoingRoughIn, elecDoingFitOff }));
     setBomGenerated(true);
   }
+
+  // Reconcile electrician-supplied materials when the elec scope toggles flip.
+  // Rules flagged elec_supplied_phase have their products stripped from the BOM
+  // while the electrician covers that phase, and restored (at rule-calculated
+  // quantities) when the toggle comes back off. Other BOM lines — including
+  // manual edits — are untouched. First render is skipped so opening a saved
+  // quote never silently rewrites its line items.
+  const elecReconcileFirstRun = useRef(true);
+  useEffect(() => {
+    if (elecReconcileFirstRun.current) {
+      elecReconcileFirstRun.current = false;
+      return;
+    }
+    if (quoteMode !== "plan" || !bomGenerated) return;
+    const rules = rulesForTemplate(allRules, templateId, products);
+    const flagged = rules.filter((r) => r.elec_supplied_phase);
+    if (flagged.length === 0) return;
+    const elec = { elecDoingRoughIn, elecDoingFitOff };
+    const stripIds = new Set(flagged.filter((r) => isElecSupplied(r, elec)).map((r) => r.auto_add_product_id));
+    const restoreRules = flagged.filter((r) => !stripIds.has(r.auto_add_product_id));
+    setBomItems((prev) => {
+      const next = prev.filter((b) => !(b.auto_added && b.product_id && stripIds.has(b.product_id)));
+      const restoreItems = autoAddItemsToBOM(evaluateDependencyRules(restoreRules, deviceCounts, products, siteInfo));
+      for (const item of restoreItems) {
+        if (!next.some((b) => b.product_id === item.product_id)) next.push(item);
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elecDoingRoughIn, elecDoingFitOff]);
 
   const bomTotals = useMemo(() => calculateBOMTotals(bomItems), [bomItems]);
 
@@ -1508,6 +1543,21 @@ export function QuoteWizard({
           </label>
         </div>
       )}
+
+      {/* Materials stripped from the BOM because the electrician supplies them */}
+      {isInterstate && (elecDoingRoughIn || elecDoingFitOff) && quoteMode === "plan" && (() => {
+        const stripped = rulesForTemplate(allRules, templateId, products)
+          .filter((r) => isElecSupplied(r, { elecDoingRoughIn, elecDoingFitOff }));
+        if (stripped.length === 0) return null;
+        const names = Array.from(new Set(stripped.map((r) => r.auto_add_product_name).filter(Boolean)));
+        return (
+          <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 mb-3">
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Removed from BOM — electrician supplies:</span> {names.join(", ")}
+            </p>
+          </div>
+        );
+      })()}
 
       {isInterstate && electricianCost === 0 && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 mb-3">

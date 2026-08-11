@@ -6,7 +6,7 @@
 import { DEVICE_TYPES, DEFAULT_MARKUP } from './constants'
 import type { DeviceCounts, SiteInfo } from './constants'
 import { evaluateDependencyRules, autoAddItemsToBOM } from './dependency-engine'
-import type { DependencyRule, Product, BOMItem } from './dependency-engine'
+import type { DependencyRule, Product, BOMItem, ElecMaterialOptions } from './dependency-engine'
 
 export type { Product, DependencyRule, BOMItem } from './dependency-engine'
 
@@ -26,7 +26,8 @@ export function generateBOM(
   deviceCounts: DeviceCounts,
   products: Product[],
   dependencyRules: DependencyRule[] = [],
-  siteInfo: SiteInfo = {}
+  siteInfo: SiteInfo = {},
+  elecOptions: ElecMaterialOptions = {}
 ): BOMItem[] {
   const bomItems: BOMItem[] = []
 
@@ -67,7 +68,7 @@ export function generateBOM(
 
   // Step 2: Run dependency rules
   if (dependencyRules.length > 0) {
-    const autoItems = evaluateDependencyRules(dependencyRules, deviceCounts, products, siteInfo)
+    const autoItems = evaluateDependencyRules(dependencyRules, deviceCounts, products, siteInfo, elecOptions)
     const autoAddBOM = autoAddItemsToBOM(autoItems)
 
     autoAddBOM.forEach((autoItem) => {

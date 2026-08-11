@@ -36,8 +36,24 @@ export interface DependencyRule {
   auto_add_product_sku?: string | null
   auto_add_product_name?: string | null
   sort_order?: number
+  // Materials the electrician supplies when they're covering a phase.
+  // 'rough_in' rules are skipped when quotes.elec_doing_rough_in is on
+  // (cable rolls), 'fit_off' rules when elec_doing_fit_off is on (faceplates).
+  elec_supplied_phase?: 'rough_in' | 'fit_off' | null
   // internal
   _needs_studio_zone?: boolean
+}
+
+export interface ElecMaterialOptions {
+  elecDoingRoughIn?: boolean
+  elecDoingFitOff?: boolean
+}
+
+/** True when this rule's product is supplied by the electrician under the given scope toggles. */
+export function isElecSupplied(rule: DependencyRule, elec: ElecMaterialOptions = {}): boolean {
+  if (rule.elec_supplied_phase === 'rough_in') return !!elec.elecDoingRoughIn
+  if (rule.elec_supplied_phase === 'fit_off') return !!elec.elecDoingFitOff
+  return false
 }
 
 export interface Product {
@@ -320,12 +336,14 @@ export function evaluateDependencyRules(
   rules: DependencyRule[],
   deviceCounts: DeviceCounts,
   products: Product[],
-  siteInfo: SiteInfo = {}
+  siteInfo: SiteInfo = {},
+  elecOptions: ElecMaterialOptions = {}
 ): AutoAddItem[] {
   const autoAddItems: AutoAddItem[] = []
 
   for (const rule of rules) {
     if (!rule.is_active) continue
+    if (isElecSupplied(rule, elecOptions)) continue
     const conditionMet = evaluateCondition(rule, deviceCounts, siteInfo)
     if (!conditionMet) continue
 
@@ -477,7 +495,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, pendant, { id: ruleId(), trigger_code: 'rf_receiver', trigger_condition: 'compound', trigger_value: 0, trigger_site_field: 'site_sqm', trigger_site_op: '>', trigger_site_value: 400, quantity_mode: 'fixed', quantity_value: 5, description: 'Duress pendants (5x) for sites > 400 sqm', preset, is_active: true })
 
   // === DURESS ===
-  pushRule(rules, find('Duress Faceplate', 'WEL2210R-DURE'), { id: ruleId(), trigger_code: 'duress_button', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Duress faceplate per duress button', preset, is_active: true })
+  pushRule(rules, find('Duress Faceplate', 'WEL2210R-DURE'), { id: ruleId(), trigger_code: 'duress_button', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Duress faceplate per duress button', preset, is_active: true, elec_supplied_phase: 'fit_off' })
   pushRule(rules, find('ECA2010', 'ECA2010'), { id: ruleId(), trigger_code: 'duress_intercom', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'GSM intercom unit per duress intercom point', preset, is_active: true })
   pushRule(rules, find('OPTUS Mobile SIM', null), { id: ruleId(), trigger_code: 'duress_intercom', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'OPTUS SIM per duress intercom', preset, is_active: true })
 
@@ -485,7 +503,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   const totalSecurityCode = 'pir_360_roof + pir_wall + reed_switch + alarm_panel + door_strike + mag_lock + duress_button + duress_intercom + light_siren + siren_piezo + rf_receiver'
   const secCableTrigger = { trigger_code: totalSecurityCode, trigger_condition: 'greater_than', trigger_value: 0, preset, is_active: true }
 
-  pushRule(rules, find('6 Core Security Cable', 'EC6C14020300B'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'ceil_formula', quantity_multiplier: 45, quantity_divisor: 300, description: '6-core security cable — CEIL(total_security_devices × 45m / 300m rolls)' })
+  pushRule(rules, find('6 Core Security Cable', 'EC6C14020300B'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'ceil_formula', quantity_multiplier: 45, quantity_divisor: 300, description: '6-core security cable — CEIL(total_security_devices × 45m / 300m rolls)', elec_supplied_phase: 'rough_in' })
   pushRule(rules, find('4 Way Plug', 'EC381V-04P'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'custom', quantity_custom_key: 'security_4w_plugs', description: '4-way security plugs — door_count + PIR_count + 2' })
   pushRule(rules, find('3 Way Plug', 'EC381V-03P'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: '3-way security plugs (2x fixed)' })
   pushRule(rules, find('2 Way Plug', 'EC381V-02P'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'custom', quantity_custom_key: 'security_2w_plugs', description: '2-way security plugs — door_count + 6' })
@@ -506,7 +524,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
 
   // === CAMERA CABLE ===
   const totalCameraCode = 'camera_black + camera_white + tailgate_system'
-  pushRule(rules, find('Cat6 UTP Cable 305m', 'ECC6UB305B'), { id: ruleId(), trigger_code: totalCameraCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 50, quantity_divisor: 305, description: 'Cat6 cable for cameras — CEIL(total_camera_devices × 50m / 305m boxes)', preset, is_active: true })
+  pushRule(rules, find('Cat6 UTP Cable 305m', 'ECC6UB305B'), { id: ruleId(), trigger_code: totalCameraCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 50, quantity_divisor: 305, description: 'Cat6 cable for cameras — CEIL(total_camera_devices × 50m / 305m boxes)', preset, is_active: true, elec_supplied_phase: 'rough_in' })
 
   // === ACCESS CONTROL ===
   // Any access door (strike or mag) needs a loop and a REX. Only strikes get the FES20.
@@ -523,7 +541,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   // 120W amp — compound: speakers > 0 AND separate_studio_zone
   pushRule(rules, find('Mixer-Amplifier 120W', 'PRM120'), { id: ruleId(), trigger_code: speakerTrigger, trigger_condition: 'compound', trigger_value: 0, trigger_site_field: 'separate_studio_zone', trigger_site_op: '>=', trigger_site_value: 1, quantity_mode: 'fixed', quantity_value: 1, description: '120W amplifier for separate studio zone', preset, is_active: true })
 
-  pushRule(rules, find('Speaker Cable', 'ESC-2C16AWG'), { id: ruleId(), trigger_code: speakerTrigger, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 20, quantity_divisor: 100, description: 'Speaker cable — CEIL(speakers × 20m / 100m rolls)', preset, is_active: true })
+  pushRule(rules, find('Speaker Cable', 'ESC-2C16AWG'), { id: ruleId(), trigger_code: speakerTrigger, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 20, quantity_divisor: 100, description: 'Speaker cable — CEIL(speakers × 20m / 100m rolls)', preset, is_active: true, elec_supplied_phase: 'rough_in' })
 
   // === AV SYSTEM (always on every Snap Fitness job) ===
   const avAlways = { trigger_code: null, trigger_condition: 'always', preset, is_active: true }
@@ -580,7 +598,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
 
   // === DATA CABLE ===
   const totalDataCode = 'camera_black + camera_white + tailgate_system + wap + data_point'
-  pushRule(rules, find('Cat6 UTP Cable 305m', 'ECC6UB305B'), { id: ruleId(), trigger_code: totalDataCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 50, quantity_divisor: 305, description: 'Cat6 cable for all data devices — CEIL(total_data_devices × 50m / 305m boxes)', preset, is_active: true })
+  pushRule(rules, find('Cat6 UTP Cable 305m', 'ECC6UB305B'), { id: ruleId(), trigger_code: totalDataCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 50, quantity_divisor: 305, description: 'Cat6 cable for all data devices — CEIL(total_data_devices × 50m / 305m boxes)', preset, is_active: true, elec_supplied_phase: 'rough_in' })
 
   return rules
 }
@@ -603,10 +621,10 @@ export function getBasicRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('6TB Surveillance HDD', 'WD60PURX'), { id: ruleId(), trigger_code: cameraTrigger, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 1, quantity_divisor: 6, description: 'HDDs — CEIL(camera_count / 6)', preset, is_active: true })
 
   const totalCameraCode = 'camera_black + camera_white + tailgate_system'
-  pushRule(rules, find('Cat6 UTP Cable 305m', 'ECC6UB305B'), { id: ruleId(), trigger_code: totalCameraCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 50, quantity_divisor: 305, description: 'Cat6 cable for cameras — CEIL(total × 50m / 305m boxes)', preset, is_active: true })
+  pushRule(rules, find('Cat6 UTP Cable 305m', 'ECC6UB305B'), { id: ruleId(), trigger_code: totalCameraCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 50, quantity_divisor: 305, description: 'Cat6 cable for cameras — CEIL(total × 50m / 305m boxes)', preset, is_active: true, elec_supplied_phase: 'rough_in' })
 
   const totalDataCode = 'camera_black + camera_white + tailgate_system + wap + data_point'
-  pushRule(rules, find('Cat6 UTP Cable 305m', 'ECC6UB305B'), { id: ruleId(), trigger_code: totalDataCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 50, quantity_divisor: 305, description: 'Cat6 cable for all data devices — CEIL(total × 50m / 305m boxes)', preset, is_active: true })
+  pushRule(rules, find('Cat6 UTP Cable 305m', 'ECC6UB305B'), { id: ruleId(), trigger_code: totalDataCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 50, quantity_divisor: 305, description: 'Cat6 cable for all data devices — CEIL(total × 50m / 305m boxes)', preset, is_active: true, elec_supplied_phase: 'rough_in' })
 
   return rules
 }
