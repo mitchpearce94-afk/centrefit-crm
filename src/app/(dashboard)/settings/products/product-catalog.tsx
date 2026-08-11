@@ -1356,11 +1356,35 @@ function OffersPanel({
   const { toast } = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [costEdit, setCostEdit] = useState<Record<string, string>>({});
-  const [adding, setAdding] = useState(false);
-  const [newSupplierId, setNewSupplierId] = useState("");
-  const [newSku, setNewSku] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newCost, setNewCost] = useState("");
+  // Add/edit share one stacked form below the table (never a row of inputs
+  // inside it — that forced sideways scrolling on phones). editTarget null =
+  // adding a new offer; otherwise editing that offer's SKU/name/cost.
+  const [formOpen, setFormOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<ProductOffer | null>(null);
+  const [formSupplierId, setFormSupplierId] = useState("");
+  const [formSku, setFormSku] = useState("");
+  const [formName, setFormName] = useState("");
+  const [formCost, setFormCost] = useState("");
+
+  function openAdd() {
+    setEditTarget(null);
+    setFormSupplierId(""); setFormSku(""); setFormName(""); setFormCost("");
+    setFormOpen(true);
+  }
+
+  function openEdit(offer: ProductOffer) {
+    setEditTarget(offer);
+    setFormSupplierId(offer.supplier_id);
+    setFormSku(offer.supplier_sku ?? "");
+    setFormName(offer.supplier_item_name ?? "");
+    setFormCost(offer.cost_price.toFixed(2));
+    setFormOpen(true);
+  }
+
+  function closeForm() {
+    setFormOpen(false);
+    setEditTarget(null);
+  }
 
   const supplierName = (id: string) => suppliers.find((s) => s.id === id)?.name ?? "—";
   const takenSupplierIds = new Set(offers.map((o) => o.supplier_id));
@@ -1404,24 +1428,41 @@ function OffersPanel({
     router.refresh();
   }
 
-  async function addOffer() {
-    if (!newSupplierId) { toast("Pick a supplier", "error"); return; }
-    const val = Number(newCost);
+  async function saveOfferForm() {
+    const val = Number(formCost);
     if (!Number.isFinite(val) || val < 0) { toast("Invalid cost", "error"); return; }
-    setBusyId("new");
-    const { error } = await supabase.from("product_supplier_offers").insert({
-      product_id: product.id,
-      supplier_id: newSupplierId,
-      supplier_sku: newSku.trim() || null,
-      supplier_item_name: newName.trim() || null,
-      cost_price: val,
-      cost_updated_at: new Date().toISOString(),
-      is_preferred: false,
-    });
-    setBusyId(null);
-    if (error) { toast(error.message, "error"); return; }
-    setAdding(false);
-    setNewSupplierId(""); setNewSku(""); setNewName(""); setNewCost("");
+
+    if (editTarget) {
+      setBusyId(editTarget.id);
+      const costChanged = Math.abs(val - editTarget.cost_price) > 0.001;
+      const { error } = await supabase
+        .from("product_supplier_offers")
+        .update({
+          supplier_sku: formSku.trim() || null,
+          supplier_item_name: formName.trim() || null,
+          cost_price: val,
+          ...(costChanged ? { cost_updated_at: new Date().toISOString() } : {}),
+        })
+        .eq("id", editTarget.id);
+      setBusyId(null);
+      if (error) { toast(error.message, "error"); return; }
+      toast(`${supplierName(editTarget.supplier_id)} offer updated`);
+    } else {
+      if (!formSupplierId) { toast("Pick a supplier", "error"); return; }
+      setBusyId("new");
+      const { error } = await supabase.from("product_supplier_offers").insert({
+        product_id: product.id,
+        supplier_id: formSupplierId,
+        supplier_sku: formSku.trim() || null,
+        supplier_item_name: formName.trim() || null,
+        cost_price: val,
+        cost_updated_at: new Date().toISOString(),
+        is_preferred: false,
+      });
+      setBusyId(null);
+      if (error) { toast(error.message, "error"); return; }
+    }
+    closeForm();
     router.refresh();
   }
 
@@ -1431,10 +1472,10 @@ function OffersPanel({
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Supplier pricing — star drives quotes &amp; POs
         </span>
-        {!adding && availableSuppliers.length > 0 && (
+        {!formOpen && availableSuppliers.length > 0 && (
           <button
             type="button"
-            onClick={() => setAdding(true)}
+            onClick={openAdd}
             className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
           >
             + Add supplier offer
@@ -1482,7 +1523,15 @@ function OffersPanel({
               <td className="py-1.5 pr-3 text-muted-foreground hidden sm:table-cell">
                 {o.cost_updated_at ? new Date(o.cost_updated_at).toLocaleDateString("en-AU") : "—"}
               </td>
-              <td className="py-1.5 text-right">
+              <td className="py-1.5 text-right whitespace-nowrap space-x-2">
+                <button
+                  type="button"
+                  onClick={() => openEdit(o)}
+                  disabled={busyId === o.id}
+                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Edit
+                </button>
                 {!o.is_preferred && (
                   <button
                     type="button"
@@ -1496,35 +1545,54 @@ function OffersPanel({
               </td>
             </tr>
           ))}
-          {adding && (
-            <tr className="border-t border-border/60">
-              <td className="py-1.5 pr-2"></td>
-              <td className="py-1.5 pr-3">
-                <select value={newSupplierId} onChange={(e) => setNewSupplierId(e.target.value)} className="rounded border border-border bg-input px-1.5 py-1 text-xs focus:border-primary focus:outline-none">
-                  <option value="">Supplier…</option>
-                  {availableSuppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </td>
-              <td className="py-1.5 pr-3">
-                <input value={newSku} onChange={(e) => setNewSku(e.target.value)} placeholder="their SKU" className="w-28 rounded border border-border bg-input px-1.5 py-1 font-mono text-xs focus:border-primary focus:outline-none" />
-              </td>
-              <td className="py-1.5 pr-3 hidden md:table-cell">
-                <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="their item name" className="w-full rounded border border-border bg-input px-1.5 py-1 text-xs focus:border-primary focus:outline-none" />
-              </td>
-              <td className="py-1.5 pr-3 text-right">
-                <input value={newCost} onChange={(e) => setNewCost(e.target.value)} placeholder="0.00" className="w-20 rounded border border-border bg-input px-1.5 py-1 text-right font-mono text-xs focus:border-primary focus:outline-none" />
-              </td>
-              <td className="py-1.5 pr-3 hidden sm:table-cell"></td>
-              <td className="py-1.5 text-right space-x-2 whitespace-nowrap">
-                <button type="button" onClick={() => setAdding(false)} className="text-[11px] text-muted-foreground hover:text-foreground transition-colors">Cancel</button>
-                <button type="button" onClick={addOffer} disabled={busyId === "new"} className="text-[11px] font-semibold text-primary hover:text-primary/80 disabled:opacity-50 transition-colors">
-                  {busyId === "new" ? "Adding…" : "Add"}
-                </button>
-              </td>
-            </tr>
-          )}
         </tbody>
       </table>
+
+      {/* Stacked add/edit form — lives BELOW the table so it stacks cleanly
+          on phones instead of widening the table into a sideways scroll. */}
+      {formOpen && (
+        <div className="rounded-md border border-primary/30 bg-muted/20 p-3 space-y-2">
+          <p className="text-[11px] font-semibold text-foreground">
+            {editTarget ? `Edit ${supplierName(editTarget.supplier_id)} offer` : "Add supplier offer"}
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">Supplier</label>
+              {editTarget ? (
+                <div className="rounded border border-border bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">{supplierName(editTarget.supplier_id)}</div>
+              ) : (
+                <select value={formSupplierId} onChange={(e) => setFormSupplierId(e.target.value)} className="w-full rounded border border-border bg-input px-2 py-1.5 text-xs focus:border-primary focus:outline-none">
+                  <option value="">Pick a supplier…</option>
+                  {availableSuppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              )}
+            </div>
+            <div>
+              <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">Cost (ex GST)</label>
+              <input value={formCost} onChange={(e) => setFormCost(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full rounded border border-border bg-input px-2 py-1.5 text-right font-mono text-xs focus:border-primary focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">Their SKU</label>
+              <input value={formSku} onChange={(e) => setFormSku(e.target.value)} placeholder="supplier's SKU" className="w-full rounded border border-border bg-input px-2 py-1.5 font-mono text-xs focus:border-primary focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">Their item name</label>
+              <input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="supplier's item name" className="w-full rounded border border-border bg-input px-2 py-1.5 text-xs focus:border-primary focus:outline-none" />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={closeForm} className="rounded border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Cancel</button>
+            <button
+              type="button"
+              onClick={saveOfferForm}
+              disabled={busyId === "new" || (editTarget != null && busyId === editTarget.id)}
+              className="rounded bg-primary px-3 py-1 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              {busyId != null ? "Saving…" : editTarget ? "Save changes" : "Add offer"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
