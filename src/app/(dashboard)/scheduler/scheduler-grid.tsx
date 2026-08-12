@@ -452,10 +452,10 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
               <div key={date}>
                 <button
                   onClick={() => switchToDay(date)}
-                  className={`sticky top-0 z-10 flex w-full items-baseline gap-2 border-b border-border px-3 py-2 text-left ${today ? "bg-primary/15" : "bg-muted"}`}
+                  className={`sticky top-0 z-10 flex w-full items-baseline gap-2 border-b border-l-2 border-b-border px-3 py-2 text-left ${today ? "border-l-primary bg-primary/25" : "border-l-primary/60 bg-primary/10"}`}
                 >
-                  <span className={`text-xs font-bold ${today ? "text-primary" : ""}`}>{d.toLocaleDateString("en-AU", { weekday: "long" })}</span>
-                  <span className={`text-xs font-medium ${today ? "text-primary/80" : "text-muted-foreground"}`}>
+                  <span className="text-sm font-bold text-primary">{d.toLocaleDateString("en-AU", { weekday: "long" })}</span>
+                  <span className="text-xs font-semibold text-primary/70">
                     {d.getDate()} {d.toLocaleDateString("en-AU", { month: "short" })}
                   </span>
                   {today && <span className="ml-auto rounded-full bg-primary px-2 py-0.5 text-[9px] font-bold text-primary-foreground">TODAY</span>}
