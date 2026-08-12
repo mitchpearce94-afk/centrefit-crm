@@ -53,6 +53,13 @@ export default async function DashboardLayout({
     <ToastProvider>
       <IdleLogout />
       <ViewportHeightFix />
+      {/* App-shell scroll lock: the document must NEVER scroll inside the
+          dashboard — all scrolling happens in <main> (and inner panels).
+          Without this, any viewport mis-measure lets the body pan a few px
+          and the whole app loses its "solid" feel: sticky bars drift,
+          modals appear to slide, rubber-banding everywhere. Scoped to the
+          dashboard layout — public token pages keep normal body scroll. */}
+      <style>{`html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }`}</style>
       {/* Shell height comes from --app-height (true visual-viewport height,
           see ViewportHeightFix) with 100dvh as the pre-JS fallback — iOS
           standalone mis-measures dvh at launch. relative so the mobile nav
