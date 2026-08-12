@@ -49,7 +49,7 @@ function timeMins(t: string): number { const [h, m] = t.split(":").map(Number); 
 // index lane that's free in the cluster. When an entry's start is past the
 // cluster's running max-end, flush the cluster (assign its lane count) and
 // start a fresh one.
-interface LaidOutEntry { entry: ScheduleEntry; lane: number; lanes: number; }
+interface LaidOutEntry { entry: ScheduleEntry; lane: number; lanes: number; cluster: number; }
 function layoutTimedEntries(entries: ScheduleEntry[]): LaidOutEntry[] {
   const sorted = [...entries]
     .filter((e) => e.start_time && e.end_time)
@@ -63,11 +63,13 @@ function layoutTimedEntries(entries: ScheduleEntry[]): LaidOutEntry[] {
   const out: LaidOutEntry[] = [];
   let cluster: { entry: ScheduleEntry; lane: number }[] = [];
   let clusterEnd = -Infinity;
+  let clusterIdx = 0;
 
   function flush() {
     if (cluster.length === 0) return;
     const lanes = Math.max(...cluster.map((c) => c.lane)) + 1;
-    for (const c of cluster) out.push({ entry: c.entry, lane: c.lane, lanes });
+    for (const c of cluster) out.push({ entry: c.entry, lane: c.lane, lanes, cluster: clusterIdx });
+    clusterIdx++;
     cluster = [];
     clusterEnd = -Infinity;
   }
@@ -127,8 +129,41 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
     // override the user's in-session toggles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [modal, setModal] = useState<{ staffId: string; date: string; startTime?: string; entry?: ScheduleEntry; defaultJobId?: string } | null>(null);
+  const [modal, setModal] = useState<{ staffId: string; date: string; startTime?: string; entry?: ScheduleEntry; siblings?: ScheduleEntry[]; defaultJobId?: string } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+
+  // Open an entry with its whole "tile group" — every row for the same job
+  // (or same event title+times) on the same date. The modal edits the group:
+  // untick a person to remove just their tile, no "primary" anywhere.
+  function openEntry(e: ScheduleEntry) {
+    const siblings = entries.filter((x) =>
+      x.schedule_date === e.schedule_date &&
+      x.entry_type === e.entry_type &&
+      (e.entry_type === "job"
+        ? x.job_id === e.job_id
+        : x.title === e.title && x.start_time === e.start_time && x.end_time === e.end_time),
+    );
+    setModal({ staffId: e.staff_id, date: e.schedule_date, entry: e, siblings });
+  }
+
+  // Day-view swipe nav (mobile): horizontal swipe moves a day; a dominant
+  // vertical component means the user is scrolling the grid — ignore it.
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  function onDayTouchStart(e: React.TouchEvent) {
+    const t = e.touches[0];
+    touchStartRef.current = { x: t.clientX, y: t.clientY };
+  }
+  function onDayTouchEnd(e: React.TouchEvent) {
+    const s = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!s) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - s.x;
+    const dy = t.clientY - s.y;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy)) {
+      goDay(dx < 0 ? "next" : "prev");
+    }
+  }
 
   // Auto-open the assign modal when arriving from a job detail page with
   // ?jobId=… so the user lands ready to pick date/staff/time. Runs once on
@@ -142,7 +177,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
     // can't pre-select it. Stale URLs just fall through to the normal grid.
     if (!jobs.some((j) => j.id === jobId)) return;
     setModal({
-      staffId: staff[0]?.id ?? "",
+      staffId: "",
       date: todayStr(),
       defaultJobId: jobId,
     });
@@ -180,26 +215,38 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   const weekDates = useMemo(() => [0,1,2,3,4,5,6].map(i => addDaysStr(weekStart, i)), [weekStart]);
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i);
 
-  const { allDayByDate, timedByDate } = useMemo(() => {
-    // No "all day" strip anymore (Mitchell's call): every entry renders in the
-    // time grid. Entries with no explicit times default to a standard 6am–4pm
-    // day. Multi-day entries repeat their block on each day of the span.
-    const allDay = new Map<string, ScheduleEntry[]>();
+  const { untimedByDate, timedByDate } = useMemo(() => {
+    // Two pools per day (2026-08-12 rework, Mitchell's call): entries with
+    // real times sit on the time axis; entries WITHOUT times stack as
+    // full-width chips under the day header instead of masquerading as
+    // 6am–4pm blocks. The old normalisation made every untimed job overlap
+    // every other one, so a busy day lane-split the column into unreadable
+    // slivers. Multi-day entries repeat on each day of their span.
+    const untimed = new Map<string, ScheduleEntry[]>();
     const timed = new Map<string, ScheduleEntry[]>();
     for (const e of entries) {
       const isMultiDay = !!e.end_date && e.end_date > e.schedule_date;
-      const norm: ScheduleEntry =
-        e.start_time && e.end_time ? e : { ...e, start_time: "06:00:00", end_time: "16:00:00" };
+      const pool = e.start_time && e.end_time ? timed : untimed;
       let cursor = e.schedule_date;
       const lastDay = isMultiDay ? e.end_date! : e.schedule_date;
       while (cursor <= lastDay) {
-        if (!timed.has(cursor)) timed.set(cursor, []);
-        timed.get(cursor)!.push(norm);
+        if (!pool.has(cursor)) pool.set(cursor, []);
+        pool.get(cursor)!.push(e);
         cursor = addDaysStr(cursor, 1);
       }
     }
-    return { allDayByDate: allDay, timedByDate: timed };
-  }, [entries]);
+    // Stable chip order: group by staff (roster order), then job number, so
+    // the same tech's work reads top-to-bottom in one colour block.
+    const staffOrder = new Map(staff.map((s, i) => [s.id, i]));
+    for (const list of untimed.values()) {
+      list.sort((a, b) => {
+        const so = (staffOrder.get(a.staff_id) ?? 99) - (staffOrder.get(b.staff_id) ?? 99);
+        if (so !== 0) return so;
+        return (a.job?.number ?? a.title ?? "").localeCompare(b.job?.number ?? b.title ?? "");
+      });
+    }
+    return { untimedByDate: untimed, timedByDate: timed };
+  }, [entries, staff]);
 
   // Keep `view` in the URL so a full navigation (next-week arrow, cross-week
   // day-nav) doesn't drop the user's view choice.
@@ -250,7 +297,9 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   function getStaff(e: ScheduleEntry) { return staff.find(s => s.id === e.staff_id); }
   function openAssign(date: string, hour?: number) {
     if (!isAdmin) return;
-    setModal({ staffId: staff[0]?.id ?? "", date, startTime: hour !== undefined ? `${hour.toString().padStart(2,"0")}:00` : undefined });
+    // No preselected staff — the old staff[0] default silently made whoever
+    // sorted first the "primary" on every new entry.
+    setModal({ staffId: "", date, startTime: hour !== undefined ? `${hour.toString().padStart(2,"0")}:00` : undefined });
   }
 
   return (
@@ -288,27 +337,49 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
         <span className="text-sm font-medium">{view === "week" ? `${fmtShort(weekDates[0])} — ${fmtShort(weekDates[6])}` : fmtLong(selectedDay)}</span>
       </div>
 
-      {/* WEEK VIEW */}
+      {/* WEEK VIEW — desktop: time grid. Mobile: agenda list (below); the
+          800px grid was unreadable slivers on a phone. */}
       {view === "week" && (
-        <div className="rounded-lg border border-border bg-card overflow-hidden flex-1 min-h-0 flex flex-col">
+        <div className="rounded-lg border border-border bg-card overflow-hidden flex-1 min-h-0 hidden md:flex flex-col">
           <div className="overflow-x-auto flex-1 min-h-0 flex flex-col">
             <div className="min-w-[800px] flex-1 min-h-0 flex flex-col">
-              {/* Day headers */}
+              {/* Day headers + stacked untimed chips. The chips live up here
+                  (full column width, one per row) so they never lane-split —
+                  that's what makes a full week readable. */}
               <div className="flex border-b border-border">
                 <div className="w-16 shrink-0 border-r border-border bg-muted/50" />
                 {weekDates.map(date => {
                   const d = new Date(date + "T00:00:00");
                   const today = isToday(date);
-                  const allDay = allDayByDate.get(date) ?? [];
+                  const dayUntimed = untimedByDate.get(date) ?? [];
                   return (
-                    <div key={date} className={`flex-1 border-r last:border-0 px-1.5 py-2 text-center min-w-[100px] cursor-pointer hover:bg-accent/30 ${today ? "bg-primary/10" : "bg-muted/50"}`} onClick={() => switchToDay(date)}>
+                    <div key={date} className={`flex-1 border-r last:border-0 px-1 py-2 text-center min-w-[100px] cursor-pointer hover:bg-accent/30 ${today ? "bg-primary/10" : "bg-muted/50"}`} onClick={() => switchToDay(date)}>
                       <div className={`text-xs font-medium ${today ? "text-primary" : "text-muted-foreground"}`}>{d.toLocaleDateString("en-AU", { weekday: "short" })}</div>
-                      <div className={`text-base font-bold ${today ? "text-primary" : ""}`}>{d.getDate()}</div>
-                      {allDay.map(e => { const s = getStaff(e); const isJob = e.entry_type === "job"; return (
-                        <button key={`${e.id}-${date}`} onClick={ev => { ev.stopPropagation(); setModal({ staffId: e.staff_id, date: e.schedule_date, entry: e }); }} className={`mt-1 w-full rounded px-1 py-0.5 text-[10px] font-medium text-white truncate text-left ${!isJob ? "border border-dashed border-white/40" : ""}`} style={{ backgroundColor: s?.colour ?? "#6b7280" }} title={isJob ? e.job?.number ?? "" : (e.title ?? "")}>
-                          {isJob ? e.job?.number : (e.entry_type === "reminder" ? "⏰ " : "") + (e.title ?? "")}
-                        </button>
-                      ); })}
+                      <div className={`text-base font-bold ${today ? "text-primary" : ""}`}>
+                        {d.getDate()}{" "}
+                        <span className={`text-[10px] font-semibold ${today ? "text-primary/80" : "text-muted-foreground"}`}>
+                          {d.toLocaleDateString("en-AU", { month: "short" })}
+                        </span>
+                      </div>
+                      {dayUntimed.map(e => {
+                        const s = getStaff(e);
+                        const isJob = e.entry_type === "job";
+                        const label = isJob
+                          ? (e.job?.site?.name ?? e.job?.customer?.name ?? e.job?.number ?? "")
+                          : (e.entry_type === "reminder" ? "⏰ " : "") + (e.title ?? "");
+                        return (
+                          <button
+                            key={`${e.id}-${date}`}
+                            onClick={ev => { ev.stopPropagation(); openEntry(e); }}
+                            className={`mt-1 flex w-full items-center gap-1 rounded px-1 py-0.5 text-[10px] font-medium text-white text-left ${!isJob ? "border border-dashed border-white/40" : ""}`}
+                            style={{ backgroundColor: s?.colour ?? "#6b7280" }}
+                            title={`${s?.display_name ?? ""} — ${isJob ? `${e.job?.number ?? ""} ${label}` : label}`}
+                          >
+                            <span className="shrink-0 font-bold opacity-90">{s?.initials}</span>
+                            <span className="truncate">{label}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   );
                 })}
@@ -328,7 +399,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
 
                   {/* Day columns with absolute-positioned entries */}
                   {weekDates.map(date => (
-                    <DayCol key={date} date={date} hours={hours} entries={timedByDate.get(date) ?? []} getStaff={getStaff} isAdmin={isAdmin} isTouchDevice={isTouchDevice} onCellClick={openAssign} onEntryClick={e => setModal({ staffId: e.staff_id, date, entry: e })} onDrop={handleDrop} draggingId={draggingId} />
+                    <DayCol key={date} date={date} hours={hours} entries={timedByDate.get(date) ?? []} getStaff={getStaff} isAdmin={isAdmin} isTouchDevice={isTouchDevice} maxLanes={2} onOverflowClick={switchToDay} onCellClick={openAssign} onEntryClick={openEntry} onDrop={handleDrop} draggingId={draggingId} />
                   ))}
                 </div>
               </div>
@@ -337,16 +408,93 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
         </div>
       )}
 
-      {/* DAY VIEW */}
+      {/* WEEK VIEW — mobile agenda: seven stacked day sections, full-width
+          cards, nothing truncated to slivers. Tap a day header for day view,
+          tap a card to edit its tile group. */}
+      {view === "week" && (
+        <div className="md:hidden rounded-lg border border-border bg-card overflow-y-auto flex-1 min-h-0">
+          {weekDates.map(date => {
+            const d = new Date(date + "T00:00:00");
+            const today = isToday(date);
+            const dayUntimed = untimedByDate.get(date) ?? [];
+            const dayTimed = (timedByDate.get(date) ?? []).slice().sort((a, b) => timeMins(a.start_time!) - timeMins(b.start_time!));
+            const items = [...dayUntimed, ...dayTimed];
+            return (
+              <div key={date}>
+                <button
+                  onClick={() => switchToDay(date)}
+                  className={`sticky top-0 z-10 flex w-full items-baseline gap-2 border-b border-border px-3 py-2 text-left ${today ? "bg-primary/15" : "bg-muted"}`}
+                >
+                  <span className={`text-xs font-bold ${today ? "text-primary" : ""}`}>{d.toLocaleDateString("en-AU", { weekday: "long" })}</span>
+                  <span className={`text-xs font-medium ${today ? "text-primary/80" : "text-muted-foreground"}`}>
+                    {d.getDate()} {d.toLocaleDateString("en-AU", { month: "short" })}
+                  </span>
+                  {today && <span className="ml-auto rounded-full bg-primary px-2 py-0.5 text-[9px] font-bold text-primary-foreground">TODAY</span>}
+                </button>
+                {items.length === 0 ? (
+                  <p className="px-3 py-2.5 text-xs text-muted-foreground/50">Nothing scheduled</p>
+                ) : (
+                  items.map(e => {
+                    const s = getStaff(e);
+                    const isJob = e.entry_type === "job";
+                    const primary = isJob
+                      ? (e.job?.site?.name ?? e.job?.customer?.name ?? e.job?.number ?? "")
+                      : (e.entry_type === "reminder" ? "⏰ " : "") + (e.title ?? "");
+                    const timeLabel = e.start_time && e.end_time
+                      ? `${e.start_time.slice(0, 5)}–${e.end_time.slice(0, 5)}`
+                      : "All day";
+                    return (
+                      <button
+                        key={`${e.id}-${date}`}
+                        onClick={() => openEntry(e)}
+                        className="flex w-full items-center gap-2.5 border-b border-border/60 px-3 py-2.5 text-left active:bg-accent"
+                      >
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: s?.colour ?? "#6b7280" }}>
+                          {s?.initials}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold">{primary}</span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {isJob && <span className="font-mono">{e.job?.number}</span>}
+                            {isJob ? " · " : ""}{timeLabel}
+                            {e.recurrence_group_id ? " · ↻" : ""}
+                          </span>
+                        </span>
+                        {isJob && e.job?.status && (
+                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: e.job.status.colour }} />
+                        )}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* DAY VIEW — swipe left/right on touch to move between days. */}
       {view === "day" && (
-        <div className="rounded-lg border border-border bg-card overflow-hidden flex-1 min-h-0 flex flex-col">
-          {(allDayByDate.get(selectedDay) ?? []).length > 0 && (
+        <div
+          className="rounded-lg border border-border bg-card overflow-hidden flex-1 min-h-0 flex flex-col"
+          onTouchStart={onDayTouchStart}
+          onTouchEnd={onDayTouchEnd}
+        >
+          {/* Date banner — always know what day you're looking at, even when
+              the header row wraps out of sight on a phone. */}
+          <div className={`border-b border-border px-4 py-1.5 text-xs font-semibold ${isToday(selectedDay) ? "bg-primary/10 text-primary" : "bg-muted/40"}`}>
+            {fmtLong(selectedDay)}
+          </div>
+          {(untimedByDate.get(selectedDay) ?? []).length > 0 && (
             <div className="border-b border-border px-4 py-2 bg-muted/30">
               <span className="text-[10px] font-semibold text-muted-foreground uppercase">All Day</span>
               <div className="mt-1 space-y-1">
-                {(allDayByDate.get(selectedDay) ?? []).map(e => { const s = getStaff(e); const isJob = e.entry_type === "job"; return (
-                  <button key={`${e.id}-${selectedDay}`} onClick={() => setModal({ staffId: e.staff_id, date: e.schedule_date, entry: e })} className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium text-white ${!isJob ? "border border-dashed border-white/40" : ""}`} style={{ backgroundColor: s?.colour ?? "#6b7280" }}>
-                    {s?.initials} · {isJob ? `${e.job?.number} — ${e.job?.site?.name ?? e.job?.customer?.name ?? ""}` : `${e.entry_type === "reminder" ? "⏰ " : ""}${e.title ?? ""}`}
+                {(untimedByDate.get(selectedDay) ?? []).map(e => { const s = getStaff(e); const isJob = e.entry_type === "job"; return (
+                  <button key={`${e.id}-${selectedDay}`} onClick={() => openEntry(e)} className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium text-white ${!isJob ? "border border-dashed border-white/40" : ""}`} style={{ backgroundColor: s?.colour ?? "#6b7280" }}>
+                    <span className="font-bold">{s?.initials}</span>
+                    <span className="truncate">
+                      {isJob ? `${e.job?.site?.name ?? e.job?.customer?.name ?? ""} — ${e.job?.number ?? ""}` : `${e.entry_type === "reminder" ? "⏰ " : ""}${e.title ?? ""}`}
+                    </span>
                   </button>
                 ); })}
               </div>
@@ -361,29 +509,56 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
                   </div>
                 ))}
               </div>
-              <DayCol date={selectedDay} hours={hours} entries={timedByDate.get(selectedDay) ?? []} getStaff={getStaff} isAdmin={isAdmin} isTouchDevice={isTouchDevice} onCellClick={openAssign} onEntryClick={e => setModal({ staffId: e.staff_id, date: selectedDay, entry: e })} onDrop={handleDrop} draggingId={draggingId} />
+              <DayCol date={selectedDay} hours={hours} entries={timedByDate.get(selectedDay) ?? []} getStaff={getStaff} isAdmin={isAdmin} isTouchDevice={isTouchDevice} maxLanes={6} onCellClick={openAssign} onEntryClick={openEntry} onDrop={handleDrop} draggingId={draggingId} />
             </div>
           </div>
           <button onClick={switchToWeek} className="w-full border-t border-border px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">← Back to week</button>
+
+          {/* Floating "Today" pill (mobile) — thumb-reachable jump back. */}
+          {selectedDay !== todayStr() && (
+            <button
+              onClick={() => goDay("today")}
+              className="md:hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-40 rounded-full bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground shadow-xl active:scale-95 transition-transform"
+            >
+              Today
+            </button>
+          )}
         </div>
       )}
 
       <p className="mt-2 text-[10px] text-muted-foreground">{entries.length} entries this week</p>
 
       {modal && (
-        <AssignJobModal staffId={modal.staffId} date={modal.date} entry={modal.entry} jobs={jobs} staff={staff} staffName={staff.find(s => s.id === modal.staffId)?.display_name ?? ""} defaultStartTime={modal.startTime} defaultJobId={modal.defaultJobId} onClose={() => setModal(null)} onSaved={() => { setModal(null); router.refresh(); }} />
+        <AssignJobModal staffId={modal.staffId} date={modal.date} entry={modal.entry} siblings={modal.siblings} jobs={jobs} staff={staff} defaultStartTime={modal.startTime} defaultJobId={modal.defaultJobId} onClose={() => setModal(null)} onSaved={() => { setModal(null); router.refresh(); }} />
       )}
     </div>
   );
 }
 
 /* Day column — explicit height, entries absolutely positioned to span full time range */
-function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCellClick, onEntryClick, onDrop, draggingId }: {
+function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, maxLanes = 2, onOverflowClick, onCellClick, onEntryClick, onDrop, draggingId }: {
   date: string; hours: number[]; entries: ScheduleEntry[]; getStaff: (e: ScheduleEntry) => StaffMember | undefined;
-  isAdmin: boolean; isTouchDevice: boolean; onCellClick: (date: string, hour: number) => void; onEntryClick: (e: ScheduleEntry) => void;
+  isAdmin: boolean; isTouchDevice: boolean;
+  /** Cap on side-by-side lanes; overlap beyond this collapses into a "+N
+   *  more" chip instead of shredding tiles into unreadable slivers. */
+  maxLanes?: number;
+  onOverflowClick?: (date: string) => void;
+  onCellClick: (date: string, hour: number) => void; onEntryClick: (e: ScheduleEntry) => void;
   onDrop?: (entryId: string, date: string, hour: number) => void; draggingId?: string | null;
 }) {
   const today = isToday(date);
+  const laid = layoutTimedEntries(entries);
+  const visible = laid.filter((l) => l.lane < maxLanes);
+  const overflow = laid.filter((l) => l.lane >= maxLanes);
+  // One "+N more" chip per overflowing cluster, pinned at the cluster's
+  // earliest hidden entry.
+  const overflowChips = new Map<number, { count: number; top: number }>();
+  for (const o of overflow) {
+    const top = Math.max(0, ((timeMins(o.entry.start_time!) - START_HOUR * 60) / 60) * HOUR_PX);
+    const cur = overflowChips.get(o.cluster);
+    if (!cur) overflowChips.set(o.cluster, { count: 1, top });
+    else { cur.count++; cur.top = Math.min(cur.top, top); }
+  }
 
   return (
     <div
@@ -408,13 +583,14 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
         />
       ))}
 
-      {/* Entry blocks — laid out into side-by-side lanes for overlapping times */}
-      {layoutTimedEntries(entries).map(({ entry, lane, lanes }) => (
+      {/* Entry blocks — side-by-side lanes for overlapping times, capped at
+          maxLanes with a "+N more" chip for the rest */}
+      {visible.map(({ entry, lane, lanes }) => (
         <TimedEntryBlock
           key={entry.id}
           entry={entry}
           lane={lane}
-          lanes={lanes}
+          lanes={Math.min(lanes, maxLanes)}
           date={date}
           staff={getStaff(entry)}
           isAdmin={isAdmin}
@@ -423,6 +599,17 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCell
           onEntryClick={onEntryClick}
           onDrop={onDrop}
         />
+      ))}
+      {[...overflowChips.entries()].map(([cluster, { count, top }]) => (
+        <button
+          key={`overflow-${cluster}`}
+          onClick={(ev) => { ev.stopPropagation(); onOverflowClick?.(date); }}
+          className="absolute z-20 rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-foreground shadow-sm hover:bg-accent transition-colors"
+          style={{ top: top + 2, right: 4 }}
+          title={`${count} more scheduled — open day view`}
+        >
+          +{count} more
+        </button>
       ))}
     </div>
   );
@@ -510,8 +697,8 @@ function TimedEntryBlock({
           left: leftStyle,
           width: widthStyle,
           zIndex: 10,
-          backgroundColor: `${staffColour}18`,
-          borderColor: `${staffColour}50`,
+          backgroundColor: `${staffColour}2E`,
+          borderColor: `${staffColour}70`,
           borderLeftWidth: 3,
           borderLeftColor: leftBorderColour,
           borderLeftStyle: isJob ? "solid" : "dashed",
@@ -525,9 +712,11 @@ function TimedEntryBlock({
                 {s.initials}
               </span>
             )}
+            {/* Site/customer first — that's what identifies the job at a
+                glance; the number is detail, not identity. */}
             <span className="text-xs font-semibold truncate">
               {isJob
-                ? <span className="font-mono">{entry.job?.number}</span>
+                ? (entry.job?.site?.name ?? entry.job?.customer?.name ?? entry.job?.number)
                 : <>{entry.entry_type === "reminder" ? "⏰ " : ""}{entry.title}</>}
             </span>
             {entry.recurrence_group_id && (
@@ -541,7 +730,8 @@ function TimedEntryBlock({
           </div>
           {height > 44 && isJob && lanes < 3 && (
             <p className="text-[10px] text-muted-foreground truncate mt-0.5">
-              {entry.job?.site?.name ?? entry.job?.customer?.name}
+              <span className="font-mono">{entry.job?.number}</span>
+              {height <= 64 && entry.start_time ? ` · ${entry.start_time.slice(0,5)}–${entry.end_time?.slice(0,5)}` : ""}
             </p>
           )}
           {height > 64 && lanes < 3 && (

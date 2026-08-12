@@ -128,9 +128,9 @@ export function AssignJobModal({
   staffId,
   date,
   entry,
+  siblings,
   jobs,
   staff,
-  staffName,
   defaultStartTime,
   defaultJobId,
   onClose,
@@ -139,9 +139,15 @@ export function AssignJobModal({
   staffId: string;
   date: string;
   entry?: ScheduleEntry;
+  /** Every entry in the same "tile group" as `entry` — same job (or same
+   *  event title/times) on the same date, one row per staff member. The
+   *  staff picker edits the whole group: untick = delete that person's row,
+   *  tick = insert one. Falls back to [entry] when not provided. */
+  siblings?: ScheduleEntry[];
   jobs: JobOption[];
   staff?: StaffOption[];
-  staffName: string;
+  /** Legacy — no longer displayed (the group has no "primary" person). */
+  staffName?: string;
   defaultStartTime?: string;
   /** Pre-select this job in the picker — used when the user lands on the
    *  scheduler from a "Schedule this job" link inside a job detail page. */
@@ -153,12 +159,20 @@ export function AssignJobModal({
   const isEditing = !!entry;
 
   const [entryType, setEntryType] = useState<EntryType>(entry?.entry_type ?? "job");
-  // Multi-select staff. On create: fans out one schedule_entry per selected
-  // staff. On edit: the first chip stays on the existing entry; any extra
-  // chips create additional entries.
-  const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>(
-    entry?.staff_id ? [entry.staff_id] : [staffId],
+  // Multi-select staff — no "primary". On create: fans out one
+  // schedule_entry per selected staff (none preselected; whoever's cell was
+  // clicked is a hint, not a lock). On edit: preselects EVERYONE in the tile
+  // group; save diffs the selection — unticked staff get their row deleted,
+  // newly ticked staff get a row inserted. The job card stays the source of
+  // truth for the team; the scheduler just mirrors per-day rows.
+  const groupEntries = useMemo<ScheduleEntry[]>(
+    () => (entry ? (siblings && siblings.length > 0 ? siblings : [entry]) : []),
+    [entry, siblings],
   );
+  const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>(() => {
+    if (entry) return Array.from(new Set(groupEntries.map((s) => s.staff_id)));
+    return staffId ? [staffId] : [];
+  });
   const [selectedDate, setSelectedDate] = useState(entry?.schedule_date ?? date);
   const [endDate, setEndDate] = useState(entry?.end_date ?? "");
   const [jobId, setJobId] = useState(entry?.job_id ?? defaultJobId ?? "");
@@ -287,8 +301,12 @@ export function AssignJobModal({
       setError("Add a title");
       return;
     }
-    if (!isEditing && selectedStaffIds.length === 0) {
-      setError("Pick at least one staff member");
+    if (selectedStaffIds.length === 0) {
+      setError(
+        isEditing
+          ? "Pick at least one staff member — or use Remove to take this off the day entirely."
+          : "Pick at least one staff member",
+      );
       return;
     }
 
@@ -326,11 +344,17 @@ export function AssignJobModal({
     };
 
     if (isEditing && entry) {
-      // Recurring edit: scope determines blast radius. The schedule_date is
-      // ALWAYS per-occurrence (you can't change "what day" the whole series
-      // happens via this flow — that's a "cancel + recreate" job). The
-      // editable-everywhere fields are job/title/notes/start_time/end_time
-      // plus recurrence flags themselves.
+      // Group edit — the tile group (same job/event, same date, one row per
+      // staff) is edited as a unit. Selection diff decides everything:
+      //   kept staff   → their rows get the updated fields
+      //   unticked     → their rows are DELETED (their tile only)
+      //   newly ticked → a fresh row is inserted
+      // No "primary" — any person can be removed without nuking the rest.
+      //
+      // Recurring scope still applies to the shared fields: "series" pushes
+      // job/title/times/notes to every occurrence; staff changes are always
+      // per-occurrence (this date only) so "Michael is sick Friday" never
+      // rewrites the whole series' roster.
       const seriesEditable = {
         entry_type: basePayload.entry_type,
         job_id: basePayload.job_id,
@@ -340,38 +364,63 @@ export function AssignJobModal({
         notes: basePayload.notes,
       };
 
+      const byStaff = new Map(groupEntries.map((s) => [s.staff_id, s]));
+      const keptIds = groupEntries
+        .filter((s) => selectedStaffIds.includes(s.staff_id))
+        .map((s) => s.id);
+      const removeIds = groupEntries
+        .filter((s) => !selectedStaffIds.includes(s.staff_id))
+        .map((s) => s.id);
+      const addStaffIds = selectedStaffIds.filter((sid) => !byStaff.has(sid));
+
       if (isPartOfSeries && editScope === "series" && entry.recurrence_group_id) {
-        // Whole-series update: apply the shared fields across every sibling.
-        // staff_id stays per-row (we don't reshuffle who's on the team via
-        // a series edit — that gets weird fast).
         const { error: err } = await supabase
           .from("schedule_entries")
           .update(seriesEditable)
           .eq("recurrence_group_id", entry.recurrence_group_id);
         if (err) { setError(err.message); setSaving(false); return; }
-      } else {
-        // Single-occurrence update (default path + non-recurring edits).
+        // Date/end-date changes stay per-occurrence even in series scope.
+        if (keptIds.length > 0) {
+          const { error: occErr } = await supabase
+            .from("schedule_entries")
+            .update({ schedule_date: basePayload.schedule_date, end_date: basePayload.end_date })
+            .in("id", keptIds);
+          if (occErr) { setError(occErr.message); setSaving(false); return; }
+        }
+      } else if (keptIds.length > 0) {
+        // Occurrence scope (default): update every kept row with the full
+        // payload — each row keeps its own staff_id.
         const { error: err } = await supabase
           .from("schedule_entries")
-          .update({ ...basePayload, staff_id: entry.staff_id })
-          .eq("id", entry.id);
+          .update(basePayload)
+          .in("id", keptIds);
         if (err) { setError(err.message); setSaving(false); return; }
       }
 
-      const additionalStaff = selectedStaffIds.filter((sid) => sid !== entry.staff_id);
-      if (additionalStaff.length > 0) {
-        const rows = additionalStaff.map((sid) => ({ ...basePayload, staff_id: sid }));
+      if (removeIds.length > 0) {
+        const { error: delErr } = await supabase
+          .from("schedule_entries")
+          .delete()
+          .in("id", removeIds);
+        if (delErr) { setError(`Couldn't remove unticked staff: ${delErr.message}`); setSaving(false); return; }
+      }
+
+      if (addStaffIds.length > 0) {
+        // New rows are plain per-day entries even on a recurring series —
+        // an extra pair of hands for one occurrence shouldn't inherit the
+        // whole series.
+        const rows = addStaffIds.map((sid) => ({ ...basePayload, staff_id: sid }));
         const { error: insErr, data: insData } = await supabase
           .from("schedule_entries")
           .insert(rows)
           .select("id");
         if (insErr) {
-          setError(`Saved primary entry but couldn't add ${additionalStaff.length} extra: ${insErr.message}`);
+          setError(`Saved but couldn't add ${addStaffIds.length} extra staff: ${insErr.message}`);
           setSaving(false);
           return;
         }
-        if (!insData || insData.length !== additionalStaff.length) {
-          setError(`Expected ${additionalStaff.length} extra entries, got ${insData?.length ?? 0}. RLS or constraint may be blocking.`);
+        if (!insData || insData.length !== addStaffIds.length) {
+          setError(`Expected ${addStaffIds.length} extra entries, got ${insData?.length ?? 0}. RLS or constraint may be blocking.`);
           setSaving(false);
           return;
         }
@@ -463,9 +512,7 @@ export function AssignJobModal({
     // the scheduler grid but the job never appears under "assigned to
     // <staff>" — the jobs list and Today view both key off job_staff.
     if (entryType === "job" && jobId) {
-      const targetStaffIds = isEditing && entry
-        ? Array.from(new Set([entry.staff_id, ...selectedStaffIds]))
-        : selectedStaffIds;
+      const targetStaffIds = selectedStaffIds;
       const { data: existing } = await supabase
         .from("job_staff")
         .select("staff_id")
@@ -511,8 +558,13 @@ export function AssignJobModal({
 
   async function handleDelete() {
     if (!entry) return;
+    const groupIds = groupEntries.map((s) => s.id);
+    const staffCount = new Set(groupEntries.map((s) => s.staff_id)).size;
+
     // Recurring entries get a two-question confirm: delete-one or
     // delete-whole-series. Standalone entries keep the single-question flow.
+    // "One" removes this occurrence for EVERYONE on it (the whole tile
+    // group that day) — individual staff come off via unticking + Save.
     if (isPartOfSeries && entry.recurrence_group_id) {
       const choice = window.prompt(
         "This entry is part of a recurring series.\n\n" +
@@ -531,18 +583,22 @@ export function AssignJobModal({
       const q = supabase.from("schedule_entries").delete();
       const { error: err } = await (scope === "all"
         ? q.eq("recurrence_group_id", entry.recurrence_group_id)
-        : q.eq("id", entry.id));
+        : q.in("id", groupIds));
       if (err) { setError(err.message); setSaving(false); return; }
       onSaved();
       return;
     }
 
-    if (!confirm("Remove this schedule entry?")) return;
+    const msg =
+      staffCount > 1
+        ? `Remove this from the day for all ${staffCount} staff? (To take one person off, untick them and Save instead.)`
+        : "Remove this schedule entry?";
+    if (!confirm(msg)) return;
     setSaving(true);
     const { error: err } = await supabase
       .from("schedule_entries")
       .delete()
-      .eq("id", entry.id);
+      .in("id", groupIds);
     if (err) {
       setError(err.message);
       setSaving(false);
@@ -596,7 +652,9 @@ export function AssignJobModal({
             <div>
               <h2 className="text-lg font-bold">{headerLabel}</h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {staffName} · {formattedDate}
+                {selectedStaffIds.length > 0
+                  ? `${selectedStaffIds.length} staff · ${formattedDate}`
+                  : formattedDate}
               </p>
             </div>
             <div className="flex items-center gap-1.5">
@@ -663,14 +721,11 @@ export function AssignJobModal({
                 <div className="flex flex-wrap gap-1.5">
                   {staff.map((s) => {
                     const on = selectedStaffIds.includes(s.id);
-                    const locked = isEditing && entry?.staff_id === s.id;
                     return (
                       <button
                         key={s.id}
                         type="button"
-                        disabled={locked}
                         onClick={() => {
-                          if (locked) return;
                           setSelectedStaffIds((prev) =>
                             prev.includes(s.id)
                               ? prev.filter((x) => x !== s.id)
@@ -681,9 +736,8 @@ export function AssignJobModal({
                           on
                             ? "border-transparent text-white"
                             : "border-border bg-card text-muted-foreground hover:text-foreground hover:bg-accent"
-                        } ${locked ? "cursor-default opacity-90" : ""}`}
+                        }`}
                         style={on ? { backgroundColor: s.colour } : undefined}
-                        title={locked ? "This entry's primary staff — can't be removed here. Delete the entry to unassign." : undefined}
                       >
                         <span
                           className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-semibold text-white"
@@ -694,7 +748,6 @@ export function AssignJobModal({
                           {s.initials}
                         </span>
                         {s.display_name}
-                        {locked && <span className="text-[9px] opacity-70">· primary</span>}
                       </button>
                     );
                   })}
@@ -705,10 +758,10 @@ export function AssignJobModal({
                     selected staff member.
                   </p>
                 )}
-                {isEditing && selectedStaffIds.filter((s) => s !== entry?.staff_id).length > 0 && (
+                {isEditing && (
                   <p className="mt-1 text-[10px] text-muted-foreground">
-                    Adds {selectedStaffIds.filter((s) => s !== entry?.staff_id).length} new entr
-                    {selectedStaffIds.filter((s) => s !== entry?.staff_id).length === 1 ? "y" : "ies"} for the additional staff.
+                    Untick someone to take them off this day only — everyone
+                    else&apos;s tiles stay put.
                   </p>
                 )}
               </div>
@@ -1025,7 +1078,7 @@ export function AssignJobModal({
                 </div>
                 <p className="text-[10px] text-muted-foreground">
                   {editScope === "series"
-                    ? "Job, title, times and notes will apply to every occurrence. The date of each occurrence stays as-is."
+                    ? "Job, title, times and notes will apply to every occurrence. Dates and staff changes only apply to this occurrence."
                     : "Changes only affect this single occurrence."}
                 </p>
               </div>
