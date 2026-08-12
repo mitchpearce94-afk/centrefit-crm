@@ -30,6 +30,10 @@ const END_HOUR = 20;
 const TOTAL_HOURS = END_HOUR - START_HOUR;
 const HOUR_PX = 60;
 const GRID_HEIGHT = TOTAL_HOURS * HOUR_PX;
+// The mobile agenda scrolls continuously through this many days either side
+// of the focused week (±4 weeks). page.tsx widens its entries query by the
+// same amount so every visible day has its data.
+export const AGENDA_WINDOW_DAYS = 28;
 
 function localISO(d: Date): string { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function addDaysStr(d: string, n: number): string { const x = new Date(d + "T00:00:00"); x.setDate(x.getDate() + n); return localISO(x); }
@@ -154,6 +158,24 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   }
 
   const weekDates = useMemo(() => [0,1,2,3,4,5,6].map(i => addDaysStr(weekStart, i)), [weekStart]);
+  // Continuous agenda range: ±AGENDA_WINDOW_DAYS around the focused week.
+  const agendaDates = useMemo(
+    () => Array.from({ length: AGENDA_WINDOW_DAYS * 2 + 7 }, (_, i) => addDaysStr(weekStart, i - AGENDA_WINDOW_DAYS)),
+    [weekStart],
+  );
+
+  // On mobile-week mount, jump the agenda scroll to today (or the focused
+  // week's Monday when today is outside the window) so the continuous list
+  // opens where the user actually is.
+  const agendaRef = useRef<HTMLDivElement>(null);
+  const agendaAnchorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (view !== "week") return;
+    const box = agendaRef.current;
+    const anchor = agendaAnchorRef.current;
+    if (!box || !anchor) return;
+    box.scrollTop = anchor.offsetTop;
+  }, [view, weekStart]);
 
   // Day-view pager: the 7 days render side-by-side in a snap-scroll strip,
   // so swiping through days is native smooth scrolling with momentum, not a
@@ -441,15 +463,22 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
           cards, nothing truncated to slivers. Tap a day header for day view,
           tap a card to edit its tile group. */}
       {view === "week" && (
-        <div className="lg:hidden rounded-lg border border-border bg-card overflow-y-auto flex-1 min-h-0">
-          {weekDates.map(date => {
+        <div ref={agendaRef} className="lg:hidden relative rounded-lg border border-border bg-card overflow-y-auto flex-1 min-h-0">
+          <a
+            href={`/scheduler?week=${addDaysStr(weekStart, -AGENDA_WINDOW_DAYS)}&view=week`}
+            className="block border-b border-border px-3 py-2.5 text-center text-xs font-medium text-primary"
+          >
+            ↑ Earlier weeks
+          </a>
+          {agendaDates.map(date => {
             const d = new Date(date + "T00:00:00");
             const today = isToday(date);
+            const isAnchor = date === (agendaDates.includes(todayStr()) ? todayStr() : weekStart);
             const dayUntimed = untimedByDate.get(date) ?? [];
             const dayTimed = (timedByDate.get(date) ?? []).slice().sort((a, b) => timeMins(a.start_time!) - timeMins(b.start_time!));
             const items = [...dayUntimed, ...dayTimed];
             return (
-              <div key={date}>
+              <div key={date} ref={isAnchor ? agendaAnchorRef : undefined}>
                 <button
                   onClick={() => switchToDay(date)}
                   className={`sticky top-0 z-10 flex w-full items-baseline gap-2 border-b border-l-2 border-b-border px-3 py-2 text-left ${today ? "border-l-primary bg-primary/25" : "border-l-primary/60 bg-primary/10"}`}
@@ -499,6 +528,12 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
               </div>
             );
           })}
+          <a
+            href={`/scheduler?week=${addDaysStr(weekStart, AGENDA_WINDOW_DAYS)}&view=week`}
+            className="block px-3 py-2.5 text-center text-xs font-medium text-primary"
+          >
+            ↓ Later weeks
+          </a>
         </div>
       )}
 
@@ -565,7 +600,9 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
         </div>
       )}
 
-      <p className="mt-2 text-[10px] text-muted-foreground">{entries.length} entries this week</p>
+      <p className="mt-2 text-[10px] text-muted-foreground">
+        {entries.filter((e) => e.schedule_date >= weekDates[0] && e.schedule_date <= weekDates[6]).length} entries this week
+      </p>
 
       {modal && (
         <AssignJobModal staffId={modal.staffId} date={modal.date} entry={modal.entry} siblings={modal.siblings} jobs={jobs} staff={staff} defaultStartTime={modal.startTime} defaultJobId={modal.defaultJobId} onClose={() => setModal(null)} onSaved={() => { setModal(null); router.refresh(); }} />

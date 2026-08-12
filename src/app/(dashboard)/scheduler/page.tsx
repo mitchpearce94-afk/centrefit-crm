@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { SchedulerView } from "./scheduler-grid";
+import { SchedulerView, AGENDA_WINDOW_DAYS } from "./scheduler-grid";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +34,11 @@ export default async function SchedulerPage({
   const monday = getMonday(week);
   const sunday = addDays(monday, 6);
   const mondayISO = formatDate(monday);
-  const sundayISO = formatDate(sunday);
+  // Entries load for the focused week ± the agenda window so the mobile
+  // agenda can scroll continuously through surrounding weeks. Desktop grid
+  // and day view still key off the focused week's dates.
+  const windowStartISO = formatDate(addDays(monday, -AGENDA_WINDOW_DAYS));
+  const windowEndISO = formatDate(addDays(sunday, AGENDA_WINDOW_DAYS));
 
   // Get completion statuses to exclude from job picker
   const { data: completionStatuses } = await supabase
@@ -76,8 +80,8 @@ export default async function SchedulerPage({
         .select(
           "*, job:jobs(id, number, reference, customer:customers(id, name), site:customer_sites(id, name), status:statuses(id, name, colour))"
         )
-        .lte("schedule_date", sundayISO)
-        .or(`end_date.gte.${mondayISO},and(end_date.is.null,schedule_date.gte.${mondayISO})`)
+        .lte("schedule_date", windowEndISO)
+        .or(`end_date.gte.${windowStartISO},and(end_date.is.null,schedule_date.gte.${windowStartISO})`)
         .order("start_time"),
       jobsQuery,
       supabase.auth.getUser(),
