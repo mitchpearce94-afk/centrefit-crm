@@ -106,7 +106,7 @@ export default async function SchedulerPage({
           the user navigates away the <style> unmounts and main returns to
           its normal overflow-y-auto behaviour. */}
       <style>{`main { overflow-y: hidden !important; }`}</style>
-      <div className="flex flex-col overflow-hidden h-[calc(100dvh-12rem)] lg:h-[calc(100dvh-6rem)]">
+      <div className="flex flex-col overflow-hidden h-[calc(var(--app-height,100dvh)-12rem)] lg:h-[calc(var(--app-height,100dvh)-6rem)]">
         <SchedulerView
           staff={staffResult.data ?? []}
           entries={entriesResult.data ?? []}

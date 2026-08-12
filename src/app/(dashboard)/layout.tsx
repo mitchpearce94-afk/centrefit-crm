@@ -7,6 +7,7 @@ import { NotificationsBell } from "@/components/notifications-bell";
 import { SuggestionButton } from "@/components/suggestion-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { IdleLogout } from "@/components/idle-logout";
+import { ViewportHeightFix } from "@/components/viewport-height-fix";
 import { ToastProvider } from "@/components/ui/toast";
 import { loadPermissionsFor, hasPermission, PERMISSION_FLAGS } from "@/lib/auth/permissions";
 
@@ -51,7 +52,15 @@ export default async function DashboardLayout({
   return (
     <ToastProvider>
       <IdleLogout />
-      <div className="flex h-dvh overflow-hidden">
+      <ViewportHeightFix />
+      {/* Shell height comes from --app-height (true visual-viewport height,
+          see ViewportHeightFix) with 100dvh as the pre-JS fallback — iOS
+          standalone mis-measures dvh at launch. relative so the mobile nav
+          can anchor to the SHELL bottom instead of the broken viewport. */}
+      <div
+        className="relative flex overflow-hidden"
+        style={{ height: "var(--app-height, 100dvh)" }}
+      >
         <Sidebar user={user} staff={staff ?? null} allowedFlags={allowedFlags} statusBoardHref={statusBoardHref} />
         <main className="flex-1 overflow-y-auto overflow-x-hidden pb-mobile-nav lg:pb-0">
           {/* Mobile fallback top bar — visible on screens that haven't yet

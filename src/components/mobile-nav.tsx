@@ -100,8 +100,13 @@ export function MobileNav({
 
   return (
     <>
+      {/* absolute (not fixed): anchors to the app shell, which is sized by
+          --app-height to the TRUE viewport — `fixed bottom-0` anchored to
+          iOS's mis-measured launch viewport and floated above a dead gap.
+          The shell never scrolls (main scrolls internally) so absolute
+          behaves identically to fixed here. */}
       <nav
-        className={`lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85 transition-transform duration-150 ${
+        className={`lg:hidden absolute bottom-0 inset-x-0 z-40 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85 transition-transform duration-150 ${
           keyboardOpen ? "translate-y-full pointer-events-none" : ""
         }`}
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
