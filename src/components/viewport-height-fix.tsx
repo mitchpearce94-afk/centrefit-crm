@@ -23,10 +23,17 @@ export function ViewportHeightFix() {
       const tag = el.tagName;
       return tag === "INPUT" || tag === "TEXTAREA" || (el as HTMLElement).isContentEditable;
     };
+    let lastApplied = 0;
     const apply = () => {
       if (keyboardLikelyOpen()) return;
-      const h = window.visualViewport?.height ?? root.clientHeight;
-      if (h > 0) root.style.setProperty("--app-height", `${Math.round(h)}px`);
+      const h = Math.round(window.visualViewport?.height ?? root.clientHeight);
+      // Ignore sub-24px jitter — iOS nudges the visual viewport a few px
+      // during scrolling/bounce, and re-sizing the shell mid-scroll makes
+      // the whole layout visibly jump. Only genuine changes (launch
+      // correction, rotation, keyboard close) pass the threshold.
+      if (h <= 0 || Math.abs(h - lastApplied) < 24) return;
+      lastApplied = h;
+      root.style.setProperty("--app-height", `${h}px`);
     };
     apply();
     // iOS settles the web view size shortly after launch without firing any

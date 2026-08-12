@@ -69,7 +69,12 @@ export default async function DashboardLayout({
         style={{ height: "var(--app-height, 100dvh)" }}
       >
         <Sidebar user={user} staff={staff ?? null} allowedFlags={allowedFlags} statusBoardHref={statusBoardHref} />
-        <main className="flex-1 overflow-y-auto overflow-x-hidden pb-mobile-nav lg:pb-0">
+        {/* overscroll-none is load-bearing on iOS: without it, pulling past
+            the top of <main> chains the gesture to the DOCUMENT and rubber-
+            bands the entire app down (heading slides, scrollbar appears
+            above the app). html/body overflow:hidden does NOT stop that
+            elastic hand-off — only the scroller refusing to chain does. */}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden overscroll-none pb-mobile-nav lg:pb-0">
           {/* Mobile fallback top bar — visible on screens that haven't yet
               migrated to <PageHeader>. Once a page renders its own
               <PageHeader> it stacks below this, which is intentional during
