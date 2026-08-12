@@ -350,7 +350,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
             // Day nav buttons are desktop-only — on mobile, swiping moves
             // days and the floating pill jumps to today, so the header stays
             // one clean row.
-            <div className="hidden md:flex items-center gap-1">
+            <div className="hidden lg:flex items-center gap-1">
               <button onClick={() => goDay("prev")} className="rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground transition-colors" aria-label="Previous day">
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
               </button>
@@ -363,13 +363,13 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
         </div>
         {/* One date, one place: desktop shows it here; mobile day view has
             the banner, mobile agenda has per-day headers. */}
-        <span className="hidden md:inline text-sm font-medium">{view === "week" ? `${fmtShort(weekDates[0])} — ${fmtShort(weekDates[6])}` : fmtLong(selectedDay)}</span>
+        <span className="hidden lg:inline text-sm font-medium">{view === "week" ? `${fmtShort(weekDates[0])} — ${fmtShort(weekDates[6])}` : fmtLong(selectedDay)}</span>
       </div>
 
       {/* WEEK VIEW — desktop: time grid. Mobile: agenda list (below); the
           800px grid was unreadable slivers on a phone. */}
       {view === "week" && (
-        <div className="rounded-lg border border-border bg-card overflow-hidden flex-1 min-h-0 hidden md:flex flex-col">
+        <div className="rounded-lg border border-border bg-card overflow-hidden flex-1 min-h-0 hidden lg:flex flex-col">
           <div className="overflow-x-auto flex-1 min-h-0 flex flex-col">
             <div className="min-w-[800px] flex-1 min-h-0 flex flex-col">
               {/* Day headers + stacked untimed chips. The chips live up here
@@ -441,7 +441,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
           cards, nothing truncated to slivers. Tap a day header for day view,
           tap a card to edit its tile group. */}
       {view === "week" && (
-        <div className="md:hidden rounded-lg border border-border bg-card overflow-y-auto flex-1 min-h-0">
+        <div className="lg:hidden rounded-lg border border-border bg-card overflow-y-auto flex-1 min-h-0">
           {weekDates.map(date => {
             const d = new Date(date + "T00:00:00");
             const today = isToday(date);
@@ -508,7 +508,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
         <div className="rounded-lg border border-border bg-card overflow-hidden flex-1 min-h-0 flex flex-col">
           {/* Date banner (mobile only — desktop shows the date in the page
               header). Updates as the pager settles on a day. */}
-          <div className={`md:hidden border-b border-border px-4 py-1.5 text-xs font-semibold ${isToday(selectedDay) ? "bg-primary/10 text-primary" : "bg-muted/40"}`}>
+          <div className={`lg:hidden border-b border-border px-4 py-1.5 text-xs font-semibold ${isToday(selectedDay) ? "bg-primary/10 text-primary" : "bg-muted/40"}`}>
             {fmtLong(selectedDay)}
           </div>
           {(untimedByDate.get(selectedDay) ?? []).length > 0 && (
@@ -557,7 +557,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
           {selectedDay !== todayStr() && (
             <button
               onClick={() => goDay("today")}
-              className="md:hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-40 rounded-full bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground shadow-xl active:scale-95 transition-transform"
+              className="lg:hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-40 rounded-full bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground shadow-xl active:scale-95 transition-transform"
             >
               Today
             </button>
