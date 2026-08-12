@@ -18,7 +18,14 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: "Centrefit",
-    statusBarStyle: "black-translucent",
+    // "black" (opaque) not "black-translucent": translucent makes iOS lay
+    // the app out under the status bar with viewport-fit=cover, which (a)
+    // squished fixed-height bars that pad by safe-area-inset-top and (b)
+    // triggers iOS's launch-viewport bug — app sized short with a bottom
+    // gap until the first scroll. Opaque sidesteps the whole class.
+    // NOTE: baked into the web clip at install — changing this needs a
+    // delete + re-add of the home screen app to take effect.
+    statusBarStyle: "black",
   },
   icons: {
     apple: "/apple-touch-icon.png",

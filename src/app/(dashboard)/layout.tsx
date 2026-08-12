@@ -61,7 +61,7 @@ export default async function DashboardLayout({
           {/* Mobile fallback top bar — visible on screens that haven't yet
               migrated to <PageHeader>. */}
           <div
-            className="lg:hidden sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-card/95 backdrop-blur px-4"
+            className="lg:hidden sticky top-0 z-20 flex min-h-14 items-center gap-2 border-b border-border bg-card/95 backdrop-blur px-4"
             style={{ paddingTop: "env(safe-area-inset-top)" }}
           >
             <Image
