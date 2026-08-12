@@ -428,7 +428,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
 
                   {/* Day columns with absolute-positioned entries */}
                   {weekDates.map(date => (
-                    <DayCol key={date} date={date} hours={hours} entries={timedByDate.get(date) ?? []} getStaff={getStaff} isAdmin={isAdmin} isTouchDevice={isTouchDevice} maxLanes={2} onOverflowClick={switchToDay} onCellClick={openAssign} onEntryClick={openEntry} onDrop={handleDrop} draggingId={draggingId} />
+                    <DayCol key={date} date={date} hours={hours} entries={timedByDate.get(date) ?? []} getStaff={getStaff} isAdmin={isAdmin} isTouchDevice={isTouchDevice} onCellClick={openAssign} onEntryClick={openEntry} onDrop={handleDrop} draggingId={draggingId} />
                   ))}
                 </div>
               </div>
@@ -545,7 +545,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
               >
                 {weekDates.map(date => (
                   <div key={date} className="w-full min-w-full snap-center flex">
-                    <DayCol date={date} hours={hours} entries={timedByDate.get(date) ?? []} getStaff={getStaff} isAdmin={isAdmin} isTouchDevice={isTouchDevice} maxLanes={6} onCellClick={openAssign} onEntryClick={openEntry} onDrop={handleDrop} draggingId={draggingId} />
+                    <DayCol date={date} hours={hours} entries={timedByDate.get(date) ?? []} getStaff={getStaff} isAdmin={isAdmin} isTouchDevice={isTouchDevice} onCellClick={openAssign} onEntryClick={openEntry} onDrop={handleDrop} draggingId={draggingId} />
                   </div>
                 ))}
               </div>
@@ -574,30 +574,18 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   );
 }
 
-/* Day column — explicit height, entries absolutely positioned to span full time range */
-function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, maxLanes = 2, onOverflowClick, onCellClick, onEntryClick, onDrop, draggingId }: {
+/* Day column — explicit height, entries absolutely positioned to span full time range.
+   Every entry always renders (Mitchell's call 2026-08-13: no "+N more"
+   collapse — hidden tiles are how jobs get missed). Genuine time overlaps
+   share the column width; the hover popover carries full detail on slim
+   tiles. */
+function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, onCellClick, onEntryClick, onDrop, draggingId }: {
   date: string; hours: number[]; entries: ScheduleEntry[]; getStaff: (e: ScheduleEntry) => StaffMember | undefined;
   isAdmin: boolean; isTouchDevice: boolean;
-  /** Cap on side-by-side lanes; overlap beyond this collapses into a "+N
-   *  more" chip instead of shredding tiles into unreadable slivers. */
-  maxLanes?: number;
-  onOverflowClick?: (date: string) => void;
   onCellClick: (date: string, hour: number) => void; onEntryClick: (e: ScheduleEntry) => void;
   onDrop?: (entryId: string, date: string, hour: number) => void; draggingId?: string | null;
 }) {
   const today = isToday(date);
-  const laid = layoutTimedEntries(entries);
-  const visible = laid.filter((l) => l.lane < maxLanes);
-  const overflow = laid.filter((l) => l.lane >= maxLanes);
-  // One "+N more" chip per overflowing cluster, pinned at the cluster's
-  // earliest hidden entry.
-  const overflowChips = new Map<number, { count: number; top: number }>();
-  for (const o of overflow) {
-    const top = Math.max(0, ((timeMins(o.entry.start_time!) - START_HOUR * 60) / 60) * HOUR_PX);
-    const cur = overflowChips.get(o.cluster);
-    if (!cur) overflowChips.set(o.cluster, { count: 1, top });
-    else { cur.count++; cur.top = Math.min(cur.top, top); }
-  }
 
   return (
     <div
@@ -622,14 +610,14 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, maxLan
         />
       ))}
 
-      {/* Entry blocks — side-by-side lanes for overlapping times, capped at
-          maxLanes with a "+N more" chip for the rest */}
-      {visible.map(({ entry, lane, lanes }) => (
+      {/* Entry blocks — side-by-side lanes for overlapping times; every
+          entry renders, nothing collapses out of sight */}
+      {layoutTimedEntries(entries).map(({ entry, lane, lanes }) => (
         <TimedEntryBlock
           key={entry.id}
           entry={entry}
           lane={lane}
-          lanes={Math.min(lanes, maxLanes)}
+          lanes={lanes}
           date={date}
           staff={getStaff(entry)}
           isAdmin={isAdmin}
@@ -638,17 +626,6 @@ function DayCol({ date, hours, entries, getStaff, isAdmin, isTouchDevice, maxLan
           onEntryClick={onEntryClick}
           onDrop={onDrop}
         />
-      ))}
-      {[...overflowChips.entries()].map(([cluster, { count, top }]) => (
-        <button
-          key={`overflow-${cluster}`}
-          onClick={(ev) => { ev.stopPropagation(); onOverflowClick?.(date); }}
-          className="absolute z-20 rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-foreground shadow-sm hover:bg-accent transition-colors"
-          style={{ top: top + 2, right: 4 }}
-          title={`${count} more scheduled — open day view`}
-        >
-          +{count} more
-        </button>
       ))}
     </div>
   );
