@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { AssignJobModal } from "./assign-job-modal";
+import { AGENDA_WINDOW_DAYS } from "./constants";
 
 type EntryType = "job" | "event" | "reminder";
 interface StaffMember { id: string; display_name: string; initials: string; colour: string; role: string; }
@@ -30,10 +31,6 @@ const END_HOUR = 20;
 const TOTAL_HOURS = END_HOUR - START_HOUR;
 const HOUR_PX = 60;
 const GRID_HEIGHT = TOTAL_HOURS * HOUR_PX;
-// The mobile agenda scrolls continuously through this many days either side
-// of the focused week (±4 weeks). page.tsx widens its entries query by the
-// same amount so every visible day has its data.
-export const AGENDA_WINDOW_DAYS = 28;
 
 function localISO(d: Date): string { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function addDaysStr(d: string, n: number): string { const x = new Date(d + "T00:00:00"); x.setDate(x.getDate() + n); return localISO(x); }

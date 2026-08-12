@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
-import { SchedulerView, AGENDA_WINDOW_DAYS } from "./scheduler-grid";
+import { SchedulerView } from "./scheduler-grid";
+import { AGENDA_WINDOW_DAYS } from "./constants";
 
 export const dynamic = "force-dynamic";
 
