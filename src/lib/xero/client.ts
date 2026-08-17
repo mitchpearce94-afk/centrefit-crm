@@ -20,9 +20,12 @@ type AnySupabaseClient = SupabaseClient | any;
 // accounting.contacts covers Contacts (customer sync).
 // accounting.banktransactions covers BankTransactions (spend/receive money —
 // needed by the bank-rec audit scripts).
-// accounting.reports.read covers all Reports EXCEPT the Bank Statement report,
-// which has its own dedicated scope accounting.reports.bankstatement.read
-// (the only API surface exposing statement-line Source: Feed vs User).
+// accounting.reports.banksummary.read covers the BankSummary report (Xero-side
+// bank balances). Post-Mar-2026 apps get per-report scopes only — the broad
+// accounting.reports.read and the BankStatement report's
+// accounting.reports.bankstatement.read do NOT exist for this app generation
+// (authorize rejects them with a misleading "Invalid redirect_uri" page);
+// statement lines must come from a UI CSV export instead.
 export const XERO_SCOPES = [
   "openid",
   "profile",
@@ -33,8 +36,7 @@ export const XERO_SCOPES = [
   "accounting.payments",
   "accounting.contacts",
   "accounting.banktransactions",
-  "accounting.reports.read",
-  "accounting.reports.bankstatement.read",
+  "accounting.reports.banksummary.read",
 ];
 
 function requireEnv(name: string): string {
