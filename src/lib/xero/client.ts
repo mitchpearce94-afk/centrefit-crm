@@ -18,6 +18,11 @@ type AnySupabaseClient = SupabaseClient | any;
 // accounting.payments covers Payments (used for payment status refresh).
 // accounting.settings covers Accounts, TaxRates, BrandingThemes, Organisation.
 // accounting.contacts covers Contacts (customer sync).
+// accounting.banktransactions covers BankTransactions (spend/receive money —
+// needed by the bank-rec audit scripts).
+// accounting.reports.read covers all Reports EXCEPT the Bank Statement report,
+// which has its own dedicated scope accounting.reports.bankstatement.read
+// (the only API surface exposing statement-line Source: Feed vs User).
 export const XERO_SCOPES = [
   "openid",
   "profile",
@@ -27,6 +32,9 @@ export const XERO_SCOPES = [
   "accounting.invoices",
   "accounting.payments",
   "accounting.contacts",
+  "accounting.banktransactions",
+  "accounting.reports.read",
+  "accounting.reports.bankstatement.read",
 ];
 
 function requireEnv(name: string): string {
