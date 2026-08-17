@@ -328,8 +328,11 @@ export function PlanVisual({
                     ? `D${effNum}`
                     : `${effNum}`
                 : null;
-              const labelFont = Math.max(SZ * deviceScale * 0.9, 11 / t.scale);
-              const tickSize = Math.max(symbolPx * 0.8, 15 / t.scale);
+              // True plan scale — same s*0.9 the editor uses. No screen-size
+              // clamp: zoomed out they go small exactly like the paper sheet;
+              // zoom in to read them.
+              const labelFont = SZ * deviceScale * 0.9;
+              const tickSize = symbolPx * 0.9;
 
               return (
                 <button
@@ -412,14 +415,16 @@ export function PlanVisual({
                     </span>
                   )}
 
-                  {/* Number label — red plan-style text, kept upright */}
+                  {/* Number label — red plan-style text, anchored to the
+                      SYMBOL edge (not the invisible tap halo) so it hugs the
+                      marker at every zoom, kept upright */}
                   {labelText && (
                     <span
                       style={{
                         position: "absolute",
                         left: "50%",
-                        top: isDataOutlet ? "100%" : undefined,
-                        bottom: isDataOutlet ? undefined : "92%",
+                        top: isDataOutlet ? `calc(50% + ${symbolPx * 0.55}px)` : undefined,
+                        bottom: isDataOutlet ? undefined : `calc(50% + ${symbolPx * 0.5}px)`,
                         transform: "translateX(-50%)",
                         color: installed ? "#16a34a" : "#dc2626",
                         fontWeight: 700,
