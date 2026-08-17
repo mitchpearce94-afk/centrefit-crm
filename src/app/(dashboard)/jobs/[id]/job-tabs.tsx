@@ -15,6 +15,7 @@ import { ImportBomToAssetsButton } from "./import-bom-to-assets-button";
 import { JobProcurement } from "./job-procurement";
 import { ScopeEditor } from "./scope-editor";
 import { UpdatesPanel } from "./updates-panel";
+import { PlanChecklist } from "./plan-checklist";
 
 interface StaffOption {
   id: string;
@@ -46,6 +47,8 @@ export function JobTabs({
   productPrices,
   billingSettings,
   receipts,
+  planFiles = [],
+  planItems = [],
   isAdmin,
   viewerId,
   viewerInitials,
@@ -72,6 +75,8 @@ export function JobTabs({
   productPrices: Record<string, { sell_price: number; cost_price: number }>;
   billingSettings: { labour_sell_rate: number; callout_fee_sell: number; it_service_labour_rate: number };
   receipts: { id: string; vendor: string | null; amount: number }[];
+  planFiles?: any[];
+  planItems?: any[];
   isAdmin: boolean;
   viewerId: string | null;
   viewerInitials: string;
@@ -87,6 +92,9 @@ export function JobTabs({
     { id: "notes", label: "Notes", count: userNotes.length },
     { id: "time", label: "Time", count: timeEntries.length },
     { id: "staff", label: "Staff", count: job.job_staff?.length ?? 0 },
+    ...(planFiles.length > 0
+      ? [{ id: "plan", label: "Plan", count: planItems.filter((i: any) => !i.orphaned && i.status !== "installed").length }]
+      : []),
     ...(showNbn ? [{ id: "nbn", label: "NBN Steps", count: nbnSteps.length }] : []),
     { id: "quoting", label: "Quoting", count: linkedQuotes.length },
     { id: "procurement", label: "Procurement", count: procurementItems.length },
@@ -168,6 +176,14 @@ export function JobTabs({
             jobId={jobId}
             assignedStaff={job.job_staff ?? []}
             allStaff={allStaff}
+          />
+        )}
+        {activeTab === "plan" && (
+          <PlanChecklist
+            planFiles={planFiles}
+            items={planItems}
+            viewerId={viewerId}
+            viewerInitials={viewerInitials}
           />
         )}
         {activeTab === "nbn" && (

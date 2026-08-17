@@ -163,6 +163,23 @@ export default async function JobDetailPage({
     .filter((r) => r.amount != null)
     .map((r) => ({ id: r.id, vendor: r.vendor, amount: Number(r.amount) }));
 
+  // Plan install checklist (Mitchell 2026-08-17): plans linked to this job
+  // plus their tickable device rows for the on-site Plan tab.
+  const { data: planFiles } = await supabase
+    .from("plan_files")
+    .select("id, name, pdf_url, revision")
+    .eq("job_id", id)
+    .order("updated_at", { ascending: false });
+  let planItems: any[] = [];
+  if ((planFiles ?? []).length > 0) {
+    const { data: planItemsData } = await supabase
+      .from("plan_items")
+      .select("*, installed_staff:staff!plan_items_installed_by_fkey(initials)")
+      .in("plan_file_id", (planFiles ?? []).map((p) => p.id))
+      .order("sort_order");
+    planItems = planItemsData ?? [];
+  }
+
   return (
     <div>
       {/* ── Compact header ── */}
@@ -234,6 +251,8 @@ export default async function JobDetailPage({
           productPrices={productPrices}
           billingSettings={billingSettings}
           receipts={receipts}
+          planFiles={(planFiles ?? []) as any[]}
+          planItems={planItems}
           isAdmin={isAdmin}
           viewerId={user?.id ?? null}
           viewerInitials={viewerInitials}

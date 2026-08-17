@@ -305,6 +305,10 @@ export default function Toolbar({ jobs = [], baseDocId = null }: { jobs?: JobOpt
       }
 
       usePlanStore.setState({ planFileId: planId });
+
+      // Sync the on-site install checklist (fire-and-forget — the save must
+      // not block on it, and a failure only delays the checklist refresh).
+      fetch(`/api/plans/${planId}/publish-checklist`, { method: "POST" }).catch(() => {});
       // Wait for PDF + upload before marking clean / clearing the URL hint
       // so the next "Send to electrician" sees the fresh file.
       setSavingPhase("rendering");
