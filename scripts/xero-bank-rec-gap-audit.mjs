@@ -59,19 +59,30 @@ if (expired) {
   }).eq("id", conn.id);
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const xeroGet = async (path) => {
-  const res = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Xero-tenant-id": conn.tenant_id,
-      Accept: "application/json",
-    },
-  });
-  const text = await res.text();
-  let data = null;
-  try { data = JSON.parse(text); } catch { /* empty or non-JSON body */ }
-  if (!res.ok) { console.error(`[WARN] ${path.split("?")[0]} failed:`, res.status, (text || "").slice(0, 200)); return null; }
-  return data;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    const res = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-tenant-id": conn.tenant_id,
+        Accept: "application/json",
+      },
+    });
+    if (res.status === 429) {
+      const wait = Number(res.headers.get("retry-after") ?? 15) * 1000 + 1000;
+      console.error(`[rate-limited] ${path.split("?")[0]} — waiting ${Math.round(wait / 1000)}s (attempt ${attempt})`);
+      await sleep(wait);
+      continue;
+    }
+    const text = await res.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch { /* empty or non-JSON body */ }
+    if (!res.ok) { console.error(`[WARN] ${path.split("?")[0]} failed:`, res.status, (text || "").slice(0, 200)); return null; }
+    return data;
+  }
+  console.error(`[WARN] ${path.split("?")[0]} still rate-limited after retries`);
+  return null;
 };
 
 const parseXeroDate = (d) => {
@@ -179,7 +190,8 @@ for (const l of unrecStmt) {
 console.log("");
 
 // ---- 3. Xero-side (GL) balance via BankSummary ----
-const bs = await xeroGet(`Reports/BankSummary?fromDate=2024-07-01&toDate=${TODAY}`);
+// BankSummary caps ranges at 365 days; we only need the closing balance.
+const bs = await xeroGet(`Reports/BankSummary?fromDate=2026-07-01&toDate=${TODAY}`);
 let xeroBal = null;
 if (bs) {
   const report = bs.Reports?.[0];

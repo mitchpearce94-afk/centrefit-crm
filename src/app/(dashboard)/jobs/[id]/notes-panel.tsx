@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
@@ -325,6 +325,7 @@ function NoteDetail({
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [confirmingAtt, setConfirmingAtt] = useState<number | null>(null);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [addProgress, setAddProgress] = useState<{ done: number; total: number } | null>(null);
   const addFileRef = useRef<HTMLInputElement>(null);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -336,6 +337,7 @@ function NoteDetail({
   if (attachments.length === 0 && note.image_url) {
     attachments.push({ url: note.image_url, name: "Photo", type: "image" });
   }
+  const imageAtts = attachments.filter((a) => a.type?.startsWith("image"));
 
   function bucketPathFromUrl(url: string): string | null {
     // Current form: /api/attachments/<path> (private bucket proxy).
@@ -643,9 +645,14 @@ function NoteDetail({
                       playsInline
                       className="h-40 max-w-full rounded-md border border-border bg-black"
                     />
-                  ) : (
-                  <a href={att.url} target="_blank" rel="noopener noreferrer" className="block">
-                    {att.type?.startsWith("image") ? (
+                  ) : att.type?.startsWith("image") ? (
+                    /* Opens the swipeable viewer instead of a new tab
+                       (Michael 2026-08-17). */
+                    <button
+                      type="button"
+                      onClick={() => setViewerIndex(imageAtts.indexOf(att))}
+                      className="block"
+                    >
                       <img
                         src={att.url}
                         alt={att.name}
@@ -653,16 +660,17 @@ function NoteDetail({
                         decoding="async"
                         className="h-24 w-auto rounded-md border border-border object-cover group-hover:opacity-90 transition-opacity"
                       />
-                    ) : (
-                      <div className="flex h-24 w-24 items-center justify-center rounded-md border border-border bg-muted group-hover:bg-accent transition-colors">
-                        <div className="text-center">
-                          <FileIcon className="h-6 w-6 text-muted-foreground mx-auto" />
-                          <p className="mt-1 text-[10px] text-muted-foreground truncate max-w-[80px]">
-                            {att.name}
-                          </p>
-                        </div>
+                    </button>
+                  ) : (
+                  <a href={att.url} target="_blank" rel="noopener noreferrer" className="block">
+                    <div className="flex h-24 w-24 items-center justify-center rounded-md border border-border bg-muted group-hover:bg-accent transition-colors">
+                      <div className="text-center">
+                        <FileIcon className="h-6 w-6 text-muted-foreground mx-auto" />
+                        <p className="mt-1 text-[10px] text-muted-foreground truncate max-w-[80px]">
+                          {att.name}
+                        </p>
                       </div>
-                    )}
+                    </div>
                   </a>
                   )}
                   <button
@@ -686,6 +694,15 @@ function NoteDetail({
             })}
           </div>
         </div>
+      )}
+
+      {viewerIndex !== null && (
+        <PhotoViewer
+          images={imageAtts}
+          index={viewerIndex}
+          onIndex={setViewerIndex}
+          onClose={() => setViewerIndex(null)}
+        />
       )}
 
       {/* Add photos/files to this note — any staff, so a second tech can drop
@@ -952,5 +969,95 @@ function FileIcon({ className }: { className?: string }) {
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
     </svg>
+  );
+}
+
+/* Fullscreen swipeable photo viewer (Michael 2026-08-17): flick left/right
+   between a note's photos instead of opening each in a new tab. Images only —
+   videos keep their inline player and other files still open in a new tab. */
+function PhotoViewer({
+  images,
+  index,
+  onIndex,
+  onClose,
+}: {
+  images: Attachment[];
+  index: number;
+  onIndex: (i: number) => void;
+  onClose: () => void;
+}) {
+  const touchX = useRef<number | null>(null);
+  const prev = () => onIndex(index === 0 ? images.length - 1 : index - 1);
+  const next = () => onIndex(index === images.length - 1 ? 0 : index + 1);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft") prev();
+      if (e.key === "ArrowRight") next();
+    }
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  });
+
+  const att = images[index];
+  if (!att) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95"
+      onClick={onClose}
+      onTouchStart={(e) => { touchX.current = e.touches[0].clientX; }}
+      onTouchEnd={(e) => {
+        if (touchX.current === null) return;
+        const dx = e.changedTouches[0].clientX - touchX.current;
+        touchX.current = null;
+        if (Math.abs(dx) > 40) (dx > 0 ? prev : next)();
+      }}
+    >
+      <img
+        src={att.url}
+        alt={att.name}
+        draggable={false}
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[92dvh] max-w-[96vw] select-none object-contain"
+      />
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close"
+        className="absolute top-3 right-3 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-xl text-white hover:bg-white/20"
+      >
+        ×
+      </button>
+      {images.length > 1 && (
+        <>
+          <button
+            type="button"
+            aria-label="Previous photo"
+            onClick={(e) => { e.stopPropagation(); prev(); }}
+            className="absolute left-2 top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-2xl text-white hover:bg-white/20"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            aria-label="Next photo"
+            onClick={(e) => { e.stopPropagation(); next(); }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-2xl text-white hover:bg-white/20"
+          >
+            ›
+          </button>
+          <p className="absolute bottom-4 inset-x-0 text-center text-xs text-white/70">
+            {index + 1} / {images.length}
+          </p>
+        </>
+      )}
+    </div>
   );
 }

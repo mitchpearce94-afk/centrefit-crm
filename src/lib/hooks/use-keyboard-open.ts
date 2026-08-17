@@ -3,11 +3,17 @@
 import { useEffect, useState } from "react";
 
 /**
- * Returns true while an editable element is focused — used as a proxy for
- * "on-screen keyboard is up". iOS Safari pushes `position: fixed` bottom
- * bars upward when the keyboard appears (the visual viewport shrinks but
- * fixed elements stay pinned to the new viewport bottom), so they float
- * mid-screen, which looks broken. We hide bottom bars while typing.
+ * Returns true while the on-screen keyboard is (very likely) up — an editable
+ * element is focused AND the visual viewport has actually shrunk. iOS Safari
+ * pushes `position: fixed` bottom bars upward when the keyboard appears, so
+ * they float mid-screen; we hide bottom bars while typing.
+ *
+ * Focus alone is NOT a safe proxy: a programmatic autoFocus (e.g. the vault
+ * unlock form) focuses an input WITHOUT raising the keyboard on iOS, which
+ * used to hide the mobile nav with no way to bring it back. And Safari does
+ * not reliably fire focusout for an input that unmounts while focused, which
+ * left the nav permanently hidden. Requiring a real viewport shrink — and
+ * re-checking on every visualViewport resize — fixes both failure modes.
  */
 export function useKeyboardOpen(): boolean {
   const [open, setOpen] = useState(false);
@@ -19,22 +25,26 @@ export function useKeyboardOpen(): boolean {
       const tag = target.tagName;
       return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
     }
-    function onFocusIn(e: FocusEvent) {
-      if (isEditable(e.target)) setOpen(true);
+    function viewportShrunk(): boolean {
+      const vv = window.visualViewport;
+      if (!vv) return true; // no signal available — fall back to focus-only
+      return window.innerHeight - vv.height > 60;
     }
-    function onFocusOut(e: FocusEvent) {
-      // FocusOut fires before focusIn on the next element, so defer the
-      // check a tick — otherwise tapping from one input to the next would
-      // briefly flicker the bars back in.
-      setTimeout(() => {
-        if (!isEditable(document.activeElement)) setOpen(false);
-      }, 0);
+    function recompute() {
+      setOpen(isEditable(document.activeElement) && viewportShrunk());
     }
-    document.addEventListener("focusin", onFocusIn);
+    function onFocusOut() {
+      // FocusOut fires before focusin lands on the next element — defer a
+      // tick so tapping between inputs doesn't flicker the bars back in.
+      setTimeout(recompute, 0);
+    }
+    document.addEventListener("focusin", recompute);
     document.addEventListener("focusout", onFocusOut);
+    window.visualViewport?.addEventListener("resize", recompute);
     return () => {
-      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusin", recompute);
       document.removeEventListener("focusout", onFocusOut);
+      window.visualViewport?.removeEventListener("resize", recompute);
     };
   }, []);
 

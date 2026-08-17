@@ -78,6 +78,15 @@ export default async function JobsPage({
     matchedSiteIds = (matchedSites ?? []).map((r) => r.id as string);
   }
 
+  // Statuses hidden from the Active view (the All tab shows everything).
+  // Excluded in the query itself so the 100-row budget isn't burned on
+  // completed jobs that would be discarded client-side (Mitchell 2026-08-17:
+  // completed jobs must not appear when searching within Active).
+  const HIDDEN_STATUSES = ["Complete", "Cancelled", "Invoice Sent"];
+  const hiddenStatusIds = (statusesResult.data ?? [])
+    .filter((s: any) => HIDDEN_STATUSES.includes(s.name))
+    .map((s: any) => s.id);
+
   let query = supabase
     .from("jobs")
     .select(
@@ -85,6 +94,10 @@ export default async function JobsPage({
     )
     .order("created_at", { ascending: false })
     .limit(100);
+
+  if (isActiveView && hiddenStatusIds.length > 0) {
+    query = query.not("status_id", "in", `(${hiddenStatusIds.join(",")})`);
+  }
 
   if (params.q) {
     const q = params.q;
@@ -120,17 +133,16 @@ export default async function JobsPage({
     );
   }
 
-  // Client-side filters: phase, period, assigned staff, active view.
-  // Search bypass: when a search query is present, drop the implicit
-  // "My Jobs" + "Active" defaults. If you're searching you almost always
-  // want global scope including completed jobs (e.g. looking up an old
-  // job by reference). Explicit staff/phase/status filters still apply.
-  const HIDDEN_STATUSES = ["Complete", "Cancelled", "Invoice Sent"];
+  // Client-side filters: phase, period, assigned staff.
+  // Search stays scoped to the current tab — Active search excludes
+  // completed/cancelled/invoice-sent (enforced in the query above); use the
+  // All tab to look up old jobs. The implicit "My Jobs" staff default is
+  // still dropped while searching so you can find teammates' jobs.
   let filteredJobs = jobs ?? [];
   const isSearching = !!params.q;
 
-  // Active view: hide completed/cancelled/invoice sent (only when not searching).
-  if (isActiveView && !isSearching) {
+  // Belt-and-braces mirror of the query-level Active exclusion.
+  if (isActiveView) {
     filteredJobs = filteredJobs.filter(
       (j: any) => !HIDDEN_STATUSES.includes(j.status?.name)
     );

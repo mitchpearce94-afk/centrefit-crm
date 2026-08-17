@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requirePermissionOrNotFound } from "@/lib/auth/route-guards";
 import { VaultShell } from "./vault-shell";
@@ -24,6 +25,18 @@ export default async function VaultPage() {
 
   return (
     <div>
+      {/* Mobile-only escape hatch — the bottom nav hides while the keyboard
+          is up, so the vault always needs a visible way back to the CRM. */}
+      <Link
+        href="/"
+        className="lg:hidden mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M19 12H5" />
+          <path d="M12 19l-7-7 7-7" />
+        </svg>
+        Back to CRM
+      </Link>
       <div className="flex items-baseline justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Vault</h1>
         <p className="text-xs text-muted-foreground">

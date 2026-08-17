@@ -22,6 +22,9 @@ export function StaffPanel({
   allStaff: StaffOption[];
 }) {
   const [adding, setAdding] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const router = useRouter();
   const { toast } = useToast();
   const supabase = createClient();
@@ -33,15 +36,26 @@ export function StaffPanel({
     setAdding(true);
     // Server route does the insert + status transition AND notifies the tagged
     // staffer (job.assigned) — a raw client insert can't fire notifications.
+    // With a date set it also creates the scheduler tile.
     const res = await fetch(`/api/jobs/${jobId}/assign-staff`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ staffId }),
+      body: JSON.stringify({
+        staffId,
+        scheduleDate: scheduleDate || undefined,
+        startTime: startTime || undefined,
+        endTime: endTime || undefined,
+      }),
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       toast(json.error ?? "Couldn't add staff", "error");
     } else {
+      if (scheduleDate && json.scheduled === false) {
+        toast("Added to the job, but couldn't create the scheduler tile — check your scheduler permission.", "error");
+      } else if (scheduleDate && json.scheduled) {
+        toast("Added and put on the scheduler.", "success");
+      }
       router.refresh();
     }
     setAdding(false);
@@ -133,6 +147,46 @@ export function StaffPanel({
           <h3 className="text-sm font-medium text-muted-foreground mb-3">
             Add staff
           </h3>
+          <div className="mb-3 rounded-lg border border-border bg-card p-3">
+            <p className="text-xs text-muted-foreground mb-2">
+              Optional: pick a date (and times) first and they&apos;ll be added
+              to the scheduler as well when you tap a name.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="date"
+                value={scheduleDate}
+                onChange={(e) => setScheduleDate(e.target.value)}
+                className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                aria-label="Schedule date"
+              />
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                disabled={!scheduleDate}
+                className="rounded-md border border-border bg-background px-2 py-1.5 text-sm disabled:opacity-50"
+                aria-label="Start time"
+              />
+              <span className="text-xs text-muted-foreground">to</span>
+              <input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                disabled={!scheduleDate}
+                className="rounded-md border border-border bg-background px-2 py-1.5 text-sm disabled:opacity-50"
+                aria-label="End time"
+              />
+              {scheduleDate && (
+                <button
+                  onClick={() => { setScheduleDate(""); setStartTime(""); setEndTime(""); }}
+                  className="text-xs text-muted-foreground hover:text-destructive px-1"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
           <div className="flex flex-wrap gap-2">
             {availableStaff.map((s) => (
               <button
