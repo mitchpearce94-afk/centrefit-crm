@@ -66,6 +66,10 @@ export function StatusBoardControls({
   const [foStaff, setFoStaff] = useState<string[]>(initFoStaff ?? []);
   const [opening, setOpening] = useState(initOpening ?? "");
   const [busy, setBusy] = useState(false);
+  // Collapsed by default on phones (Mitchell 2026-08-18): the build-dates
+  // panel is admin/status-board tooling and was eating the whole screen for
+  // techs. Desktop always shows it.
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   // Persist the whole board state in one call. Pass overrides so a setter +
   // sync in the same handler doesn't race React's async state.
@@ -130,7 +134,27 @@ export function StatusBoardControls({
       </button>
 
       {isNewBuild && (
-        <div className="mt-3 grid max-w-4xl gap-3 rounded-lg border border-border bg-card p-4 lg:grid-cols-[1fr_auto]">
+        <button
+          type="button"
+          onClick={() => setMobileOpen((o) => !o)}
+          className="lg:hidden mt-2 flex w-full items-center justify-between rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground"
+        >
+          <span className="truncate">
+            Build dates
+            {riStart && ` · RI ${riStart.slice(8, 10)}/${riStart.slice(5, 7)}`}
+            {foStart && ` · FO ${foStart.slice(8, 10)}/${foStart.slice(5, 7)}`}
+            {opening && ` · Opens ${opening.slice(8, 10)}/${opening.slice(5, 7)}`}
+          </span>
+          <svg
+            className={`h-4 w-4 shrink-0 transition-transform ${mobileOpen ? "rotate-180" : ""}`}
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+      )}
+      {isNewBuild && (
+        <div className={`${mobileOpen ? "grid" : "hidden"} lg:grid mt-3 max-w-4xl gap-3 rounded-lg border border-border bg-card p-4 lg:grid-cols-[1fr_auto]`}>
           <div className="grid gap-3 sm:grid-cols-2">
             <PhaseEditor
               label="Rough In"
