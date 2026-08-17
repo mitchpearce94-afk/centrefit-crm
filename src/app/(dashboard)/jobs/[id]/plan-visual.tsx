@@ -328,10 +328,10 @@ export function PlanVisual({
                     ? `D${effNum}`
                     : `${effNum}`
                 : null;
-              // True plan scale — same s*0.9 the editor uses. No screen-size
-              // clamp: zoomed out they go small exactly like the paper sheet;
-              // zoom in to read them.
-              const labelFont = SZ * deviceScale * 0.9;
+              // True plan scale, slightly larger than the editor's s*0.9 for
+              // on-site readability (Mitchell). No screen-size clamp: zoomed
+              // out they go small exactly like the paper sheet.
+              const labelFont = SZ * deviceScale * 1.2;
               const tickSize = symbolPx * 0.9;
 
               return (
@@ -427,7 +427,7 @@ export function PlanVisual({
                         bottom: isDataOutlet ? undefined : `calc(50% + ${symbolPx * 0.5}px)`,
                         transform: "translateX(-50%)",
                         color: installed ? "#16a34a" : "#dc2626",
-                        fontWeight: 700,
+                        fontWeight: 800,
                         fontSize: labelFont,
                         lineHeight: 1.1,
                         whiteSpace: "nowrap",
