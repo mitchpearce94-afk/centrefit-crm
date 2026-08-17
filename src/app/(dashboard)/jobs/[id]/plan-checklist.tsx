@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
+import { PlanVisual } from "./plan-visual";
 
 /**
  * On-site plan install checklist (Mitchell 2026-08-17). One row per device on
@@ -15,12 +16,14 @@ interface PlanFileRow {
   id: string;
   name: string;
   pdf_url: string | null;
+  cfp_url: string | null;
   revision: string | null;
 }
 
 interface PlanItemRow {
   id: string;
   plan_file_id: string;
+  instance_id: string;
   floor_name: string | null;
   label: string;
   qty: number;
@@ -43,6 +46,7 @@ export function PlanChecklist({
   viewerInitials: string;
 }) {
   const [localItems, setLocalItems] = useState<PlanItemRow[]>(items);
+  const [view, setView] = useState<"plan" | "list">("plan");
   const { toast } = useToast();
   const supabase = createClient();
 
@@ -131,7 +135,52 @@ export function PlanChecklist({
               </p>
             )}
 
-            {floors.map((floor) => (
+            {/* View toggle: the drawing is the primary surface; the list is
+                the progress/orphan summary. */}
+            <div className="mt-3 flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => setView("plan")}
+                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                  view === "plan"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:border-primary/50"
+                }`}
+              >
+                Plan drawing
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("list")}
+                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                  view === "list"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:border-primary/50"
+                }`}
+              >
+                List
+              </button>
+            </div>
+
+            {view === "plan" && plan.cfp_url && (
+              <div className="mt-3">
+                <PlanVisual
+                  cfpUrl={plan.cfp_url}
+                  itemsByInstance={new Map(planItems.map((i) => [i.instance_id, i]))}
+                  onToggle={(item) => {
+                    const row = planItems.find((i) => i.id === item.id);
+                    if (row) toggleItem(row);
+                  }}
+                />
+              </div>
+            )}
+            {view === "plan" && !plan.cfp_url && (
+              <p className="mt-3 text-sm text-muted-foreground">
+                No drawing file saved for this plan yet — using the list instead.
+              </p>
+            )}
+
+            {view === "list" && floors.map((floor) => (
               <div key={floor.name} className="mt-4">
                 <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
                   {floor.name}

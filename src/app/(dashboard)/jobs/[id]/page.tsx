@@ -167,7 +167,7 @@ export default async function JobDetailPage({
   // plus their tickable device rows for the on-site Plan tab.
   const { data: planFiles } = await supabase
     .from("plan_files")
-    .select("id, name, pdf_url, revision")
+    .select("id, name, pdf_url, cfp_url, revision")
     .eq("job_id", id)
     .order("updated_at", { ascending: false });
   let planItems: any[] = [];
