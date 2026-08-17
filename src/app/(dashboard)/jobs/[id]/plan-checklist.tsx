@@ -46,7 +46,7 @@ export function PlanChecklist({
   viewerInitials: string;
 }) {
   const [localItems, setLocalItems] = useState<PlanItemRow[]>(items);
-  const [view, setView] = useState<"plan" | "list">("plan");
+  const [openPlanId, setOpenPlanId] = useState<string | null>(null);
   const { toast } = useToast();
   const supabase = createClient();
 
@@ -135,52 +135,41 @@ export function PlanChecklist({
               </p>
             )}
 
-            {/* View toggle: the drawing is the primary surface; the list is
-                the progress/orphan summary. */}
+            {/* Fullscreen interactive drawing opens on demand; the tab body
+                below is the list — both drive the same plan_items rows. */}
             <div className="mt-3 flex gap-1.5">
               <button
                 type="button"
-                onClick={() => setView("plan")}
-                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                  view === "plan"
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:border-primary/50"
-                }`}
+                onClick={() => {
+                  if (plan.cfp_url) setOpenPlanId(plan.id);
+                  else toast("No drawing file saved for this plan yet — save it in the plan builder first.", "error");
+                }}
+                className="rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs text-primary transition-colors hover:bg-primary/20"
               >
-                Plan drawing
+                Interactive plan
               </button>
               <button
                 type="button"
-                onClick={() => setView("list")}
-                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                  view === "list"
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:border-primary/50"
-                }`}
+                className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground"
               >
                 List
               </button>
             </div>
 
-            {view === "plan" && plan.cfp_url && (
-              <div className="mt-3">
-                <PlanVisual
-                  cfpUrl={plan.cfp_url}
-                  itemsByInstance={new Map(planItems.map((i) => [i.instance_id, i]))}
-                  onToggle={(item) => {
-                    const row = planItems.find((i) => i.id === item.id);
-                    if (row) toggleItem(row);
-                  }}
-                />
-              </div>
-            )}
-            {view === "plan" && !plan.cfp_url && (
-              <p className="mt-3 text-sm text-muted-foreground">
-                No drawing file saved for this plan yet — using the list instead.
-              </p>
+            {openPlanId === plan.id && plan.cfp_url && (
+              <PlanVisual
+                planName={plan.name}
+                cfpUrl={plan.cfp_url}
+                itemsByInstance={new Map(localItems.filter((i) => i.plan_file_id === plan.id).map((i) => [i.instance_id, i]))}
+                onToggle={(item) => {
+                  const row = localItems.find((i) => i.id === item.id);
+                  if (row) toggleItem(row);
+                }}
+                onClose={() => setOpenPlanId(null)}
+              />
             )}
 
-            {view === "list" && floors.map((floor) => (
+            {floors.map((floor) => (
               <div key={floor.name} className="mt-4">
                 <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
                   {floor.name}
