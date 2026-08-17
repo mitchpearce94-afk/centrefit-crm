@@ -131,6 +131,52 @@ export async function GET(req: NextRequest) {
     if (taskErr) console.error("[morning-digest] mandate task upsert:", taskErr);
   }
 
+  // 2c — auto-close auto-tasks whose trigger has resolved (Mitchell
+  // 2026-08-18: "Chase mandate" tasks stayed open — and kept appearing in
+  // the brief as "unsigned" — long after the plan activated). A task the
+  // system created, the system must also retire.
+  const { data: openAuto } = await svc
+    .from("personal_tasks")
+    .select("id, source, source_ref")
+    .eq("owner_id", owner.id)
+    .in("source", ["digest.mandate-pending", "digest.invoice-unsent"])
+    .neq("status", "done");
+  if (openAuto && openAuto.length > 0) {
+    const staleIds: string[] = [];
+    const mandateRefs = openAuto.filter((t) => t.source === "digest.mandate-pending").map((t) => t.source_ref);
+    if (mandateRefs.length > 0) {
+      const { data: refPlans } = await svc
+        .from("recurring_plans")
+        .select("id, status, gc_mandate_id")
+        .in("id", mandateRefs);
+      const stillPending = new Set(
+        (refPlans ?? []).filter((p) => p.status === "pending_mandate" && !p.gc_mandate_id).map((p) => p.id),
+      );
+      for (const t of openAuto) {
+        if (t.source === "digest.mandate-pending" && !stillPending.has(t.source_ref)) staleIds.push(t.id);
+      }
+    }
+    const invoiceRefs = openAuto.filter((t) => t.source === "digest.invoice-unsent").map((t) => t.source_ref);
+    if (invoiceRefs.length > 0) {
+      const { data: refInvs } = await svc
+        .from("invoices")
+        .select("id, status, sent_at, amount_due")
+        .in("id", invoiceRefs);
+      const stillUnsent = new Set(
+        (refInvs ?? []).filter((i) => i.status === "authorised" && !i.sent_at && Number(i.amount_due) > 0).map((i) => i.id),
+      );
+      for (const t of openAuto) {
+        if (t.source === "digest.invoice-unsent" && !stillUnsent.has(t.source_ref)) staleIds.push(t.id);
+      }
+    }
+    if (staleIds.length > 0) {
+      await svc
+        .from("personal_tasks")
+        .update({ status: "done", completed_at: new Date().toISOString() })
+        .in("id", staleIds);
+    }
+  }
+
   // 3 — compose the brief from LIVE data (never a snapshot).
   const { data: taskData } = await svc
     .from("personal_tasks")
@@ -197,8 +243,60 @@ export async function GET(req: NextRequest) {
       }
     : null;
 
+  // Unfilled write-ups: jobs worked YESTERDAY (time entries or plan-checklist
+  // ticks) with no Work Completed entry dated that day (Mitchell 2026-08-18).
+  const yesterday = brisbaneDateISO(new Date(nowMs - DAY_MS));
+  const yStart = new Date(`${yesterday}T00:00:00+10:00`).toISOString();
+  const yEnd = new Date(`${today}T00:00:00+10:00`).toISOString();
+  const workedY = new Map<string, Set<string>>();
+  const touchY = (jobId: string | null, staffId: string | null) => {
+    if (!jobId) return;
+    if (!workedY.has(jobId)) workedY.set(jobId, new Set());
+    if (staffId) workedY.get(jobId)!.add(staffId);
+  };
+  const { data: yTime } = await svc
+    .from("job_time")
+    .select("job_id, staff_id")
+    .gte("start_time", yStart)
+    .lt("start_time", yEnd);
+  for (const r of yTime ?? []) touchY(r.job_id, r.staff_id);
+  const { data: yTicks } = await svc
+    .from("plan_items")
+    .select("job_id, installed_by, installed_at, roughed_in_by, roughed_in_at")
+    .not("job_id", "is", null)
+    .or(`and(installed_at.gte.${yStart},installed_at.lt.${yEnd}),and(roughed_in_at.gte.${yStart},roughed_in_at.lt.${yEnd})`);
+  for (const r of yTicks ?? []) {
+    if (r.installed_at && r.installed_at >= yStart && r.installed_at < yEnd) touchY(r.job_id, r.installed_by);
+    if (r.roughed_in_at && r.roughed_in_at >= yStart && r.roughed_in_at < yEnd) touchY(r.job_id, r.roughed_in_by);
+  }
+  let unfilledWriteups: Array<{ number: string; where: string; techs: string; href: string }> = [];
+  const yJobIds = [...workedY.keys()];
+  if (yJobIds.length > 0) {
+    const { data: yEntries } = await svc
+      .from("job_work_entries")
+      .select("job_id")
+      .in("job_id", yJobIds)
+      .eq("work_date", yesterday);
+    const yCovered = new Set((yEntries ?? []).map((e) => e.job_id));
+    const yMissing = yJobIds.filter((id) => !yCovered.has(id));
+    if (yMissing.length > 0) {
+      const [{ data: yJobs }, { data: staffRows }] = await Promise.all([
+        svc.from("jobs").select("id, number, customer:customers(name), site:customer_sites(name)").in("id", yMissing),
+        svc.from("staff").select("id, initials"),
+      ]);
+      const initialsById = new Map((staffRows ?? []).map((s) => [s.id, s.initials]));
+      unfilledWriteups = (yJobs ?? []).map((j: any) => ({
+        number: j.number ?? "—",
+        where: nameOf(j.site) || nameOf(j.customer) || "—",
+        techs: [...(workedY.get(j.id) ?? [])].map((id) => initialsById.get(id) ?? "?").join(", "),
+        href: `/jobs/${j.id}`,
+      }));
+    }
+  }
+
   const hasContent =
     tasks.length > 0 || overdueRows.length > 0 || unsentRows.length > 0 || planRows.length > 0 ||
+    unfilledWriteups.length > 0 ||
     !!(emailTriage && (emailTriage.billsForwarded || emailTriage.flagged || emailTriage.errors));
   if (!hasContent) {
     // Silence IS the all-clear (D3).
@@ -219,6 +317,7 @@ export async function GET(req: NextRequest) {
     overdueInvoices: { count: overdueRows.length, total: overdueTotal, top },
     unsentInvoices: { count: unsentRows.length, total: unsentTotal },
     pendingMandates: { count: planRows.length, monthlyValue: mandateMonthly, oldestDays: oldestMandateDays },
+    unfilledWriteups,
     emailTriage,
     appBaseUrl,
   });
@@ -233,5 +332,6 @@ export async function GET(req: NextRequest) {
     overdue: overdueRows.length,
     unsent: unsentRows.length,
     pendingMandates: planRows.length,
+    unfilledWriteups: unfilledWriteups.length,
   });
 }

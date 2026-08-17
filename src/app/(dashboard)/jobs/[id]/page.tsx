@@ -174,7 +174,7 @@ export default async function JobDetailPage({
   if ((planFiles ?? []).length > 0) {
     const { data: planItemsData } = await supabase
       .from("plan_items")
-      .select("*, installed_staff:staff!plan_items_installed_by_fkey(initials)")
+      .select("*, installed_staff:staff!plan_items_installed_by_fkey(initials), roughed_staff:staff!plan_items_roughed_in_by_fkey(initials)")
       .in("plan_file_id", (planFiles ?? []).map((p) => p.id))
       .order("sort_order");
     planItems = planItemsData ?? [];
@@ -201,6 +201,7 @@ export default async function JobDetailPage({
           jobId={id}
           currentStatus={job.status as any}
           allStatuses={statusesResult.data ?? []}
+          hasWorkEntries={(workResult.data ?? []).length > 0}
         />
       </div>
 

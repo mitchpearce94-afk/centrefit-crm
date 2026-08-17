@@ -37,6 +37,10 @@
     {
       "path": "/api/cron/email-triage",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/writeup-watchdog",
+      "schedule": "30 6 * * 1-5"
     }
   ]
 }

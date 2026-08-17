@@ -18,10 +18,12 @@ export function StatusTransition({
   jobId,
   currentStatus,
   allStatuses,
+  hasWorkEntries = true,
 }: {
   jobId: string;
   currentStatus: Status;
   allStatuses: Status[];
+  hasWorkEntries?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [updating, setUpdating] = useState(false);
@@ -42,6 +44,21 @@ export function StatusTransition({
   }, [open]);
 
   async function changeStatus(newStatusId: string) {
+    // Soft write-up gate (Mitchell 2026-08-18): moving into a completion
+    // status with an empty work log gets a confirm, never a block — patrol
+    // runs and other no-write-up jobs must still be invoiceable.
+    const target = allStatuses.find((s) => s.id === newStatusId);
+    if (
+      !hasWorkEntries &&
+      target?.phase === "completion" &&
+      target.name !== "Cancelled" &&
+      !window.confirm(
+        `Nothing has been written in Work Completed for this job.\n\nMove to "${target.name}" anyway?\n(Fine for patrol runs and jobs with nothing to write.)`,
+      )
+    ) {
+      setOpen(false);
+      return;
+    }
     setUpdating(true);
     const { error } = await supabase
       .from("jobs")

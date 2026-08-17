@@ -16,6 +16,7 @@ export interface VisualItem {
   instance_id: string;
   status: string;
   orphaned: boolean;
+  roughed?: boolean;
 }
 
 interface CfpDevice {
@@ -69,12 +70,18 @@ export function PlanVisual({
   itemsByInstance,
   onToggle,
   onClose,
+  phase = "fit",
+  onPhaseChange,
+  showPhases = false,
 }: {
   planName: string;
   cfpUrl: string;
   itemsByInstance: Map<string, VisualItem>;
   onToggle: (item: VisualItem) => void;
   onClose: () => void;
+  phase?: "rough" | "fit";
+  onPhaseChange?: (p: "rough" | "fit") => void;
+  showPhases?: boolean;
 }) {
   const [floors, setFloors] = useState<CfpFloor[] | null>(null);
   const [deviceScale, setDeviceScale] = useState(1);
@@ -228,6 +235,32 @@ export function PlanVisual({
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-white/10 px-3 py-2">
         <p className="min-w-0 flex-1 truncate text-sm font-medium text-white">{planName}</p>
+        {showPhases && onPhaseChange && (
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => onPhaseChange("rough")}
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                phase === "rough"
+                  ? "border-amber-400 bg-amber-400/15 text-amber-300"
+                  : "border-white/20 text-white/60"
+              }`}
+            >
+              Rough In
+            </button>
+            <button
+              type="button"
+              onClick={() => onPhaseChange("fit")}
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                phase === "fit"
+                  ? "border-emerald-400 bg-emerald-400/15 text-emerald-300"
+                  : "border-white/20 text-white/60"
+              }`}
+            >
+              Fit Off
+            </button>
+          </div>
+        )}
         {floors && floors.length > 1 && (
           <div className="flex gap-1 overflow-x-auto">
             {floors.map((f, i) => (
@@ -312,6 +345,12 @@ export function PlanVisual({
               const def = catalogById.get(d.deviceId);
               const item = itemsByInstance.get(d.instanceId);
               const installed = item?.status === "installed";
+              const roughed = !!item?.roughed;
+              // Wireless gear has no cable run — inert in the Rough In phase.
+              const noCable = def?.cableType === "none";
+              const inert = !item || item.orphaned || (phase === "rough" && noCable);
+              const ticked = phase === "rough" ? roughed : installed;
+              const tickColor = phase === "rough" ? "#d97706" : "#16a34a";
               const rotation = d.rotation ?? 0;
               const isDataOutlet = d.deviceId === "cat6-data" || d.deviceId === "rg6-coax";
               const symbolPx = def?.symbolImage
@@ -338,10 +377,10 @@ export function PlanVisual({
                 <button
                   key={d.instanceId}
                   type="button"
-                  disabled={!item || item.orphaned}
+                  disabled={inert}
                   onClick={() => {
                     if (moved.current > 8) return;
-                    if (item && !item.orphaned) onToggle(item);
+                    if (!inert && item) onToggle(item);
                   }}
                   title={def?.name ?? d.deviceId}
                   style={{
@@ -371,7 +410,7 @@ export function PlanVisual({
                       alignItems: "center",
                       justifyContent: "center",
                       pointerEvents: "none",
-                      filter: installed ? "grayscale(45%) opacity(0.75)" : undefined,
+                      filter: ticked ? "grayscale(45%) opacity(0.75)" : undefined,
                     }}
                   >
                     {def?.symbolImage ? (
@@ -395,15 +434,16 @@ export function PlanVisual({
                     )}
                   </span>
 
-                  {/* Green pen-tick when installed */}
-                  {installed && (
+                  {/* Pen-tick: amber for roughed-in (Rough In phase), green
+                      for fitted off */}
+                  {ticked && (
                     <span
                       style={{
                         position: "absolute",
                         left: "50%",
                         top: "50%",
                         transform: "translate(-50%, -55%)",
-                        color: "#16a34a",
+                        color: tickColor,
                         fontWeight: 800,
                         fontSize: tickSize,
                         lineHeight: 1,
@@ -426,7 +466,7 @@ export function PlanVisual({
                         top: isDataOutlet ? `calc(50% + ${symbolPx * 0.55}px)` : undefined,
                         bottom: isDataOutlet ? undefined : `calc(50% + ${symbolPx * 0.5}px)`,
                         transform: "translateX(-50%)",
-                        color: installed ? "#16a34a" : "#dc2626",
+                        color: ticked ? tickColor : "#dc2626",
                         fontWeight: 800,
                         fontSize: labelFont,
                         lineHeight: 1.1,

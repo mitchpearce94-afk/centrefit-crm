@@ -16,6 +16,7 @@ import { JobProcurement } from "./job-procurement";
 import { ScopeEditor } from "./scope-editor";
 import { UpdatesPanel } from "./updates-panel";
 import { PlanChecklist } from "./plan-checklist";
+import { WrapUpDay } from "./wrap-up-day";
 
 interface StaffOption {
   id: string;
@@ -161,6 +162,7 @@ export function JobTabs({
             jobUpdates={jobUpdates}
             timeEntries={timeEntries}
             scheduleEntries={scheduleEntries ?? []}
+            planItems={planItems}
             viewerId={viewerId}
             viewerInitials={viewerInitials}
           />
@@ -184,6 +186,7 @@ export function JobTabs({
             items={planItems}
             viewerId={viewerId}
             viewerInitials={viewerInitials}
+            isNewBuild={job.is_new_build ?? false}
           />
         )}
         {activeTab === "nbn" && (
@@ -290,6 +293,7 @@ function JobOverview({
   jobUpdates,
   timeEntries,
   scheduleEntries,
+  planItems = [],
   viewerId,
   viewerInitials,
 }: {
@@ -305,6 +309,7 @@ function JobOverview({
   jobUpdates: any[];
   timeEntries: any[];
   scheduleEntries: any[];
+  planItems?: any[];
   viewerId: string | null;
   viewerInitials: string;
 }) {
@@ -369,6 +374,14 @@ function JobOverview({
       />
 
       {/* ── Work Completed ── */}
+      <WrapUpDay
+        jobId={jobId}
+        workEntries={workEntries}
+        timeEntries={timeEntries}
+        planItems={planItems}
+        notes={notes}
+        viewerId={viewerId}
+      />
       <WorkLog jobId={jobId} entries={workEntries} />
 
       {/* ── Scheduled Dates ── */}

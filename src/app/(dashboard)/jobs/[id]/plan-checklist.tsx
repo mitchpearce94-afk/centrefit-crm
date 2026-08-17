@@ -4,6 +4,13 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
 import { PlanVisual } from "./plan-visual";
+import { DEVICE_CATALOG } from "@/lib/plan-builder/devices";
+
+// Wireless / uncabled gear has no rough-in step — excluded from RI progress
+// and untickable in the Rough In phase.
+const NO_CABLE_DEVICES = new Set(
+  DEVICE_CATALOG.filter((d) => d.cableType === "none").map((d) => d.id),
+);
 
 /**
  * On-site plan install checklist (Mitchell 2026-08-17). One row per device on
@@ -24,14 +31,17 @@ interface PlanItemRow {
   id: string;
   plan_file_id: string;
   instance_id: string;
+  device_id: string;
   floor_name: string | null;
   label: string;
   qty: number;
   status: string;
   installed_at: string | null;
+  roughed_in_at: string | null;
   orphaned: boolean;
   sort_order: number;
   installed_staff?: { initials: string } | null;
+  roughed_staff?: { initials: string } | null;
 }
 
 export function PlanChecklist({
@@ -39,19 +49,48 @@ export function PlanChecklist({
   items,
   viewerId,
   viewerInitials,
+  isNewBuild = false,
 }: {
   planFiles: PlanFileRow[];
   items: PlanItemRow[];
   viewerId: string | null;
   viewerInitials: string;
+  isNewBuild?: boolean;
 }) {
   const [localItems, setLocalItems] = useState<PlanItemRow[]>(items);
   const [openPlanId, setOpenPlanId] = useState<string | null>(null);
+  // New builds tick twice: Rough In (cable run) then Fit Off (device on the
+  // wall). Other jobs only have the single fit/installed tick.
+  const [phase, setPhase] = useState<"rough" | "fit">(isNewBuild ? "rough" : "fit");
   const { toast } = useToast();
   const supabase = createClient();
 
   async function toggleItem(item: PlanItemRow) {
     if (item.orphaned) return;
+
+    if (phase === "rough") {
+      if (NO_CABLE_DEVICES.has(item.device_id)) return; // nothing to rough in
+      const nowRoughed = !item.roughed_in_at;
+      const patch = {
+        roughed_in_at: nowRoughed ? new Date().toISOString() : null,
+        roughed_in_by: nowRoughed ? viewerId : null,
+        updated_at: new Date().toISOString(),
+      };
+      setLocalItems((prev) =>
+        prev.map((i) =>
+          i.id === item.id
+            ? { ...i, roughed_in_at: patch.roughed_in_at, roughed_staff: nowRoughed ? { initials: viewerInitials } : null }
+            : i,
+        ),
+      );
+      const { error } = await supabase.from("plan_items").update(patch).eq("id", item.id);
+      if (error) {
+        setLocalItems((prev) => prev.map((i) => (i.id === item.id ? item : i)));
+        toast(error.message, "error");
+      }
+      return;
+    }
+
     const nowInstalled = item.status !== "installed";
     const patch = {
       status: nowInstalled ? "installed" : "pending",
@@ -91,7 +130,12 @@ export function PlanChecklist({
           .sort((a, b) => a.sort_order - b.sort_order);
         const live = planItems.filter((i) => !i.orphaned);
         const installed = live.filter((i) => i.status === "installed").length;
-        const pct = live.length > 0 ? Math.round((installed / live.length) * 100) : 0;
+        const riEligible = live.filter((i) => !NO_CABLE_DEVICES.has(i.device_id));
+        const roughed = riEligible.filter((i) => !!i.roughed_in_at).length;
+        const pct =
+          phase === "rough"
+            ? riEligible.length > 0 ? Math.round((roughed / riEligible.length) * 100) : 0
+            : live.length > 0 ? Math.round((installed / live.length) * 100) : 0;
 
         // Group by floor, preserving sort order.
         const floors: { name: string; rows: PlanItemRow[] }[] = [];
@@ -108,7 +152,9 @@ export function PlanChecklist({
               <div className="min-w-0">
                 <h3 className="text-sm font-semibold truncate">{plan.name}</h3>
                 <p className="text-xs text-muted-foreground">
-                  {installed}/{live.length} installed
+                  {isNewBuild
+                    ? `Rough in ${roughed}/${riEligible.length} · Fit off ${installed}/${live.length}`
+                    : `${installed}/${live.length} installed`}
                 </p>
               </div>
               {plan.pdf_url && (
@@ -124,10 +170,37 @@ export function PlanChecklist({
             </div>
             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full rounded-full bg-primary transition-all"
+                className={`h-full rounded-full transition-all ${phase === "rough" ? "bg-amber-500" : "bg-primary"}`}
                 style={{ width: `${pct}%` }}
               />
             </div>
+
+            {isNewBuild && (
+              <div className="mt-3 flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setPhase("rough")}
+                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                    phase === "rough"
+                      ? "border-amber-500 bg-amber-500/10 text-amber-500"
+                      : "border-border text-muted-foreground hover:border-amber-500/50"
+                  }`}
+                >
+                  Rough In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPhase("fit")}
+                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                    phase === "fit"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:border-primary/50"
+                  }`}
+                >
+                  Fit Off
+                </button>
+              </div>
+            )}
 
             {live.length === 0 && (
               <p className="mt-4 text-sm text-muted-foreground">
@@ -160,12 +233,19 @@ export function PlanChecklist({
               <PlanVisual
                 planName={plan.name}
                 cfpUrl={plan.cfp_url}
-                itemsByInstance={new Map(localItems.filter((i) => i.plan_file_id === plan.id).map((i) => [i.instance_id, i]))}
+                itemsByInstance={new Map(
+                  localItems
+                    .filter((i) => i.plan_file_id === plan.id)
+                    .map((i) => [i.instance_id, { ...i, roughed: !!i.roughed_in_at }]),
+                )}
                 onToggle={(item) => {
                   const row = localItems.find((i) => i.id === item.id);
                   if (row) toggleItem(row);
                 }}
                 onClose={() => setOpenPlanId(null)}
+                phase={phase}
+                onPhaseChange={setPhase}
+                showPhases={isNewBuild}
               />
             )}
 
@@ -176,25 +256,35 @@ export function PlanChecklist({
                 </h4>
                 <div className="space-y-1.5">
                   {floor.rows.map((item) => {
-                    const done = item.status === "installed";
+                    const noCable = NO_CABLE_DEVICES.has(item.device_id);
+                    const roughedDone = !!item.roughed_in_at;
+                    const fitDone = item.status === "installed";
+                    const done = phase === "rough" ? roughedDone : fitDone;
+                    const inert = item.orphaned || (phase === "rough" && noCable);
+                    const fmt = (d: string) =>
+                      new Date(d).toLocaleDateString("en-AU", { day: "2-digit", month: "2-digit", year: "2-digit" });
                     return (
                       <button
                         key={item.id}
                         type="button"
                         onClick={() => toggleItem(item)}
-                        disabled={item.orphaned}
+                        disabled={inert}
                         className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
-                          item.orphaned
+                          inert
                             ? "border-border/50 opacity-50"
                             : done
-                              ? "border-primary/40 bg-primary/5"
+                              ? phase === "rough"
+                                ? "border-amber-500/40 bg-amber-500/5"
+                                : "border-primary/40 bg-primary/5"
                               : "border-border bg-card hover:border-primary/50"
                         }`}
                       >
                         <span
                           className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 text-xs ${
                             done
-                              ? "border-primary bg-primary text-primary-foreground"
+                              ? phase === "rough"
+                                ? "border-amber-500 bg-amber-500 text-white"
+                                : "border-primary bg-primary text-primary-foreground"
                               : "border-muted-foreground/40"
                           }`}
                         >
@@ -211,15 +301,21 @@ export function PlanChecklist({
                             <span className="block text-xs text-destructive/80">
                               Removed from the latest plan revision
                             </span>
-                          ) : done && item.installed_at ? (
+                          ) : phase === "rough" && noCable ? (
                             <span className="block text-xs text-muted-foreground">
-                              {item.installed_staff?.initials ?? ""}{" "}
-                              {new Date(item.installed_at).toLocaleDateString("en-AU", {
-                                day: "2-digit",
-                                month: "2-digit",
-                                year: "2-digit",
-                              })}
+                              No cable — fit off only
                             </span>
+                          ) : phase === "rough" && roughedDone && item.roughed_in_at ? (
+                            <span className="block text-xs text-muted-foreground">
+                              {item.roughed_staff?.initials ?? ""} {fmt(item.roughed_in_at)}
+                            </span>
+                          ) : phase === "fit" && fitDone && item.installed_at ? (
+                            <span className="block text-xs text-muted-foreground">
+                              {item.installed_staff?.initials ?? ""} {fmt(item.installed_at)}
+                              {roughedDone && <span className="ml-1.5 text-amber-500">RI ✓</span>}
+                            </span>
+                          ) : phase === "fit" && roughedDone ? (
+                            <span className="block text-xs text-amber-500">RI ✓</span>
                           ) : null}
                         </span>
                       </button>

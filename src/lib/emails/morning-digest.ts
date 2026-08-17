@@ -28,6 +28,9 @@ export interface MorningDigestInput {
   overdueInvoices: { count: number; total: number; top: DigestInvoiceLine[] };
   unsentInvoices: { count: number; total: number };
   pendingMandates: { count: number; monthlyValue: number; oldestDays: number };
+  /** Jobs worked yesterday (time entries / plan ticks) with no Work
+   *  Completed entry for that day — Mitchell 2026-08-18. */
+  unfilledWriteups: Array<{ number: string; where: string; techs: string; href: string }>;
   /** Email triage ledger over the last 24h — null until Phase 3 is live. */
   emailTriage: {
     mode: "observe" | "live";
@@ -77,6 +80,7 @@ export function digestSubject(input: MorningDigestInput): string {
   if (input.overdueInvoices.count > 0) bits.push(`${fmtShort(input.overdueInvoices.total)} overdue`);
   if (input.unsentInvoices.count > 0) bits.push(`${input.unsentInvoices.count} unsent`);
   if (input.pendingMandates.count > 0) bits.push(`${input.pendingMandates.count} unsigned`);
+  if (input.unfilledWriteups.length > 0) bits.push(`${input.unfilledWriteups.length} unfilled`);
   return `Morning brief — ${bits.join(" · ")}`;
 }
 
@@ -126,6 +130,21 @@ export async function sendMorningDigestEmail(
       <h1 style="font-size:19px;font-weight:600;color:#0f172a;margin:0;letter-spacing:-0.3px">Morning, Mitchell</h1>
     </td></tr>
     ${input.tasks.length ? section(`Your list · ${input.tasks.length}`, taskRows) : ""}
+    ${
+      input.unfilledWriteups.length
+        ? section(
+            `Unfilled write-ups · yesterday`,
+            input.unfilledWriteups
+              .map((j) =>
+                row(
+                  `<a href="${input.appBaseUrl}${j.href}" style="color:#0f172a;text-decoration:none"><strong>${j.number}</strong> — ${j.where}</a>`,
+                  j.techs || "—",
+                ),
+              )
+              .join(""),
+          )
+        : ""
+    }
     ${moneyBits.length ? section("Money", moneyBits.join("")) : ""}
     ${
       input.pendingMandates.count
