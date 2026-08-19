@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
 
@@ -36,6 +36,27 @@ export function StaffNotificationEditor({
   const { toast } = useToast();
   const [, startTransition] = useTransition();
 
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const pendingSaves = useRef(0);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function beginSave() {
+    pendingSaves.current++;
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    setSaveStatus("saving");
+  }
+
+  function endSave(ok: boolean) {
+    pendingSaves.current--;
+    if (pendingSaves.current > 0) return;
+    if (!ok) {
+      setSaveStatus("idle");
+      return;
+    }
+    setSaveStatus("saved");
+    savedTimer.current = setTimeout(() => setSaveStatus("idle"), 2500);
+  }
+
   const [prefs, setPrefs] = useState<Map<string, { bell: boolean; email: boolean }>>(() => {
     const m = new Map<string, { bell: boolean; email: boolean }>();
     for (const t of types) {
@@ -54,6 +75,7 @@ export function StaffNotificationEditor({
     const newMap = new Map(prefs);
     newMap.set(code, next);
     setPrefs(newMap);
+    beginSave();
     startTransition(async () => {
       const { error } = await supabase
         .from("staff_notification_preferences")
@@ -67,6 +89,7 @@ export function StaffNotificationEditor({
           },
           { onConflict: "staff_id,type_code" },
         );
+      endSave(!error);
       if (error) {
         toast(`${code}: ${error.message}`, "error");
         // Revert on error.
@@ -81,6 +104,7 @@ export function StaffNotificationEditor({
 
   function bulkToggle(category: string, channel: "bell" | "email", on: boolean) {
     const inCat = types.filter((t) => t.category === category);
+    beginSave();
     startTransition(async () => {
       const newMap = new Map(prefs);
       for (const t of inCat) {
@@ -98,6 +122,7 @@ export function StaffNotificationEditor({
       const { error } = await supabase
         .from("staff_notification_preferences")
         .upsert(rows, { onConflict: "staff_id,type_code" });
+      endSave(!error);
       if (error) {
         toast(error.message, "error");
       } else {
@@ -115,13 +140,27 @@ export function StaffNotificationEditor({
 
   return (
     <div className="border-t border-border bg-muted/20">
-      <div className="px-4 py-3 border-b border-border bg-muted/30">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Notifications for {staffName}
-        </p>
-        <p className="text-[11px] text-muted-foreground mt-0.5">
-          🔔 Bell shows in the top bar · ✉ Email goes to {staffName}&apos;s inbox. Each event can fire either, both, or neither.
-        </p>
+      <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Notifications for {staffName}
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            🔔 Bell shows in the top bar · ✉ Email goes to {staffName}&apos;s inbox. Changes save instantly as you tap — no save button needed.
+          </p>
+        </div>
+        <span
+          aria-live="polite"
+          className={`flex-shrink-0 text-[11px] px-2 py-1 rounded-md transition-opacity duration-300 ${
+            saveStatus === "idle" ? "opacity-0" : "opacity-100"
+          } ${
+            saveStatus === "saving"
+              ? "bg-muted text-muted-foreground"
+              : "bg-primary/15 text-primary"
+          }`}
+        >
+          {saveStatus === "saving" ? "Saving…" : "Saved ✓"}
+        </span>
       </div>
       {[...byCategory.entries()].map(([category, items]) => (
         <details key={category} className="group" open>
