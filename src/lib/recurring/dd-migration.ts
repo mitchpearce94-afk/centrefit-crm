@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAuthedClient } from "@/lib/xero/client";
-import { norm } from "@/lib/recurring/billing-match";
+import { nameMatches, norm } from "@/lib/recurring/billing-match";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
 
 /**
@@ -201,7 +201,21 @@ function buildSiteIndex(sites: SiteLite[]) {
         }
       }
       const k = norm(contactName);
-      return (k && byName.get(k)) || null;
+      const exact = k ? byName.get(k) : undefined;
+      if (exact) return exact;
+      // Legacy Xero contacts are entity-named ("Gladesville Fitness Pty Ltd -
+      // SF Meadowbank"); the site's own location tokens ("meadowbank") must
+      // all appear in the contact name. Only an unambiguous single hit counts.
+      if (contactName) {
+        const hits = new Map<string, SiteLite>();
+        for (const s of sites) {
+          if ((s.name && nameMatches(s.name, contactName)) || (s.invoice_name && nameMatches(s.invoice_name, contactName))) {
+            hits.set(s.id, s);
+          }
+        }
+        if (hits.size === 1) return [...hits.values()][0];
+      }
+      return null;
     },
   };
 }
