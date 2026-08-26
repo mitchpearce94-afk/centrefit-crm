@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { verifyGoCardlessSignature } from "@/lib/gocardless/webhook-verify";
 import { getMandate, getBillingRequest } from "@/lib/gocardless/client";
+import { markDdTargetsLiveForPlan } from "@/lib/recurring/dd-migration";
 import { activatePlan } from "@/lib/recurring/activate-plan";
 import { completeRemandate } from "@/lib/recurring/remandate";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
@@ -199,6 +200,14 @@ async function handleBillingRequestEvent(
       const result = await activatePlan(supabase, plan.id);
       if (!result.ok) {
         console.error(`[gc-webhook] activatePlan failed for plan ${plan.id}: ${result.reason}`);
+      } else {
+        // DD migration: a legacy Xero repeating invoice may still be live for
+        // this site — flag it for retirement so nobody gets invoiced twice.
+        try {
+          await markDdTargetsLiveForPlan(supabase, plan.id);
+        } catch (err) {
+          console.error(`[gc-webhook] dd-migration flag failed for plan ${plan.id}:`, err);
+        }
       }
     } catch (err) {
       console.error(`[gc-webhook] activatePlan threw for plan ${plan.id}:`, err);

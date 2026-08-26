@@ -17,6 +17,10 @@ import { enqueueNotification } from "@/lib/notifications/enqueue";
  * Used by the "Resend signup email" button on the plan page (reminder=false)
  * and the pending-mandate watchdog's auto-chase (reminder=true, which also
  * advances the reminder counter/cool-off).
+ *
+ * `send: false` mints and persists the fresh link WITHOUT emailing — the DD
+ * migration tracker uses it so the finance officer can paste the link into a
+ * personal email from accounts@ (Mitchell's rule: no automated invitations).
  */
 
 export interface ResendSignupResult {
@@ -45,7 +49,7 @@ interface PlanRow {
 export async function resendSignupEmail(
   supabase: SupabaseClient,
   planId: string,
-  opts: { reminder: boolean },
+  opts: { reminder: boolean; send?: boolean },
 ): Promise<ResendSignupResult> {
   const { data } = await supabase
     .from("recurring_plans")
@@ -78,7 +82,8 @@ export async function resendSignupEmail(
   const primary =
     customer?.customer_contacts?.find((c) => c.is_primary && c.email) ??
     customer?.customer_contacts?.find((c) => !!c.email);
-  if (!primary?.email) {
+  const send = opts.send !== false;
+  if (send && !primary?.email) {
     throw new Error("Customer has no contact email to send the signup to");
   }
 
@@ -107,7 +112,7 @@ export async function resendSignupEmail(
   if (monthly > 0) summaryParts.push(`$${monthly.toFixed(2)}/month`);
   if (yearly > 0) summaryParts.push(`$${yearly.toFixed(2)}/year`);
 
-  await sendMandateSignupEmail({
+  if (send && primary?.email) await sendMandateSignupEmail({
     to: primary.email,
     customerName: customer?.name ?? siteLabel,
     reminder: opts.reminder,
@@ -153,12 +158,16 @@ export async function resendSignupEmail(
     refType: "recurring_plan",
     refId: planId,
     audience: { allActive: true },
-    title: isDraftFirstSend
+    title: !send
+      ? `Mandate signup link minted: ${siteLabel}`
+      : isDraftFirstSend
       ? `Mandate signup sent (draft released): ${siteLabel}`
       : `Mandate signup ${opts.reminder ? "auto-reminder" : "re-sent"}: ${siteLabel}`,
-    body: `Sent to ${primary.email} with a fresh GoCardless link.`,
+    body: send
+      ? `Sent to ${primary?.email} with a fresh GoCardless link.`
+      : "Fresh GoCardless link created for a personal email from accounts@ (DD migration).",
     href: `/invoices/recurring/${planId}`,
   });
 
-  return { to: primary.email, signupUrl };
+  return { to: primary?.email ?? "", signupUrl };
 }

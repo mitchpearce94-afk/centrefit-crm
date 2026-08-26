@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { isCurrentUserAdmin } from "@/lib/auth/current-staff";
+import { currentUserHasPermission } from "@/lib/auth/permissions";
 import Link from "next/link";
 import { BackfillSubscriptionsButton } from "./backfill-subscriptions-button";
 import { nextMonthlyOccurrence } from "@/lib/recurring/next-occurrence";
@@ -214,6 +215,7 @@ export default async function RecurringInvoicesPage({
 
   const todayStr = brisbaneDateISO(new Date());
   const isAdmin = await isCurrentUserAdmin();
+  const canManageRecurring = await currentUserHasPermission("invoices.manage_recurring");
 
   return (
     <>
@@ -226,6 +228,14 @@ export default async function RecurringInvoicesPage({
         </div>
         <div className="flex items-center gap-2">
           {isAdmin && <BackfillSubscriptionsButton />}
+          {canManageRecurring && (
+            <Link
+              href="/invoices/recurring/dd-migration"
+              className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent transition-colors"
+            >
+              DD migration
+            </Link>
+          )}
           <Link
             href="/invoices/recurring/new"
             className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
