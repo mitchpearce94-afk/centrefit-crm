@@ -30,6 +30,9 @@ export default async function ReceiptsPage() {
         <p className="mt-1 text-sm text-muted-foreground">
           Scan a receipt → choose a job (or not) → done. It&rsquo;s emailed to accounts either way.
         </p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          On your phone use the <a href="/snap" className="font-medium text-primary hover:underline">Receipts app</a> — open crm.centrefit.com.au/snap in Safari, Share → Add to Home Screen. Icon → shutter → done.
+        </p>
       </div>
       <div className="mt-5">
         <ReceiptsClient jobs={jobs} />

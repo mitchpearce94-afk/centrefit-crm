@@ -26,6 +26,7 @@ interface Settings {
   default_payment_terms: string;
   progress_payment_enabled: boolean;
   receipt_forward_email: string;
+  xero_bills_email: string | null;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -67,6 +68,7 @@ export function BillingSettings({ settings }: { settings: Settings | null }) {
     default_payment_terms: "Due on completion",
     progress_payment_enabled: true,
     receipt_forward_email: "accounts@centrefit.com.au",
+    xero_bills_email: "",
   });
 
   function set(field: keyof Settings, value: number | string | boolean) {
@@ -124,6 +126,9 @@ export function BillingSettings({ settings }: { settings: Settings | null }) {
         </Field>
         <Field label="Receipt forwarding email">
           <input type="text" value={s.receipt_forward_email} onChange={e => set("receipt_forward_email", e.target.value)} placeholder="accounts@centrefit.com.au" className={inputClass} />
+        </Field>
+        <Field label="Xero bills inbox (email bills to Xero)">
+          <input type="text" value={s.xero_bills_email ?? ""} onChange={e => set("xero_bills_email", e.target.value)} placeholder="bills.xxxx@xerofiles.com" className={inputClass} />
         </Field>
         <div className="flex items-center gap-2 pt-5">
           <button

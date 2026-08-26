@@ -7,6 +7,7 @@ function getResend() {
 
 export interface ForwardReceiptInput {
   to: string;
+  cc?: string[];
   filename: string;
   /** Raw image bytes. */
   content: Buffer;
@@ -62,12 +63,14 @@ export async function forwardReceiptEmail(
     input.vendor ? `· ${input.vendor}` : "",
     input.amount != null ? `· $${Number(input.amount).toFixed(2)}` : "",
     input.jobNumber ? `· ${input.jobNumber}` : "",
+    input.uploadedByName ? `· ${input.uploadedByName}` : "",
   ].filter(Boolean);
 
   try {
     const { error } = await getResend().emails.send({
       from: FROM_NO_REPLY,
       to: input.to,
+      ...(input.cc && input.cc.length ? { cc: input.cc } : {}),
       replyTo: REPLY_TO_ACCOUNTS,
       subject: subjectBits.join(" "),
       html,

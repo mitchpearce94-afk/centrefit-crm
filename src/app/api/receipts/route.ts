@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { forwardReceiptEmail } from "@/lib/emails/receipt-forward";
 import { brisbaneDateISO } from "@/lib/dates";
+import { getCurrentStaff } from "@/lib/auth/current-staff";
+import { resolveReceiptDestination } from "@/lib/receipts/snap";
 
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"]);
 const MAX_BYTES = 15 * 1024 * 1024; // 15 MB
@@ -17,6 +19,7 @@ export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const staff = await getCurrentStaff();
 
   let form: FormData;
   try { form = await req.formData(); }
@@ -51,7 +54,8 @@ export async function POST(req: NextRequest) {
       amount: amount != null && !Number.isNaN(amount) ? amount : null,
       receipt_date: receiptDate,
       job_id: jobId,
-      uploaded_by: null,
+      uploaded_by: staff?.id ?? user.id,
+      source: "scanner",
     })
     .select("id")
     .single();
@@ -66,16 +70,13 @@ export async function POST(req: NextRequest) {
     jobNumber = job?.number ?? null;
   }
 
-  // Forward to the configured accounts mailbox — best effort.
-  const { data: settings } = await supabase
-    .from("billing_settings")
-    .select("receipt_forward_email")
-    .limit(1)
-    .maybeSingle();
-  const to = settings?.receipt_forward_email || "accounts@centrefit.com.au";
+  // Forward to Xero's bills inbox when configured (accounts CC'd), else accounts — best effort.
+  const dest = await resolveReceiptDestination(supabase);
 
   const sent = await forwardReceiptEmail({
-    to,
+    to: dest.to,
+    cc: dest.cc,
+    uploadedByName: staff?.display_name ?? null,
     filename: `receipt-${vendor ? vendor.replace(/[^a-z0-9]+/gi, "-").slice(0, 30) + "-" : ""}${brisbaneDateISO()}.${ext}`,
     content: bytes,
     vendor,
@@ -86,7 +87,7 @@ export async function POST(req: NextRequest) {
 
   await supabase
     .from("receipts")
-    .update({ email_sent: sent.ok, email_error: sent.ok ? null : (sent.error ?? "send failed"), updated_at: new Date().toISOString() })
+    .update({ email_sent: sent.ok, email_error: sent.ok ? null : (sent.error ?? "send failed"), forwarded_to: dest.to, updated_at: new Date().toISOString() })
     .eq("id", receipt.id);
 
   return NextResponse.json({ ok: true, id: receipt.id, emailSent: sent.ok, emailError: sent.ok ? null : sent.error });
