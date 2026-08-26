@@ -134,15 +134,17 @@ function derive(existing: Pick<DdTargetRow, "status" | "recurring_plan_id"> | nu
   if (site?.invoice_only) return { status: "excluded", reason: "Invoice-only site", planId: null };
 
   const sitePlans = site ? plans.filter((p) => p.site_id === site.id) : [];
-  const inCampaign = !!existing && ["invited", "mandate_pending", "dd_live"].includes(existing.status);
-  const live = sitePlans
+  const mandated = sitePlans
     .filter((p) => !!p.gc_mandate_id && (p.status === "active" || p.status === "paused"))
-    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
-  if (live) {
-    if (live.source === "imported" && !inCampaign && existing?.recurring_plan_id !== live.id) {
-      return { status: "already_dd", reason: "Collecting via legacy GoCardless subscription", planId: live.id };
-    }
-    return { status: "dd_live", reason: null, planId: live.id };
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  // A CRM-created plan is the only thing this campaign can produce, so its
+  // presence means the legacy RI is now a duplicate. An imported plan is the
+  // customer's pre-existing GC billing — the legacy RI IS their invoice.
+  const crmLive = mandated.find((p) => p.source === "crm");
+  if (crmLive) return { status: "dd_live", reason: null, planId: crmLive.id };
+  const importedLive = mandated.find((p) => p.source !== "crm");
+  if (importedLive) {
+    return { status: "already_dd", reason: "Collecting via legacy GoCardless subscription", planId: importedLive.id };
   }
   const pending = sitePlans
     .filter((p) => !p.gc_mandate_id && (p.status === "draft" || p.status === "pending_mandate"))
