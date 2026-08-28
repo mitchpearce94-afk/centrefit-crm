@@ -56,11 +56,13 @@ export function SnapClient({
   todayJobs,
   viaXero,
   isAdmin,
+  needsPairing,
 }: {
   staffName: string;
   todayJobs: JobLite[];
   viaXero: boolean;
   isAdmin: boolean;
+  needsPairing: boolean;
 }) {
   const { toast } = useToast();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -105,6 +107,14 @@ export function SnapClient({
       setMode("fallback");
     }
   }, []);
+
+  // Session-authed open with no (or someone else's) device cookie: pair this
+  // phone in the background so future opens skip login entirely. The pair
+  // endpoint also re-stamps the cookie expiry, so in-use phones never lapse.
+  useEffect(() => {
+    if (!needsPairing) return;
+    void fetch("/api/snap/pair", { method: "POST" }).catch(() => {});
+  }, [needsPairing]);
 
   useEffect(() => {
     void startCamera();
@@ -338,13 +348,8 @@ export function SnapClient({
         >
           <span className="h-[62px] w-[62px] rounded-full bg-white" />
         </button>
-        <Link
-          href="/"
-          className="flex h-14 w-14 flex-col items-center justify-center rounded-full bg-black/55 text-[10px] backdrop-blur"
-        >
-          <GridGlyph className="h-5 w-5" />
-          <span className="mt-0.5">CRM</span>
-        </Link>
+        {/* Spacer where the CRM link used to be — keeps the shutter centred. */}
+        <div className="h-14 w-14" aria-hidden />
       </div>
 
       <input
@@ -428,16 +433,6 @@ function PhotosGlyph({ className }: { className?: string }) {
       <rect x="3" y="5" width="18" height="14" rx="2" />
       <path d="m3 16 5-5 4 4 3-3 6 6" />
       <circle cx="16" cy="9" r="1.5" />
-    </svg>
-  );
-}
-function GridGlyph({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="4" y="4" width="6" height="6" rx="1" />
-      <rect x="14" y="4" width="6" height="6" rx="1" />
-      <rect x="4" y="14" width="6" height="6" rx="1" />
-      <rect x="14" y="14" width="6" height="6" rx="1" />
     </svg>
   );
 }

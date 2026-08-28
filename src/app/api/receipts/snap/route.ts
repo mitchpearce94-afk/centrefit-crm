@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
-import { getCurrentStaff } from "@/lib/auth/current-staff";
+import { resolveSnapStaff } from "@/lib/receipts/snap-device";
 import { processSnapReceipt } from "@/lib/receipts/snap";
 
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"]);
@@ -18,10 +17,13 @@ const MAX_BYTES = 15 * 1024 * 1024;
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  const staff = await getCurrentStaff();
+  // Session OR paired-device cookie — this route is middleware-public so the
+  // installed app can upload after its session dies. Always resolves to a
+  // real, active staff member (uploads stay attributed).
+  const auth = await resolveSnapStaff();
+  if (!auth) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const staff = auth.staff;
+  const svc = createServiceRoleClient();
 
   let form: FormData;
   try {
@@ -40,7 +42,9 @@ export async function POST(req: NextRequest) {
   const path = `${new Date().getFullYear()}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
   const bytes = Buffer.from(await file.arrayBuffer());
 
-  const { error: upErr } = await supabase.storage.from("receipts").upload(path, bytes, {
+  // Service client throughout: device-authed requests carry no Supabase
+  // session, and the caller is already verified above.
+  const { error: upErr } = await svc.storage.from("receipts").upload(path, bytes, {
     contentType: file.type,
     upsert: false,
   });
@@ -48,16 +52,16 @@ export async function POST(req: NextRequest) {
 
   let jobNumber: string | null = null;
   if (jobId) {
-    const { data: job } = await supabase.from("jobs").select("number").eq("id", jobId).maybeSingle();
+    const { data: job } = await svc.from("jobs").select("number").eq("id", jobId).maybeSingle();
     jobNumber = job?.number ?? null;
   }
 
-  const { data: receipt, error: insErr } = await supabase
+  const { data: receipt, error: insErr } = await svc
     .from("receipts")
     .insert({
       storage_path: path,
       job_id: jobId,
-      uploaded_by: staff?.id ?? user.id,
+      uploaded_by: staff.id,
       source,
     })
     .select("id")
@@ -66,7 +70,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Saved image but failed to record: ${insErr?.message ?? "unknown"}` }, { status: 500 });
   }
 
-  const svc = createServiceRoleClient();
   after(async () => {
     await processSnapReceipt({
       db: svc,
@@ -74,7 +77,7 @@ export async function POST(req: NextRequest) {
       bytes,
       mime: file.type,
       ext,
-      staffName: staff?.display_name ?? null,
+      staffName: staff.display_name,
       jobNumber,
     });
   });

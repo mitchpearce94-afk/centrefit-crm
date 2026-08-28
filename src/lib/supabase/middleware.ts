@@ -93,6 +93,12 @@ const PUBLIC_PATH_PREFIXES = [
   "/status-board",
   "/monitoring-form",
   "/handover",
+  // Receipts app: does its own auth (MFA-satisfied session OR paired-device
+  // cookie — see lib/receipts/snap-device.ts). Public here so a phone whose
+  // session died isn't bounced to /login before the device cookie is seen.
+  // /api/snap/pair is deliberately NOT listed — pairing needs a full session.
+  "/snap",
+  "/api/receipts/snap",
 ];
 
 function isPublicPath(pathname: string): boolean {

@@ -25,6 +25,16 @@ const REMEMBER_PREF_KEY = "cf-remember-pref";
 const REMEMBER_COOKIE = "cf-remember";
 const REMEMBER_MAX_AGE_S = 60 * 60 * 24 * 14; // 14 days
 
+// Where to land after sign-in. Internal paths only ("/snap" sends the
+// Receipts app back to its camera instead of the dashboard).
+function nextPath(): string {
+  try {
+    const n = new URLSearchParams(window.location.search).get("next");
+    if (n && n.startsWith("/") && !n.startsWith("//")) return n;
+  } catch {}
+  return "/";
+}
+
 function writeRememberCookie(on: boolean) {
   document.cookie = on
     ? `${REMEMBER_COOKIE}=1; path=/; max-age=${REMEMBER_MAX_AGE_S}; samesite=lax`
@@ -97,7 +107,7 @@ export default function LoginPage() {
       setError(error.message);
       setLoading(false);
     } else {
-      router.push("/");
+      router.push(nextPath());
       router.refresh();
     }
   }
@@ -134,7 +144,7 @@ export default function LoginPage() {
       try {
         localStorage.setItem(PASSKEY_DEVICE_KEY, "1");
       } catch {}
-      router.push("/");
+      router.push(nextPath());
       router.refresh();
     }
   }
