@@ -25,6 +25,30 @@ import {
  * of minting a new version.
  */
 
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+/**
+ * Recipients arrive either as a comma/semicolon-separated string (the UI's
+ * single "Recipient email(s)" box) or an explicit array. De-duped
+ * case-insensitively, order preserved — the first one is the signing contact
+ * (Sue, 2026-09-02: paperwork needs to reach more than one person).
+ */
+function parseRecipientEmails(raw: string | undefined, list: string[] | undefined): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (s: string) => {
+    const e = s.trim();
+    if (!e) return;
+    const key = e.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(e);
+  };
+  for (const s of list ?? []) push(s);
+  for (const s of (raw ?? "").split(/[,;\s]+/)) push(s);
+  return out;
+}
+
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id: siteId } = await ctx.params;
 
@@ -32,7 +56,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  let body: { recipientName?: string; recipientEmail?: string; resendRequestId?: string };
+  let body: { recipientName?: string; recipientEmail?: string; recipientEmails?: string[]; resendRequestId?: string };
   try {
     body = await req.json();
   } catch {
@@ -53,11 +77,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (!existing || existing.status === "void" || existing.status === "signed") {
       return NextResponse.json({ error: "No live request to resend" }, { status: 404 });
     }
-    const to = body.recipientEmail?.trim() || existing.recipient_email;
+    const requested = parseRecipientEmails(body.recipientEmail, body.recipientEmails);
+    const all =
+      requested.length > 0
+        ? requested
+        : [existing.recipient_email as string, ...(((existing.cc_emails as string[] | null) ?? []))];
+    const to = all[0];
+    const cc = all.slice(1);
     const name = body.recipientName?.trim() || existing.recipient_name;
     const prefill = existing.prefill as MonitoringPrefill;
     const result = await sendMonitoringFormRequestEmail({
-      to,
+      to: all,
       recipientName: name,
       siteName: prefill.siteName,
       formUrl: `${baseUrl}/monitoring-form/${existing.token}`,
@@ -68,7 +98,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 500 });
     await sb
       .from("document_sign_requests")
-      .update({ recipient_email: to, recipient_name: name, updated_at: new Date().toISOString() })
+      .update({ recipient_email: to, cc_emails: cc, recipient_name: name, updated_at: new Date().toISOString() })
       .eq("id", existing.id);
     await logDocumentActivity({
       supabase: sb,
@@ -76,17 +106,25 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       documentId: existing.id,
       eventType: "monitoring_form.resent",
       actor: user.id,
-      metadata: { to, site_id: siteId },
+      metadata: { to: all, site_id: siteId },
     });
-    return NextResponse.json({ success: true, url: `${baseUrl}/monitoring-form/${existing.token}` });
+    return NextResponse.json({ success: true, url: `${baseUrl}/monitoring-form/${existing.token}`, sentTo: all });
   }
 
   // ── Fresh generation ──────────────────────────────────────────────────────
-  const recipientEmail = body.recipientEmail?.trim();
+  const recipients = parseRecipientEmails(body.recipientEmail, body.recipientEmails);
   const recipientName = body.recipientName?.trim() || null;
-  if (!recipientEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(recipientEmail)) {
+  if (recipients.length === 0) {
     return NextResponse.json({ error: "A valid recipient email is required" }, { status: 400 });
   }
+  const badEmail = recipients.find((e) => !EMAIL_RE.test(e));
+  if (badEmail) {
+    return NextResponse.json({ error: `"${badEmail}" isn't a valid email address` }, { status: 400 });
+  }
+  // First address = the signing contact (pre-filled onto the form); the rest
+  // get the same link as cc recipients.
+  const recipientEmail = recipients[0];
+  const ccEmails = recipients.slice(1);
 
   const [siteResult, feesResult, profileResult, assetsResult, priorResult] = await Promise.all([
     sb
@@ -256,6 +294,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       token,
       recipient_name: recipientName,
       recipient_email: recipientEmail,
+      cc_emails: ccEmails,
       status: "sent",
       version,
       prefill,
@@ -271,7 +310,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   const formUrl = `${baseUrl}/monitoring-form/${token}`;
   const result = await sendMonitoringFormRequestEmail({
-    to: recipientEmail,
+    to: recipients,
     recipientName,
     siteName: prefill.siteName,
     formUrl,
@@ -292,8 +331,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     documentId: requestRow.id,
     eventType: "monitoring_form.sent",
     actor: user.id,
-    metadata: { to: recipientEmail, site_id: siteId, version },
+    metadata: { to: recipients, site_id: siteId, version },
   });
 
-  return NextResponse.json({ success: true, url: formUrl, version });
+  return NextResponse.json({ success: true, url: formUrl, version, sentTo: recipients });
 }

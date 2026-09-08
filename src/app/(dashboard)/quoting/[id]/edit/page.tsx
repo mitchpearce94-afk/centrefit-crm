@@ -10,7 +10,7 @@ export default async function EditQuotePage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [quoteResult, lineItemsResult, extrasResult, customersResult, productsResult, plansResult, linkedPlanResult, jobsResult, billingResult, timingsResult, templatesResult, rulesResult] = await Promise.all([
+  const [quoteResult, lineItemsResult, extrasResult, customersResult, productsResult, plansResult, linkedPlanResult, jobsResult, billingResult, timingsResult, templatesResult, rulesResult, deviceDefaultsResult] = await Promise.all([
     supabase.from("quotes").select("*").eq("id", id).single(),
     supabase.from("quote_line_items").select("*").eq("quote_id", id).order("sort_order"),
     supabase.from("quote_extras").select("*").eq("quote_id", id).order("sort_order"),
@@ -23,6 +23,7 @@ export default async function EditQuotePage({
     supabase.from("labour_timings").select("code, name, minutes_per").order("sort_order"),
     supabase.from("quote_rule_templates").select("*").eq("is_active", true).order("sort_order"),
     supabase.from("quote_dependency_rules").select("*").eq("is_active", true).order("sort_order"),
+    supabase.from("quote_template_device_defaults").select("template_id, device_type, product_id"),
   ]);
 
   if (quoteResult.error || !quoteResult.data) notFound();
@@ -114,6 +115,7 @@ export default async function EditQuotePage({
           labourTimings={(timingsResult.data ?? []) as { code: string; name: string; minutes_per: number }[]}
           templates={templatesResult.data ?? []}
           allRules={rulesResult.data ?? []}
+          templateDeviceDefaults={deviceDefaultsResult.data ?? []}
         />
       </div>
     </div>

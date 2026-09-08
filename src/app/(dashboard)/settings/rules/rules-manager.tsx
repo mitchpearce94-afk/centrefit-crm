@@ -176,7 +176,7 @@ export function RulesManager({
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(initialTemplateId);
 
   async function seedRulesFromEngine() {
-    if (!confirm("Re-seed the Snap Fitness, Total Fusion and Planet Fitness templates from the code-defined ruleset? This wipes all existing dependency rules and replaces them.")) return;
+    if (!confirm("Re-seed the Snap Fitness, Total Fusion and Planet Fitness templates from the code-defined ruleset? This replaces the rules on THOSE THREE templates only. Other templates (e.g. Inner Range) are left alone.")) return;
     setSeeding(true);
     try {
       const { data: fullProducts } = await supabase.from("quote_products").select("*").eq("is_active", true);
@@ -192,12 +192,18 @@ export function RulesManager({
       const basicRules = basicTemplate ? getBasicRules(fullProducts).map((r) => ({ ...r, _templateId: basicTemplate.id })) : [];
       const pfRules = pfTemplate ? getPlanetFitnessRules(fullProducts).map((r) => ({ ...r, _templateId: pfTemplate.id })) : [];
       const allRules = [...snapRules, ...basicRules, ...pfRules];
-      await supabase.from("quote_dependency_rules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      // Only wipe the templates we are about to re-seed. The old .neq(id, zero-uuid)
+      // deleted EVERY rule, including Inner Range's hand-built ones (health
+      // check 2026-09-08).
+      const seededTemplateIds = [snapTemplate?.id, basicTemplate?.id, pfTemplate?.id].filter(Boolean) as string[];
+      await supabase.from("quote_dependency_rules").delete().in("template_id", seededTemplateIds);
       const rows = allRules
         .filter((r) => r.auto_add_product_id)
         .map((rule, i) => ({
           preset: rule.preset, template_id: rule._templateId,
           description: rule.description, is_active: rule.is_active,
+          // Was silently dropped before, so every universal rule became template-only on re-seed.
+          is_universal: rule.is_universal ?? false,
           trigger_code: rule.trigger_code, trigger_condition: rule.trigger_condition,
           trigger_value: rule.trigger_value ?? null, trigger_min: rule.trigger_min ?? null, trigger_max: rule.trigger_max ?? null,
           trigger_site_field: rule.trigger_site_field ?? null, trigger_site_value: rule.trigger_site_value ?? null, trigger_site_op: rule.trigger_site_op ?? null,

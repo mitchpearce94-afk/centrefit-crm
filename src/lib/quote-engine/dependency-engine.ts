@@ -40,6 +40,9 @@ export interface DependencyRule {
   // 'rough_in' rules are skipped when quotes.elec_doing_rough_in is on
   // (cable rolls), 'fit_off' rules when elec_doing_fit_off is on (faceplates).
   elec_supplied_phase?: 'rough_in' | 'fit_off' | null
+  // Fires on every template, not just the one it lives on (DB column mirrored
+  // here so the Re-seed button doesn't strip the flag).
+  is_universal?: boolean
   // internal
   _needs_studio_zone?: boolean
 }
@@ -486,8 +489,10 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   }
 
   pushRule(rules, find('Solution 6000', 'K6000NODET'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Bosch Solution 6000 alarm kit' })
-  pushRule(rules, find('MW730B', 'MW730B'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Metal enclosure for alarm panel' })
-  pushRule(rules, find('LARGE Connector Board', 'CFLGE2022'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'CentreFit large connector board for alarm panel' })
+  // MW730B enclosure REMOVED from the seed (Sue, 2026-09-06): the Solution 6000
+  // kit (K6000NODET) already ships with its enclosure, so this was double-
+  // counting one on every Snap security quote. DB rule d75308d2 is inactive too.
+  pushRule(rules, find('LARGE Connector Board', 'CFLGE2022'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, is_universal: true, description: 'CentreFit large connector board for alarm panel' })
   pushRule(rules, find('CM710B', 'CM710B'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Output expansion module for alarm panel' })
   pushRule(rules, find('MY368AU', 'MY368AU'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '4G modem for alarm panel (1x)' })
   pushRule(rules, find('CM444B', 'CM444B'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 3, description: '2 amp relay modules for alarm (3x)' })
@@ -496,7 +501,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('ETHM-A', 'S-COM-ETHM-A'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Ethernet relay module for alarm comms' })
   pushRule(rules, find('Finder Relay', 'FID55.32.007412VDC'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Finder relay for alarm automation (2x)' })
   pushRule(rules, find('Relay Mount', 'FID9402'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Finder relay mount socket (2x)' })
-  pushRule(rules, find('Power Adaptor', 'MP3560'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Power adaptor for alarm system' })
+  pushRule(rules, find('Power Adaptor', 'MP3560'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, is_universal: true, description: 'Power adaptor for alarm system' })
   pushRule(rules, find('Mounting Tape', 'SCOTCH-TAPE-25'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Scotch mounting tape for alarm panel' })
   pushRule(rules, find('Crimp Ferrule', 'RS-FERRULE-20AWG'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 3, description: 'Crimp ferrules 20AWG for alarm wiring (3x)' })
 
@@ -522,52 +527,52 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
 
   // === DURESS ===
   pushRule(rules, find('Duress Faceplate', 'WEL2210R-DURE'), { id: ruleId(), trigger_code: 'duress_button', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Duress faceplate per duress button', preset, is_active: true })
-  pushRule(rules, find('ECA2010', 'ECA2010'), { id: ruleId(), trigger_code: 'duress_intercom', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'GSM intercom unit per duress intercom point', preset, is_active: true })
+  pushRule(rules, find('ECA2010', 'ECA2010'), { id: ruleId(), trigger_code: 'duress_intercom', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', is_universal: true, description: 'GSM intercom unit per duress intercom point', preset, is_active: true })
   pushRule(rules, find('OPTUS Mobile SIM', null), { id: ruleId(), trigger_code: 'duress_intercom', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'OPTUS SIM per duress intercom', preset, is_active: true })
 
   // === SECURITY CABLE ===
   const totalSecurityCode = 'pir_360_roof + pir_wall + reed_switch + alarm_panel + door_strike + mag_lock + duress_button + duress_intercom + light_siren + siren_piezo + rf_receiver + break_glass'
   const secCableTrigger = { trigger_code: totalSecurityCode, trigger_condition: 'greater_than', trigger_value: 0, preset, is_active: true }
 
-  pushRule(rules, find('6 Core Security Cable', 'EC6C14020300B'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'ceil_formula', quantity_multiplier: 45, quantity_divisor: 300, description: '6-core security cable — CEIL(total_security_devices × 45m / 300m rolls)', elec_supplied_phase: 'rough_in' })
-  pushRule(rules, find('4 Way Plug', 'EC381V-04P'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'custom', quantity_custom_key: 'security_4w_plugs', description: '4-way security plugs — door_count + PIR_count + 2' })
-  pushRule(rules, find('3 Way Plug', 'EC381V-03P'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: '3-way security plugs (2x fixed)' })
-  pushRule(rules, find('2 Way Plug', 'EC381V-02P'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'custom', quantity_custom_key: 'security_2w_plugs', description: '2-way security plugs — door_count + 6' })
-  pushRule(rules, find('6 Way Plug', 'EC381V-06P'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'custom', quantity_custom_key: 'security_6w_plugs', description: '6-way security plugs — matches door_count' })
+  pushRule(rules, find('6 Core Security Cable', 'EC6C14020300B'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'ceil_formula', quantity_multiplier: 45, quantity_divisor: 300, is_universal: true, description: '6-core security cable — CEIL(total_security_devices × 45m / 300m rolls)', elec_supplied_phase: 'rough_in' })
+  pushRule(rules, find('4 Way Plug', 'EC381V-04P'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'custom', quantity_custom_key: 'security_4w_plugs', is_universal: true, description: '4-way security plugs — door_count + PIR_count + 2' })
+  pushRule(rules, find('3 Way Plug', 'EC381V-03P'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, is_universal: true, description: '3-way security plugs (2x fixed)' })
+  pushRule(rules, find('2 Way Plug', 'EC381V-02P'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'custom', quantity_custom_key: 'security_2w_plugs', is_universal: true, description: '2-way security plugs — door_count + 6' })
+  pushRule(rules, find('6 Way Plug', 'EC381V-06P'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'custom', quantity_custom_key: 'security_6w_plugs', is_universal: true, description: '6-way security plugs — matches door_count' })
 
   // === CAMERAS ===
   const cameraTrigger = 'camera_black + camera_white'
   const nvr16 = find('16CH NVR', 'NVR4216-16P-A') || find('16CH', null)
 
   pushRule(rules, nvr16, { id: ruleId(), trigger_code: cameraTrigger, trigger_condition: 'range', trigger_min: 1, trigger_max: 16, quantity_mode: 'fixed', quantity_value: 1, description: '16-channel NVR for 1-16 cameras', preset, is_active: true })
-  pushRule(rules, find('32CH NVR', 'DHU10568'), { id: ruleId(), trigger_code: cameraTrigger, trigger_condition: 'range', trigger_min: 17, trigger_max: 32, quantity_mode: 'fixed', quantity_value: 1, description: '32-channel NVR for 17-32 cameras', preset, is_active: true })
+  pushRule(rules, find('32CH NVR', 'DHU10568'), { id: ruleId(), trigger_code: cameraTrigger, trigger_condition: 'range', trigger_min: 17, trigger_max: 32, quantity_mode: 'fixed', quantity_value: 1, is_universal: true, description: '32-channel NVR for 17-32 cameras', preset, is_active: true })
   pushRule(rules, find('64CH NVR', 'DHU6276'), { id: ruleId(), trigger_code: cameraTrigger, trigger_condition: 'range', trigger_min: 33, trigger_max: 64, quantity_mode: 'fixed', quantity_value: 1, description: '64-channel NVR for 33-64 cameras', preset, is_active: true })
-  pushRule(rules, find('FHD LED Monitor', 'DHI-LM22-H200'), { id: ruleId(), trigger_code: cameraTrigger, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, description: 'Monitoring display for NVR', preset, is_active: true })
-  pushRule(rules, find('6TB Surveillance HDD', 'WD60PURX'), { id: ruleId(), trigger_code: cameraTrigger, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 1, quantity_divisor: 6, description: 'HDDs — CEIL(camera_count / 6)', preset, is_active: true })
-  pushRule(rules, find('Wall Mount', 'PFB204W'), { id: ruleId(), trigger_code: 'external_camera_count', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Wall mount bracket per external camera', preset, is_active: true })
-  pushRule(rules, find('Roof Mount Black', 'DH-PFA139-B'), { id: ruleId(), trigger_code: 'concrete_mount_black', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Concrete roof mount (black) per specified location', preset, is_active: true })
-  pushRule(rules, find('Roof Mount', 'PFA-139'), { id: ruleId(), trigger_code: 'concrete_mount_white', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Concrete roof mount (white) per specified location', preset, is_active: true })
+  pushRule(rules, find('FHD LED Monitor', 'DHI-LM22-H200'), { id: ruleId(), trigger_code: cameraTrigger, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, is_universal: true, description: 'Monitoring display for NVR', preset, is_active: true })
+  pushRule(rules, find('6TB Surveillance HDD', 'WD60PURX'), { id: ruleId(), trigger_code: cameraTrigger, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 1, quantity_divisor: 6, is_universal: true, description: 'HDDs — CEIL(camera_count / 6)', preset, is_active: true })
+  pushRule(rules, find('Wall Mount', 'PFB204W'), { id: ruleId(), trigger_code: 'external_camera_count', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', is_universal: true, description: 'Wall mount bracket per external camera', preset, is_active: true })
+  pushRule(rules, find('Roof Mount Black', 'DH-PFA139-B'), { id: ruleId(), trigger_code: 'concrete_mount_black', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', is_universal: true, description: 'Concrete roof mount (black) per specified location', preset, is_active: true })
+  pushRule(rules, find('Roof Mount', 'PFA-139'), { id: ruleId(), trigger_code: 'concrete_mount_white', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', is_universal: true, description: 'Concrete roof mount (white) per specified location', preset, is_active: true })
 
   // === CAMERA CABLE ===
   const totalCameraCode = 'camera_black + camera_white + tailgate_system'
-  pushRule(rules, find('Cat6 UTP Cable 305m', 'ECC6UB305B'), { id: ruleId(), trigger_code: totalCameraCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 50, quantity_divisor: 305, description: 'Cat6 cable for cameras — CEIL(total_camera_devices × 50m / 305m boxes)', preset, is_active: true, elec_supplied_phase: 'rough_in' })
+  pushRule(rules, find('Cat6 UTP Cable 305m', 'ECC6UB305B'), { id: ruleId(), trigger_code: totalCameraCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 50, quantity_divisor: 305, is_universal: true, description: 'Cat6 cable for cameras — CEIL(total_camera_devices × 50m / 305m boxes)', preset, is_active: true, elec_supplied_phase: 'rough_in' })
 
   // === ACCESS CONTROL ===
   // Any access door (strike or mag) needs a loop and a REX. Only strikes get the FES20.
   const anyDoorCode = 'door_strike + mag_lock'
-  pushRule(rules, find('Door Loop', 'SECDWM300'), { id: ruleId(), trigger_code: anyDoorCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Door loop with box ends per access door (strike or mag)', preset, is_active: true })
-  pushRule(rules, find('Striker', 'FSHFES20'), { id: ruleId(), trigger_code: 'door_strike', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'FES20 electric striker per door strike', preset, is_active: true })
+  pushRule(rules, find('Door Loop', 'SECDWM300'), { id: ruleId(), trigger_code: anyDoorCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', is_universal: true, description: 'Door loop with box ends per access door (strike or mag)', preset, is_active: true })
+  pushRule(rules, find('Striker', 'FSHFES20'), { id: ruleId(), trigger_code: 'door_strike', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', is_universal: true, description: 'FES20 electric striker per door strike', preset, is_active: true })
   pushRule(rules, find('Magnetic Lock', 'LOXCCW30F'), { id: ruleId(), trigger_code: 'mag_lock', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Magnetic lock per mag-lock door', preset, is_active: true })
-  pushRule(rules, find('REX', 'WEL1911'), { id: ruleId(), trigger_code: anyDoorCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, description: 'REX button (1x) when any access door present', preset, is_active: true })
+  pushRule(rules, find('REX', 'WEL1911'), { id: ruleId(), trigger_code: anyDoorCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, description: 'Illuminated stainless REX button (Seadan NEMEVAQEX20M-FLSIL/SS) (1x) when door locks present', preset, is_active: true })
 
   // === AUDIO ===
   const speakerTrigger = 'speaker_roof_black + speaker_roof_white + speaker_wall_black + speaker_wall_white'
-  pushRule(rules, find('Mixer-Amplifier 240W', 'PRM240'), { id: ruleId(), trigger_code: speakerTrigger, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, description: '240W amplifier for speakers', preset, is_active: true })
+  pushRule(rules, find('Mixer-Amplifier 240W', 'PRM240'), { id: ruleId(), trigger_code: speakerTrigger, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, is_universal: true, description: '240W amplifier for speakers', preset, is_active: true })
 
   // 120W amp — compound: speakers > 0 AND separate_studio_zone
-  pushRule(rules, find('Mixer-Amplifier 120W', 'PRM120'), { id: ruleId(), trigger_code: speakerTrigger, trigger_condition: 'compound', trigger_value: 0, trigger_site_field: 'separate_studio_zone', trigger_site_op: '>=', trigger_site_value: 1, quantity_mode: 'fixed', quantity_value: 1, description: '120W amplifier for separate studio zone', preset, is_active: true })
+  pushRule(rules, find('Mixer-Amplifier 120W', 'PRM120'), { id: ruleId(), trigger_code: speakerTrigger, trigger_condition: 'compound', trigger_value: 0, trigger_site_field: 'separate_studio_zone', trigger_site_op: '>=', trigger_site_value: 1, quantity_mode: 'fixed', quantity_value: 1, is_universal: true, description: '120W amplifier for separate studio zone', preset, is_active: true })
 
-  pushRule(rules, find('Speaker Cable', 'ESC-2C16AWG'), { id: ruleId(), trigger_code: speakerTrigger, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 20, quantity_divisor: 100, description: 'Speaker cable — CEIL(speakers × 20m / 100m rolls)', preset, is_active: true, elec_supplied_phase: 'rough_in' })
+  pushRule(rules, find('Speaker Cable', 'ESC-2C16AWG'), { id: ruleId(), trigger_code: speakerTrigger, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 20, quantity_divisor: 100, is_universal: true, description: 'Speaker cable — CEIL(speakers × 20m / 100m rolls)', preset, is_active: true, elec_supplied_phase: 'rough_in' })
 
   // === AV SYSTEM (always on every Snap Fitness job) ===
   const avAlways = { trigger_code: null, trigger_condition: 'always', preset, is_active: true }
@@ -584,7 +589,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('Attenuator 10db', 'ATF10PP'), { ...avAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Attenuator 10db (2x standard)' })
 
   // RG6 cable — only if coax points on plan
-  pushRule(rules, find('305 M RG6', 'EC6QS305B'), { trigger_code: 'coax_point', trigger_condition: 'greater_than', trigger_value: 0, preset, is_active: true, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '305m RG6 coaxial cable — only if RG6 points on plan' })
+  pushRule(rules, find('305 M RG6', 'EC6QS305B'), { trigger_code: 'coax_point', trigger_condition: 'greater_than', trigger_value: 0, preset, is_active: true, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, is_universal: true, description: '305m RG6 coaxial cable — only if RG6 points on plan' })
 
   // Variable AV items
   pushRule(rules, find('8 way Coaxial Splitter', 'DSU8'), { ...avAlways, id: ruleId(), quantity_mode: 'custom', quantity_custom_key: 'av_8way_splitter', description: '8-way splitter — CEIL((cardio + TVs) / 8)' })
@@ -619,14 +624,14 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
 
   // Clipsal mounting brackets
   const bracketTriggerCode = 'pir_360_roof + pir_wall + speaker_roof_black + speaker_roof_white + speaker_wall_black + speaker_wall_white + camera_black + camera_white + duress_button + wap + duress_intercom + rf_receiver + break_glass'
-  pushRule(rules, find('Mounting Bracket', 'CLI155N'), { id: ruleId(), trigger_code: bracketTriggerCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Clipsal mounting brackets — 1 per PIR, speaker, camera, duress, WAP, RF receiver, break glass', preset, is_active: true, elec_supplied_phase: 'rough_in' })
+  pushRule(rules, find('Mounting Bracket', 'CLI155N'), { id: ruleId(), trigger_code: bracketTriggerCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', is_universal: true, description: 'Clipsal mounting brackets — 1 per PIR, speaker, camera, duress, WAP, RF receiver, break glass', preset, is_active: true, elec_supplied_phase: 'rough_in' })
 
   // Bosch PIR wall brackets — sold in packs of 3. CEIL(pir_wall / 3)
-  pushRule(rules, find('PIR Wall Mounts Pack of 3', 'B335-3'), { id: ruleId(), trigger_code: 'pir_wall', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 1, quantity_divisor: 3, description: 'PIR wall brackets — CEIL(pir_wall / 3) packs of 3', preset, is_active: true })
+  pushRule(rules, find('PIR Wall Mounts Pack of 3', 'B335-3'), { id: ruleId(), trigger_code: 'pir_wall', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 1, quantity_divisor: 3, is_universal: true, description: 'PIR wall brackets — CEIL(pir_wall / 3) packs of 3', preset, is_active: true })
 
   // === DATA CABLE ===
   const totalDataCode = 'camera_black + camera_white + tailgate_system + wap + data_point'
-  pushRule(rules, find('Cat6 UTP Cable 305m', 'ECC6UB305B'), { id: ruleId(), trigger_code: totalDataCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 50, quantity_divisor: 305, description: 'Cat6 cable for all data devices — CEIL(total_data_devices × 50m / 305m boxes)', preset, is_active: true, elec_supplied_phase: 'rough_in' })
+  pushRule(rules, find('Cat6 UTP Cable 305m', 'ECC6UB305B'), { id: ruleId(), trigger_code: totalDataCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 50, quantity_divisor: 305, is_universal: true, description: 'Cat6 cable for all data devices — CEIL(total_data_devices × 50m / 305m boxes)', preset, is_active: true, elec_supplied_phase: 'rough_in' })
 
   return rules
 }
@@ -653,6 +658,11 @@ export function getBasicRules(products: Product[]): DependencyRule[] {
 
   const totalDataCode = 'camera_black + camera_white + tailgate_system + wap + data_point'
   pushRule(rules, find('Cat6 UTP Cable 305m', 'ECC6UB305B'), { id: ruleId(), trigger_code: totalDataCode, trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'ceil_formula', quantity_multiplier: 50, quantity_divisor: 305, description: 'Cat6 cable for all data devices — CEIL(total × 50m / 305m boxes)', preset, is_active: true, elec_supplied_phase: 'rough_in' })
+
+  // Touchless REX when door locks present. Used to reach this template via a
+  // UNIVERSAL Snap rule; that rule became Snap-only (WEL1911) on 2026-09-08 so
+  // Snap/PF could carry different REX buttons — this keeps Total Fusion as-is.
+  pushRule(rules, find('Touchless Request To Exit', 'NEMEVAQEX00M-TFSIL/SS'), { id: ruleId(), trigger_code: 'door_strike + mag_lock', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, description: 'Touchless REX button (1x) when door locks present', preset, is_active: true })
 
   return rules
 }
@@ -698,6 +708,26 @@ export function getPlanetFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('FHD LED Monitor', 'DHI-LM22-H200'), { ...pfAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '22" LM22 monitor (1x) — PF AV' })
   pushRule(rules, find('AR100A', 'TIXX-AR100A'), { ...pfAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'TIXX AR100A articulated mount (1x) — PF AV' })
   pushRule(rules, find('TiXX Articulated Wall Mount', 'TIXX-AR400'), { ...pfAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'TIXX AR400 articulated mount (1x) — PF AV' })
+
+  // === SECURITY SYSTEM (alarm_panel > 0) — parity with Snap (Mitchell 2026-09-08) ===
+  // CF large board (CFLGE2022) and the 12V PSU (MP3560) already reach PF via
+  // UNIVERSAL rules on the Snap template, so they're deliberately not repeated
+  // here — a PF copy would double them on every quote.
+  const pfSecurityTrigger = { trigger_code: 'alarm_panel', trigger_condition: 'greater_than', trigger_value: 0, preset, is_active: true }
+  pushRule(rules, find('CM444B', 'CM444B'), { ...pfSecurityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 3, description: '2 amp relay modules for alarm (3x)' })
+  pushRule(rules, find('5 Port', 'ANDDEAR-DG9'), { ...pfSecurityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '5 port switch for alarm comms' })
+  pushRule(rules, find('ETHM-A', 'S-COM-ETHM-A'), { ...pfSecurityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Ethernet relay module for alarm comms' })
+  pushRule(rules, find('Finder Relay', 'FID55.32.007412VDC'), { ...pfSecurityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Finder relay for alarm automation (2x) — Haymans' })
+  pushRule(rules, find('Relay Mount', 'FID9402'), { ...pfSecurityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Finder relay mount socket (2x) — Haymans' })
+
+  // 500mm patch leads — PF plans carry no server cabinet, so trigger on the data
+  // devices (same trigger as the Cloud Key rule) instead of Snap's cabinet count.
+  pushRule(rules, find('500mm', 'ECPLS-C6B0.5'), { id: ruleId(), trigger_code: 'cardio_count + tv_count + camera_black + camera_white + tailgate_system + wap + data_point', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'custom', quantity_custom_key: 'cabinet_500mm_patch_leads', description: '500mm Cat6 patch leads — base 2 + CEIL(card_reader / 2)', preset, is_active: true })
+
+  // REX per franchise: PF uses the DFMWES2261 timer button (Snap = WEL1911).
+  // The placed-device default is ALSO overridden per template via
+  // quote_template_device_defaults (bom-engine step 1).
+  pushRule(rules, find('30x75mm timer', 'DFMWES2261'), { id: ruleId(), trigger_code: 'door_strike + mag_lock', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, description: 'REX button DFMWES2261 (1x) when door locks present', preset, is_active: true })
 
   return rules
 }

@@ -45,6 +45,7 @@ export interface SignRequestRow {
   status: string;
   recipient_name: string | null;
   recipient_email: string;
+  cc_emails?: string[] | null;
   version: number;
   token: string;
   sent_at: string | null;
@@ -478,7 +479,8 @@ function MonitoringSendButton({ siteId, monitoring }: { siteId: string; monitori
       });
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error ?? "Send failed");
-      toast(`Monitoring form v${json.version} sent to ${email.trim()}`);
+      const sentTo: string[] = Array.isArray(json.sentTo) ? json.sentTo : [email.trim()];
+      toast(`Monitoring form v${json.version} sent to ${sentTo.length === 1 ? sentTo[0] : `${sentTo.length} recipients`}`);
       setOpen(false);
       router.refresh();
     } catch (err) {
@@ -511,7 +513,8 @@ function MonitoringSendButton({ siteId, monitoring }: { siteId: string; monitori
             </p>
             {live && (
               <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-400">
-                A live link sent to {live.recipient_email} will be voided and replaced.
+                A live link sent to {live.recipient_email}
+                {live.cc_emails && live.cc_emails.length > 0 ? ` (+${live.cc_emails.length} more)` : ""} will be voided and replaced.
               </p>
             )}
             <div className="mt-4 space-y-3">
@@ -525,14 +528,18 @@ function MonitoringSendButton({ siteId, monitoring }: { siteId: string; monitori
                 />
               </label>
               <label className="block">
-                <span className="text-[11px] font-medium text-muted-foreground">Recipient email</span>
+                <span className="text-[11px] font-medium text-muted-foreground">Recipient email(s)</span>
                 <input
                   className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                   type="email"
+                  multiple
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@business.com.au"
+                  placeholder="manager@club.com.au, owner@business.com.au"
                 />
+                <span className="mt-1 block text-[10px] text-muted-foreground">
+                  Separate multiple addresses with commas. The first one is the signing contact; everyone gets the same link.
+                </span>
               </label>
             </div>
             <div className="mt-5 flex justify-end gap-2">

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { StatusTransition } from "./status-transition";
 import { StatusBoardControls } from "./status-board-controls";
-import { JobTabs } from "./job-tabs";
+import { JobTabs, type JobKeyInfo } from "./job-tabs";
 
 export default async function JobDetailPage({
   params,
@@ -163,6 +163,32 @@ export default async function JobDetailPage({
     .filter((r) => r.amount != null)
     .map((r) => ({ id: r.id, vendor: r.vendor, amount: Number(r.amount) }));
 
+  // Key Info tab (Michael 2026-07-30): the site's Key Information panel on the
+  // job itself so a tech opening a job for the NVR creds doesn't have to
+  // bounce out to Sites. Same queries the site page runs.
+  let keyInfo: JobKeyInfo | null = null;
+  if (job.site_id) {
+    const [kiAssets, kiTypes, kiPhotos, kiSite] = await Promise.all([
+      supabase
+        .from("site_assets")
+        .select("*")
+        .eq("site_id", job.site_id)
+        .order("is_active", { ascending: false })
+        .order("device_type", { ascending: true, nullsFirst: false })
+        .order("device_name", { ascending: true, nullsFirst: false }),
+      supabase.from("asset_types").select("*").eq("is_active", true).order("sort_order").order("name"),
+      supabase.from("site_key_info_photos").select("*").eq("site_id", job.site_id).order("created_at", { ascending: false }),
+      supabase.from("customer_sites").select("key_info_notes, ifob_users").eq("id", job.site_id).maybeSingle(),
+    ]);
+    keyInfo = {
+      assets: (kiAssets.data ?? []) as JobKeyInfo["assets"],
+      assetTypes: (kiTypes.data ?? []) as JobKeyInfo["assetTypes"],
+      photos: (kiPhotos.data ?? []) as JobKeyInfo["photos"],
+      notes: (kiSite.data?.key_info_notes as string | null | undefined) ?? null,
+      ifobUsers: ((kiSite.data?.ifob_users as JobKeyInfo["ifobUsers"] | null | undefined) ?? []),
+    };
+  }
+
   // Plan install checklist (Mitchell 2026-08-17): plans linked to this job
   // plus their tickable device rows for the on-site Plan tab.
   const { data: planFiles } = await supabase
@@ -254,6 +280,7 @@ export default async function JobDetailPage({
           receipts={receipts}
           planFiles={(planFiles ?? []) as any[]}
           planItems={planItems}
+          keyInfo={keyInfo}
           isAdmin={isAdmin}
           viewerId={user?.id ?? null}
           viewerInitials={viewerInitials}

@@ -138,7 +138,7 @@ export default async function SiteDetailPage({
       .order("updated_at", { ascending: false }),
     supabase
       .from("document_sign_requests")
-      .select("id, site_document_id, document_type, status, recipient_name, recipient_email, version, token, sent_at, viewed_at, signed_at")
+      .select("id, site_document_id, document_type, status, recipient_name, recipient_email, cc_emails, version, token, sent_at, viewed_at, signed_at")
       .eq("site_id", id)
       .order("created_at", { ascending: false }),
     supabase

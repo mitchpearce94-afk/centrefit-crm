@@ -27,7 +27,11 @@ export function generateBOM(
   products: Product[],
   dependencyRules: DependencyRule[] = [],
   siteInfo: SiteInfo = {},
-  elecOptions: ElecMaterialOptions = {}
+  elecOptions: ElecMaterialOptions = {},
+  // Per-template default product per device type (quote_template_device_defaults):
+  // e.g. Planet Fitness REX -> DFMWES2261, Snap -> WEL1911. Falls back to the
+  // catalogue's global is_default when the template has no override.
+  deviceDefaults: Record<string, string> = {}
 ): BOMItem[] {
   const bomItems: BOMItem[] = []
 
@@ -36,7 +40,11 @@ export function generateBOM(
     const count = deviceCounts[deviceType.code] || 0
     if (count === 0) return
 
-    const defaultProduct = products.find(
+    const overrideId = deviceDefaults[deviceType.code]
+    const defaultProduct = (overrideId
+      ? products.find((p) => p.id === overrideId && p.is_active !== false)
+      : undefined
+    ) || products.find(
       (p) => p.device_type === deviceType.code && p.is_default
     ) || products.find(
       (p) => p.device_type === deviceType.code

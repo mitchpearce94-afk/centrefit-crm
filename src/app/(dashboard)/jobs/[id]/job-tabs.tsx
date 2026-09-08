@@ -17,6 +17,17 @@ import { ScopeEditor } from "./scope-editor";
 import { UpdatesPanel } from "./updates-panel";
 import { PlanChecklist } from "./plan-checklist";
 import { WrapUpDay } from "./wrap-up-day";
+import { KeyInfoPanel, type KeyInfoPhoto, type IfobUser } from "@/app/(dashboard)/sites/[id]/key-info-panel";
+import type { AssetType, SiteAsset } from "@/lib/types";
+
+/** The site's Key Information, fetched by the job page for the Key Info tab. */
+export interface JobKeyInfo {
+  assets: SiteAsset[];
+  assetTypes: AssetType[];
+  photos: KeyInfoPhoto[];
+  notes: string | null;
+  ifobUsers: IfobUser[];
+}
 
 interface StaffOption {
   id: string;
@@ -50,6 +61,7 @@ export function JobTabs({
   receipts,
   planFiles = [],
   planItems = [],
+  keyInfo = null,
   isAdmin,
   viewerId,
   viewerInitials,
@@ -78,6 +90,7 @@ export function JobTabs({
   receipts: { id: string; vendor: string | null; amount: number }[];
   planFiles?: any[];
   planItems?: any[];
+  keyInfo?: JobKeyInfo | null;
   isAdmin: boolean;
   viewerId: string | null;
   viewerInitials: string;
@@ -93,6 +106,9 @@ export function JobTabs({
     { id: "notes", label: "Notes", count: userNotes.length },
     { id: "time", label: "Time", count: timeEntries.length },
     { id: "staff", label: "Staff", count: job.job_staff?.length ?? 0 },
+    // Site Key Information on the job (Michael, 2026-07-30) — NVR/router
+    // creds, Wi-Fi, iFob users, photos — without leaving the job.
+    ...(keyInfo && job.site ? [{ id: "keyinfo", label: "Key Info" }] : []),
     ...(planFiles.length > 0
       ? [{ id: "plan", label: "Plan", count: planItems.filter((i: any) => !i.orphaned && i.status !== "installed").length }]
       : []),
@@ -179,6 +195,26 @@ export function JobTabs({
             assignedStaff={job.job_staff ?? []}
             allStaff={allStaff}
           />
+        )}
+        {activeTab === "keyinfo" && keyInfo && job.site && (
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                Key Information for <span className="text-foreground font-medium">{job.site.name}</span> — edits here save to the site.
+              </p>
+              <Link href={`/sites/${job.site.id}`} className="text-xs text-muted-foreground hover:text-foreground shrink-0">
+                Open site →
+              </Link>
+            </div>
+            <KeyInfoPanel
+              siteId={job.site.id}
+              assets={keyInfo.assets}
+              assetTypes={keyInfo.assetTypes}
+              photos={keyInfo.photos}
+              notes={keyInfo.notes}
+              ifobUsers={keyInfo.ifobUsers}
+            />
+          </div>
         )}
         {activeTab === "plan" && (
           <PlanChecklist
@@ -337,6 +373,32 @@ function JobOverview({
         {job.site?.address && (
           <p className="text-xs text-muted-foreground mt-0.5">
             {[job.site.address, job.site.suburb, job.site.state, job.site.postcode].filter(Boolean).join(", ")}
+          </p>
+        )}
+        {/* Site phone + site contact under the address so the tech can ring
+            the club from the job without bouncing out to Sites (Michael,
+            2026-07-30). Only renders what's actually recorded on the site. */}
+        {(job.site?.phone || job.site?.site_contact?.mobile || job.site?.site_contact?.phone) && (
+          <p className="text-xs text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+            {job.site.phone && (
+              <span>
+                Club{" "}
+                <a href={`tel:${String(job.site.phone).replace(/\s+/g, "")}`} className="text-foreground hover:text-primary tabular-nums">
+                  {job.site.phone}
+                </a>
+              </span>
+            )}
+            {job.site.site_contact && (job.site.site_contact.mobile || job.site.site_contact.phone) && (
+              <span>
+                {job.site.site_contact.name}{" "}
+                <a
+                  href={`tel:${String(job.site.site_contact.mobile || job.site.site_contact.phone).replace(/\s+/g, "")}`}
+                  className="text-foreground hover:text-primary tabular-nums"
+                >
+                  {job.site.site_contact.mobile || job.site.site_contact.phone}
+                </a>
+              </span>
+            )}
           </p>
         )}
       </div>

@@ -16,7 +16,8 @@ function getResend() {
 }
 
 export async function sendMonitoringFormRequestEmail(opts: {
-  to: string;
+  /** One address, or several — every recipient gets the same signing link. */
+  to: string | string[];
   recipientName: string | null;
   siteName: string;
   formUrl: string;
@@ -62,7 +63,7 @@ export async function sendMonitoringFormRequestEmail(opts: {
     const { error } = await getResend().emails.send({
       from: FROM_INVOICES,
       replyTo: REPLY_TO_ACCOUNTS,
-      to: [opts.to],
+      to: Array.isArray(opts.to) ? opts.to : [opts.to],
       subject: `Action required — Security Monitoring Instructions for ${opts.siteName}`,
       html,
       headers: {

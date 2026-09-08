@@ -5,7 +5,7 @@ export default async function NewQuotePage() {
   const supabase = await createClient();
   const [
     customersResult, productsResult, plansResult, billingResult,
-    jobsResult, timingsResult, templatesResult, rulesResult,
+    jobsResult, timingsResult, templatesResult, rulesResult, deviceDefaultsResult,
   ] = await Promise.all([
     supabase.from("customers").select("id, name, customer_sites(id, name, address, suburb, state, postcode), customer_contacts(id, name, phone, mobile, email, is_primary)").eq("is_active", true).order("name"),
     supabase.from("quote_products").select("*").eq("is_active", true).order("category, name"),
@@ -15,6 +15,7 @@ export default async function NewQuotePage() {
     supabase.from("labour_timings").select("code, name, minutes_per").order("sort_order"),
     supabase.from("quote_rule_templates").select("*").eq("is_active", true).order("sort_order"),
     supabase.from("quote_dependency_rules").select("*").eq("is_active", true).order("sort_order"),
+    supabase.from("quote_template_device_defaults").select("template_id, device_type, product_id"),
   ]);
 
   const jobs = (jobsResult.data ?? []).map((j: any) => ({
@@ -37,6 +38,7 @@ export default async function NewQuotePage() {
           labourTimings={(timingsResult.data ?? []) as { code: string; name: string; minutes_per: number }[]}
           templates={templatesResult.data ?? []}
           allRules={rulesResult.data ?? []}
+          templateDeviceDefaults={deviceDefaultsResult.data ?? []}
         />
       </div>
     </div>

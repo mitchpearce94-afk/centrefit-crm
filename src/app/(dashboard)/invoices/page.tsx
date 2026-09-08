@@ -1,26 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { ListSearch } from "@/components/ui/list-search";
+import { InvoicesTable } from "./invoices-table";
 
 function fmt(n: number): string {
   return n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-
-const STATUS_COLOURS: Record<string, string> = {
-  draft: "#6b7280",
-  authorised: "#3b82f6",
-  paid: "#22c55e",
-  void: "#ef4444",
-  overdue: "#ef4444",
-};
-
-const TYPE_LABEL: Record<string, string> = {
-  full: "Full",
-  progress_pp1: "PP1",
-  progress_pp2: "PP2",
-  adhoc: "Ad-hoc",
-  recurring: "Recurring",
-};
 
 type Tab = "active" | "unsent" | "overdue" | "drafts" | "paid" | "voided";
 
@@ -37,7 +22,7 @@ export default async function InvoicesPage({
   const { data: invoices } = await supabase
     .from("invoices")
     .select(
-      "id, xero_invoice_number, invoice_type, status, total, amount_due, due_date, paid_at, created_at, sent_at, sent_to_email, last_reminder_sent_at, reminder_count, auto_remind_enabled, customer:customers(id, name), site:customer_sites(id, name), quote:quotes(id, ref, site:customer_sites(id, name)), job:jobs(id, number, site:customer_sites(id, name))",
+      "id, xero_invoice_id, xero_invoice_number, invoice_type, status, total, amount_due, due_date, paid_at, created_at, sent_at, sent_to_email, last_reminder_sent_at, reminder_count, auto_remind_enabled, customer:customers(id, name, customer_contacts(email, is_primary)), site:customer_sites(id, name), quote:quotes(id, ref, site:customer_sites(id, name)), job:jobs(id, number, site:customer_sites(id, name))",
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -184,127 +169,8 @@ export default async function InvoicesPage({
         )}
       </div>
 
-      {/* List */}
-      <div className="surface-card mt-4 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-muted-foreground">
-            <tr className="text-left">
-              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Invoice</th>
-              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider hidden sm:table-cell">Type</th>
-              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Site</th>
-              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Status</th>
-              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider">Sent</th>
-              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider text-right">Total</th>
-              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider text-right">Due</th>
-              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider hidden md:table-cell">Due date</th>
-              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-wider hidden lg:table-cell">Reminded</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground text-sm">
-                  {q
-                    ? "No invoices match your search."
-                    : tab === "active"
-                    ? "Nothing outstanding — sent invoices awaiting payment appear here."
-                    : tab === "unsent"
-                    ? "All authorised invoices have been emailed — nothing waiting to send."
-                    : tab === "overdue"
-                    ? "No overdue invoices."
-                    : `No ${tab} invoices.`}
-                </td>
-              </tr>
-            )}
-            {filtered.map((inv) => {
-              const colour = STATUS_COLOURS[inv.status] ?? "#6b7280";
-              const isOverdue = inv._isOverdue;
-              const siteName = inv.site?.name ?? inv.quote?.site?.name ?? inv.job?.site?.name ?? null;
-              const lastReminded = inv.last_reminder_sent_at
-                ? Math.floor((Date.now() - new Date(inv.last_reminder_sent_at).getTime()) / 86_400_000)
-                : null;
-              return (
-                <tr key={inv.id} className="transition-colors hover:bg-accent/40">
-                  <td className="px-4 py-2.5">
-                    <Link href={`/invoices/${inv.id}`} className="font-mono text-sm text-foreground hover:text-primary transition-colors">
-                      {inv.xero_invoice_number ?? "—"}
-                    </Link>
-                    {inv.quote?.ref && (
-                      <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{inv.quote.ref}</p>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs text-muted-foreground hidden sm:table-cell">{TYPE_LABEL[inv.invoice_type] ?? inv.invoice_type}</td>
-                  <td className="px-4 py-2.5 text-sm font-medium">
-                    <span className="text-foreground">{siteName ?? inv.customer?.name ?? "—"}</span>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span
-                        className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize"
-                        style={{ backgroundColor: `${colour}20`, color: colour }}
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colour }} />
-                        {inv.status}
-                      </span>
-                      {isOverdue && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium text-destructive uppercase tracking-wide">
-                          Overdue
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    {inv.sent_at ? (
-                      <span
-                        className="inline-flex items-center gap-1.5 text-[11px] text-emerald-400"
-                        title={`Emailed ${new Date(inv.sent_at).toLocaleString("en-AU")}${inv.sent_to_email ? ` to ${inv.sent_to_email}` : ""}`}
-                      >
-                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                        {new Date(inv.sent_at).toLocaleDateString("en-AU")}
-                      </span>
-                    ) : inv.status === "authorised" ? (
-                      <span
-                        className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium text-destructive uppercase tracking-wide"
-                        title="Authorised in Xero but never emailed — the customer hasn't received this"
-                      >
-                        Not sent
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-sm">${fmt(Number(inv.total))}</td>
-                  <td className="px-4 py-2.5 text-right font-mono text-sm">
-                    {Number(inv.amount_due) > 0 ? (
-                      <span className={isOverdue ? "text-red-400" : "text-amber-400"}>${fmt(Number(inv.amount_due))}</span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs hidden md:table-cell">
-                    {inv.due_date ? (
-                      <span className={isOverdue ? "text-red-400 font-medium" : "text-muted-foreground"}>
-                        {new Date(inv.due_date).toLocaleDateString("en-AU")}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs hidden lg:table-cell text-muted-foreground">
-                    {lastReminded === null ? (
-                      "—"
-                    ) : lastReminded === 0 ? (
-                      <span>today · {inv.reminder_count}×</span>
-                    ) : (
-                      <span>{lastReminded}d ago · {inv.reminder_count}×</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {/* List + bulk reminders (client component) */}
+      <InvoicesTable rows={filtered} tab={tab} q={q} />
     </div>
   );
 }

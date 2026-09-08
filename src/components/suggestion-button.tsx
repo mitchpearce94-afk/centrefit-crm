@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/ui/toast";
 
 type Category = "Feature" | "Bug" | "UI/UX" | "Other";
@@ -33,6 +33,7 @@ function SuggestionModal({ onClose }: { onClose: () => void }) {
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -40,6 +41,14 @@ function SuggestionModal({ onClose }: { onClose: () => void }) {
     return () => {
       document.body.style.overflow = prev;
     };
+  }, []);
+
+  // Only auto-focus on mouse/trackpad devices. On phones, autoFocus pops the
+  // keyboard the instant the sheet opens and iOS then scrolls the fixed layer
+  // so the top of the form is pushed off-screen with no way to reach it
+  // (Michael, 2026-08-06). Touch users tap the box when they're ready.
+  useEffect(() => {
+    if (window.matchMedia?.("(pointer: fine)").matches) textareaRef.current?.focus();
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -70,11 +79,17 @@ function SuggestionModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+    // The scroll lives on the full-screen layer, not the card: a flex-centred
+    // card that overflows its container clips its own top and can never be
+    // scrolled back into view. Bottom-sheet on phones, centred on desktop.
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/60" />
+      <div className="absolute inset-0 overflow-y-auto" onClick={onClose}>
+        <div className="flex min-h-full items-end sm:items-center justify-center p-3 sm:p-4">
       <form
         onSubmit={handleSubmit}
-        className="relative w-full max-w-md rounded-2xl border border-border bg-card shadow-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-md rounded-2xl border border-border bg-card shadow-2xl"
       >
         <div className="p-5 space-y-4">
           <div className="flex items-start justify-between gap-3">
@@ -123,10 +138,10 @@ function SuggestionModal({ onClose }: { onClose: () => void }) {
               What&apos;s on your mind?
             </label>
             <textarea
+              ref={textareaRef}
               value={body}
               onChange={(e) => setBody(e.target.value)}
               rows={6}
-              autoFocus
               placeholder="Describe the suggestion, the pain point it would fix, or where it would live..."
               className="block w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y"
             />
@@ -153,6 +168,8 @@ function SuggestionModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
       </form>
+        </div>
+      </div>
     </div>
   );
 }

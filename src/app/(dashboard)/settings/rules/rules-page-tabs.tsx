@@ -4,15 +4,18 @@ import { useState } from "react";
 
 const TABS = [
   { id: "dependency", label: "Dependency Rules" },
+  { id: "defaults", label: "Device Defaults" },
   { id: "labour", label: "Labour Timings" },
 ] as const;
 
 export function RulesPageTabs({
   dependencyTab,
   labourTab,
+  deviceDefaultsTab,
 }: {
   dependencyTab: React.ReactNode;
   labourTab: React.ReactNode;
+  deviceDefaultsTab?: React.ReactNode;
 }) {
   const [active, setActive] = useState<string>("dependency");
 
@@ -34,6 +37,7 @@ export function RulesPageTabs({
         ))}
       </div>
       {active === "dependency" && dependencyTab}
+      {active === "defaults" && deviceDefaultsTab}
       {active === "labour" && labourTab}
     </>
   );

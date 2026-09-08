@@ -2,14 +2,16 @@ import { createClient } from "@/lib/supabase/server";
 import { RulesManager } from "./rules-manager";
 import { LabourTimingsManager } from "./labour-timings-manager";
 import { RulesPageTabs } from "./rules-page-tabs";
+import { TemplateDeviceDefaults } from "./template-device-defaults";
 
 export default async function SettingsRulesPage() {
   const supabase = await createClient();
-  const [{ data: dbRules }, { data: products }, { data: labourTimings }, { data: templates }] = await Promise.all([
+  const [{ data: dbRules }, { data: products }, { data: labourTimings }, { data: templates }, { data: deviceDefaults }] = await Promise.all([
     supabase.from("quote_dependency_rules").select("*").order("template_id, sort_order"),
-    supabase.from("quote_products").select("id, name, sku, category").eq("is_active", true).order("category, name"),
+    supabase.from("quote_products").select("id, name, sku, category, device_type, is_default").eq("is_active", true).order("category, name"),
     supabase.from("labour_timings").select("*").order("sort_order"),
     supabase.from("quote_rule_templates").select("*").order("sort_order"),
+    supabase.from("quote_template_device_defaults").select("id, template_id, device_type, product_id"),
   ]);
 
   return (
@@ -28,6 +30,13 @@ export default async function SettingsRulesPage() {
             />
           }
           labourTab={<LabourTimingsManager timings={labourTimings ?? []} />}
+          deviceDefaultsTab={
+            <TemplateDeviceDefaults
+              templates={templates ?? []}
+              products={(products ?? []) as { id: string; name: string; sku: string | null; device_type: string | null; is_default: boolean | null }[]}
+              defaults={deviceDefaults ?? []}
+            />
+          }
         />
       </div>
     </div>

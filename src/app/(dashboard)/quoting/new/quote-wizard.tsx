@@ -278,6 +278,7 @@ export function QuoteWizard({
   labourTimings = [],
   templates = [],
   allRules = [],
+  templateDeviceDefaults = [],
 }: {
   customers: CustomerOption[];
   products: QuoteProduct[];
@@ -288,6 +289,7 @@ export function QuoteWizard({
   labourTimings?: { code: string; name: string; minutes_per: number }[];
   templates?: RuleTemplate[];
   allRules?: RuleRow[];
+  templateDeviceDefaults?: { template_id: string; device_type: string; product_id: string }[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -325,6 +327,12 @@ export function QuoteWizard({
     templates[0]?.id ??
     null;
   const [templateId, setTemplateId] = useState<string | null>(defaultTemplateId);
+  // Per-template device -> product overrides (quote_template_device_defaults),
+  // e.g. the REX button is DFMWES2261 on Planet Fitness but WEL1911 on Snap.
+  const deviceDefaults: Record<string, string> = {};
+  for (const d of templateDeviceDefaults) {
+    if (d.template_id === templateId) deviceDefaults[d.device_type] = d.product_id;
+  }
 
   // Step 1: Client
   const [customerId, setCustomerId] = useState(existingQuote?.customerId || "");
@@ -929,7 +937,7 @@ export function QuoteWizard({
     if (quoteMode === "plan") {
       if (newStep === 2 && !bomGenerated) {
         const rules = rulesForTemplate(allRules, templateId, products);
-        setBomItems(generateBOM(deviceCounts, products, rules, siteInfo, { elecDoingRoughIn, elecDoingFitOff }));
+        setBomItems(generateBOM(deviceCounts, products, rules, siteInfo, { elecDoingRoughIn, elecDoingFitOff }, deviceDefaults));
         setBomGenerated(true);
       }
       if (newStep === 3 && !labourData) {
@@ -964,7 +972,7 @@ export function QuoteWizard({
       if (!ok) return;
     }
     const rules = rulesForTemplate(allRules, templateId, products);
-    setBomItems(generateBOM(deviceCounts, products, rules, siteInfo, { elecDoingRoughIn, elecDoingFitOff }));
+    setBomItems(generateBOM(deviceCounts, products, rules, siteInfo, { elecDoingRoughIn, elecDoingFitOff }, deviceDefaults));
     setBomGenerated(true);
   }
 
