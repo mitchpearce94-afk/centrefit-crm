@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/service";
+import { checkLowStock } from "@/lib/inventory/low-stock";
 
 /**
  * Patch a single procurement item. Allowed mutations:
@@ -92,7 +94,31 @@ export async function PATCH(
     .single();
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
 
-  return NextResponse.json({ item: updated });
+  // Inventory (docs/inventory-CONTEXT.md D4/D6): the DB trigger has already
+  // moved stock for any in_stock change. Fire the low-stock check and hand the
+  // new on-hand back so the UI can toast "N left on hand".
+  let inventory: { qty_on_hand: number; reorder_point: number | null } | null = null;
+  if (updated?.product_id && (body.status !== undefined || body.quantity !== undefined)) {
+    try {
+      await checkLowStock([updated.product_id]);
+      const svc = createServiceRoleClient();
+      const { data: inv } = await svc
+        .from("inventory_items")
+        .select("qty_on_hand, reorder_point")
+        .eq("product_id", updated.product_id)
+        .maybeSingle();
+      if (inv) {
+        inventory = {
+          qty_on_hand: Number(inv.qty_on_hand),
+          reorder_point: inv.reorder_point == null ? null : Number(inv.reorder_point),
+        };
+      }
+    } catch (err) {
+      console.error("[procurement-items] inventory follow-up failed:", err);
+    }
+  }
+
+  return NextResponse.json({ item: updated, inventory });
 }
 
 /**

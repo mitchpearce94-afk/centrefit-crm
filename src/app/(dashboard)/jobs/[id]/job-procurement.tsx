@@ -225,6 +225,15 @@ export function JobProcurement({
       if (!res.ok || json.error) {
         toast(json.error ?? "Update failed", "error");
       } else {
+        // Tracked in inventory? Say what's left on the shelf after this click.
+        const inv = json.inventory as { qty_on_hand: number; reorder_point: number | null } | null | undefined;
+        if (inv && (update.status === "in_stock" || update.status === "pending" || update.quantity !== undefined)) {
+          const low = inv.reorder_point != null && inv.qty_on_hand <= inv.reorder_point;
+          toast(
+            `${update.status === "in_stock" ? "Taken from stock" : "Stock updated"} — ${inv.qty_on_hand} left on hand${low ? " (at/below reorder point)" : ""}`,
+            low ? "error" : "success",
+          );
+        }
         router.refresh();
       }
     } finally {

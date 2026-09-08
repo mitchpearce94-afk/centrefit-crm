@@ -90,8 +90,12 @@ export default async function ProcurementIndexPage() {
         total: 0,
         poNumbers: new Set<string>(),
       } as Stats);
-    if ((KNOWN_STATUSES as string[]).includes(it.status)) {
-      s[it.status as StatusKey] += 1;
+    // ordered_online (bought direct, no Xero PO) is awaiting delivery just like
+    // ordered — it used to fall through every bucket, so jobs with an online
+    // line could never add up to complete (health check 2026-09-08).
+    const bucket = it.status === "ordered_online" ? "ordered" : it.status;
+    if ((KNOWN_STATUSES as string[]).includes(bucket)) {
+      s[bucket as StatusKey] += 1;
     }
     s.total += 1;
     if (it.xero_po_number) s.poNumbers.add(it.xero_po_number);

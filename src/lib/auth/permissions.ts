@@ -21,6 +21,7 @@ export const PERMISSION_FLAGS = [
   "invoices.send", "invoices.manage_recurring",
   "scheduler.view_all_team", "scheduler.manage", "scheduler.assign_others",
   "procurement.view", "procurement.view_costs", "procurement.manage", "procurement.receive",
+  "inventory.view", "inventory.manage",
   "plans.view", "plans.manage", "plans.send_to_electrician",
   "nbn.view", "nbn.manage", "nbn.view_recurring_revenue",
   "suppliers.view", "suppliers.view_pricing", "suppliers.manage",
