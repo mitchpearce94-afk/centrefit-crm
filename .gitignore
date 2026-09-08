@@ -60,3 +60,7 @@ scripts/dd-sheet-output.json
 scripts/recon-report.md
 scripts/site-first-xero-map.md
 scripts/site-first-split-log.md
+
+# One-off script data dumps (Xero forensics etc.) — local only
+scripts/*.json
+watchdog-test.json
