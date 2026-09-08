@@ -100,3 +100,13 @@ them.
 - Dropping the mirror columns (supplier_id/cost_price) from quote_products — revisit
   only if the mirror causes real problems; the text column was the drift source, not
   the ids.
+
+## Revision — kits, lifecycle, routes (locked 2026-09-08 with Mitchell: "hit those recommendations")
+
+**D13 — Kits declare their contents.** `quote_product_kit_contents` (kit_product_id, component_product_id, quantity). `generateBOM()` step 3 nets kit contents off any other line for the same component so a kit never double-counts what is already in the box. Seeded: K6000-GFX-ND (BOSCH 7087) ships with 1× MW730B. Edited in the product form ("Kit contents").
+
+**D14 — Products have a lifecycle.** `quote_products.discontinued_at` + `replacement_product_id`. A discontinued product stays `is_active` so history, edits and rules still resolve; new BOM generations substitute the replacement (device defaults AND rule-added lines, max 3 hops, note "replaces <sku>"). Rules pointing at a discontinued product are flagged on Settings → Rules. A replacement can't itself be discontinued.
+
+**D15 — Cleanup.** `public.parts` dropped (0 rows, no references). `quote_products.supplier` text is now nullable with default '' — it is still derived by trigger from supplier_id. The mirror columns themselves stay (D9 decision of 2026-07-08 unchanged).
+
+**D16 — Product mutations go through routes.** `/api/products` (create), `/api/products/[id]` (update incl. lifecycle), `/api/products/[id]/offers` (+ `/[offerId]`), `/api/products/[id]/kit`. Gate = `settings.products` flag, writes on the service role; RLS stays as the floor. Starring an offer calls `product_set_preferred_offer(offer, keep_sell=true)` which re-pins markup from the OLD sell and the NEW cost in one transaction — Mitchell's "keep the sell, cut COGS" rule, previously a manual SQL procedure. A cost edit on the current preferred offer still passes through with markup unchanged; the UI now says when the sell moved. Image upload is the one write still done client-side (Storage, not a table).

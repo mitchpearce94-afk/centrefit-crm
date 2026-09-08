@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 import { PRODUCT_CATEGORIES, DEVICE_TYPES } from "@/lib/quote-engine";
 import { RowXeroSyncButton } from "./row-xero-sync-button";
+import { KitPanel, type KitContentRow } from "./kit-panel";
 
 export interface ProductSubcategory {
   id: string;
@@ -39,6 +40,9 @@ interface Product {
   requires_cable_run: boolean;
   is_default: boolean;
   is_active: boolean;
+  // Lifecycle (2026-09-08)
+  discontinued_at: string | null;
+  replacement_product_id: string | null;
 }
 
 interface Supplier {
@@ -95,6 +99,7 @@ export function ProductCatalog({
   assetTypes,
   subcategories,
   offers = [],
+  kitContents = [],
 }: {
   products: Product[];
   suppliers: Supplier[];
@@ -103,10 +108,12 @@ export function ProductCatalog({
   assetTypes: AssetTypeOption[];
   subcategories: ProductSubcategory[];
   offers?: ProductOffer[];
+  kitContents?: KitContentRow[];
 }) {
   const router = useRouter();
-  const supabase = createClient();
   const { toast } = useToast();
+  // Products that are kits (have contents) — for the row badge.
+  const kitIds = useMemo(() => new Set(kitContents.map((k) => k.kit_product_id)), [kitContents]);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [taggingFilter, setTaggingFilter] = useState<"" | "untagged_any" | "untagged_scope" | "untagged_labour" | "untagged_asset">("");
@@ -156,11 +163,13 @@ export function ProductCatalog({
   // Inline asset-type tag — drives the BOM->assets import (only products mapped
   // to a trackable asset type become asset shells). Saves on change.
   async function saveAssetType(productId: string, assetTypeId: string) {
-    const { error } = await supabase
-      .from("quote_products")
-      .update({ asset_type_id: assetTypeId || null })
-      .eq("id", productId);
-    if (error) toast(error.message, "error");
+    const res = await fetch(`/api/products/${productId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ asset_type_id: assetTypeId || null }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) toast(json.error ?? "Update failed", "error");
     else router.refresh();
   }
 
@@ -265,10 +274,17 @@ export function ProductCatalog({
     return m;
   }, [subcategories]);
 
-  async function updateProduct(id: string, updates: Partial<Product>) {
-    const { error } = await supabase.from("quote_products").update(updates).eq("id", id);
-    if (error) {
-      toast(error.message, "error");
+  // All product writes go through /api/products (permission check, validation
+  // and business rules server-side) instead of straight through browser RLS.
+  async function updateProduct(id: string, updates: Partial<Product> & { discontinued?: boolean }) {
+    const res = await fetch(`/api/products/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast(json.error ?? "Update failed", "error");
     } else {
       toast("Product updated");
       setEditingId(null);
@@ -472,6 +488,12 @@ export function ProductCatalog({
                           <td className="px-3 py-2 text-right text-xs font-mono">${p.sell_price.toFixed(2)}</td>
                           <td className="px-3 py-2 text-center hidden sm:table-cell">
                             {p.is_default && <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">Default</span>}
+                            {kitIds.has(p.id) && <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground" title="Kit — its contents are netted off quotes">Kit</span>}
+                            {p.discontinued_at && (
+                              <span className="ml-1 rounded-full bg-destructive/15 px-1.5 py-0.5 text-[10px] text-destructive" title={p.replacement_product_id ? "Discontinued — new quotes use the replacement" : "Discontinued — no replacement set"}>
+                                Disc.
+                              </span>
+                            )}
                           </td>
                           <td className="px-3 py-2 text-right space-x-2">
                             <button
@@ -536,6 +558,8 @@ export function ProductCatalog({
             mode="edit"
             product={product}
             offers={offersByProduct.get(product.id) ?? []}
+            kitContents={kitContents.filter((k) => k.kit_product_id === product.id)}
+            allProducts={products}
             suppliers={sortedSuppliers}
             scopeRoles={sortedScopeRoles}
             labourTimings={sortedLabourTimings}
@@ -572,12 +596,16 @@ type ProductFormModalProps =
       onSaved: () => void;
       product?: never;
       offers?: never;
+      kitContents?: never;
+      allProducts?: never;
       onSave?: never;
     }
   | {
       mode: "edit";
       product: Product;
       offers: ProductOffer[];
+      kitContents: KitContentRow[];
+      allProducts: Product[];
       suppliers: Supplier[];
       scopeRoles: ScopeRoleOption[];
       labourTimings: LabourTimingOption[];
@@ -586,7 +614,7 @@ type ProductFormModalProps =
       onScopeRoleCreated: (role: ScopeRoleOption) => void;
       onLabourTimingCreated: (timing: LabourTimingOption) => void;
       onClose: () => void;
-      onSave: (id: string, updates: Partial<Product>) => void;
+      onSave: (id: string, updates: Partial<Product> & { discontinued?: boolean }) => void;
       category?: never;
       onSaved?: never;
     };
@@ -633,6 +661,9 @@ function ProductFormModal(props: ProductFormModalProps) {
   const [imageUrl, setImageUrl] = useState(isEditing ? (props.product.image_url || "") : "");
   const [uploadingImage, setUploadingImage] = useState(false);
   const [requiresCableRun, setRequiresCableRun] = useState(isEditing ? props.product.requires_cable_run : false);
+  // Lifecycle (edit mode): discontinued flag + replacement to quote instead.
+  const [discontinued, setDiscontinued] = useState(isEditing ? Boolean(props.product.discontinued_at) : false);
+  const [replacementId, setReplacementId] = useState(isEditing ? (props.product.replacement_product_id ?? "") : "");
   const [saving, setSaving] = useState(false);
 
   const [showNewScopeRole, setShowNewScopeRole] = useState(false);
@@ -740,47 +771,38 @@ function ProductFormModal(props: ProductFormModalProps) {
     };
 
     if (isEditing) {
-      const updates: Partial<Product> = { ...payload, category } as Partial<Product>;
+      const updates: Partial<Product> & { discontinued?: boolean } = { ...payload, category } as Partial<Product>;
       // CentreFit direct entry writes actual COGS onto the product (the
       // trigger mirrors it to the CentreFit offer). Other suppliers' costs
       // are edited in the Supplier pricing section, never here.
       if (isCentrefit) updates.cost_price = parseFloat(costPrice);
+      // Lifecycle: the route turns `discontinued` into discontinued_at.
+      updates.discontinued = discontinued;
+      updates.replacement_product_id = discontinued ? (replacementId || null) : null;
       props.onSave(props.product.id, updates);
       return;
     }
 
     setSaving(true);
-    const { data: created, error } = await supabase
-      .from("quote_products")
-      .insert({
+    const res = await fetch("/api/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         ...payload,
         category,
         supplier_id: supplierId,
         cost_price: parseFloat(costPrice),
-        is_active: true,
-      })
-      .select("id")
-      .single();
-    if (error || !created) {
-      setSaving(false);
-      toast(error?.message ?? "Insert failed", "error");
+        supplier_ref_sku: supplierRefSku.trim() || null,
+        supplier_ref_name: supplierRefName.trim() || null,
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    setSaving(false);
+    if (!res.ok) {
+      toast(json.error ?? "Insert failed", "error");
       return;
     }
-    // The DB trigger just created the preferred offer using our catalogue
-    // SKU/name as placeholders — overwrite with the supplier's own SKU/item
-    // name if they were provided.
-    if (supplierRefSku.trim() || supplierRefName.trim()) {
-      const { error: offerErr } = await supabase
-        .from("product_supplier_offers")
-        .update({
-          supplier_sku: supplierRefSku.trim() || null,
-          supplier_item_name: supplierRefName.trim() || null,
-        })
-        .eq("product_id", created.id)
-        .eq("supplier_id", supplierId);
-      if (offerErr) toast(`Product added, but saving the supplier's SKU failed: ${offerErr.message}`, "error");
-    }
-    setSaving(false);
+    if (json.warning) toast(json.warning, "error");
     toast("Product added");
     props.onSaved();
   }
@@ -1140,6 +1162,45 @@ function ProductFormModal(props: ProductFormModalProps) {
             />
             <span>Default product for this device type</span>
           </label>
+
+          {/* Lifecycle — discontinued + replacement (2026-09-08) */}
+          {isEditing && (
+            <div className="rounded-md border border-border bg-card px-3 py-2.5 space-y-2">
+              <label className="flex items-start gap-2 text-xs cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={discontinued}
+                  onChange={(e) => setDiscontinued(e.target.checked)}
+                  className="mt-0.5 rounded border-border accent-primary"
+                />
+                <span>
+                  <span className="font-medium text-foreground">Discontinued</span>
+                  <span className="block text-muted-foreground/80 mt-0.5">Stays in the catalogue so old quotes and rules still resolve, but new quotes swap in the replacement below. Rules pointing at it are flagged on the Rules page.</span>
+                </span>
+              </label>
+              {discontinued && (
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Replacement product</label>
+                  <select value={replacementId} onChange={(e) => setReplacementId(e.target.value)} className={inputClass}>
+                    <option value="">— none yet: keep quoting this product for now —</option>
+                    {props.allProducts
+                      .filter((p) => p.id !== props.product.id && p.is_active && !p.discontinued_at)
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>{p.sku ? `${p.sku} · ` : ""}{p.name}</option>
+                      ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Kit contents — what this product already ships with */}
+          {isEditing && (
+            <div className="rounded-md border border-border bg-muted/20 px-3 py-3">
+              <KitPanel product={props.product} contents={props.kitContents} products={props.allProducts} />
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -1352,7 +1413,6 @@ function OffersPanel({
   suppliers: Supplier[];
 }) {
   const router = useRouter();
-  const supabase = createClient();
   const { toast } = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [costEdit, setCostEdit] = useState<Record<string, string>>({});
@@ -1390,16 +1450,25 @@ function OffersPanel({
   const takenSupplierIds = new Set(offers.map((o) => o.supplier_id));
   const availableSuppliers = suppliers.filter((s) => !takenSupplierIds.has(s.id));
 
+  // Margin-preserving flip (Mitchell's rule: keep the sell, cut COGS) — the
+  // route re-pins markup from the old sell + new cost in one transaction.
   async function setPreferred(offer: ProductOffer) {
     if (offer.is_preferred) return;
     setBusyId(offer.id);
-    const { error } = await supabase
-      .from("product_supplier_offers")
-      .update({ is_preferred: true })
-      .eq("id", offer.id);
+    const res = await fetch(`/api/products/${product.id}/offers/${offer.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ make_preferred: true, keep_sell: true }),
+    });
+    const json = await res.json().catch(() => ({}));
     setBusyId(null);
-    if (error) { toast(error.message, "error"); return; }
-    toast(`${supplierName(offer.supplier_id)} now prices ${product.name}`);
+    if (!res.ok) { toast(json.error ?? "Update failed", "error"); return; }
+    const flip = json.flip as { sell_before: number; sell_after: number; markup: number } | null;
+    toast(
+      flip
+        ? `${supplierName(offer.supplier_id)} now prices ${product.name} — sell held at $${Number(flip.sell_after).toFixed(2)}, markup now ${(Number(flip.markup) * 100).toFixed(1)}%`
+        : `${supplierName(offer.supplier_id)} now prices ${product.name}`,
+    );
     router.refresh();
   }
 
@@ -1409,12 +1478,19 @@ function OffersPanel({
     const val = Number(raw);
     if (!Number.isFinite(val) || val < 0) { toast("Invalid cost", "error"); return; }
     setBusyId(offer.id);
-    const { error } = await supabase
-      .from("product_supplier_offers")
-      .update({ cost_price: val, cost_updated_at: new Date().toISOString() })
-      .eq("id", offer.id);
+    const res = await fetch(`/api/products/${product.id}/offers/${offer.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cost_price: val }),
+    });
+    const json = await res.json().catch(() => ({}));
     setBusyId(null);
-    if (error) { toast(error.message, "error"); return; }
+    if (!res.ok) { toast(json.error ?? "Update failed", "error"); return; }
+    const before = Number(json.product_before?.sell_price);
+    const after = Number(json.product_after?.sell_price);
+    if (offer.is_preferred && Number.isFinite(before) && Number.isFinite(after) && Math.abs(before - after) > 0.004) {
+      toast(`Cost saved — sell price moved $${before.toFixed(2)} → $${after.toFixed(2)} (markup unchanged)`);
+    }
     setCostEdit((m) => { const n = { ...m }; delete n[offer.id]; return n; });
     router.refresh();
   }
@@ -1422,9 +1498,10 @@ function OffersPanel({
   async function removeOffer(offer: ProductOffer) {
     if (offer.is_preferred) { toast("Make another offer preferred first", "error"); return; }
     setBusyId(offer.id);
-    const { error } = await supabase.from("product_supplier_offers").delete().eq("id", offer.id);
+    const res = await fetch(`/api/products/${product.id}/offers/${offer.id}`, { method: "DELETE" });
+    const json = await res.json().catch(() => ({}));
     setBusyId(null);
-    if (error) { toast(error.message, "error"); return; }
+    if (!res.ok) { toast(json.error ?? "Remove failed", "error"); return; }
     router.refresh();
   }
 
@@ -1435,36 +1512,36 @@ function OffersPanel({
     if (editTarget) {
       if (!formSupplierId) { toast("Pick a supplier", "error"); return; }
       setBusyId(editTarget.id);
-      const costChanged = Math.abs(val - editTarget.cost_price) > 0.001;
-      // Changing supplier_id on the preferred offer is safe — the DB sync
-      // trigger mirrors the new supplier onto the product row.
-      const { error } = await supabase
-        .from("product_supplier_offers")
-        .update({
+      const res = await fetch(`/api/products/${product.id}/offers/${editTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           supplier_id: formSupplierId,
           supplier_sku: formSku.trim() || null,
           supplier_item_name: formName.trim() || null,
           cost_price: val,
-          ...(costChanged ? { cost_updated_at: new Date().toISOString() } : {}),
-        })
-        .eq("id", editTarget.id);
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
       setBusyId(null);
-      if (error) { toast(error.message, "error"); return; }
+      if (!res.ok) { toast(json.error ?? "Update failed", "error"); return; }
       toast(`${supplierName(formSupplierId)} offer updated`);
     } else {
       if (!formSupplierId) { toast("Pick a supplier", "error"); return; }
       setBusyId("new");
-      const { error } = await supabase.from("product_supplier_offers").insert({
-        product_id: product.id,
-        supplier_id: formSupplierId,
-        supplier_sku: formSku.trim() || null,
-        supplier_item_name: formName.trim() || null,
-        cost_price: val,
-        cost_updated_at: new Date().toISOString(),
-        is_preferred: false,
+      const res = await fetch(`/api/products/${product.id}/offers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          supplier_id: formSupplierId,
+          supplier_sku: formSku.trim() || null,
+          supplier_item_name: formName.trim() || null,
+          cost_price: val,
+        }),
       });
+      const json = await res.json().catch(() => ({}));
       setBusyId(null);
-      if (error) { toast(error.message, "error"); return; }
+      if (!res.ok) { toast(json.error ?? "Insert failed", "error"); return; }
     }
     closeForm();
     router.refresh();

@@ -39,6 +39,8 @@ interface ProductOption {
   name: string;
   sku: string;
   category: string;
+  discontinued_at?: string | null;
+  replacement_product_id?: string | null;
 }
 
 interface RuleTemplate {
@@ -94,7 +96,11 @@ function conditionText(rule: DbRule): string {
 
 function quantityText(rule: DbRule, products: ProductOption[]): string {
   const product = products.find(p => p.id === rule.auto_add_product_id);
-  const productName = product ? product.name : "unknown product";
+  const productName = product
+    ? product.discontinued_at
+      ? `${product.name} ⚠ DISCONTINUED${product.replacement_product_id ? " → quotes its replacement" : " (no replacement set!)"}`
+      : product.name
+    : "unknown product";
   switch (rule.quantity_mode) {
     case "fixed":
       return `add **${rule.quantity_value || 1}x** ${productName}`;

@@ -279,6 +279,7 @@ export function QuoteWizard({
   templates = [],
   allRules = [],
   templateDeviceDefaults = [],
+  kitContents = [],
 }: {
   customers: CustomerOption[];
   products: QuoteProduct[];
@@ -290,6 +291,7 @@ export function QuoteWizard({
   templates?: RuleTemplate[];
   allRules?: RuleRow[];
   templateDeviceDefaults?: { template_id: string; device_type: string; product_id: string }[];
+  kitContents?: { kit_product_id: string; component_product_id: string; quantity: number }[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -937,7 +939,7 @@ export function QuoteWizard({
     if (quoteMode === "plan") {
       if (newStep === 2 && !bomGenerated) {
         const rules = rulesForTemplate(allRules, templateId, products);
-        setBomItems(generateBOM(deviceCounts, products, rules, siteInfo, { elecDoingRoughIn, elecDoingFitOff }, deviceDefaults));
+        setBomItems(generateBOM(deviceCounts, products, rules, siteInfo, { elecDoingRoughIn, elecDoingFitOff }, deviceDefaults, kitContents));
         setBomGenerated(true);
       }
       if (newStep === 3 && !labourData) {
@@ -972,7 +974,7 @@ export function QuoteWizard({
       if (!ok) return;
     }
     const rules = rulesForTemplate(allRules, templateId, products);
-    setBomItems(generateBOM(deviceCounts, products, rules, siteInfo, { elecDoingRoughIn, elecDoingFitOff }, deviceDefaults));
+    setBomItems(generateBOM(deviceCounts, products, rules, siteInfo, { elecDoingRoughIn, elecDoingFitOff }, deviceDefaults, kitContents));
     setBomGenerated(true);
   }
 

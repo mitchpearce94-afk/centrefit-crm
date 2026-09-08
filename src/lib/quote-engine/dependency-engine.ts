@@ -71,6 +71,10 @@ export interface Product {
   device_type: string | null
   is_default: boolean
   is_active: boolean
+  // Lifecycle (2026-09-08): a discontinued product stays active so history
+  // still resolves, but new BOM generations quote the replacement instead.
+  discontinued_at?: string | null
+  replacement_product_id?: string | null
 }
 
 export interface AutoAddItem {

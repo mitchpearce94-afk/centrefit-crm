@@ -8,7 +8,7 @@ export default async function SettingsRulesPage() {
   const supabase = await createClient();
   const [{ data: dbRules }, { data: products }, { data: labourTimings }, { data: templates }, { data: deviceDefaults }] = await Promise.all([
     supabase.from("quote_dependency_rules").select("*").order("template_id, sort_order"),
-    supabase.from("quote_products").select("id, name, sku, category, device_type, is_default").eq("is_active", true).order("category, name"),
+    supabase.from("quote_products").select("id, name, sku, category, device_type, is_default, discontinued_at, replacement_product_id").eq("is_active", true).order("category, name"),
     supabase.from("labour_timings").select("*").order("sort_order"),
     supabase.from("quote_rule_templates").select("*").order("sort_order"),
     supabase.from("quote_template_device_defaults").select("id, template_id, device_type, product_id"),

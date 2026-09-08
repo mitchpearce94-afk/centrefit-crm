@@ -10,6 +10,36 @@ import type { DependencyRule, Product, BOMItem, ElecMaterialOptions } from './de
 
 export type { Product, DependencyRule, BOMItem } from './dependency-engine'
 
+/** "Kit ships with N × component" — quote_product_kit_contents rows. */
+export interface KitContent {
+  kit_product_id: string
+  component_product_id: string
+  quantity: number
+}
+
+/**
+ * Follow a discontinued product to its replacement (max 3 hops) so new BOM
+ * generations quote what can actually be bought. Returns the original when
+ * it isn't discontinued, has no replacement, or the replacement is inactive.
+ */
+export function resolveLiveProduct(
+  product: Product | undefined,
+  products: Product[]
+): { product: Product | undefined; replacedSku: string | null } {
+  let current = product
+  let replacedSku: string | null = null
+  let hops = 0
+  while (current && current.discontinued_at && current.replacement_product_id && hops < 3) {
+    const nextId = current.replacement_product_id
+    const next = products.find((p) => p.id === nextId && p.is_active !== false)
+    if (!next) break
+    replacedSku = replacedSku ?? (current.sku || current.name)
+    current = next
+    hops += 1
+  }
+  return { product: current, replacedSku }
+}
+
 export interface BOMTotals {
   totalCost: number
   totalSell: number
@@ -31,7 +61,10 @@ export function generateBOM(
   // Per-template default product per device type (quote_template_device_defaults):
   // e.g. Planet Fitness REX -> DFMWES2261, Snap -> WEL1911. Falls back to the
   // catalogue's global is_default when the template has no override.
-  deviceDefaults: Record<string, string> = {}
+  deviceDefaults: Record<string, string> = {},
+  // Kit contents: components already inside a kit product get netted off any
+  // rule/device line for the same product so nothing is quoted twice.
+  kitContents: KitContent[] = []
 ): BOMItem[] {
   const bomItems: BOMItem[] = []
 
@@ -41,7 +74,7 @@ export function generateBOM(
     if (count === 0) return
 
     const overrideId = deviceDefaults[deviceType.code]
-    const defaultProduct = (overrideId
+    const pickedProduct = (overrideId
       ? products.find((p) => p.id === overrideId && p.is_active !== false)
       : undefined
     ) || products.find(
@@ -49,6 +82,10 @@ export function generateBOM(
     ) || products.find(
       (p) => p.device_type === deviceType.code
     )
+    // Discontinued → quote the replacement (lifecycle, 2026-09-08).
+    const live = resolveLiveProduct(pickedProduct, products)
+    const defaultProduct = live.product
+    const lifecycleNote = live.replacedSku ? `replaces ${live.replacedSku}` : ''
 
     // Reed switches split on the plan builder's Cabled tickbox (all templates,
     // Mitchell 2026-08-11): cabled units are the WIRED DFMWSS60W, uncabled
@@ -100,9 +137,9 @@ export function generateBOM(
       cost_price: defaultProduct?.cost_price || 0,
       markup: defaultProduct?.markup || DEFAULT_MARKUP,
       sell_price: defaultProduct?.sell_price || 0,
-      notes: isWallSpeaker && count !== orderQty
-        ? `${count} speakers (sold in pairs)`
-        : '',
+      notes: [isWallSpeaker && count !== orderQty ? `${count} speakers (sold in pairs)` : '', lifecycleNote]
+        .filter(Boolean)
+        .join(' · '),
       auto_added: false,
       rule_description: null,
     })
@@ -112,6 +149,23 @@ export function generateBOM(
   if (dependencyRules.length > 0) {
     const autoItems = evaluateDependencyRules(dependencyRules, deviceCounts, products, siteInfo, elecOptions)
     const autoAddBOM = autoAddItemsToBOM(autoItems)
+
+    // Lifecycle: rule-added products that are discontinued → their replacement.
+    autoAddBOM.forEach((autoItem) => {
+      if (!autoItem.product_id) return
+      const original = products.find((p) => p.id === autoItem.product_id)
+      const live = resolveLiveProduct(original, products)
+      if (live.product && live.replacedSku && live.product.id !== autoItem.product_id) {
+        autoItem.product_id = live.product.id
+        autoItem.product_name = live.product.name
+        autoItem.sku = live.product.sku || ''
+        autoItem.supplier = live.product.supplier || ''
+        autoItem.cost_price = live.product.cost_price || 0
+        autoItem.markup = live.product.markup || DEFAULT_MARKUP
+        autoItem.sell_price = live.product.sell_price || 0
+        autoItem.notes = [autoItem.notes, `replaces ${live.replacedSku}`].filter(Boolean).join(' · ')
+      }
+    })
 
     autoAddBOM.forEach((autoItem) => {
       const existing = bomItems.find((b) => b.product_id === autoItem.product_id)
@@ -125,6 +179,37 @@ export function generateBOM(
         bomItems.push(autoItem)
       }
     })
+  }
+
+  // Step 3: Kits. A kit line already contains its components — net them off
+  // any other line for the same product so the quote never carries both
+  // (Sue, 2026-09-06: the K6000 kit ships with its MW730B enclosure).
+  if (kitContents.length > 0) {
+    for (const kitLine of [...bomItems]) {
+      if (!kitLine.product_id) continue
+      const contents = kitContents.filter((k) => k.kit_product_id === kitLine.product_id)
+      if (contents.length === 0) continue
+      const included: string[] = []
+      for (const c of contents) {
+        const covered = Number(c.quantity) * kitLine.quantity
+        if (!(covered > 0)) continue
+        const idx = bomItems.findIndex((b) => b !== kitLine && b.product_id === c.component_product_id)
+        if (idx === -1) continue
+        const comp = bomItems[idx]
+        const removed = Math.min(comp.quantity, covered)
+        if (removed <= 0) continue
+        included.push(`${removed}× ${comp.sku || comp.product_name}`)
+        comp.quantity -= removed
+        if (comp.quantity <= 0) {
+          bomItems.splice(idx, 1)
+        } else {
+          comp.notes = [comp.notes, `${removed} covered by ${kitLine.sku || kitLine.product_name} kit`].filter(Boolean).join(' · ')
+        }
+      }
+      if (included.length > 0) {
+        kitLine.notes = [kitLine.notes, `kit includes ${included.join(', ')}`].filter(Boolean).join(' · ')
+      }
+    }
   }
 
   return bomItems
