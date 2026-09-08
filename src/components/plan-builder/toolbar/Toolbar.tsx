@@ -273,7 +273,31 @@ export default function Toolbar({ jobs = [], baseDocId = null }: { jobs?: JobOpt
         // .cfp is worse than no update at all.
         console.error('[Plan Builder] .cfp upload failed:', cfpUpload.error);
         pdfBlob = await pdfPromise;
-        alert('Failed to save plan to cloud (.cfp upload): ' + cfpUpload.error.message);
+        // Never let a failed cloud save be the only copy. Drop the exact
+        // .cfp we just tried to upload into Downloads so the work survives
+        // a closed tab. (2026-09-08: a 73MB Total Fusion plan bounced off the
+        // 50MB Storage cap three times with nothing on disk to fall back to.)
+        const cfpMb = (cfpBlob.size / 1048576).toFixed(1);
+        const backupName = `${planBaseName()} - BACKUP.cfp`;
+        let backedUp = false;
+        try {
+          downloadBlob(cfpBlob, backupName);
+          backedUp = true;
+        } catch (dlErr) {
+          console.error('[Plan Builder] local .cfp backup failed:', dlErr);
+        }
+        const tooBig = /exceeded the maximum allowed size|too large|EntityTooLarge|413/i.test(
+          `${cfpUpload.error.message} ${(cfpUpload.error as { statusCode?: string | number }).statusCode ?? ''}`
+        );
+        alert(
+          (tooBig
+            ? `The plan file is ${cfpMb} MB, which is over the cloud upload limit, so it did NOT save to the CRM.`
+            : `Failed to save plan to cloud (.cfp upload): ${cfpUpload.error.message}`) +
+          (backedUp
+            ? `\n\nA backup copy has been saved to your Downloads folder as "${backupName}". Load it later via Plans → Load .cfp if needed.`
+            : '\n\nAutomatic backup failed too — do NOT close this tab.') +
+          '\n\nDON\'T refresh — your work is still in this tab. Try Save again shortly.'
+        );
         return pdfBlob;
       }
       const { data: cfpUrlData } = supabase.storage.from('plan-files').getPublicUrl(cfpPath);

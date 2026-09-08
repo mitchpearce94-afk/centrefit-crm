@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { sendSuggestionEmail } from "@/lib/emails/suggestion";
+import { sendSuggestionEmail, sendSuggestionReceiptEmail } from "@/lib/emails/suggestion";
 
 const VALID_CATEGORIES = new Set(["Feature", "Bug", "UI/UX", "Other"]);
 
@@ -62,7 +62,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: insertErr.message }, { status: 500 });
   }
 
-  const result = await sendSuggestionEmail({ fromName, fromEmail, category, body });
+  // Two sends in parallel: the suggestion to Mitchell's inbox, and a
+  // "got it, here's what you sent" receipt back to the submitter (with a
+  // reference number). The receipt is best-effort — it never blocks or
+  // fails the submission, and it's skipped when the auth user has no email
+  // (the noreply@ fallback would just bounce).
+  const [result, receipt] = await Promise.all([
+    sendSuggestionEmail({ fromName, fromEmail, category, body }),
+    user.email
+      ? sendSuggestionReceiptEmail({
+          toEmail: user.email,
+          toName: fromName,
+          category,
+          body,
+          suggestionId: row.id,
+        })
+      : Promise.resolve({ ok: false as const, error: "submitter has no email" }),
+  ]);
+  if (!receipt.ok) {
+    console.warn(`[suggestions] receipt email to ${user.email ?? "(none)"} failed: ${receipt.error}`);
+  }
 
   // Best-effort patch the email outcome onto the row — failure here is
   // non-blocking (the row still exists, the email status just won't be
