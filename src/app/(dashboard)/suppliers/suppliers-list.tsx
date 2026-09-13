@@ -16,7 +16,6 @@ interface Supplier {
   account_number: string | null;
   notes: string | null;
   is_active: boolean;
-  parts?: { count: number }[];
   offers?: { count: number }[];
 }
 
@@ -204,15 +203,11 @@ export function SuppliersList({ suppliers }: { suppliers: Supplier[] }) {
                 <th className="px-4 py-2.5 text-right font-medium text-muted-foreground w-24" title="Products this supplier offers pricing on — click the row to open their catalogue">
                   Products
                 </th>
-                <th className="px-4 py-2.5 text-right font-medium text-muted-foreground w-20">
-                  Parts
-                </th>
                 <th className="px-4 py-2.5 w-16"></th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((supplier) => {
-                const partsCount = supplier.parts?.[0]?.count ?? 0;
                 const offersCount = supplier.offers?.[0]?.count ?? 0;
                 return (
                   <tr
@@ -242,9 +237,6 @@ export function SuppliersList({ suppliers }: { suppliers: Supplier[] }) {
                     </td>
                     <td className="px-4 py-3 text-right text-muted-foreground">
                       {offersCount > 0 ? offersCount : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right text-muted-foreground">
-                      {partsCount > 0 ? partsCount : "—"}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button
