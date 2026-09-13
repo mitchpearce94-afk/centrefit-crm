@@ -348,7 +348,12 @@ export function JobProcurement({
           }`,
         );
       } else if (failCount > 0) {
-        toast(`All ${failCount} PO attempt(s) failed — see console`, "error");
+        // Say what Xero said — "see console" sent Mitchell hunting (2026-09-14)
+        const first = json.failures[0] as { supplierName?: string; message?: string };
+        toast(
+          `${first.supplierName ?? "PO"}: ${first.message ?? "failed"}${failCount > 1 ? ` (+${failCount - 1} more, see console)` : ""}`,
+          "error",
+        );
         console.error("PO generation failures:", json.failures);
       }
       if (json.itemSyncWarnings?.length) {

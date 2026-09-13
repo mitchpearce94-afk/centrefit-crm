@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthedClient } from "@/lib/xero/client";
+import { DEFAULT_PURCHASE_ACCOUNT_CODE } from "@/lib/xero/purchase-orders";
 import type { Item } from "xero-node";
 
 /**
@@ -91,6 +92,7 @@ export async function POST(req: NextRequest) {
       isTrackedAsInventory: false,
       purchaseDetails: {
         unitPrice: Number(p.cost_price) || 0,
+        accountCode: DEFAULT_PURCHASE_ACCOUNT_CODE, // same account the PO lines use
       },
       salesDetails: {
         unitPrice: Number(p.sell_price) || 0,

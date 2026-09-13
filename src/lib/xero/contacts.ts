@@ -243,20 +243,44 @@ export async function findOrCreateSupplierContact(
   tenantId: string,
   supplier: SupplierForXero,
 ): Promise<string> {
-  if (supplier.xero_contact_id) return supplier.xero_contact_id;
-
   const safeName = supplier.name.replace(/"/g, '\\"');
   let contactId: string | undefined;
 
-  try {
-    const search = await xero.accountingApi.getContacts(
-      tenantId,
-      undefined,
-      `Name=="${safeName}"`,
-    );
-    contactId = search.body.contacts?.[0]?.contactID;
-  } catch {
-    // Search failure shouldn't block creation — fall through.
+  // Trust the stored mapping only while that contact is still ACTIVE. A Xero
+  // clean-up (2026-09-14: the CRM-made "Electrocraft"/"Seadan" contacts were
+  // merged into the older bills contacts) leaves the stored id pointing at an
+  // ARCHIVED contact, and Xero refuses a PO against it. Follow the merge when
+  // Xero tells us where it went, else fall through to search/create and
+  // re-persist. One extra GET per supplier per PO run.
+  if (supplier.xero_contact_id) {
+    try {
+      const res = await xero.accountingApi.getContact(tenantId, supplier.xero_contact_id);
+      const c = res.body.contacts?.[0];
+      const status = String(c?.contactStatus ?? "");
+      if (c?.contactID && status === "ACTIVE") return c.contactID;
+      if (c?.mergedToContactID) {
+        const merged = await xero.accountingApi.getContact(tenantId, c.mergedToContactID);
+        const m = merged.body.contacts?.[0];
+        if (m?.contactID && String(m.contactStatus ?? "") === "ACTIVE") contactId = m.contactID;
+      }
+    } catch {
+      // Unreadable (deleted, or a transient error) — search by name below.
+    }
+  }
+
+  if (!contactId) {
+    try {
+      // getContacts excludes archived contacts unless asked, so a hit here is
+      // usable as-is.
+      const search = await xero.accountingApi.getContacts(
+        tenantId,
+        undefined,
+        `Name=="${safeName}"`,
+      );
+      contactId = search.body.contacts?.[0]?.contactID;
+    } catch {
+      // Search failure shouldn't block creation — fall through.
+    }
   }
 
   if (!contactId) {

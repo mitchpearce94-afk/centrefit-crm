@@ -1,4 +1,5 @@
 import type { XeroClient, Item } from "xero-node";
+import { DEFAULT_PURCHASE_ACCOUNT_CODE } from "@/lib/xero/purchase-orders";
 
 export interface SyncableProduct {
   id: string;
@@ -42,7 +43,9 @@ export async function ensureXeroItem(
     isSold: true,
     isPurchased: true,
     isTrackedAsInventory: false,
-    purchaseDetails: { unitPrice: Number(product.cost_price) || 0 },
+    // Same purchases account the PO lines use, so an Item picked by hand in
+    // Xero codes the way the CRM's POs do (341 since the Sept 2026 chart tidy)
+    purchaseDetails: { unitPrice: Number(product.cost_price) || 0, accountCode: DEFAULT_PURCHASE_ACCOUNT_CODE },
     salesDetails: { unitPrice: Number(product.sell_price) || 0 },
   };
 

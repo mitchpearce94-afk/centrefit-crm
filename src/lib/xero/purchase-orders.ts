@@ -1,10 +1,15 @@
 import type { XeroClient } from "xero-node";
 import { brisbaneDateISO } from "@/lib/dates";
 
-// Xero's default Cost of Sales account in the standard chart.
-// Centrefit uses 300 historically — override per-line if a particular
-// product maps elsewhere.
-export const DEFAULT_PURCHASE_ACCOUNT_CODE = "300";
+// The Xero account every PO line is coded to. Centrefit's chart has no
+// generic "300 Purchases" any more (deleted in the September 2026 chart
+// tidy-up, which broke PO generation with "account code is not valid");
+// parts bought for jobs go to 341 "Purchase - IT Parts", the same account the
+// Xero Items and the hand-made POs use. Override with XERO_PURCHASE_ACCOUNT_CODE
+// if the bookkeeper moves it again; generate-pos checks the code exists and
+// is active before it tries to create anything.
+export const DEFAULT_PURCHASE_ACCOUNT_CODE =
+  process.env.XERO_PURCHASE_ACCOUNT_CODE?.trim() || "341";
 // Australian GST on expenses. Input-only tax.
 export const DEFAULT_TAX_TYPE_INPUT = "INPUT";
 

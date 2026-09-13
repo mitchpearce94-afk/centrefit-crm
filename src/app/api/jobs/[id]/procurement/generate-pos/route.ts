@@ -5,6 +5,7 @@ import { getAuthedClient } from "@/lib/xero/client";
 import { findOrCreateSupplierContact } from "@/lib/xero/contacts";
 import {
   createXeroPurchaseOrder,
+  DEFAULT_PURCHASE_ACCOUNT_CODE,
   type XeroPOLineItem,
 } from "@/lib/xero/purchase-orders";
 import { ensureXeroItem, xeroErrorMessage, type SyncableProduct } from "@/lib/xero/items";
@@ -166,6 +167,32 @@ export async function POST(
   for (const s of (suppliers ?? []) as SupplierRow[]) supplierById.set(s.id, s);
 
   const { client: xero, conn } = await getAuthedClient();
+
+  // Pre-flight the purchase account. Every line is coded to it, and Xero
+  // rejects the whole PO when the code doesn't exist (the 2026-09-14 failure:
+  // "300" had been deleted from the chart). Fail once, in plain words, before
+  // touching Items or POs.
+  try {
+    const acc = await xero.accountingApi.getAccounts(
+      conn.tenant_id,
+      undefined,
+      `Code=="${DEFAULT_PURCHASE_ACCOUNT_CODE.replace(/"/g, '\\"')}"`,
+    );
+    const a = acc.body.accounts?.[0];
+    if (!a || String(a.status ?? "") !== "ACTIVE") {
+      return NextResponse.json(
+        {
+          error: `Xero has no active account with code ${DEFAULT_PURCHASE_ACCOUNT_CODE} to put PO lines on. Either restore it in Xero (Accounting → Chart of accounts) or set XERO_PURCHASE_ACCOUNT_CODE to the purchases account you want, e.g. 341 Purchase - IT Parts.`,
+        },
+        { status: 409 },
+      );
+    }
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Couldn't read the chart of accounts from Xero: ${xeroErrorMessage(err)}` },
+      { status: 502 },
+    );
+  }
 
   // Ensure every distinct product on this PO run exists as a Xero Item with its
   // CURRENT catalogue cost, so (a) the SKU can go in the Xero ItemCode column
