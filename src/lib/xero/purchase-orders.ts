@@ -85,12 +85,29 @@ export async function createXeroPurchaseOrder({
     poPayload.deliveryInstructions = deliveryInstructions.slice(0, 500);
   }
 
-  const res = await xero.accountingApi.createPurchaseOrders(
-    tenantId,
-    { purchaseOrders: [poPayload] },
-    true, // summarizeErrors
-    idempotencyKey,
-  );
+  const create = (key?: string) =>
+    xero.accountingApi.createPurchaseOrders(
+      tenantId,
+      { purchaseOrders: [poPayload] },
+      true, // summarizeErrors
+      key,
+    );
+
+  let res: Awaited<ReturnType<typeof create>>;
+  try {
+    res = await create(idempotencyKey);
+  } catch (err) {
+    if (!idempotencyKey || !isIdempotencyConflict(err)) throw err;
+    // "Idempotency Key … is used with a different request": the same key was
+    // first sent with a payload that has since changed (2026-09-14: the same
+    // rows, but account 300 → 341 and a merged supplier contact after the
+    // Xero tidy). Xero remembers a key for 24h even when that first request
+    // FAILED. If the earlier request did make a PO, adopt it rather than
+    // duplicate; otherwise go again with a fresh key.
+    const existing = await findTodaysDraft(xero, tenantId, supplierContactId, reference, lineItems.length, issueDate);
+    if (existing) return existing;
+    res = await create(`${idempotencyKey}-${Date.now().toString(36)}`);
+  }
   let po = res.body.purchaseOrders?.[0];
   if (!po?.purchaseOrderID) {
     throw new Error("Xero did not return a PurchaseOrderID for the new PO");
@@ -123,6 +140,53 @@ export async function createXeroPurchaseOrder({
     total: Number(po.total ?? 0),
     status: String(po.status ?? "DRAFT"),
   };
+}
+
+function isIdempotencyConflict(err: unknown): boolean {
+  const body = (err as { response?: { body?: { Detail?: unknown } } })?.response?.body;
+  const detail = typeof body?.Detail === "string" ? body.Detail : "";
+  return /idempotency key/i.test(detail) && /different request/i.test(detail);
+}
+
+/**
+ * A DRAFT PO created today for this supplier + job reference with the same
+ * number of lines — what an earlier attempt would have left behind if Xero
+ * made the PO but the CRM never heard back. Newest wins.
+ */
+async function findTodaysDraft(
+  xero: XeroClient,
+  tenantId: string,
+  supplierContactId: string,
+  reference: string | undefined,
+  lineCount: number,
+  issueDate: string,
+): Promise<CreatedXeroPO | null> {
+  try {
+    const res = await xero.accountingApi.getPurchaseOrders(
+      tenantId,
+      undefined,
+      "DRAFT",
+      issueDate,
+      issueDate,
+      "UpdatedDateUTC DESC",
+    );
+    const match = (res.body.purchaseOrders ?? []).find(
+      (p) =>
+        p.contact?.contactID === supplierContactId &&
+        (p.reference ?? "") === (reference ?? "") &&
+        (p.lineItems?.length ?? 0) === lineCount &&
+        !!p.purchaseOrderID,
+    );
+    if (!match?.purchaseOrderID) return null;
+    return {
+      purchaseOrderID: match.purchaseOrderID,
+      purchaseOrderNumber: match.purchaseOrderNumber ?? null,
+      total: Number(match.total ?? 0),
+      status: String(match.status ?? "DRAFT"),
+    };
+  } catch {
+    return null; // can't tell — fall through to a fresh create
+  }
 }
 
 /**

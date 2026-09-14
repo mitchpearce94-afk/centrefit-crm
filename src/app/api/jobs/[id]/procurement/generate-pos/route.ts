@@ -291,13 +291,24 @@ export async function POST(
         };
       });
 
-      // Idempotency key derived from the exact row set AND line content so a
-      // double-click or network retry can't duplicate the PO (24h window at
-      // Xero), but a regenerate after prices/SKUs/triage change gets a fresh
-      // key. Keying on row ids alone broke the reset→regenerate flow: same
-      // key + different body is an idempotency conflict Xero rejects outright.
+      // Idempotency key derived from the exact row set AND everything that
+      // goes into the Xero payload, so a double-click or network retry can't
+      // duplicate the PO (24h window at Xero), but any change — prices, SKUs,
+      // triage, the supplier contact, the account code — gets a fresh key.
+      // Keying on rows + lines alone bit twice: the reset→regenerate flow,
+      // and 2026-09-14 when the account code and contact changed under the
+      // same lines ("Idempotency Key … is used with a different request").
       const rowFingerprint = createHash("sha1")
-        .update(rows.map((r) => r.id).sort().join(",") + "|" + JSON.stringify(lineItems))
+        .update(
+          [
+            rows.map((r) => r.id).sort().join(","),
+            JSON.stringify(lineItems),
+            xeroSupplierContactId,
+            DEFAULT_PURCHASE_ACCOUNT_CODE,
+            job.number ?? "",
+            deliveryAddress,
+          ].join("|"),
+        )
         .digest("hex")
         .slice(0, 16);
       const idempotencyKey = `po-${jobId}-${supplierId}-${rowFingerprint}`.slice(0, 128);
