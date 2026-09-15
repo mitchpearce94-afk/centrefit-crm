@@ -86,6 +86,11 @@ export default async function EditQuotePage({
       quote.quote_mode === "manual" && quote.quote_type === "progress"
         ? quote.pricing_snapshot?.pp2?.total ?? undefined
         : undefined,
+    // Plan progress quotes: PP1 set by hand on the Summary step (PP2 derived).
+    pp1Override:
+      quote.quote_mode !== "manual" && quote.quote_type === "progress" && quote.pricing_snapshot?.split?.mode === "manual"
+        ? quote.pricing_snapshot.split.pp1ExGST ?? undefined
+        : undefined,
   };
 
   // Merge plans: include the one linked to this quote so the dropdown can show it

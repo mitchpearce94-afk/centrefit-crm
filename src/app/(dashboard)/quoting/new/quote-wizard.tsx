@@ -266,6 +266,8 @@ interface ExistingQuote {
   // Manually-entered PP1/PP2 amounts (manual progress quotes from the old system).
   manualPp1?: number;
   manualPp2?: number;
+  /** Plan progress quotes: PP1 set by hand on the Summary step (ex GST); PP2 = total − PP1. */
+  pp1Override?: number;
 }
 
 export function QuoteWizard({
@@ -314,6 +316,13 @@ export function QuoteWizard({
   );
   const [manualPp2, setManualPp2] = useState<string>(
     existingQuote?.manualPp2 != null ? String(existingQuote.manualPp2) : ""
+  );
+  // Plan progress quotes: PP1 typed by hand ("" = off). PP2 is never typed —
+  // it is always total − PP1, so the two can't drift from the headline total
+  // (Mitchell, 2026-09-15: Total Fusion SB came out 95k / 185k and needed
+  // balancing without the totals moving).
+  const [pp1Override, setPp1Override] = useState<string>(
+    existingQuote?.pp1Override != null ? String(existingQuote.pp1Override) : ""
   );
 
   // Job linking. Accept either ?job= (from /plans CompletePlanModal) or
@@ -670,6 +679,7 @@ export function QuoteWizard({
       if (Array.isArray(d.manualLabourLines)) setManualLabourLines(backfillLineCosts(d.manualLabourLines, billingSettings?.labour_cost_rate ?? 75));
       if (d.manualPp1 != null) setManualPp1(d.manualPp1);
       if (d.manualPp2 != null) setManualPp2(d.manualPp2);
+      if (d.pp1Override != null) setPp1Override(d.pp1Override);
       if (d.electricianCost != null) setElectricianCost(d.electricianCost);
       if (d.elecDoingRoughIn != null) setElecDoingRoughIn(d.elecDoingRoughIn);
       if (d.elecDoingFitOff != null) setElecDoingFitOff(d.elecDoingFitOff);
@@ -691,7 +701,7 @@ export function QuoteWizard({
           step, quoteMode, customerId, siteId, clientName, siteName, siteAddress, siteInfo,
           deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
           linkedJobId, selectedPlanId, manualScope, manualBomItems, manualLabourLines,
-          manualPp1, manualPp2,
+          manualPp1, manualPp2, pp1Override,
           electricianCost,
           elecDoingRoughIn, elecDoingFitOff,
         }));
@@ -701,7 +711,7 @@ export function QuoteWizard({
   }, [step, quoteMode, customerId, siteId, clientName, siteName, siteAddress, siteInfo,
     deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
     linkedJobId, selectedPlanId, manualScope, manualBomItems, manualLabourLines,
-    manualPp1, manualPp2,
+    manualPp1, manualPp2, pp1Override,
     electricianCost,
     elecDoingRoughIn, elecDoingFitOff]);
 
@@ -1114,8 +1124,24 @@ export function QuoteWizard({
   const isManualProgress = quoteMode === "manual" && quoteType === "progress";
   const manualPp1Num = parseFloat(manualPp1) || 0;
   const manualPp2Num = parseFloat(manualPp2) || 0;
-  const effPp1 = isManualProgress ? manualPp1Num : (summary?.pp1.total ?? 0);
-  const effPp2 = isManualProgress ? manualPp2Num : (summary?.pp2.total ?? 0);
+  // Plan progress quotes with a hand-set PP1: PP2 is derived, never typed.
+  const pp1OverrideOn = quoteType === "progress" && !isManualProgress && pp1Override !== "";
+  const pp1OverrideNum = Math.round((parseFloat(pp1Override) || 0) * 100) / 100;
+  const totalForSplit = Math.round((summary?.totalExGST ?? 0) * 100) / 100;
+  const pp1OverrideError = !pp1OverrideOn
+    ? null
+    : pp1OverrideNum <= 0
+      ? "Enter the PP1 amount (ex GST)"
+      : pp1OverrideNum >= totalForSplit
+        ? `PP1 must be less than the quote total ($${fmt(totalForSplit)} ex GST)`
+        : null;
+  const pp1OverrideValid = pp1OverrideOn && !pp1OverrideError;
+  const effPp1 = isManualProgress ? manualPp1Num : pp1OverrideValid ? pp1OverrideNum : (summary?.pp1.total ?? 0);
+  const effPp2 = isManualProgress
+    ? manualPp2Num
+    : pp1OverrideValid
+      ? Math.round((totalForSplit - pp1OverrideNum) * 100) / 100
+      : (summary?.pp2.total ?? 0);
 
   const labourWarnings = useMemo(() => {
     if (quoteMode === "manual") return [];
@@ -1217,6 +1243,10 @@ export function QuoteWizard({
       toast("Enter the PP1 and/or PP2 amount for this progress quote", "error");
       return;
     }
+    if (pp1OverrideOn && pp1OverrideError) {
+      toast(pp1OverrideError, "error");
+      return;
+    }
 
     setSaving(true);
 
@@ -1280,6 +1310,21 @@ export function QuoteWizard({
               totalIncGST: (manualPp1Num + manualPp2Num) * 1.1,
             }
           : {}),
+        // Plan progress quotes with PP1 set by hand: PP2 = total − PP1 and the
+        // totals are untouched. `split` records it so the quote page can show
+        // the adjustment against the cost split and the edit page can reload it.
+        ...(pp1OverrideValid
+          ? {
+              pp1: { ...summary.pp1, total: pp1OverrideNum },
+              pp2: { ...summary.pp2, total: Math.round((totalForSplit - pp1OverrideNum) * 100) / 100 },
+              split: {
+                mode: "manual" as const,
+                pp1ExGST: pp1OverrideNum,
+                costPp1: summary.pp1.total,
+                adjustment: Math.round((pp1OverrideNum - summary.pp1.total) * 100) / 100,
+              },
+            }
+          : { split: { mode: "cost" as const } }),
       },
       expires_at: new Date(Date.now() + (billingSettings?.quote_validity_days ?? 30) * 86400000).toISOString(),
     };
@@ -2937,7 +2982,10 @@ export function QuoteWizard({
                   <div className="flex justify-between"><span className="text-muted-foreground">Incidentals</span><span className="font-mono">${fmt(summary.pp1.incidentals)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Admin</span><span className="font-mono">${fmt(summary.pp1.admin)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Extras</span><span className="font-mono">${fmt(summary.pp1.extrasCost)}</span></div>
-                  <div className="flex justify-between border-t border-border pt-2 font-medium"><span>PP1 Total</span><span className="font-mono">${fmt(summary.pp1.total)}</span></div>
+                  {pp1OverrideValid && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">Manual adjustment</span><span className="font-mono">{pp1OverrideNum >= summary.pp1.total ? "+" : "−"}${fmt(Math.abs(pp1OverrideNum - summary.pp1.total))}</span></div>
+                  )}
+                  <div className="flex justify-between border-t border-border pt-2 font-medium"><span>PP1 Total</span><span className="font-mono">${fmt(effPp1)}</span></div>
                 </div>
               </div>
               <div className="rounded-lg border border-border bg-card p-4">
@@ -2950,7 +2998,10 @@ export function QuoteWizard({
                   {summary.pp2.uplift > 0.005 && (
                     <div className="flex justify-between"><span className="text-muted-foreground">Uplift</span><span className="font-mono">${fmt(summary.pp2.uplift)}</span></div>
                   )}
-                  <div className="flex justify-between border-t border-border pt-2 font-medium"><span>PP2 Total</span><span className="font-mono">${fmt(summary.pp2.total)}</span></div>
+                  {pp1OverrideValid && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">Manual adjustment</span><span className="font-mono">{pp1OverrideNum >= summary.pp1.total ? "−" : "+"}${fmt(Math.abs(pp1OverrideNum - summary.pp1.total))}</span></div>
+                  )}
+                  <div className="flex justify-between border-t border-border pt-2 font-medium"><span>PP2 Total</span><span className="font-mono">${fmt(effPp2)}</span></div>
                 </div>
               </div>
             </div>
@@ -2972,16 +3023,67 @@ export function QuoteWizard({
             <div className="pt-2"><p className="text-xs text-muted-foreground uppercase">Total Profit</p><p className="text-2xl font-bold font-mono text-emerald-400">${fmt(summary.profit)}</p></div>
           </div>
 
-          {/* Discount toggle */}
-          <label className="flex items-center gap-3 text-sm">
-            <button type="button" onClick={() => setDiscountPercent(discountPercent > 0 ? 0 : 5)} className={`relative h-5 w-9 rounded-full transition-colors ${discountPercent > 0 ? "bg-primary" : "bg-muted"}`}>
-              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${discountPercent > 0 ? "left-[18px]" : "left-0.5"}`} />
-            </button>
-            Apply 5% discount
-          </label>
-          {discountPercent > 0 && (
-            <p className="text-xs text-muted-foreground">Full price: ${fmt(summary.fullPriceExGST)} ex GST — showing ${fmt(summary.targetExGST)} (saves ${fmt(summary.discount.amount)})</p>
-          )}
+          {/* Discount toggle + (progress quotes) PP1 override, side by side */}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-10">
+            <div>
+              <label className="flex items-center gap-3 text-sm">
+                <button type="button" onClick={() => setDiscountPercent(discountPercent > 0 ? 0 : 5)} className={`relative h-5 w-9 rounded-full transition-colors ${discountPercent > 0 ? "bg-primary" : "bg-muted"}`}>
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${discountPercent > 0 ? "left-[18px]" : "left-0.5"}`} />
+                </button>
+                Apply 5% discount
+              </label>
+              {discountPercent > 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">Full price: ${fmt(summary.fullPriceExGST)} ex GST — showing ${fmt(summary.targetExGST)} (saves ${fmt(summary.discount.amount)})</p>
+              )}
+            </div>
+            {quoteType === "progress" && !isManualProgress && (
+              <div className="flex-1">
+                <label className="flex items-center gap-3 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setPp1Override(pp1OverrideOn ? "" : String(Math.round(summary.pp1.total * 100) / 100))}
+                    className={`relative h-5 w-9 rounded-full transition-colors ${pp1OverrideOn ? "bg-primary" : "bg-muted"}`}
+                  >
+                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${pp1OverrideOn ? "left-[18px]" : "left-0.5"}`} />
+                  </button>
+                  Set PP1 manually
+                </label>
+                {pp1OverrideOn ? (
+                  <div className="mt-3 rounded-lg border border-border bg-card p-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">PP1 — Due on Acceptance (ex GST)</label>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-muted-foreground">$</span>
+                          <input
+                            type="number" step="0.01" min="0" max={totalForSplit} inputMode="decimal"
+                            value={pp1Override}
+                            onChange={(e) => setPp1Override(e.target.value)}
+                            className="block w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+                        <p className="mt-1 text-[10px] text-muted-foreground">inc GST ${fmt(pp1OverrideNum * 1.1)}</p>
+                      </div>
+                      <div>
+                        <p className="block text-xs font-medium text-muted-foreground mb-1">PP2 — Due on Completion (ex GST)</p>
+                        <p className="rounded-md border border-dashed border-border px-3 py-2 text-sm font-mono">${fmt(Math.max(totalForSplit - pp1OverrideNum, 0))}</p>
+                        <p className="mt-1 text-[10px] text-muted-foreground">inc GST ${fmt(Math.max(totalForSplit - pp1OverrideNum, 0) * 1.1)} — always the total less PP1</p>
+                      </div>
+                    </div>
+                    {pp1OverrideError ? (
+                      <p className="mt-3 text-xs text-red-500" role="alert">{pp1OverrideError}</p>
+                    ) : (
+                      <p className="mt-3 text-[11px] text-muted-foreground">
+                        Quote total stays ${fmt(totalForSplit)} ex GST. Cost split would be PP1 ${fmt(summary.pp1.total)} / PP2 ${fmt(summary.pp2.total)}; this moves {pp1OverrideNum >= summary.pp1.total ? "+" : "−"}${fmt(Math.abs(pp1OverrideNum - summary.pp1.total))} into PP1.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-[11px] text-muted-foreground">PP1 is cost recovery, PP2 the margin. Switch on to rebalance the two; the quote total never moves.</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

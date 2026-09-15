@@ -50,6 +50,10 @@ export interface QuoteSummary {
     total: number
   }
   discount: { percent: number; amount: number }
+  /** Progress quotes: how PP1/PP2 were split. "manual" = PP1 typed on the
+   *  Summary step (Total Fusion SB, 2026-09-15); PP2 is always total − PP1,
+   *  so the headline total never moves. Absent on older snapshots = cost. */
+  split?: { mode: "cost" } | { mode: "manual"; pp1ExGST: number; costPp1: number; adjustment: number }
   totalExGST: number
   gst: number
   totalIncGST: number

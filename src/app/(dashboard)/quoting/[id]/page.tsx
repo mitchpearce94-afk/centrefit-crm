@@ -357,6 +357,9 @@ export default async function QuoteDetailPage({
                   <div className="flex justify-between"><span className="text-muted-foreground">Incidentals</span><span className="font-mono">${fmt(pricing.pp1.incidentals)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Admin</span><span className="font-mono">${fmt(pricing.pp1.admin)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Extras</span><span className="font-mono">${fmt(pricing.pp1.extrasCost)}</span></div>
+                  {manualSplit(pricing) && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">Manual adjustment</span><span className="font-mono">{manualSplit(pricing)!.adjustment >= 0 ? "+" : "−"}${fmt(Math.abs(manualSplit(pricing)!.adjustment))}</span></div>
+                  )}
                   <div className="flex justify-between border-t border-border pt-2 font-medium"><span>PP1 Total (ex GST)</span><span className="font-mono">${fmt(pricing.pp1.total)}</span></div>
                 </div>
               </div>
@@ -369,6 +372,9 @@ export default async function QuoteDetailPage({
                   <div className="flex justify-between"><span className="text-muted-foreground">Extras</span><span className="font-mono">${fmt(pricing.pp2.extrasProfit)}</span></div>
                   {((pricing.pp2 as { uplift?: number }).uplift ?? 0) > 0.005 && (
                     <div className="flex justify-between"><span className="text-muted-foreground">Uplift</span><span className="font-mono">${fmt((pricing.pp2 as { uplift?: number }).uplift ?? 0)}</span></div>
+                  )}
+                  {manualSplit(pricing) && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">Manual adjustment</span><span className="font-mono">{manualSplit(pricing)!.adjustment >= 0 ? "−" : "+"}${fmt(Math.abs(manualSplit(pricing)!.adjustment))}</span></div>
                   )}
                   <div className="flex justify-between border-t border-border pt-2 font-medium"><span>PP2 Total (ex GST)</span><span className="font-mono">${fmt(pricing.pp2.total)}</span></div>
                 </div>
@@ -425,4 +431,14 @@ export default async function QuoteDetailPage({
       <p className="mt-6 text-xs text-muted-foreground">Created {new Date(quote.created_at).toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
     </div>
   );
+}
+
+/** PP1 set by hand on the Summary step (pricing_snapshot.split, 2026-09-15):
+ *  the cards above are still the cost/margin split, so the amount moved
+ *  between them is shown as a line each side. */
+function manualSplit(pricing: unknown): { adjustment: number; costPp1: number } | null {
+  const split = (pricing as { split?: { mode?: string; adjustment?: number; costPp1?: number } } | null)?.split;
+  return split?.mode === "manual" && typeof split.adjustment === "number"
+    ? { adjustment: split.adjustment, costPp1: Number(split.costPp1 ?? 0) }
+    : null;
 }
