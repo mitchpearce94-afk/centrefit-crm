@@ -24,6 +24,14 @@ export const XERO_SALES_ACCOUNTS: XeroAccountOption[] = [
   { code: "221", name: "Sales - Security" },
 ];
 
+/**
+ * Default sales account for every invoice line that doesn't pick one:
+ * 203 · Sales - IT Install (Mitchell, 2026-09-16: "all invoices default as IT
+ * sales 203"). Was 200 · Sales. Recurring catalogue services keep whatever
+ * account is saved on the service; this only fills the gap.
+ */
+export const DEFAULT_SALES_ACCOUNT_CODE = "203";
+
 export interface XeroTaxTypeOption {
   code: string;
   label: string;

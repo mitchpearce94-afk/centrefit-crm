@@ -5,6 +5,7 @@ import { createServiceRoleClient } from "@/lib/supabase/service";
 import { createSubscription, getMandate, GoCardlessApiError } from "@/lib/gocardless/client";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
 import { mirrorServiceToXero } from "@/lib/recurring/mirror-service-invoice";
+import { DEFAULT_SALES_ACCOUNT_CODE } from "@/lib/xero/account-codes";
 
 /**
  * Add a service to a plan that bills via existing GoCardless subscriptions
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest) {
       recurring_plan_id: planId,
       service_code: serviceCode ?? "custom",
       service_name: serviceName.trim(),
-      account_code: accountCode ?? "200",
+      account_code: accountCode ?? DEFAULT_SALES_ACCOUNT_CODE,
       frequency,
       price_inc_gst: priceIncGst,
       quantity,
@@ -123,7 +124,7 @@ export async function POST(req: NextRequest) {
           serviceName: serviceName.trim(),
           priceIncGst,
           quantity,
-          accountCode: accountCode ?? "200",
+          accountCode: accountCode ?? DEFAULT_SALES_ACCOUNT_CODE,
           frequency,
           startDate: sub.start_date ?? chargeDate ?? new Date().toISOString().slice(0, 10),
         });

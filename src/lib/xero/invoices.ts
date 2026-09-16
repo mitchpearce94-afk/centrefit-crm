@@ -1,5 +1,6 @@
 import type { XeroClient } from "xero-node";
 import { brisbaneDateISO } from "@/lib/dates";
+import { DEFAULT_SALES_ACCOUNT_CODE } from "@/lib/xero/account-codes";
 import {
   generateScopeOfWorks,
   manualScopeDocument,
@@ -12,7 +13,7 @@ import {
 
 // Centrefit's default Xero sales account code. Sue used 200 historically —
 // if this ever changes, update here + let the rest of the code flow through.
-export const DEFAULT_SALES_ACCOUNT_CODE = "200";
+export { DEFAULT_SALES_ACCOUNT_CODE };
 // Australian GST on income tax type. Xero accepts this identifier verbatim.
 export const DEFAULT_TAX_TYPE_OUTPUT = "OUTPUT";
 // Default payment term: 14 days from issue. Overridable per customer later.

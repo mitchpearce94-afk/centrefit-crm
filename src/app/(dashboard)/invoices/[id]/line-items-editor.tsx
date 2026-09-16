@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 import {
+  DEFAULT_SALES_ACCOUNT_CODE,
   XERO_SALES_ACCOUNTS,
   XERO_OUTPUT_TAX_TYPES,
 } from "@/lib/xero/account-codes";
@@ -49,7 +50,7 @@ export function LineItemsEditor({
       description: li.description ?? "",
       quantity: li.quantity ?? 1,
       unitAmount: Number(li.unitAmount ?? 0),
-      accountCode: li.accountCode ?? "200",
+      accountCode: li.accountCode ?? DEFAULT_SALES_ACCOUNT_CODE,
       taxType: li.taxType ?? "OUTPUT",
       descriptionOnly: li.unitAmount == null,
     })),
@@ -88,7 +89,7 @@ export function LineItemsEditor({
         description: "",
         quantity: 1,
         unitAmount: 0,
-        accountCode: "200",
+        accountCode: DEFAULT_SALES_ACCOUNT_CODE,
         taxType: "OUTPUT",
         descriptionOnly,
       },

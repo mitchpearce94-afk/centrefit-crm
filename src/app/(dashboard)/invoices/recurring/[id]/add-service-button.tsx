@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { DEFAULT_SALES_ACCOUNT_CODE } from "@/lib/xero/account-codes";
 
 /**
  * Add a service to an imported (GC-billed) plan. Creates ONE new GoCardless
@@ -67,7 +68,7 @@ export function AddServiceButton({
           planId,
           serviceName: effName,
           serviceCode: isCustom ? "custom" : code,
-          accountCode: isCustom ? "200" : selected?.account_code ?? "200",
+          accountCode: isCustom ? DEFAULT_SALES_ACCOUNT_CODE : selected?.account_code ?? DEFAULT_SALES_ACCOUNT_CODE,
           priceIncGst: effPrice,
           frequency: effFreq,
           quantity,

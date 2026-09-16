@@ -1,4 +1,5 @@
 import "server-only";
+import { DEFAULT_SALES_ACCOUNT_CODE } from "@/lib/xero/account-codes";
 import crypto from "node:crypto";
 import { XeroClient } from "xero-node";
 
@@ -87,7 +88,7 @@ export interface CreatedRepeatingInvoice {
   nextScheduledDate: string | null;
 }
 
-const DEFAULT_SALES_ACCOUNT_CODE = "200";   // matches createXeroInvoice default
+// default sales account shared with createXeroInvoice (203 · Sales - IT Install)
 const DEFAULT_TAX_TYPE_INCLUSIVE = "OUTPUT"; // GST inclusive line items
 
 /**

@@ -4,6 +4,7 @@ import { getAuthedClient } from "@/lib/xero/client";
 import { updateXeroInvoiceLines } from "@/lib/xero/invoices";
 import { logDocumentActivity } from "@/lib/activity/log";
 import { assertXeroAvailable, captureXeroRateLimit } from "@/lib/xero/rate-limit";
+import { DEFAULT_SALES_ACCOUNT_CODE } from "@/lib/xero/account-codes";
 
 interface InboundLine {
   description: string;
@@ -96,7 +97,7 @@ export async function POST(
           description: li.description,
           quantity: li.quantity ?? 1,
           unitAmount: li.unitAmount,
-          accountCode: li.accountCode ?? "200",
+          accountCode: li.accountCode ?? DEFAULT_SALES_ACCOUNT_CODE,
           taxType: li.taxType ?? "OUTPUT",
         },
   );

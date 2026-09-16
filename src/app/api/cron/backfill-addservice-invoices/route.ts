@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { mirrorServiceToXero } from "@/lib/recurring/mirror-service-invoice";
+import { DEFAULT_SALES_ACCOUNT_CODE } from "@/lib/xero/account-codes";
 
 /**
  * One-shot catch-up for add-service GC subscriptions created BEFORE the Xero
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
         description: item?.description ?? null,
         priceIncGst,
         quantity,
-        accountCode: item?.account_code ?? "200",
+        accountCode: item?.account_code ?? DEFAULT_SALES_ACCOUNT_CODE,
         frequency: link.interval_unit === "yearly" ? "yearly" : "monthly",
         startDate: link.start_date,
       });

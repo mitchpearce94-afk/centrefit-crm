@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
-import { XERO_SALES_ACCOUNTS, accountCodeLabel } from "@/lib/xero/account-codes";
+import { XERO_SALES_ACCOUNTS, accountCodeLabel, DEFAULT_SALES_ACCOUNT_CODE } from "@/lib/xero/account-codes";
 
 interface Service {
   id: string;
@@ -126,7 +126,7 @@ function ServiceModal({
   const [description, setDescription] = useState(service?.description ?? "");
   const [price, setPrice] = useState(service?.price_inc_gst != null ? String(service.price_inc_gst) : "");
   const [frequency, setFrequency] = useState<"monthly" | "yearly">(service?.frequency ?? "monthly");
-  const [accountCode, setAccountCode] = useState(service?.account_code ?? "200");
+  const [accountCode, setAccountCode] = useState(service?.account_code ?? DEFAULT_SALES_ACCOUNT_CODE);
   const [sortOrder, setSortOrder] = useState(service?.sort_order ?? 0);
   const [saving, setSaving] = useState(false);
 
