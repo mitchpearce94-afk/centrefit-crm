@@ -30,7 +30,7 @@ import { sendNotificationEmail } from "@/lib/emails/notification-email";
  *   });
  */
 
-export type NotificationRefType = "quote" | "invoice" | "job" | "recurring_plan" | "enquiry" | "plan" | "site" | "inventory";
+export type NotificationRefType = "quote" | "invoice" | "job" | "recurring_plan" | "enquiry" | "plan" | "site" | "inventory" | "receipt";
 
 export type Audience =
   | { staffId: string | null | undefined }
