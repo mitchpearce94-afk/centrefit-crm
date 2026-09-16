@@ -72,7 +72,7 @@ export function UpliftChecker() {
           placeholder="Start typing an address…"
         />
         {matches.length > 0 && (
-          <div className="absolute z-10 mt-1 w-full rounded-md border border-border bg-popover shadow-lg max-h-56 overflow-auto">
+          <div className="absolute z-10 mt-1 w-full rounded-md border border-border bg-card-elevated shadow-2xl max-h-56 overflow-auto">
             {matches.map((m) => (
               <button
                 key={m.id}

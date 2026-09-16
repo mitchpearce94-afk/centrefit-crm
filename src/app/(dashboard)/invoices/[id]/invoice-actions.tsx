@@ -297,7 +297,7 @@ export function InvoiceActions({
           {menuOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-              <div role="menu" className="absolute right-0 mt-1 z-50 min-w-[240px] rounded-md border border-border bg-popover shadow-lg py-1">
+              <div role="menu" className="absolute right-0 mt-1 z-50 min-w-[240px] rounded-md border border-border bg-card-elevated shadow-2xl py-1">
                 {/* Look */}
                 {xeroInvoiceId && (
                   <MenuItem onClick={openPreviewPdf}>Preview PDF</MenuItem>
