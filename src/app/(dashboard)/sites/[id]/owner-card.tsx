@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
+import { XeroContactPicker, type PickedXeroContact } from "@/components/xero-contact-picker";
 
 /**
  * Owner card (site-first D2/D4). Two paths:
@@ -17,6 +18,8 @@ export interface OwnerInfo {
   billing_email: string | null;
   /** Xero billing-entity override (customer_sites.invoice_name). Null = bill as site name. */
   invoiceName: string | null;
+  /** Linked Xero contact (customer_sites.xero_contact_id). When set it wins over invoiceName (D6). */
+  xeroContactId?: string | null;
   contactName: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
@@ -41,6 +44,41 @@ export function OwnerCard({
   const [mode, setMode] = useState<"view" | "edit" | "change">("view");
   const [busy, setBusy] = useState(false);
   const [sendDdSignup, setSendDdSignup] = useState(true);
+
+  // Linked Xero contact (docs/billing-contact-CONTEXT.md D3/D6). The name is
+  // looked up lazily from Xero so the page itself never waits on Xero.
+  const [pickingXero, setPickingXero] = useState(false);
+  const [xeroName, setXeroName] = useState<string | null>(null);
+  const [xeroNameState, setXeroNameState] = useState<"idle" | "loading" | "missing" | "error">("idle");
+  useEffect(() => {
+    const id = owner.xeroContactId;
+    if (!id) { setXeroName(null); setXeroNameState("idle"); return; }
+    let cancelled = false;
+    setXeroNameState("loading");
+    fetch(`/api/xero/contacts?id=${encodeURIComponent(id)}`)
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!r.ok) { setXeroNameState("error"); return; }
+        if (j.contact?.name) { setXeroName(j.contact.name); setXeroNameState("idle"); } else { setXeroNameState("missing"); }
+      })
+      .catch(() => { if (!cancelled) setXeroNameState("error"); });
+    return () => { cancelled = true; };
+  }, [owner.xeroContactId]);
+
+  async function setXeroContact(id: string | null, label: string) {
+    const res = await fetch(`/api/sites/${siteId}/owner`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ xeroContactId: id }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { toast(j.error || "Couldn't update the Xero contact", "error"); return; }
+    toast(id ? `Future invoices for this site bill to ${label}` : "Xero contact unlinked — next invoice finds or creates one by the invoice name");
+    setPickingXero(false);
+    router.refresh();
+  }
+  async function pickXero(c: PickedXeroContact) { await setXeroContact(c.id, c.name); }
 
   // Shared form state — seeded from the current owner in edit mode, blank in
   // change mode.
@@ -141,6 +179,16 @@ export function OwnerCard({
         )}
       </div>
 
+      {pickingXero && (
+        <XeroContactPicker
+          title="Bill this site to…"
+          intro="Every future invoice for this site is raised against the contact you pick. Existing invoices are unchanged — re-bill those from the invoice itself."
+          currentId={owner.xeroContactId ?? null}
+          onClose={() => setPickingXero(false)}
+          onPick={pickXero}
+          confirmLabel="Link contact"
+        />
+      )}
       {mode === "view" && (
         <div className="mt-2 space-y-1 text-sm">
           <p className="font-medium text-foreground">{owner.name}</p>
@@ -152,8 +200,35 @@ export function OwnerCard({
           {owner.billing_email && owner.billing_email !== owner.contactEmail && (
             <p className="text-xs text-muted-foreground">Billing: <span className="font-mono">{owner.billing_email}</span></p>
           )}
-          {owner.invoiceName && (
-            <p className="text-xs text-muted-foreground">Invoices bill to: <span className="font-medium text-foreground">{owner.invoiceName}</span></p>
+          <p className="text-xs text-muted-foreground">
+            Invoices bill to:{" "}
+            {owner.xeroContactId ? (
+              <span className="font-medium text-foreground">
+                {xeroNameState === "loading" ? "…" : xeroName ?? (xeroNameState === "missing" ? "a Xero contact that no longer exists" : "linked Xero contact")}
+              </span>
+            ) : (
+              <span className="font-medium text-foreground">{owner.invoiceName ?? "the site name"}</span>
+            )}
+            <span className="ml-1 text-[10px] text-muted-foreground/80">
+              {owner.xeroContactId ? "(linked Xero contact)" : "(no Xero contact linked yet — created on the first invoice)"}
+            </span>
+            {" "}
+            <button type="button" onClick={() => setPickingXero(true)} className="text-[10px] underline hover:text-foreground">
+              {owner.xeroContactId ? "Change" : "Link existing"}
+            </button>
+            {owner.xeroContactId && (
+              <>
+                {" · "}
+                <button type="button" onClick={() => void setXeroContact(null, "")} className="text-[10px] underline hover:text-foreground">
+                  Unlink
+                </button>
+              </>
+            )}
+          </p>
+          {owner.xeroContactId && owner.invoiceName && xeroName && xeroName !== owner.invoiceName && (
+            <p className="text-[10px] text-amber-300/90">
+              Invoice name &ldquo;{owner.invoiceName}&rdquo; is ignored while a contact is linked.
+            </p>
           )}
           {owner.abn && <p className="text-xs text-muted-foreground">ABN {owner.abn}</p>}
           {/* Customer ID — deliberately surfaced ONLY here (site-first spec:
@@ -224,6 +299,7 @@ export function OwnerCard({
             />
             <span className="mt-1 block text-[10px] text-muted-foreground">
               Set this when the owner&apos;s accounts team needs the legal entity on invoices (e.g. &quot;Bravofit Oxley Pty Ltd&quot;). New Xero contacts are created under this name.
+              {owner.xeroContactId && " A linked Xero contact (see the Owner card) takes priority over this name."}
             </span>
           </label>
           <div className="grid grid-cols-3 gap-2">

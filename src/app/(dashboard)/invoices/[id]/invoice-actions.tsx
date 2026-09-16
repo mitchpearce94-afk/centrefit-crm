@@ -16,6 +16,8 @@ interface Props {
   defaultRecipient: string | null;
   lastReminderAt: string | null;
   reminderCount: number;
+  /** Xero contact the invoice is billed to (snapshot) — shown before Authorise & Send (D1). */
+  billToName?: string | null;
 }
 
 export function InvoiceActions({
@@ -30,6 +32,7 @@ export function InvoiceActions({
   defaultRecipient,
   lastReminderAt,
   reminderCount,
+  billToName = null,
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -351,6 +354,28 @@ export function InvoiceActions({
               </p>
             </div>
             <div className="px-5 py-4 space-y-3">
+              {/* D1: nobody authorises without seeing who it's billed to. */}
+              <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/30 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Billed to (Xero contact)</p>
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {billToName ?? <span className="italic text-muted-foreground">not synced — use Refresh, or check the PDF</span>}
+                  </p>
+                </div>
+                {xeroInvoiceId && (
+                  <button
+                    type="button"
+                    onClick={() => window.open(`/api/invoices/${invoiceId}/pdf`, "_blank", "noopener")}
+                    className="shrink-0 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                    title="Open the invoice PDF exactly as Xero renders it now"
+                  >
+                    Preview PDF
+                  </button>
+                )}
+              </div>
+              <p className="text-[10px] text-muted-foreground -mt-1">
+                Wrong entity? Cancel and use <span className="font-medium">Change</span> next to &ldquo;Billed to&rdquo; on the invoice first.
+              </p>
               <div>
                 <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Recipient email{authSendRecipient.includes(",") ? "s" : ""}

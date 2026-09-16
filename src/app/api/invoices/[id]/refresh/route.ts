@@ -83,6 +83,10 @@ export async function POST(
         : null,
       xero_last_synced_at: new Date().toISOString(),
       xero_last_error: null,
+      // Bill-to snapshot (docs/billing-contact-CONTEXT.md D5): Xero is the
+      // source of truth for who the invoice is billed to; Refresh re-reads it.
+      ...(latest.contactID ? { xero_contact_id: latest.contactID } : {}),
+      ...(latest.contactName ? { bill_to_name: latest.contactName } : {}),
     })
     .eq("id", id)
     .select()

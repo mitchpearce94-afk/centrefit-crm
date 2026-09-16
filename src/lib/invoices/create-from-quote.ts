@@ -168,6 +168,7 @@ export async function createInvoiceFromAcceptedQuote(
     xeroContactId,
     lineItems,
     reference: quote.ref,
+    siteName: site?.name ?? null, // D4: "<site> - <ref>" when billed to another entity
   });
 
   const gst = Number((xeroResult.total - xeroResult.subTotal).toFixed(2));
@@ -179,6 +180,8 @@ export async function createInvoiceFromAcceptedQuote(
       job_id: quote.job_id ?? null,
       customer_id: customer.id,
       site_id: site?.id ?? null,
+      xero_contact_id: xeroContactId,
+      bill_to_name: xeroResult.contactName,
       description: headerDescription,
       line_items: lineItems,
       subtotal: xeroResult.subTotal,

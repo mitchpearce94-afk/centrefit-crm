@@ -243,9 +243,10 @@ export async function POST(req: NextRequest) {
 
   // ── Create in Xero ──
   let xeroResult;
+  let xeroContactId: string | null = null;
   try {
     const { client: xero, conn } = await getAuthedClient();
-    const xeroContactId = await findOrCreateContact(
+    xeroContactId = await findOrCreateContact(
       supabase,
       xero,
       conn.tenant_id,
@@ -268,6 +269,7 @@ export async function POST(req: NextRequest) {
       lineItems,
       reference,
       dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
+      siteName: siteRow?.name ?? null, // D4: "<site> - <ref>" when billed to another entity
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -287,6 +289,8 @@ export async function POST(req: NextRequest) {
       job_id: jobId,
       customer_id: customerId,
       site_id: siteRow?.id ?? null,
+      xero_contact_id: xeroContactId,
+      bill_to_name: xeroResult.contactName,
       description: headerDescription,
       line_items: lineItems,
       subtotal: xeroResult.subTotal,

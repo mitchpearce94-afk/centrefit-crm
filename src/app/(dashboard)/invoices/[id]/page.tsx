@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { InvoiceActions } from "./invoice-actions";
+import { BillTo } from "./bill-to";
 import { LineItemsEditor } from "./line-items-editor";
 import { DocumentActivityTimeline } from "@/components/document-activity-timeline";
 import { accountCodeLabel } from "@/lib/xero/account-codes";
@@ -110,6 +111,17 @@ export default async function InvoiceDetailPage({
               </p>
             );
           })()}
+          {/* Who the invoice is billed to in Xero — visible before anything
+              is authorised or emailed (docs/billing-contact-CONTEXT.md D1). */}
+          <BillTo
+            invoiceId={inv.id}
+            billToName={inv.bill_to_name ?? null}
+            xeroContactId={inv.xero_contact_id ?? null}
+            status={inv.status}
+            amountPaid={Number(inv.amount_paid) || 0}
+            siteName={(inv.site ?? inv.quote?.site ?? inv.job?.site)?.name ?? null}
+            hasXero={!!inv.xero_invoice_id}
+          />
         </div>
         <InvoiceActions
           invoiceId={inv.id}
@@ -120,6 +132,7 @@ export default async function InvoiceDetailPage({
           xeroInvoiceId={inv.xero_invoice_id}
           sentAt={inv.sent_at ?? null}
           sentToEmail={inv.sent_to_email ?? null}
+          billToName={inv.bill_to_name ?? null}
           lastReminderAt={inv.last_reminder_sent_at ?? null}
           reminderCount={inv.reminder_count ?? 0}
           defaultRecipient={(() => {

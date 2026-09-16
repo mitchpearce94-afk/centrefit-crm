@@ -62,6 +62,10 @@ export interface CreateXeroInvoiceInput {
   lineItems: XeroLineItemInput[];
   reference?: string;      // goes on the invoice header (our quote ref, job number, etc.)
   dueDate?: Date;          // defaults to today + DEFAULT_DUE_DAYS
+  /** CRM site name. When the Xero contact isn't named after the site, the
+   * Reference becomes "<site> - <reference>" so the site never disappears
+   * from the paper (docs/billing-contact-CONTEXT.md D4). */
+  siteName?: string | null;
 }
 
 export interface CreatedXeroInvoice {
@@ -74,6 +78,42 @@ export interface CreatedXeroInvoice {
   amountDue: number;
   status: string;
   dueDate: string | null;  // ISO date
+  /** Xero contact name at creation — the "Bill to" the customer will see (D5 snapshot). */
+  contactName: string | null;
+  /** The Reference actually written to Xero (after the D4 site rule). */
+  reference: string | null;
+}
+
+/**
+ * D4: the site must survive on the invoice. When the bill-to contact is the
+ * site (the default model) the reference stays as given; when it's a
+ * different entity (Bravofit Oxley Pty Ltd, Workspace 360, …) the site name
+ * leads the reference. Normalised compare so "Snap Fitness - Preston" still
+ * counts as the site.
+ */
+export function billToReference(
+  siteName: string | null | undefined,
+  billToName: string | null | undefined,
+  reference: string | null | undefined,
+): string | null {
+  const ref = reference?.trim() || null;
+  const site = siteName?.trim();
+  if (!site) return ref;
+  const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const sameEntity = !!billToName && (norm(billToName) === norm(site) || norm(billToName).includes(norm(site)));
+  if (sameEntity) return ref;
+  if (ref && norm(ref).startsWith(norm(site))) return ref;
+  return (ref ? `${site} - ${ref}` : site).slice(0, 255);
+}
+
+/** Contact name lookup for the bill-to snapshot; never blocks invoice creation. */
+async function contactNameOf(xero: XeroClient, tenantId: string, contactId: string): Promise<string | null> {
+  try {
+    const res = await xero.accountingApi.getContact(tenantId, contactId);
+    return res.body.contacts?.[0]?.name ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -83,7 +123,7 @@ export interface CreatedXeroInvoice {
  * authorise endpoint once the invoice is promoted.
  */
 export async function createXeroInvoice({
-  xero, tenantId, xeroContactId, lineItems, reference, dueDate,
+  xero, tenantId, xeroContactId, lineItems, reference, dueDate, siteName,
 }: CreateXeroInvoiceInput): Promise<CreatedXeroInvoice> {
   if (lineItems.length === 0) {
     throw new Error("Cannot create a Xero invoice with zero line items");
@@ -94,6 +134,8 @@ export async function createXeroInvoice({
 
   const today = new Date();
   const due = dueDate ?? new Date(today.getTime() + DEFAULT_DUE_DAYS * 86400_000);
+  const contactName = await contactNameOf(xero, tenantId, xeroContactId);
+  const finalReference = billToReference(siteName, contactName, reference);
 
   const invoicePayload: Record<string, unknown> = {
     type: "ACCREC", // Accounts Receivable — sales invoice
@@ -104,7 +146,7 @@ export async function createXeroInvoice({
     lineAmountTypes: "Exclusive", // unit amounts are ex-GST; Xero adds GST
     lineItems: lineItems.map(toXeroLineItem),
   };
-  if (reference) invoicePayload.reference = reference.slice(0, 255);
+  if (finalReference) invoicePayload.reference = finalReference.slice(0, 255);
 
   const res = await xero.accountingApi.createInvoices(tenantId, {
     invoices: [invoicePayload],
@@ -124,7 +166,47 @@ export async function createXeroInvoice({
     amountDue: Number(invoice.amountDue ?? invoice.total ?? 0),
     status: String(invoice.status ?? "DRAFT"),
     dueDate: invoice.dueDate ?? null,
+    contactName: invoice.contact?.name ?? contactName,
+    reference: invoice.reference ?? finalReference,
   };
+}
+
+/**
+ * Re-point an existing invoice at another Xero contact (D3). Xero accepts a
+ * Contact + Reference update on DRAFT and on AUTHORISED invoices with no
+ * payments (proven 2026-09-16 on INV-6909/6900). Anything else is refused
+ * here before we touch Xero. Returns the contact name for the snapshot.
+ */
+export async function updateXeroInvoiceContact({
+  xero, tenantId, xeroInvoiceId, xeroContactId, siteName,
+}: {
+  xero: XeroClient;
+  tenantId: string;
+  xeroInvoiceId: string;
+  xeroContactId: string;
+  siteName?: string | null;
+}): Promise<{ contactName: string | null; reference: string | null; status: string }> {
+  const current = (await xero.accountingApi.getInvoice(tenantId, xeroInvoiceId)).body.invoices?.[0];
+  if (!current) throw new Error("Xero invoice not found");
+  const status = String(current.status ?? "");
+  if (!(status === "DRAFT" || status === "SUBMITTED" || (status === "AUTHORISED" && Number(current.amountPaid ?? 0) === 0))) {
+    throw new Error(`Xero won't let the contact change on a ${status.toLowerCase()} invoice${Number(current.amountPaid ?? 0) > 0 ? " with payments" : ""}`);
+  }
+  const contactName = await contactNameOf(xero, tenantId, xeroContactId);
+  // Strip a previous "<site> - " prefix before re-deriving, so re-pointing
+  // twice doesn't stack site names.
+  const site = siteName?.trim();
+  let baseRef = current.reference ?? null;
+  if (site && baseRef && baseRef.toLowerCase().startsWith(`${site.toLowerCase()} - `)) baseRef = baseRef.slice(site.length + 3);
+  const reference = billToReference(siteName, contactName, baseRef);
+  const payload: Record<string, unknown> = { invoiceID: xeroInvoiceId, contact: { contactID: xeroContactId } };
+  if (reference !== null) payload.reference = reference;
+  const res = await xero.accountingApi.updateInvoice(tenantId, xeroInvoiceId, { invoices: [payload] });
+  const updated = res.body.invoices?.[0];
+  if (updated?.contact?.contactID && updated.contact.contactID !== xeroContactId) {
+    throw new Error("Xero did not apply the contact change");
+  }
+  return { contactName: updated?.contact?.name ?? contactName, reference: updated?.reference ?? reference, status: String(updated?.status ?? status) };
 }
 
 /**
@@ -266,6 +348,9 @@ export async function fetchXeroInvoice(
   fullyPaidOnDate: string | null;
   invoiceNumber: string | null;
   contactID: string | null;
+  /** Bill-to name as Xero holds it now (D5 snapshot source). */
+  contactName: string | null;
+  reference: string | null;
   dueDate: string | null;
   /** Set when Xero auto-generated this invoice from a RepeatingInvoice template. */
   repeatingInvoiceID: string | null;
@@ -282,6 +367,8 @@ export async function fetchXeroInvoice(
     fullyPaidOnDate: invoice.fullyPaidOnDate ?? null,
     invoiceNumber: invoice.invoiceNumber ?? null,
     contactID: invoice.contact?.contactID ?? null,
+    contactName: invoice.contact?.name ?? null,
+    reference: invoice.reference ?? null,
     dueDate: invoice.dueDate ?? null,
     repeatingInvoiceID: invoice.repeatingInvoiceID ?? null,
   };

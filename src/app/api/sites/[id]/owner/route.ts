@@ -22,6 +22,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     name?: string; abn?: string | null; billingEmail?: string | null;
     /** Xero billing-entity override (e.g. "Bravofit Oxley Pty Ltd"). Empty = bill as site name. */
     invoiceName?: string | null;
+    /** Linked Xero contact (picker). Null unlinks. Wins over invoiceName when set. */
+    xeroContactId?: string | null;
     contactName?: string | null; contactEmail?: string | null; contactPhone?: string | null;
   };
   try {
@@ -51,15 +53,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // reads customer_sites.billing_email first — mirror it onto the site so
   // invoice delivery follows the owner's billing email. Same slot carries the
   // invoice-name override (billing concern → Owner tab per Mitchell's rule).
-  if (body.billingEmail !== undefined || body.invoiceName !== undefined) {
+  if (body.billingEmail !== undefined || body.invoiceName !== undefined || body.xeroContactId !== undefined) {
     const sitePatch: Record<string, string | null> = {};
     if (body.billingEmail !== undefined) sitePatch.billing_email = body.billingEmail?.trim() || null;
     if (body.invoiceName !== undefined) sitePatch.invoice_name = body.invoiceName?.trim() || null;
+    // Linked Xero contact (docs/billing-contact-CONTEXT.md D3/D6): a linked
+    // contact always wins over invoice_name. Null = unlink, so the next
+    // invoice finds-or-creates by invoice_name / site name again.
+    if (body.xeroContactId !== undefined) {
+      const xc = body.xeroContactId?.trim() || null;
+      if (xc && !/^[0-9a-f-]{36}$/i.test(xc)) return NextResponse.json({ error: "Invalid Xero contact id" }, { status: 400 });
+      sitePatch.xero_contact_id = xc;
+    }
     const { error } = await svc
       .from("customer_sites")
       .update(sitePatch)
       .eq("id", siteId);
     if (error) return NextResponse.json({ error: `Site billing update failed: ${error.message}` }, { status: 500 });
+    if (sitePatch.xero_contact_id) {
+      // mirror onto the owning customer only when it has no contact of its own
+      await svc.from("customers").update({ xero_contact_id: sitePatch.xero_contact_id }).eq("id", site.customer_id).is("xero_contact_id", null);
+    }
   }
 
   // Primary contact: update the existing primary (or first) contact, or

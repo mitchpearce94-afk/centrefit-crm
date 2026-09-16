@@ -237,6 +237,7 @@ export default async function SiteDetailPage({
                   abn: site.customer.abn ?? null,
                   billing_email: site.customer.billing_email ?? null,
                   invoiceName: (site as { invoice_name?: string | null }).invoice_name ?? null,
+                  xeroContactId: (site as { xero_contact_id?: string | null }).xero_contact_id ?? null,
                   contactName: ownerContact?.name ?? null,
                   contactEmail: ownerContact?.email ?? null,
                   contactPhone: ownerContact?.phone ?? null,

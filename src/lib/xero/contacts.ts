@@ -312,3 +312,71 @@ export async function findOrCreateSupplierContact(
 
   return contactId;
 }
+
+// ── Billing-contact picker helpers (docs/billing-contact-CONTEXT.md D3) ──────
+
+export interface XeroContactSummary {
+  id: string;
+  name: string;
+  email: string | null;
+  /** First address line + suburb, for telling two similarly named contacts apart. */
+  addressLine: string | null;
+  status: string;
+}
+
+function summariseContact(c: {
+  contactID?: string; name?: string; emailAddress?: string; contactStatus?: unknown;
+  addresses?: Array<{ addressType?: unknown; addressLine1?: string; city?: string }>;
+}): XeroContactSummary | null {
+  if (!c.contactID || !c.name) return null;
+  const addr = (c.addresses ?? []).find((a) => String(a.addressType) === "POBOX") ?? (c.addresses ?? [])[0];
+  const addressLine = addr ? [addr.addressLine1, addr.city].filter(Boolean).join(", ") || null : null;
+  return { id: c.contactID, name: c.name, email: c.emailAddress ?? null, addressLine, status: String(c.contactStatus ?? "") };
+}
+
+/**
+ * Name search for the contact picker. ACTIVE contacts only (getContacts
+ * excludes archived unless asked). Xero's where-clause is case-sensitive, so
+ * we try the typed casing and a capitalised variant and merge.
+ */
+export async function searchXeroContacts(
+  xero: XeroClient,
+  tenantId: string,
+  query: string,
+  limit = 12,
+): Promise<XeroContactSummary[]> {
+  const q = query.trim().slice(0, 60).replace(/"/g, '\\"');
+  if (q.length < 2) return [];
+  const variants = Array.from(new Set([q, q.charAt(0).toUpperCase() + q.slice(1), q.toUpperCase()]));
+  const seen = new Map<string, XeroContactSummary>();
+  for (const v of variants) {
+    try {
+      const res = await xero.accountingApi.getContacts(tenantId, undefined, `Name.Contains("${v}")`, "Name ASC", undefined, 1);
+      for (const c of res.body.contacts ?? []) {
+        const s = summariseContact(c as never);
+        if (s && !seen.has(s.id)) seen.set(s.id, s);
+      }
+    } catch {
+      // best effort per variant
+    }
+    if (seen.size >= limit) break;
+  }
+  return Array.from(seen.values()).slice(0, limit);
+}
+
+/** Fetch one contact, following a merge if Xero says it was merged away. */
+export async function getXeroContact(
+  xero: XeroClient,
+  tenantId: string,
+  contactId: string,
+): Promise<XeroContactSummary | null> {
+  const res = await xero.accountingApi.getContact(tenantId, contactId);
+  const c = res.body.contacts?.[0] as (Record<string, unknown> & { mergedToContactID?: string }) | undefined;
+  if (!c) return null;
+  if (String(c.contactStatus ?? "") !== "ACTIVE" && c.mergedToContactID) {
+    const merged = await xero.accountingApi.getContact(tenantId, c.mergedToContactID);
+    const m = merged.body.contacts?.[0];
+    return m ? summariseContact(m as never) : null;
+  }
+  return summariseContact(c as never);
+}

@@ -141,6 +141,7 @@ export async function tryCreatePP2ForJob(
         xeroContactId,
         lineItems,
         reference: quote.ref,
+        siteName: siteRow?.name ?? null, // D4: "<site> - <ref>" when billed to another entity
       });
 
       const gst = Number((xeroResult.total - xeroResult.subTotal).toFixed(2));
@@ -161,6 +162,8 @@ export async function tryCreatePP2ForJob(
           job_id: jobId,
           customer_id: customer.id,
           site_id: siteRow?.id ?? null,
+          xero_contact_id: xeroContactId,
+          bill_to_name: xeroResult.contactName,
           description: header,
           line_items: lineItems,
           subtotal: xeroResult.subTotal,
