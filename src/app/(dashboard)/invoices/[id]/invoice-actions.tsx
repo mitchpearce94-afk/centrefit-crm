@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
+import { XeroContactPicker, type PickedXeroContact } from "@/components/xero-contact-picker";
 
 interface Props {
   invoiceId: string;
@@ -18,6 +19,10 @@ interface Props {
   reminderCount: number;
   /** Xero contact the invoice is billed to (snapshot) — shown before Authorise & Send (D1). */
   billToName?: string | null;
+  xeroContactId?: string | null;
+  /** CRM site the invoice belongs to (for the "bill this site here from now on" option). */
+  siteName?: string | null;
+  amountPaid?: number;
 }
 
 export function InvoiceActions({
@@ -33,6 +38,9 @@ export function InvoiceActions({
   lastReminderAt,
   reminderCount,
   billToName = null,
+  xeroContactId = null,
+  siteName = null,
+  amountPaid = 0,
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -172,6 +180,32 @@ export function InvoiceActions({
     ? `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${xeroInvoiceId}`
     : null;
 
+  // Billed-to contact (docs/billing-contact-CONTEXT.md D3): re-point a draft
+  // or unpaid authorised invoice to another Xero contact — same number, PDF
+  // regenerates. Lives in the 3-dot menu with the other Xero housekeeping.
+  const [pickingContact, setPickingContact] = useState(false);
+  const [linkSite, setLinkSite] = useState(true);
+  const canRebill = !!xeroInvoiceId && (status === "draft" || (status === "authorised" && amountPaid === 0));
+  async function rebill(c: PickedXeroContact) {
+    const res = await fetch(`/api/invoices/${invoiceId}/contact`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ xeroContactId: c.id, linkSite: linkSite && !!siteName }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast(j.error || "Couldn't change the billed-to contact", "error");
+      return;
+    }
+    toast(`Now billed to ${j.billToName ?? c.name}${j.siteLinked ? ` — ${siteName} will bill there from now on` : ""}`);
+    setPickingContact(false);
+    router.refresh();
+  }
+  function openPreviewPdf() {
+    setMenuOpen(false);
+    window.open(`/api/invoices/${invoiceId}/pdf`, "_blank", "noopener");
+  }
+
   async function handleSendReminder() {
     const email = reminderRecipient.trim();
     if (!email) {
@@ -225,31 +259,11 @@ export function InvoiceActions({
 
   return (
     <>
-      <div className="flex items-center gap-2 flex-wrap">
-        {payLink && (
-          <button
-            onClick={copyPayLink}
-            className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          >
-            Copy pay link
-          </button>
-        )}
-        {xeroEditUrl && (
-          <a
-            href={xeroEditUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          >
-            Edit in Xero
-            <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-              <polyline points="15 3 21 3 21 9" />
-              <line x1="10" y1="14" x2="21" y2="3" />
-            </svg>
-          </a>
-        )}
-        {status === "draft" && (
+      <div className="flex items-center gap-2 flex-wrap justify-end">
+        {/* One primary action stays visible; everything else is in the menu
+            (Mitchell, 2026-09-16: "instead of buttons … add it to the 3 dot
+            menu"). Drafts → Authorise & Send. Otherwise → Send / Resend. */}
+        {status === "draft" ? (
           <button
             onClick={openAuthSend}
             disabled={authorising}
@@ -257,88 +271,127 @@ export function InvoiceActions({
           >
             {authorising ? "Working…" : "Authorise & Send"}
           </button>
-        )}
-        {status === "draft" && !confirmDelete && (
+        ) : canSend ? (
           <button
-            onClick={() => setConfirmDelete(true)}
-            className="rounded-md border border-destructive/40 px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10 transition-colors"
+            onClick={openSendModal}
+            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
           >
-            Delete draft
+            {sendLabel}
           </button>
-        )}
-        {status === "draft" && confirmDelete && (
-          <span className="inline-flex items-center gap-1.5">
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="rounded-md bg-destructive px-3 py-1.5 text-xs font-medium text-white hover:bg-destructive/90 disabled:opacity-50 transition-colors"
-            >
-              {deleting ? "Deleting…" : "Confirm delete"}
-            </button>
-            <button
-              onClick={() => setConfirmDelete(false)}
-              disabled={deleting}
-              className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent transition-colors"
-            >
-              Cancel
-            </button>
-          </span>
-        )}
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-        >
-          {refreshing ? "Refreshing…" : "Refresh from Xero"}
-        </button>
+        ) : null}
 
-        {/* Kebab — currently only houses Send/Resend; lives alongside the
-            inline buttons rather than absorbing them, since they're the
-            high-frequency actions for an admin landing on this page. */}
-        {(canSend || canRemind) && (
-          <div className="relative">
-            <button
-              onClick={() => setMenuOpen((v) => !v)}
-              className="rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              aria-label="More actions"
-            >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="5" r="1.6" />
-                <circle cx="12" cy="12" r="1.6" />
-                <circle cx="12" cy="19" r="1.6" />
-              </svg>
-            </button>
-            {menuOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 mt-1 z-50 min-w-[220px] rounded-md border border-border bg-popover shadow-lg py-1">
-                  {canSend && (
-                    <button
-                      onClick={openSendModal}
-                      className="block w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent"
-                    >
-                      {sendLabel}
-                    </button>
-                  )}
-                  {canRemind && (
-                    <button
-                      onClick={openReminderModal}
-                      className="block w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent"
-                    >
-                      Send payment reminder
-                      {reminderCount > 0 && (
-                        <span className="ml-1.5 text-[10px] text-muted-foreground">
-                          ({reminderCount} sent)
-                        </span>
-                      )}
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        )}
+        <div className="relative">
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            className="rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            aria-label="More actions"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="5" r="1.6" />
+              <circle cx="12" cy="12" r="1.6" />
+              <circle cx="12" cy="19" r="1.6" />
+            </svg>
+          </button>
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+              <div role="menu" className="absolute right-0 mt-1 z-50 min-w-[240px] rounded-md border border-border bg-popover shadow-lg py-1">
+                {/* Look */}
+                {xeroInvoiceId && (
+                  <MenuItem onClick={openPreviewPdf}>Preview PDF</MenuItem>
+                )}
+                {xeroEditUrl && (
+                  <a
+                    href={xeroEditUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    role="menuitem"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-foreground hover:bg-accent"
+                  >
+                    Edit in Xero
+                    <svg className="h-3 w-3 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                  </a>
+                )}
+                {canRebill && (
+                  <MenuItem onClick={() => { setMenuOpen(false); setPickingContact(true); }}>
+                    Change billed-to contact…
+                  </MenuItem>
+                )}
+                <MenuDivider />
+                {/* Customer-facing */}
+                {status === "draft" && canSend && (
+                  <MenuItem onClick={openSendModal}>{sendLabel} (without authorising)</MenuItem>
+                )}
+                {canRemind && (
+                  <MenuItem onClick={openReminderModal}>
+                    Send payment reminder
+                    {reminderCount > 0 && <span className="ml-1.5 text-[10px] text-muted-foreground">({reminderCount} sent)</span>}
+                  </MenuItem>
+                )}
+                {payLink && (
+                  <MenuItem onClick={() => { setMenuOpen(false); void copyPayLink(); }}>Copy pay link</MenuItem>
+                )}
+                <MenuDivider />
+                {/* Sync + danger */}
+                <MenuItem onClick={() => { setMenuOpen(false); void handleRefresh(); }} disabled={refreshing}>
+                  {refreshing ? "Refreshing…" : "Refresh from Xero"}
+                </MenuItem>
+                {status === "draft" && (
+                  <MenuItem onClick={() => { setMenuOpen(false); setConfirmDelete(true); }} danger>
+                    Delete draft…
+                  </MenuItem>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
+
+      {status === "draft" && confirmDelete && (
+        <div className="mt-2 flex items-center justify-end gap-1.5">
+          <span className="text-xs text-muted-foreground">Delete this draft in the CRM and Xero?</span>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="rounded-md bg-destructive px-3 py-1.5 text-xs font-medium text-white hover:bg-destructive/90 disabled:opacity-50 transition-colors"
+          >
+            {deleting ? "Deleting…" : "Confirm delete"}
+          </button>
+          <button
+            onClick={() => setConfirmDelete(false)}
+            disabled={deleting}
+            className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {pickingContact && (
+        <XeroContactPicker
+          title="Bill this invoice to…"
+          intro={`Re-points the Xero invoice (same number) and refreshes its PDF.${siteName ? " The site name stays in the reference." : ""} Nothing is emailed.`}
+          currentId={xeroContactId}
+          onClose={() => setPickingContact(false)}
+          onPick={rebill}
+          confirmLabel="Re-bill invoice"
+          extra={
+            siteName ? (
+              <label className="flex cursor-pointer items-start gap-2 text-xs text-muted-foreground">
+                <input type="checkbox" checked={linkSite} onChange={(e) => setLinkSite(e.target.checked)} className="mt-0.5 accent-primary" />
+                <span>Also bill <span className="font-medium text-foreground">{siteName}</span> to this contact for every future invoice.</span>
+              </label>
+            ) : null
+          }
+        />
+      )}
 
       {/* Authorise & Send modal — posts to Xero AND emails the customer in one
           step. Recipient is always confirmed here (never a silent send). An
@@ -532,4 +585,22 @@ export function InvoiceActions({
       )}
     </>
   );
+}
+
+function MenuItem({ children, onClick, disabled, danger }: { children: React.ReactNode; onClick: () => void; disabled?: boolean; danger?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      disabled={disabled}
+      className={`block w-full px-3 py-1.5 text-left text-xs hover:bg-accent disabled:opacity-50 ${danger ? "text-destructive" : "text-foreground"}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MenuDivider() {
+  return <div className="my-1 border-t border-border" />;
 }

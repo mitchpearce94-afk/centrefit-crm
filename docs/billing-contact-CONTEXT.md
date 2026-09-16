@@ -58,9 +58,13 @@ ability to link it to another xero contact."
   included); `PATCH /api/sites/[id]/owner` accepts `xeroContactId` (null
   unlinks; mirrors to the customer when it had none); Refresh writes the
   snapshot from Xero.
-- **UI:** invoice page "Billed to <name> · Preview PDF · Change"
-  (`bill-to.tsx`); Authorise & Send modal shows the bill-to + Preview PDF
-  before the recipient field; Owner card "Invoices bill to: <linked Xero
+- **UI:** invoice page shows "Billed to <name>" (`bill-to.tsx`, display
+  only); the header is ONE primary button (Authorise & Send on drafts,
+  Send/Resend otherwise) plus a 3-dot menu holding Preview PDF, Edit in
+  Xero, Change billed-to contact…, payment reminder, Copy pay link, Refresh
+  from Xero, Delete draft… (Mitchell 2026-09-16: "instead of buttons … add
+  it to the 3 dot menu"); Authorise & Send modal shows the bill-to + Preview
+  PDF before the recipient field; Owner card "Invoices bill to: <linked Xero
   contact> (Change · Unlink / Link existing)" with the linked-contact-wins
   warning; shared `src/components/xero-contact-picker.tsx`; timeline label
   "Billed-to contact changed".
