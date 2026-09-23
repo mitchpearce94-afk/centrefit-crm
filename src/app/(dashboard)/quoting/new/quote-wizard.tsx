@@ -1329,11 +1329,11 @@ export function QuoteWizard({
     return lintQuote({
       bomItems: items, deviceCounts, siteInfo, products, deviceTypes,
       rules: rulesForTemplate(allRules, templateId, products), kitComponents, templateId, templateSupply,
-      elecDoingRoughIn, labourTimingCodes: labourTimings.map((t) => t.code),
+      elecDoingRoughIn, isInterstate, electricianCost, labourTimingCodes: labourTimings.map((t) => t.code),
       unansweredKitQuestions: kitQuestions.map((q) => ({ component: q.component, product: q.product })),
       diagnostics: bomDiagnostics, quoteMode,
     });
-  }, [bomItems, manualBomItems, deviceCounts, siteInfo, products, deviceTypes, allRules, templateId, kitComponents, templateSupply, elecDoingRoughIn, labourTimings, kitQuestions, bomDiagnostics, quoteMode]);
+  }, [bomItems, manualBomItems, deviceCounts, siteInfo, products, deviceTypes, allRules, templateId, kitComponents, templateSupply, elecDoingRoughIn, isInterstate, electricianCost, labourTimings, kitQuestions, bomDiagnostics, quoteMode]);
   const lintBlocking = useMemo(() => blockingFindings(lintFindings, lintOverrides), [lintFindings, lintOverrides]);
 
   async function handleSave() {

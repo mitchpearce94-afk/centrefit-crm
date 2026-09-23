@@ -28,6 +28,9 @@ export interface LintInput {
   templateId: string | null
   templateSupply: TemplateSupply[]
   elecDoingRoughIn?: boolean
+  /** Interstate jobs must carry the electrician's quoted cost (Mitchell, 23 Sep) */
+  isInterstate?: boolean
+  electricianCost?: number
   labourTimingCodes?: string[]
   unansweredKitQuestions?: { component: KitComponent; product: Product }[]
   diagnostics?: KitDiagnostic[]
@@ -88,6 +91,7 @@ export function lintQuote(input: LintInput): LintFinding[] {
   if (panelPresent && !commsPresent) f.push({ code: 'panel_without_comms', severity: 'error', message: 'Alarm panel quoted with no comms path (4G modem or ETHM-A)' })
   const expanders = withProduct.filter(({ p }) => nameHas(p, /CM704B/i)).reduce((t, { b }) => t + b.quantity, 0)
   if (panelPresent && detectors > 16 && expanders === 0) f.push({ code: 'detectors_over_capacity', severity: 'warn', message: `${detectors} detectors on the panel with no zone expander` })
+  if (input.isInterstate && !(Number(input.electricianCost) > 0)) f.push({ code: 'electrician_cost_missing', severity: 'error', message: 'Interstate job with no electrician cost — enter the electrician\'s quote on the Labour step' })
   if (!input.elecDoingRoughIn) {
     const securityDevices = detectors + (dc.duress_intercom || 0) + (dc.light_siren || 0) + (dc.rf_receiver || 0)
     if (securityDevices > 0 && !has((p) => nameHas(p, /6 ?core|security cable/i))) f.push({ code: 'security_without_cable', severity: 'warn', message: 'Security devices quoted with no 6-core cable' })

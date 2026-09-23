@@ -61,7 +61,17 @@ export function GuidedInterview({ templates }: { templates: Template[] }) {
   const [draft, setDraft] = useState<Draft>({});
   const [stage, setStage] = useState<"pick" | "questions" | "site">("pick");
   const chosen = useMemo(() => INTERVIEW.filter((s) => systems.includes(s.id)), [systems]);
-  const set = (id: string, v: string | boolean) => setDraft((d) => ({ ...d, [id]: v }));
+  // Interstate = Yes defaults both electrician toggles on (Mitchell, 23 Sep:
+  // interstate means the electrician does rough-in and fit-off, we quote
+  // their cost at 2x). Either can still be flipped off.
+  const set = (id: string, v: string | boolean) => setDraft((d) => {
+    const next = { ...d, [id]: v };
+    if (id === "isInterstate" && v === true) {
+      if (d.elecDoingRoughIn === undefined) next.elecDoingRoughIn = true;
+      if (d.elecDoingFitOff === undefined) next.elecDoingFitOff = true;
+    }
+    return next;
+  });
   const truthy = (id: string) => { const v = draft[id]; return typeof v === "boolean" ? v : !!v && v !== "0"; };
   const visible = (q: Question) => !q.showIf || truthy(q.showIf);
 
