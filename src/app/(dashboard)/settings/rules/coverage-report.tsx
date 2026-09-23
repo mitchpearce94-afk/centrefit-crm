@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/toast";
 export interface CoverageData {
   deviceTypesNoProduct: { code: string; legend: string; count_quotes: number }[];
   productsMissingTags: { id: string; name: string; sku: string | null; missing: string[] }[];
+  labourMismatch: { id: string; name: string; sku: string | null; device_type: string; problem: string }[];
   rulesBroken: { id: string; description: string | null; problem: string; template: string | null }[];
   kitsBroken: { kit: string; component: string; problem: string }[];
   zeroCost: { id: string; name: string; sku: string | null; used_by_rules: number; used_by_kits: number }[];
@@ -47,6 +48,10 @@ export function CoverageReport({ data }: { data: CoverageData }) {
       <Section title="Products missing tags" n={data.productsMissingTags.length}>
         <p className="mb-1 text-muted-foreground">Without a scope role the part never reaches the customer&apos;s document; without a labour code no fit-off labour is charged.</p>
         <ul className="max-h-64 space-y-1 overflow-auto">{data.productsMissingTags.map((p) => <li key={p.id}><span className="font-medium">{p.name}</span> <span className="text-muted-foreground">{p.sku} — missing {p.missing.join(", ")}</span></li>)}</ul>
+      </Section>
+      <Section title="Labour tags that contradict the device type" n={data.labourMismatch.length}>
+        <p className="mb-1 text-muted-foreground">Wrong fit-off line, or a cable run charged for head-end gear, on every quote the product lands on. Fix the product&apos;s labour code / cable-run flag in Settings → Products.</p>
+        <ul className="space-y-1">{data.labourMismatch.map((p, i) => <li key={`${p.id}-${i}`}><span className="font-medium">{p.name}</span> <span className="font-mono text-muted-foreground">{p.device_type}</span> <span className="text-muted-foreground">— {p.problem}</span></li>)}</ul>
       </Section>
       <Section title="Rules that can't fire" n={data.rulesBroken.length}>
         <ul className="space-y-1">{data.rulesBroken.map((r) => <li key={r.id}><span className="font-medium">{r.description ?? r.id.slice(0, 8)}</span> <span className="text-muted-foreground">({r.template ?? "universal"}) — {r.problem}</span></li>)}</ul>

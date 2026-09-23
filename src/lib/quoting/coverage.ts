@@ -31,7 +31,23 @@ async function fetchAll<T>(make: () => { range: (a: number, b: number) => Promis
   return out;
 }
 
-interface ProductRow { id: string; name: string; sku: string | null; category: string | null; device_type: string | null; is_default: boolean | null; is_active: boolean | null; scope_role: string | null; labour_code: string | null; cost_price: number | null; is_kit: boolean | null; discontinued_at: string | null }
+interface ProductRow { id: string; name: string; sku: string | null; category: string | null; device_type: string | null; is_default: boolean | null; is_active: boolean | null; scope_role: string | null; labour_code: string | null; cost_price: number | null; is_kit: boolean | null; discontinued_at: string | null; requires_cable_run: boolean | null }
+
+/** The labour code a device-typed product should carry (labour_timings codes).
+ *  A mismatch here is how the K6000 panel ended up charging PIR-wall labour
+ *  and a cable run (Mitchell, 23 Sep). */
+const EXPECTED_LABOUR: Record<string, string> = {
+  camera_black: "camera_plaster", camera_white: "camera_plaster",
+  pir_360_roof: "pir_360_roof", pir_wall: "pir_wall", reed_switch: "reed_switch",
+  duress_button: "duress_button", duress_intercom: "duress_intercom", rex_button: "rex_button", light_siren: "light_siren",
+  wap: "wap", speaker_roof_black: "speaker_roof", speaker_roof_white: "speaker_roof", speaker_wall_black: "speaker_wall", speaker_wall_white: "speaker_wall",
+  tailgate_system: "tailgate_system", card_reader: "card_reader", door_strike: "door_lock", mag_lock: "door_lock",
+  integration_cable: "integration_cable", alarm_keypad: "alarm_keypad", rf_receiver: "rf_receiver", data_point: "data_point", coax_point: "coax_point",
+  intercom_master: "intercom_master", intercom_slave: "intercom_slave", volume_control: "volume_control",
+  // head-end gear: labour is the fixed wiring-in / build / commission lines, not per-unit fit-off
+  alarm_panel: "none", nvr: "none", cabinet_9ru: "none", cabinet_27ru: "none", cabinet_32ru: "none", cabinet_42ru: "none",
+};
+const HEAD_END = new Set(["alarm_panel", "nvr", "cabinet_9ru", "cabinet_27ru", "cabinet_32ru", "cabinet_42ru"]);
 interface RuleRow { id: string; description: string | null; template_id: string | null; is_universal: boolean | null; is_active: boolean | null; auto_add_product_id: string | null; trigger_code: string | null; trigger_condition: string | null }
 interface KitRow { id: string; kit_product_id: string; component_product_id: string; qty_mode: string; qty_formula: string | null; status: string }
 interface QuoteRow { id: string; job_id: string | null; quote_mode: string | null; device_counts: Record<string, number> | null; status: string | null }
@@ -51,7 +67,7 @@ export interface GapsData { adds: GapAdd[]; oneOffs: number; quotesScanned: numb
 export async function loadCoverageAndGaps(supabase: AnyClient): Promise<{ coverage: CoverageData; gaps: GapsData }> {
   const [dtRes, prodRes, ruleRes, tplRes, defRes, kitRes, supRes] = await Promise.all([
     supabase.from("quote_device_types").select("code, legend, has_hardware").eq("is_active", true).order("sort_order"),
-    supabase.from("quote_products").select("id, name, sku, category, device_type, is_default, is_active, scope_role, labour_code, cost_price, is_kit, discontinued_at").order("name"),
+    supabase.from("quote_products").select("id, name, sku, category, device_type, is_default, is_active, scope_role, labour_code, cost_price, is_kit, discontinued_at, requires_cable_run").order("name"),
     supabase.from("quote_dependency_rules").select("id, description, template_id, is_universal, is_active, auto_add_product_id, trigger_code, trigger_condition"),
     supabase.from("quote_rule_templates").select("id, name").eq("is_active", true).order("sort_order"),
     supabase.from("quote_template_device_defaults").select("template_id, device_type, product_id"),
@@ -98,6 +114,17 @@ export async function loadCoverageAndGaps(supabase: AnyClient): Promise<{ covera
     .map((p) => { const missing: string[] = []; if (!p.scope_role) missing.push("scope role"); if (p.device_type && !p.labour_code) missing.push("labour code"); return { id: p.id, name: p.name, sku: p.sku, missing }; })
     .filter((p) => p.missing.length);
 
+  // Labour tags that contradict the device type — these charge the wrong
+  // fit-off line (or a cable run for head-end gear) on every quote.
+  const labourMismatch: CoverageData["labourMismatch"] = [];
+  for (const p of products) {
+    if (p.is_active === false || !p.device_type) continue;
+    const expected = EXPECTED_LABOUR[p.device_type];
+    if (expected && p.labour_code && p.labour_code !== expected) labourMismatch.push({ id: p.id, name: p.name, sku: p.sku, device_type: p.device_type, problem: `labour code "${p.labour_code}" — expected "${expected}"` });
+    if (HEAD_END.has(p.device_type) && p.requires_cable_run) labourMismatch.push({ id: p.id, name: p.name, sku: p.sku, device_type: p.device_type, problem: "flagged as needing a cable run — head-end gear doesn't" });
+    if (p.device_type === "alarm_panel" && p.scope_role && p.scope_role !== "alarm_panel") labourMismatch.push({ id: p.id, name: p.name, sku: p.sku, device_type: p.device_type, problem: `scope role "${p.scope_role}" — expected "alarm_panel"` });
+  }
+
   const rulesBroken: CoverageData["rulesBroken"] = [];
   for (const r of activeRules) {
     const tpl = r.template_id ? (tplName.get(r.template_id) ?? null) : null;
@@ -130,7 +157,7 @@ export async function loadCoverageAndGaps(supabase: AnyClient): Promise<{ covera
     .filter((p) => p.is_active !== false && !(Number(p.cost_price) > 0) && (rulesUsing.has(p.id) || kitsUsing.has(p.id) || defaultProducts.has(p.id) || (p.is_default && p.device_type)))
     .map((p) => ({ id: p.id, name: p.name, sku: p.sku, used_by_rules: rulesUsing.get(p.id) ?? 0, used_by_kits: kitsUsing.get(p.id) ?? 0 }));
 
-  const coverage: CoverageData = { deviceTypesNoProduct, productsMissingTags, rulesBroken, kitsBroken, zeroCost, templates, deviceTypes, supply };
+  const coverage: CoverageData = { deviceTypesNoProduct, productsMissingTags, labourMismatch, rulesBroken, kitsBroken, zeroCost, templates, deviceTypes, supply };
 
   // ---- Gaps inbox ----
   const linesByQuote = new Map<string, LineRow[]>();
