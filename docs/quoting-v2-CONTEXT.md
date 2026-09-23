@@ -71,3 +71,13 @@ Root cause in one sentence: **completeness depends on a person remembering, beca
 ## Not changing
 
 Plan builder, procurement, invoicing, Xero sync, the send/accept flow, PP1/PP2 structure. Existing quotes are untouched; the engine changes apply to new quotes and to drafts on explicit regenerate.
+
+---
+
+## Status — 23 Sep 2026 (commit 5a25bc7)
+
+**Built:** phases 1–3. Kits engine (`src/lib/quote-engine/kits.ts`), lint (`lint.ts`), guided interview (`interview.ts` + `/quoting/guided`), wizard integration (kit questions, lint panel, save/send gate, `?guided=1` prefill), kit components editor (Settings → Products), Coverage + Gaps inbox tabs (Settings → Rules, loader `src/lib/quoting/coverage.ts`), template supply editor, procurement skips customer-supplied lines.
+
+**Kit data decided with Mitchell 23 Sep:** see memory `centrefit-quotes-rework-2026-09-23` — K6000 panel kit, PIR wall mounts, ECA2010 SIM, RF reed piezo, FEM4300 mag lock kit (PSU lives here, ask glass/standard), PF access kit on the PFRRK scanner (Aero 1100C per 2 doors, X100 thereafter, PIM, USB-RS232, DB9, REX, loop), NVR `hdd_pack`. Rules retired: HDD ceil(cams/6), Dream Machine router; Snap AV fixed 'always' rules now conditional on `cardio_count + tv_count > 0`.
+
+**Open:** D9 document design (recommend keep-and-fix); costs for HID-X100 / NIDAC-PIMS4 / JAYCAR-USB-RS232 / DB9-F-SCREW; Mitchell to review the Coverage and Gaps tabs and decide proposals; interview questions live in code (`interview.ts`) — move to a table if the set grows.
