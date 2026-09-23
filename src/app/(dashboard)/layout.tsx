@@ -45,6 +45,15 @@ export default async function DashboardLayout({
 
   // Public New Build status board — token lives in Vercel env only, so the
   // link simply doesn't render in environments without it.
+  // Finance section (docs/finance-CONTEXT.md D1): Mitchell, or a staff id on
+  // finance_settings.viewer_staff_ids. RLS hides the row from everyone else,
+  // so a single select answers both questions.
+  let financeVisible = user.email?.toLowerCase() === "mitchell@centrefit.com.au";
+  if (!financeVisible) {
+    const { data: fs } = await supabase.from("finance_settings").select("viewer_staff_ids").eq("id", 1).maybeSingle();
+    financeVisible = ((fs?.viewer_staff_ids as string[] | null) ?? []).includes(user.id);
+  }
+
   const statusBoardHref = process.env.STATUS_BOARD_TOKEN
     ? `/status-board/${process.env.STATUS_BOARD_TOKEN}`
     : null;
@@ -68,7 +77,7 @@ export default async function DashboardLayout({
         className="relative flex overflow-hidden"
         style={{ height: "var(--app-height, 100dvh)" }}
       >
-        <Sidebar user={user} staff={staff ?? null} allowedFlags={allowedFlags} statusBoardHref={statusBoardHref} />
+        <Sidebar user={user} staff={staff ?? null} allowedFlags={allowedFlags} statusBoardHref={statusBoardHref} financeVisible={financeVisible} />
         {/* overscroll-none is load-bearing on iOS: without it, pulling past
             the top of <main> chains the gesture to the DOCUMENT and rubber-
             bands the entire app down (heading slides, scrollbar appears
@@ -111,7 +120,7 @@ export default async function DashboardLayout({
           </div>
           <div className="p-4 md:p-6">{children}</div>
         </main>
-        <MobileNav user={user} staff={staff ?? null} allowedFlags={allowedFlags} statusBoardHref={statusBoardHref} />
+        <MobileNav user={user} staff={staff ?? null} allowedFlags={allowedFlags} statusBoardHref={statusBoardHref} financeVisible={financeVisible} />
       </div>
     </ToastProvider>
   );

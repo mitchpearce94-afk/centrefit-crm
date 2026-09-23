@@ -165,8 +165,10 @@ for (const r of probeSet) {
         const { data: byCust } = await supabase.from("recurring_plans").select("*").or(`gc_customer_id.eq.${gcCustomerId},gc_mandate_id.eq.${pay.links.mandate}`).eq("status", "active").limit(2);
         if (byCust?.length === 1) { plan = byCust[0]; link = { [planFk]: plan.id, via: "gc_customer" }; }
       }
-      const gcc = !link && gcCustomerId ? (await gcGet(`customers/${gcCustomerId}`))?.customers : null;
-      if (gcc) who = `GC: ${gcc.company_name ?? `${gcc.given_name ?? ""} ${gcc.family_name ?? ""}`.trim()} <${gcc.email ?? ""}>`;
+      const gcc = gcCustomerId ? (await gcGet(`customers/${gcCustomerId}`))?.customers : null;
+      const gcName = gcc ? (gcc.company_name ?? `${gcc.given_name ?? ""} ${gcc.family_name ?? ""}`.trim()) : null;
+      if (!link && gcc) who = `GC: ${gcName} <${gcc.email ?? ""}>`;
+      else if (link && !who && gcName) who = gcName; // plan found via GC customer but carries no site/customer name — use GC's
     }
     let invNote = "no contact";
     let contactVia = "stored";

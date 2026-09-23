@@ -67,11 +67,13 @@ export function MobileNav({
   user,
   staff,
   allowedFlags,
+  financeVisible = false,
   statusBoardHref,
 }: {
   user: User;
   staff: StaffSummary | null;
   allowedFlags: string[];
+  financeVisible?: boolean;
   statusBoardHref?: string | null;
 }) {
   const pathname = usePathname();
@@ -85,6 +87,9 @@ export function MobileNav({
   // My List is PRIVATE to Mitchell (assistant-CONTEXT D1) — first in More.
   if (user.email?.toLowerCase() === "mitchell@centrefit.com.au") {
     visibleMoreLinks.unshift({ name: "My List", href: "/my-list", icon: ListCheckIcon, flag: null });
+  }
+  if (financeVisible) {
+    visibleMoreLinks.push({ name: "Finance", href: "/finance", icon: ListCheckIcon, flag: null });
   }
 
   const isMore = !visibleTabs.some((t) =>

@@ -56,11 +56,13 @@ export function Sidebar({
   staff,
   allowedFlags,
   statusBoardHref,
+  financeVisible = false,
 }: {
   user: User;
   staff: StaffSummary | null;
   allowedFlags: string[];
   statusBoardHref?: string | null;
+  financeVisible?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -79,6 +81,12 @@ export function Sidebar({
   // D1). The page 404s for anyone else; this just hides the door.
   if (user.email?.toLowerCase() === "mitchell@centrefit.com.au") {
     visibleNav.unshift({ name: "My List", href: "/my-list", icon: ListCheckIcon, flag: null });
+  }
+  // Finance is Mitchell-only (finance-CONTEXT D1) — the layout decides, the
+  // route 404s for anyone else; this just hides the door.
+  if (financeVisible) {
+    const at = visibleNav.findIndex((i) => i.href === "/settings");
+    visibleNav.splice(at < 0 ? visibleNav.length : at, 0, { name: "Finance", href: "/finance", icon: BillingIcon, flag: null });
   }
 
   async function handleSignOut() {

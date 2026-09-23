@@ -5,6 +5,10 @@
   ],
   "crons": [
     {
+      "path": "/api/cron/finance-agent",
+      "schedule": "30 20 * * *"
+    },
+    {
       "path": "/api/cron/receipts-forward-watchdog",
       "schedule": "30 20 * * *"
     },
