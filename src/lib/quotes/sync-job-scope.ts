@@ -77,6 +77,7 @@ export async function syncQuoteScopeToJob(
         siteInfo,
         quote.scope_overrides ?? undefined,
         roleDescriptions,
+        (quote.device_counts as Record<string, number> | null) ?? undefined,
       );
   const scopeText = renderScopeAsText(scope);
 

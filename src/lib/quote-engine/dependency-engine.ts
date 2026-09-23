@@ -170,7 +170,8 @@ function calculateCustomQuantity(key: string, deviceCounts: DeviceCounts, siteIn
   switch (key) {
     case 'security_4w_plugs': {
       const doors = si.door_count || 0
-      const pirs = (dc.pir_360_roof || 0) + (dc.pir_wall || 0)
+      // existing PIRs kept on a new panel still get a plug at the panel end
+      const pirs = (dc.pir_360_roof || 0) + (dc.pir_wall || 0) + (dc.pir_360_roof_existing || 0) + (dc.pir_wall_existing || 0)
       return doors + pirs + 2
     }
     case 'security_2w_plugs': {

@@ -74,6 +74,8 @@ interface Props {
   bom: { product_id: string | null; quantity: number; sell_price?: number }[];
   productScopeRoles: { id: string; scope_role: string }[];
   siteInfo: SiteInfo;
+  /** existing detectors etc. — things with no BOM line that belong in the scope */
+  deviceCounts?: Record<string, number>;
   initialOverrides: ScopeOverrides | null;
   roleDescriptions: Record<string, string>;
   /** Quote total ex GST — the price breakdown lines must sum to this. */
@@ -125,7 +127,8 @@ interface ListBlockEdit {
  *   - Revert any of the above to the auto-generated value
  */
 export function ScopeEditor({
-  quoteId, status, bom, productScopeRoles, siteInfo, initialOverrides, roleDescriptions, totalExGST, onClose,
+  quoteId, status, bom, productScopeRoles, siteInfo,
+  deviceCounts, initialOverrides, roleDescriptions, totalExGST, onClose,
 }: Props) {
   const router = useRouter();
   const supabase = createClient();
@@ -134,14 +137,14 @@ export function ScopeEditor({
 
   // The auto version (no overrides) is the baseline for compare / revert.
   const auto = useMemo(
-    () => generateScopeOfWorks(bom, productScopeRoles, siteInfo, undefined, roleDescriptions),
-    [bom, productScopeRoles, siteInfo, roleDescriptions],
+    () => generateScopeOfWorks(bom, productScopeRoles, siteInfo, undefined, roleDescriptions, deviceCounts),
+    [bom, productScopeRoles, siteInfo, roleDescriptions, deviceCounts],
   );
 
   // The applied version (with current overrides) is what we render.
   const initial = useMemo(
-    () => generateScopeOfWorks(bom, productScopeRoles, siteInfo, initialOverrides ?? undefined, roleDescriptions),
-    [bom, productScopeRoles, siteInfo, initialOverrides, roleDescriptions],
+    () => generateScopeOfWorks(bom, productScopeRoles, siteInfo, initialOverrides ?? undefined, roleDescriptions, deviceCounts),
+    [bom, productScopeRoles, siteInfo, initialOverrides, roleDescriptions, deviceCounts],
   );
 
   // We seed editor state from the applied version. Note that excluded systems

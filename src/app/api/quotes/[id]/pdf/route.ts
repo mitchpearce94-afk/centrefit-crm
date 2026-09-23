@@ -99,6 +99,7 @@ export async function GET(
         siteInfo,
         (quote.scope_overrides as Parameters<typeof generateScopeOfWorks>[3]) ?? undefined,
         roleDescriptions,
+        (quote.device_counts as Record<string, number> | null) ?? undefined,
       );
 
   const quoteForPdf: QuoteForPdf = {

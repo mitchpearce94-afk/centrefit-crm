@@ -45,7 +45,8 @@ export function lintQuote(input: LintInput): LintFinding[] {
   const has = (pred: (p: Product | undefined, b: BOMItem) => boolean) => withProduct.some(({ b, p }) => pred(p, b))
   const dc = input.deviceCounts
   const cams = (dc.camera_black || 0) + (dc.camera_white || 0)
-  const detectors = (dc.pir_360_roof || 0) + (dc.pir_wall || 0) + (dc.reed_switch || 0) + (dc.duress_button || 0)
+  // Existing detectors kept on a new panel still take zones (Mitchell, 23 Sep)
+  const detectors = (dc.pir_360_roof || 0) + (dc.pir_wall || 0) + (dc.pir_360_roof_existing || 0) + (dc.pir_wall_existing || 0) + (dc.reed_switch || 0) + (dc.duress_button || 0)
   const customerSupplied = new Set(input.templateSupply.filter((s) => s.template_id === input.templateId && s.supplied_by === 'customer').map((s) => s.device_type))
   const dtByCode = new Map(input.deviceTypes.map((d) => [d.code, d]))
 

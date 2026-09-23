@@ -162,7 +162,7 @@ export function QuoteActions({
   const manualScopeTrimmed = quoteMode === "manual" ? manualScopeText.trim() : "";
   const scope = manualScopeTrimmed
     ? manualScopeDocument(manualScopeTrimmed)
-    : generateScopeOfWorks(scopeBom, productScopeRoles, siteInfo, scopeOverrides ?? undefined, roleDescriptions);
+    : generateScopeOfWorks(scopeBom, productScopeRoles, siteInfo, scopeOverrides ?? undefined, roleDescriptions, deviceCounts);
   const hasScopeOverrides = !!scopeOverrides;
 
   const linkedJob = jobs.find((j) => j.id === currentJobId);
@@ -506,6 +506,7 @@ export function QuoteActions({
       {/* ── SCOPE OF WORKS EDITOR ── */}
       {showScopeEditor && (
         <ScopeEditor
+          deviceCounts={deviceCounts}
           quoteId={quoteId}
           status={status}
           bom={scopeBom}

@@ -214,6 +214,20 @@ export function calculateLabour(
     }
   }
 
+  // Existing detectors kept on a new panel: no cable pull, no fit-off, but
+  // each one is re-terminated at the panel end (Mitchell, 23 Sep — "we don't
+  // order new ones for a replacement, but we accommodate them in the panel").
+  const existingDetectors = (c.pir_360_roof_existing || 0) + (c.pir_wall_existing || 0)
+  if (existingDetectors > 0 && !elecRoughIn) {
+    const reTermHrs = round((existingDetectors * 8) / 60)
+    roughInItems.push({
+      name: 'Re-terminate existing detectors',
+      formula: `${existingDetectors} existing PIRs × 8 min (panel end only)`,
+      defaultHours: reTermHrs,
+      hours: reTermHrs,
+    })
+  }
+
   sections.push(buildSection('Rough In', roughInItems, false))
 
   // === Shared flags ===

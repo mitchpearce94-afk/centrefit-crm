@@ -29,8 +29,11 @@ export const INTERVIEW: SystemDef[] = [
     id: 'alarm', label: 'Alarm', blurb: 'Panel, detectors, keypad, sirens, monitoring.',
     questions: [
       { id: 'alarm_panel', prompt: 'New alarm panel?', help: 'The K6000 kit brings its keypad, comms, relays and power with it.', type: 'yesno', target: { kind: 'device', code: 'alarm_panel' }, yesValue: 1 },
-      { id: 'pir_360_roof', prompt: 'Ceiling PIRs (360°)', type: 'number', target: { kind: 'device', code: 'pir_360_roof' } },
-      { id: 'pir_wall', prompt: 'Wall PIRs', type: 'number', target: { kind: 'device', code: 'pir_wall' } },
+      { id: 'pir_360_roof', prompt: 'Ceiling PIRs (360°) — new', type: 'number', target: { kind: 'device', code: 'pir_360_roof' } },
+      { id: 'pir_wall', prompt: 'Wall PIRs — new', type: 'number', target: { kind: 'device', code: 'pir_wall' } },
+      { id: 'pir_existing', prompt: 'Existing PIRs staying on site?', help: 'Kept and re-terminated on the new panel: no new detectors ordered, but they take zones, expanders and connector boards.', type: 'yesno', target: { kind: 'none' } },
+      { id: 'pir_360_roof_existing', prompt: 'Existing ceiling PIRs (reused)', type: 'number', target: { kind: 'device', code: 'pir_360_roof_existing' }, showIf: 'pir_existing' },
+      { id: 'pir_wall_existing', prompt: 'Existing wall PIRs (reused)', type: 'number', target: { kind: 'device', code: 'pir_wall_existing' }, showIf: 'pir_existing' },
       { id: 'reed_switch', prompt: 'Reed switches (doors, roller doors)', type: 'number', target: { kind: 'device', code: 'reed_switch' } },
       { id: 'reed_switch_uncabled', prompt: 'How many of those are wireless?', type: 'number', target: { kind: 'site', field: 'reed_switch_uncabled' }, showIf: 'reed_switch' },
       { id: 'light_siren', prompt: 'External sirens / strobes', type: 'number', target: { kind: 'device', code: 'light_siren' } },

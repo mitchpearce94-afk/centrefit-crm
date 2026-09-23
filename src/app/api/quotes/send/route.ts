@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
       : "";
   const scope: ScopeDocument = manualScopeText
     ? manualScopeDocument(manualScopeText)
-    : generateScopeOfWorks(scopeBom, scopeProducts, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions);
+    : generateScopeOfWorks(scopeBom, scopeProducts, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions, (quote.device_counts as Record<string, number> | null) ?? undefined);
 
   // Mirror the scope-of-works + payment terms into the linked job's description.
   // Quote is the source of truth for scope, so we overwrite on every send —

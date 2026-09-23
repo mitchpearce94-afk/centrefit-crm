@@ -91,7 +91,7 @@ export default async function QuoteResponsePage({
       : "";
   const scope = manualScopeText
     ? manualScopeDocument(manualScopeText)
-    : generateScopeOfWorks(bom, products, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions);
+    : generateScopeOfWorks(bom, products, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions, (quote.device_counts as Record<string, number> | null) ?? undefined);
 
   const clientName = quote.customer?.name || quote.client_name;
 

@@ -2604,7 +2604,7 @@ export function QuoteWizard({
                   quantity: Number(it.quantity) || 0,
                 }));
                 const scopeProducts = rawProducts.map((p) => ({ id: p.id, scope_role: p.scope_role ?? null, name: p.name, sku: p.sku }));
-                const scope = generateScopeOfWorks(scopeBom, scopeProducts, siteInfo);
+                const scope = generateScopeOfWorks(scopeBom, scopeProducts, siteInfo, undefined, undefined, deviceCounts);
                 if (scope.systems.length === 0) {
                   return <p className="text-xs text-muted-foreground italic">Add items to the BOM to see the scope of works.</p>;
                 }

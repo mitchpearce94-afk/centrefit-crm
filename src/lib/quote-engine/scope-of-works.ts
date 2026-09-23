@@ -8,7 +8,7 @@
 // for plan-based quotes, manual quotes, and any tech-added line items.
 // ============================================================================
 
-import type { SiteInfo } from './constants';
+import type { SiteInfo, DeviceCounts } from './constants';
 
 // ── Document shape ─────────────────────────────────────────────────────────
 
@@ -294,8 +294,12 @@ export function generateScopeOfWorks(
   siteInfo: SiteInfo,
   overrides?: ScopeOverrides,
   roleDescriptions?: Record<string, string>,
+  /** Device counts for things that have no BOM line but belong in the scope —
+   *  existing detectors kept on a new panel (quoting-v2, 23 Sep). */
+  deviceCounts?: DeviceCounts,
 ): ScopeDocument {
   const r = new BOMRollup(bom, products);
+  const existingPirs = (deviceCounts?.pir_360_roof_existing || 0) + (deviceCounts?.pir_wall_existing || 0);
 
   // ── Counts (BOM) ────────────────────────────────────────────────────────
   const cameras         = r.count('camera');
@@ -335,11 +339,12 @@ export function generateScopeOfWorks(
 
   // ── System: Security & Alarm ────────────────────────────────────────────
   const securitySystem: ScopeSystemBlock | null = (() => {
-    const has = panels + motion + reeds + buttons + pendants + intercoms + rfReceivers + sirens > 0;
+    const has = panels + motion + existingPirs + reeds + buttons + pendants + intercoms + rfReceivers + sirens > 0;
     if (!has) return null;
     const counts: string[] = [];
     if (panels > 0)       counts.push(`${panels} ${plural(panels, 'panel')}`);
     if (motion > 0)       counts.push(`${motion} ${plural(motion, 'PIR')}`);
+    if (existingPirs > 0) counts.push(`${existingPirs} existing ${plural(existingPirs, 'PIR')} retained`);
     if (reeds > 0)        counts.push(`${reeds} reed`);
     if (buttons > 0)      counts.push(`${buttons} ${plural(buttons, 'button')}`);
     if (pendants > 0)     counts.push(`${pendants} ${plural(pendants, 'pendant')}`);
@@ -348,6 +353,7 @@ export function generateScopeOfWorks(
 
     const items: string[] = [];
     if (motion > 0)       items.push(roleBullet(roleDescriptions, 'motion_sensor', motion, `<strong>(${motion}) movement ${plural(motion, 'sensor')}</strong> covering the gym floor and back-of-house, programmed for intrusion + member detection`));
+    if (existingPirs > 0) items.push(`<strong>(${existingPirs}) existing movement ${plural(existingPirs, 'sensor')}</strong> retained and re-terminated onto the new panel (no new detectors supplied)`);
     if (reeds > 0)        items.push(roleBullet(roleDescriptions, 'reed_switch', reeds, `<strong>(${reeds}) reed ${plural(reeds, 'switch', 'switches')}</strong> on entry/exit doors and roller shutters`));
     if (buttons > 0)      items.push(roleBullet(roleDescriptions, 'duress_button', buttons, `<strong>(${buttons}) wall-mounted duress ${plural(buttons, 'button')}</strong>`));
     if (pendants > 0)     items.push(roleBullet(roleDescriptions, 'duress_pendant', pendants, `<strong>(${pendants}) wireless duress ${plural(pendants, 'pendant')}</strong> for staff`));
