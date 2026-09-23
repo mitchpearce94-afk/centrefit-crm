@@ -48,6 +48,14 @@ const EXPECTED_LABOUR: Record<string, string> = {
   alarm_panel: "none", nvr: "none", cabinet_9ru: "none", cabinet_27ru: "none", cabinet_32ru: "none", cabinet_42ru: "none",
 };
 const HEAD_END = new Set(["alarm_panel", "nvr", "cabinet_9ru", "cabinet_27ru", "cabinet_32ru", "cabinet_42ru"]);
+/** Scope role a device-typed product should carry where it's unambiguous.
+ *  The pendant tagged duress_button is why the scope lumped buttons and
+ *  pendants together (Mitchell, 23 Sep). */
+const EXPECTED_SCOPE: Record<string, string> = {
+  duress_button: "duress_button", duress_pendant: "duress_pendant", duress_intercom: "duress_intercom", rf_receiver: "rf_receiver",
+  alarm_panel: "alarm_panel", pir_360_roof: "motion_sensor", pir_wall: "motion_sensor", reed_switch: "reed_switch", mag_lock: "mag_lock",
+  cabinet_9ru: "cabinet", cabinet_27ru: "cabinet", cabinet_32ru: "cabinet", cabinet_42ru: "cabinet",
+};
 interface RuleRow { id: string; description: string | null; template_id: string | null; is_universal: boolean | null; is_active: boolean | null; auto_add_product_id: string | null; trigger_code: string | null; trigger_condition: string | null }
 interface KitRow { id: string; kit_product_id: string; component_product_id: string; qty_mode: string; qty_formula: string | null; status: string }
 interface QuoteRow { id: string; job_id: string | null; quote_mode: string | null; device_counts: Record<string, number> | null; status: string | null }
@@ -122,7 +130,9 @@ export async function loadCoverageAndGaps(supabase: AnyClient): Promise<{ covera
     const expected = EXPECTED_LABOUR[p.device_type];
     if (expected && p.labour_code && p.labour_code !== expected) labourMismatch.push({ id: p.id, name: p.name, sku: p.sku, device_type: p.device_type, problem: `labour code "${p.labour_code}" — expected "${expected}"` });
     if (HEAD_END.has(p.device_type) && p.requires_cable_run) labourMismatch.push({ id: p.id, name: p.name, sku: p.sku, device_type: p.device_type, problem: "flagged as needing a cable run — head-end gear doesn't" });
-    if (p.device_type === "alarm_panel" && p.scope_role && p.scope_role !== "alarm_panel") labourMismatch.push({ id: p.id, name: p.name, sku: p.sku, device_type: p.device_type, problem: `scope role "${p.scope_role}" — expected "alarm_panel"` });
+    const expectedScope = EXPECTED_SCOPE[p.device_type];
+    if (p.scope_role === "none") labourMismatch.push({ id: p.id, name: p.name, sku: p.sku, device_type: p.device_type, problem: "scope role is 'none' — this device never appears in the scope of works" });
+    else if (expectedScope && p.scope_role && p.scope_role !== expectedScope) labourMismatch.push({ id: p.id, name: p.name, sku: p.sku, device_type: p.device_type, problem: `scope role "${p.scope_role}" — expected "${expectedScope}" (it's scoped as the wrong thing)` });
   }
 
   const rulesBroken: CoverageData["rulesBroken"] = [];

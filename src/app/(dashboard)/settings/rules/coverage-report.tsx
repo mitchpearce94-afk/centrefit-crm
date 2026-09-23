@@ -49,8 +49,8 @@ export function CoverageReport({ data }: { data: CoverageData }) {
         <p className="mb-1 text-muted-foreground">Without a scope role the part never reaches the customer&apos;s document; without a labour code no fit-off labour is charged.</p>
         <ul className="max-h-64 space-y-1 overflow-auto">{data.productsMissingTags.map((p) => <li key={p.id}><span className="font-medium">{p.name}</span> <span className="text-muted-foreground">{p.sku} — missing {p.missing.join(", ")}</span></li>)}</ul>
       </Section>
-      <Section title="Labour tags that contradict the device type" n={data.labourMismatch.length}>
-        <p className="mb-1 text-muted-foreground">Wrong fit-off line, or a cable run charged for head-end gear, on every quote the product lands on. Fix the product&apos;s labour code / cable-run flag in Settings → Products.</p>
+      <Section title="Labour or scope tags that contradict the device type" n={data.labourMismatch.length}>
+        <p className="mb-1 text-muted-foreground">Wrong fit-off line, a cable run charged for head-end gear, or the wrong scope-of-works item, on every quote the product lands on. Fix the product&apos;s labour code, scope role or cable-run flag in Settings → Products.</p>
         <ul className="space-y-1">{data.labourMismatch.map((p, i) => <li key={`${p.id}-${i}`}><span className="font-medium">{p.name}</span> <span className="font-mono text-muted-foreground">{p.device_type}</span> <span className="text-muted-foreground">— {p.problem}</span></li>)}</ul>
       </Section>
       <Section title="Rules that can't fire" n={data.rulesBroken.length}>
