@@ -64,3 +64,8 @@ scripts/site-first-split-log.md
 # One-off script data dumps (Xero forensics etc.) — local only
 scripts/*.json
 watchdog-test.json
+
+# finance-agent probe outputs (customer PII)
+scripts/gc-xero-contact-map.csv
+scripts/gc-xero-contact-map.json
+scripts/gc-payout-recon-probe.json
