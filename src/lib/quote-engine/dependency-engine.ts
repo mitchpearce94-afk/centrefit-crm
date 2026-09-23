@@ -75,6 +75,12 @@ export interface Product {
   // still resolves, but new BOM generations quote the replacement instead.
   discontinued_at?: string | null
   replacement_product_id?: string | null
+  // Quoting v2 (2026-09-23): what lint and kits need to know about a product.
+  scope_role?: string | null
+  labour_code?: string | null
+  cost_updated_at?: string | null
+  is_kit?: boolean
+  customer_supplied?: boolean
 }
 
 export interface AutoAddItem {
@@ -99,6 +105,10 @@ export interface BOMItem {
   notes: string
   auto_added: boolean
   rule_description: string | null
+  // Quoting v2: customer-supplied lines stay for labour, never priced or procured;
+  // kit lines remember the kit product they came from.
+  customer_supplied?: boolean
+  kit_parent_product_id?: string | null
 }
 
 // ── Site Info Fields ──

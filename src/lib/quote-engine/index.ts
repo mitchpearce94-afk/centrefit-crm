@@ -89,3 +89,10 @@ export type {
   BOMLineForScope,
   ProductForScope,
 } from './scope-of-works'
+
+// Quoting v2 (2026-09-23): kits, device types as data, lint
+export { expandKits, mergeKitLines, applyTemplateSupply, hddPack, evalKitFormula } from './kits'
+export type { KitComponent, DeviceTypeRow, TemplateSupply, KitAnswers, KitDiagnostic } from './kits'
+export { lintQuote, blockingFindings, findingKey } from './lint'
+export type { LintFinding, LintInput, LintSeverity } from './lint'
+export type { BOMv2Options } from './bom-engine'

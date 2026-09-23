@@ -4,7 +4,7 @@ import { SyncToXeroButton } from "./sync-to-xero-button";
 
 export default async function SettingsProductsPage() {
   const supabase = await createClient();
-  const [{ data: products }, { data: suppliers }, { data: scopeRoles }, { data: labourTimings }, { data: assetTypes }, { data: subcategories }, { data: xeroConn }, { data: offers }, { data: kitContents }] =
+  const [{ data: products }, { data: suppliers }, { data: scopeRoles }, { data: labourTimings }, { data: assetTypes }, { data: subcategories }, { data: xeroConn }, { data: offers }, { data: kitContents }, { data: kitComponents }, { data: deviceTypes }] =
     await Promise.all([
       supabase.from("quote_products").select("*").order("category, name"),
       supabase.from("suppliers").select("id, name").eq("is_active", true).order("name"),
@@ -32,6 +32,8 @@ export default async function SettingsProductsPage() {
         .order("is_preferred", { ascending: false })
         .order("cost_price", { ascending: true }),
       supabase.from("quote_product_kit_contents").select("id, kit_product_id, component_product_id, quantity"),
+      supabase.from("product_kit_components").select("*").order("sort_order"),
+      supabase.from("quote_device_types").select("code, legend").eq("is_active", true).order("sort_order"),
     ]);
 
   return (
@@ -46,7 +48,7 @@ export default async function SettingsProductsPage() {
         <SyncToXeroButton connected={!!xeroConn} tenantName={xeroConn?.tenant_name ?? null} />
       </div>
       <div className="mt-5">
-        <ProductCatalog products={products ?? []} suppliers={suppliers ?? []} scopeRoles={scopeRoles ?? []} labourTimings={labourTimings ?? []} assetTypes={assetTypes ?? []} subcategories={subcategories ?? []} offers={offers ?? []} kitContents={kitContents ?? []} />
+        <ProductCatalog products={products ?? []} suppliers={suppliers ?? []} scopeRoles={scopeRoles ?? []} labourTimings={labourTimings ?? []} assetTypes={assetTypes ?? []} subcategories={subcategories ?? []} offers={offers ?? []} kitContents={kitContents ?? []} kitComponents={kitComponents ?? []} deviceTypes={deviceTypes ?? []} />
       </div>
     </div>
   );

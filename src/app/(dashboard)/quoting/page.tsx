@@ -114,6 +114,14 @@ export default async function QuotingPage({
             <span className="font-medium text-foreground tabular-nums">{allQuotes.length}</span> total quotes
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        <Link
+          href="/quoting/guided"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 sm:px-4 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
+          title="No plan? Answer a few questions and the engine builds the quote."
+        >
+          Guided quote
+        </Link>
         <Link
           href="/quoting/new"
           className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 sm:px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
@@ -121,6 +129,7 @@ export default async function QuotingPage({
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
           New Quote
         </Link>
+        </div>
       </div>
 
       {/* Stats bar — desktop/tablet only. On mobile the same numbers live as

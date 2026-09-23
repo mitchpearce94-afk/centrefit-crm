@@ -21,7 +21,13 @@ import {
   calculateQuoteSummary,
   generateScopeOfWorks,
   parseScopeItem,
+  lintQuote,
+  blockingFindings,
+  findingKey,
+  expandKits,
 } from "@/lib/quote-engine";
+import type { DeviceTypeRow, KitComponent, TemplateSupply, KitAnswers, LintFinding, KitDiagnostic } from "@/lib/quote-engine";
+import { GUIDED_STORAGE_KEY, type InterviewResult } from "@/lib/quote-engine/interview";
 import type {
   DeviceCounts,
   SiteInfo,
@@ -229,6 +235,7 @@ interface ManualBomItem {
   cost_price: number;
   sell_price: number;
   isCustom: boolean;
+  fromKit?: string | null;
 }
 
 const inputClass =
@@ -268,6 +275,10 @@ interface ExistingQuote {
   manualPp2?: number;
   /** Plan progress quotes: PP1 set by hand on the Summary step (ex GST); PP2 = total − PP1. */
   pp1Override?: number;
+  // Quoting v2
+  kitAnswers?: KitAnswers;
+  interview?: InterviewResult | null;
+  lintOverrides?: Record<string, string>;
 }
 
 export function QuoteWizard({
@@ -282,6 +293,9 @@ export function QuoteWizard({
   allRules = [],
   templateDeviceDefaults = [],
   kitContents = [],
+  deviceTypes = [],
+  kitComponents = [],
+  templateSupply = [],
 }: {
   customers: CustomerOption[];
   products: QuoteProduct[];
@@ -294,6 +308,9 @@ export function QuoteWizard({
   allRules?: RuleRow[];
   templateDeviceDefaults?: { template_id: string; device_type: string; product_id: string }[];
   kitContents?: { kit_product_id: string; component_product_id: string; quantity: number }[];
+  deviceTypes?: DeviceTypeRow[];
+  kitComponents?: KitComponent[];
+  templateSupply?: TemplateSupply[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -363,6 +380,13 @@ export function QuoteWizard({
   // Step 2: Devices
   const [deviceCounts, setDeviceCounts] = useState<DeviceCounts>(existingQuote?.deviceCounts || {});
 
+  // Quoting v2 (docs/quoting-v2-CONTEXT.md): kit answers, what the engine
+  // couldn't do, and the operator's overrides of blocking lint findings.
+  const [kitAnswers, setKitAnswers] = useState<KitAnswers>(existingQuote?.kitAnswers ?? {});
+  const [kitQuestions, setKitQuestions] = useState<{ component: KitComponent; kit: BOMItem; product: Product }[]>([]);
+  const [bomDiagnostics, setBomDiagnostics] = useState<KitDiagnostic[]>([]);
+  const [lintOverrides, setLintOverrides] = useState<Record<string, string>>(existingQuote?.lintOverrides ?? {});
+
   // Quote mode: plan-based or manual. MUST be declared before bomItems /
   // manualBomItems so the rehydration logic below can route saved line items
   // into the correct bucket.
@@ -413,6 +437,11 @@ export function QuoteWizard({
   const [bomGenerated, setBomGenerated] = useState(
     existingQuote?.quoteMode !== "manual" && _savedAsBomItems.length > 0
   );
+  // Guided quote (quoting-v2 D4): the interview answers, saved with the quote
+  // so the "why is this on here" trail survives. `guidedPending` fires one
+  // engine run once the prefilled state has landed.
+  const [interview, setInterview] = useState<InterviewResult | null>(existingQuote?.interview ?? null);
+  const [guidedPending, setGuidedPending] = useState(false);
 
   // Step 4: Labour
   const [labourData, setLabourData] = useState<LabourData | null>(existingQuote?.labourData || null);
@@ -580,6 +609,43 @@ export function QuoteWizard({
     const totalDevices = Object.values(plan.device_counts || {}).reduce((a, b) => a + (b as number), 0);
     toast(`Loaded ${totalDevices} devices from plan`);
   }
+
+  // Guided quote: /quoting/guided stores the interview result in sessionStorage
+  // and sends us here with ?guided=1. Prefill the plan-mode state from it and
+  // run the engine once. The user lands on the Devices step with the BOM built.
+  useEffect(() => {
+    if (isEditing || searchParams.get("guided") !== "1") return;
+    let raw: string | null = null;
+    try { raw = sessionStorage.getItem(GUIDED_STORAGE_KEY); } catch { raw = null; }
+    if (!raw) { toast("No guided answers found — start again from Guided quote", "error"); return; }
+    try {
+      const g = JSON.parse(raw) as InterviewResult & { templateId?: string };
+      setQuoteMode("plan");
+      if (g.templateId && templates.some((t) => t.id === g.templateId)) setTemplateId(g.templateId);
+      setDeviceCounts(g.deviceCounts || {});
+      setSiteInfo((prev) => ({ ...prev, ...(g.siteInfo || {}) }));
+      setIsInterstate(!!g.flags?.isInterstate);
+      setElecDoingRoughIn(!!g.flags?.elecDoingRoughIn);
+      setElecDoingFitOff(!!g.flags?.elecDoingFitOff);
+      setInterview({ deviceCounts: g.deviceCounts, siteInfo: g.siteInfo, flags: g.flags, systems: g.systems, answers: g.answers });
+      setGuidedPending(true);
+      try { sessionStorage.removeItem(GUIDED_STORAGE_KEY); } catch { /* ignore */ }
+    } catch {
+      toast("Couldn't read the guided answers", "error");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!guidedPending) return;
+    setGuidedPending(false);
+    const items = generateWithKits();
+    setBomItems(items);
+    setBomGenerated(true);
+    const n = Object.values(deviceCounts).reduce((a, b) => a + (b as number), 0);
+    toast(`Built from your answers — ${n} devices, ${items.length} lines. Check the kit questions and add any extras.`);
+    setStep(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guidedPending]);
 
   // Auto-select plan from URL params (sent from Plan Builder's "Complete Plan")
   useEffect(() => {
@@ -948,8 +1014,7 @@ export function QuoteWizard({
     }
     if (quoteMode === "plan") {
       if (newStep === 2 && !bomGenerated) {
-        const rules = rulesForTemplate(allRules, templateId, products);
-        setBomItems(generateBOM(deviceCounts, products, rules, siteInfo, { elecDoingRoughIn, elecDoingFitOff }, deviceDefaults, kitContents));
+        setBomItems(generateWithKits());
         setBomGenerated(true);
       }
       if (newStep === 3 && !labourData) {
@@ -973,6 +1038,32 @@ export function QuoteWizard({
     document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  /** generateBOM with the v2 inputs: device types from the table, template
+   *  supply, approved kits and the answers so far. Records what the engine
+   *  couldn't do (for lint) and any kit question still open. */
+  function generateWithKits(answers: KitAnswers = kitAnswers): BOMItem[] {
+    const rules = rulesForTemplate(allRules, templateId, products);
+    const diagnostics: KitDiagnostic[] = [];
+    const questions: { component: KitComponent; kit: BOMItem; product: Product }[] = [];
+    const items = generateBOM(deviceCounts, products, rules, siteInfo, { elecDoingRoughIn, elecDoingFitOff }, deviceDefaults, kitContents, {
+      deviceTypes, kitComponents, kitAnswers: answers, templateSupply, templateId, diagnostics, kitQuestions: questions,
+    });
+    setBomDiagnostics(diagnostics);
+    setKitQuestions(questions);
+    return items;
+  }
+
+  /** Manual quotes get kits too (Mitchell 23 Sep): adding a kit product appends its
+   *  approved components; 'ask' components surface as questions. */
+  function manualKitLines(p: Product, qty: number, answers: KitAnswers): { lines: ManualBomItem[]; questions: { component: KitComponent; kit: BOMItem; product: Product }[] } {
+    const seed: BOMItem = { device_type_code: null, device_type_legend: null, category: p.category, product_id: p.id, product_name: p.name, sku: p.sku, supplier: p.supplier, quantity: qty, cost_price: p.cost_price, markup: p.markup, sell_price: p.sell_price, notes: "", auto_added: false, rule_description: null };
+    const r = expandKits([seed], products, kitComponents, { deviceCounts: {}, siteInfo, kitAnswers: answers });
+    return {
+      lines: r.added.map((a) => ({ product_id: a.product_id, product_name: a.product_name, sku: a.sku, category: a.category, supplier: a.supplier, quantity: a.quantity, cost_price: a.cost_price, sell_price: a.sell_price, isCustom: false, fromKit: p.name })),
+      questions: r.questions,
+    };
+  }
+
   function regenerateBOM() {
     // Edit mode — regen wipes any manual BOM tweaks the user made before
     // saving (price overrides, removed rule-added items, custom additions).
@@ -983,8 +1074,7 @@ export function QuoteWizard({
       );
       if (!ok) return;
     }
-    const rules = rulesForTemplate(allRules, templateId, products);
-    setBomItems(generateBOM(deviceCounts, products, rules, siteInfo, { elecDoingRoughIn, elecDoingFitOff }, deviceDefaults, kitContents));
+    setBomItems(generateWithKits());
     setBomGenerated(true);
   }
 
@@ -1230,6 +1320,22 @@ export function QuoteWizard({
     setLabourData(recalcLabour(updated));
   }
 
+  // Quoting v2 D5 — the completeness check on whatever BOM this quote has.
+  const lintFindings = useMemo<LintFinding[]>(() => {
+    const items: BOMItem[] = quoteMode === "manual"
+      ? manualBomItems.map((m) => ({ device_type_code: null, device_type_legend: null, category: m.category, product_id: m.product_id, product_name: m.product_name, sku: m.sku, supplier: m.supplier, quantity: m.quantity, cost_price: m.cost_price, markup: 0, sell_price: m.sell_price, notes: "", auto_added: false, rule_description: null }))
+      : bomItems;
+    if (!items.length) return [];
+    return lintQuote({
+      bomItems: items, deviceCounts, siteInfo, products, deviceTypes,
+      rules: rulesForTemplate(allRules, templateId, products), kitComponents, templateId, templateSupply,
+      elecDoingRoughIn, labourTimingCodes: labourTimings.map((t) => t.code),
+      unansweredKitQuestions: kitQuestions.map((q) => ({ component: q.component, product: q.product })),
+      diagnostics: bomDiagnostics, quoteMode,
+    });
+  }, [bomItems, manualBomItems, deviceCounts, siteInfo, products, deviceTypes, allRules, templateId, kitComponents, templateSupply, elecDoingRoughIn, labourTimings, kitQuestions, bomDiagnostics, quoteMode]);
+  const lintBlocking = useMemo(() => blockingFindings(lintFindings, lintOverrides), [lintFindings, lintOverrides]);
+
   async function handleSave() {
     // Both modes now write the real labourData to quote.labour_data.
     // Manual quotes that haven't visited the Labour step still get their
@@ -1293,6 +1399,11 @@ export function QuoteWizard({
       // items into the right bucket (manualBomItems vs bomItems) without
       // having to crack open labour_data.
       quote_mode: quoteMode,
+      kit_answers: kitAnswers,
+      interview: interview,
+      lint_findings: lintFindings,
+      lint_overrides: lintOverrides,
+      lint_checked_at: new Date().toISOString(),
       quote_type: quoteType,
       template_id: quoteMode === "manual" ? null : templateId,
       pricing_snapshot: {
@@ -1424,6 +1535,8 @@ export function QuoteWizard({
           cost_price: item.cost_price, markup: item.markup, sell_price: item.sell_price,
           auto_added: item.auto_added, rule_description: item.rule_description,
           notes: item.notes, sort_order: i,
+          customer_supplied: (item as { customer_supplied?: boolean }).customer_supplied ?? false,
+          kit_parent_product_id: (item as { kit_parent_product_id?: string | null }).kit_parent_product_id ?? null,
         }))
       );
     }
@@ -1972,11 +2085,22 @@ export function QuoteWizard({
                         key={p.id}
                         type="button"
                         onClick={() => {
+                          const kit = manualKitLines(p, 1, kitAnswers);
                           setManualBomItems((prev) => {
                             const existing = prev.find((b) => b.product_id === p.id);
-                            if (existing) return prev.map((b) => b.product_id === p.id ? { ...b, quantity: b.quantity + 1 } : b);
-                            return [...prev, { product_id: p.id, product_name: p.name, sku: p.sku, category: p.category, supplier: p.supplier, quantity: 1, cost_price: p.cost_price, sell_price: p.sell_price, isCustom: false }];
+                            const base = existing
+                              ? prev.map((b) => b.product_id === p.id ? { ...b, quantity: b.quantity + 1 } : b)
+                              : [...prev, { product_id: p.id, product_name: p.name, sku: p.sku, category: p.category, supplier: p.supplier, quantity: 1, cost_price: p.cost_price, sell_price: p.sell_price, isCustom: false }];
+                            // kit parts ADD (one more panel = one more set)
+                            const out = [...base];
+                            for (const l of kit.lines) {
+                              const same = out.find((b) => b.product_id === l.product_id && b.fromKit === l.fromKit);
+                              if (same) same.quantity += l.quantity; else out.push(l);
+                            }
+                            return out;
                           });
+                          if (kit.questions.length) setKitQuestions((prev) => [...prev.filter((q) => !kit.questions.some((n) => n.component.id === q.component.id)), ...kit.questions]);
+                          if (kit.lines.length) toast(`${p.name}: added ${kit.lines.length} kit part${kit.lines.length === 1 ? "" : "s"}`);
                           setManualBomSearch("");
                         }}
                         className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm hover:bg-accent transition-colors border-b border-border last:border-0"
@@ -1992,6 +2116,13 @@ export function QuoteWizard({
                   </div>
                 )}
               </div>
+
+              <KitQuestions questions={kitQuestions} onAnswer={(id, val) => {
+                const next = { ...kitAnswers, [id]: val }; setKitAnswers(next);
+                const q = kitQuestions.find((x) => x.component.id === id);
+                setKitQuestions((prev) => prev.filter((x) => x.component.id !== id));
+                if (val && q) setManualBomItems((prev) => [...prev, { product_id: q.product.id, product_name: q.product.name, sku: q.product.sku, category: q.product.category, supplier: q.product.supplier, quantity: q.kit.quantity * Number(q.component.qty_value || 1), cost_price: q.product.cost_price, sell_price: q.product.sell_price, isCustom: false, fromKit: q.kit.product_name }]);
+              }} />
 
               {/* Add Custom Item button */}
               <div className="mb-4">
@@ -2153,6 +2284,7 @@ export function QuoteWizard({
                 </div>
                 <button onClick={regenerateBOM} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Regenerate BOM</button>
               </div>
+              <KitQuestions questions={kitQuestions} onAnswer={(id, val) => { const next = { ...kitAnswers, [id]: val }; setKitAnswers(next); setBomItems(generateWithKits(next)); }} />
 
               {/* BOM totals card at top */}
               <div className="grid grid-cols-3 gap-3 mb-6">
@@ -2895,6 +3027,7 @@ export function QuoteWizard({
       {/* STEP 6: SUMMARY */}
       {step === 5 && summary && (
         <div className="space-y-6">
+          <LintPanel findings={lintFindings} overrides={lintOverrides} onOverride={(k, v) => setLintOverrides((o) => ({ ...o, [k]: v }))} />
           {/* Quote type / mode badges */}
           <div className="flex items-center gap-2">
             <span className={`rounded-full px-3 py-1 text-xs font-medium ${quoteType === "progress" ? "bg-primary/10 text-primary" : "bg-muted text-foreground"}`}>
@@ -3115,13 +3248,71 @@ export function QuoteWizard({
               );
             })()}
             {isLast && (
-              <button onClick={handleSave} disabled={saving || labourWarnings.length > 0} className="rounded-md bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
+              <button onClick={handleSave} disabled={saving || labourWarnings.length > 0 || lintBlocking.length > 0} title={lintBlocking.length ? `${lintBlocking.length} check${lintBlocking.length === 1 ? "" : "s"} must be fixed or overridden with a reason` : undefined} className="rounded-md bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
                 {saving ? "Saving..." : "Save Quote"}
               </button>
             )}
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+// ── Quoting v2 UI bits ──────────────────────────────────────────────────
+
+function KitQuestions({ questions, onAnswer }: { questions: { component: KitComponent; kit: BOMItem; product: Product }[]; onAnswer: (componentId: string, value: boolean) => void }) {
+  if (!questions.length) return null;
+  return (
+    <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+      <p className="mb-2 text-xs font-semibold text-amber-300">Kit questions — answer these and the parts are added for you</p>
+      <div className="space-y-2">
+        {questions.map((q) => (
+          <div key={q.component.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span>{q.component.ask_prompt ?? `Include ${q.product.name}?`} <span className="text-xs text-muted-foreground">· {q.kit.product_name} · adds {q.product.name}</span></span>
+            <span className="flex gap-1">
+              <button type="button" onClick={() => onAnswer(q.component.id, true)} className="rounded-md border border-border px-3 py-1 text-xs hover:bg-accent">Yes</button>
+              <button type="button" onClick={() => onAnswer(q.component.id, false)} className="rounded-md border border-border px-3 py-1 text-xs hover:bg-accent">No</button>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LintPanel({ findings, overrides, onOverride }: { findings: LintFinding[]; overrides: Record<string, string>; onOverride: (key: string, reason: string) => void }) {
+  const errors = findings.filter((f) => f.severity === "error");
+  const warns = findings.filter((f) => f.severity === "warn");
+  if (!findings.length) {
+    return <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-300">Quote check passed — nothing missing that the rules know about.</div>;
+  }
+  return (
+    <div className="space-y-3">
+      {errors.length > 0 && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-4">
+          <p className="text-sm font-semibold text-red-300">{errors.length} thing{errors.length === 1 ? "" : "s"} must be fixed before this quote can be saved or sent</p>
+          <p className="mb-3 text-xs text-muted-foreground">Fix it on the BOM step, or write why it&apos;s fine — the reason is kept with the quote.</p>
+          <div className="space-y-2">
+            {errors.map((f) => {
+              const k = findingKey(f);
+              const reason = overrides[k] ?? "";
+              return (
+                <div key={k} className="rounded-md border border-border bg-card p-2">
+                  <div className="flex items-start justify-between gap-2 text-sm"><span>{f.message}</span><span className="text-[10px] uppercase tracking-wide text-muted-foreground">{f.code}</span></div>
+                  <input value={reason} onChange={(e) => onOverride(k, e.target.value)} placeholder="Override reason (leave blank to keep it blocking)" className={`mt-1 w-full rounded-md border px-2 py-1 text-xs ${reason.trim() ? "border-emerald-500/40 bg-emerald-500/5" : "border-border bg-background"}`} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {warns.length > 0 && (
+        <details className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-amber-300">{warns.length} warning{warns.length === 1 ? "" : "s"} worth a look</summary>
+          <ul className="mt-2 space-y-1 text-xs text-muted-foreground">{warns.map((f) => <li key={findingKey(f)}>• {f.message} <span className="text-[10px] uppercase">{f.code}</span></li>)}</ul>
+        </details>
+      )}
     </div>
   );
 }

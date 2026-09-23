@@ -6,16 +6,22 @@ const TABS = [
   { id: "dependency", label: "Dependency Rules" },
   { id: "defaults", label: "Device Defaults" },
   { id: "labour", label: "Labour Timings" },
+  { id: "coverage", label: "Coverage" },
+  { id: "gaps", label: "Gaps inbox" },
 ] as const;
 
 export function RulesPageTabs({
   dependencyTab,
   labourTab,
   deviceDefaultsTab,
+  coverageTab,
+  gapsTab,
 }: {
   dependencyTab: React.ReactNode;
   labourTab: React.ReactNode;
   deviceDefaultsTab?: React.ReactNode;
+  coverageTab?: React.ReactNode;
+  gapsTab?: React.ReactNode;
 }) {
   const [active, setActive] = useState<string>("dependency");
 
@@ -39,6 +45,8 @@ export function RulesPageTabs({
       {active === "dependency" && dependencyTab}
       {active === "defaults" && deviceDefaultsTab}
       {active === "labour" && labourTab}
+      {active === "coverage" && coverageTab}
+      {active === "gaps" && gapsTab}
     </>
   );
 }

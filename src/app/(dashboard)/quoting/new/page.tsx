@@ -6,6 +6,7 @@ export default async function NewQuotePage() {
   const [
     customersResult, productsResult, plansResult, billingResult,
     jobsResult, timingsResult, templatesResult, rulesResult, deviceDefaultsResult, kitContentsResult,
+    deviceTypesResult, kitComponentsResult, templateSupplyResult,
   ] = await Promise.all([
     supabase.from("customers").select("id, name, customer_sites(id, name, address, suburb, state, postcode), customer_contacts(id, name, phone, mobile, email, is_primary)").eq("is_active", true).order("name"),
     supabase.from("quote_products").select("*").eq("is_active", true).order("category, name"),
@@ -17,6 +18,9 @@ export default async function NewQuotePage() {
     supabase.from("quote_dependency_rules").select("*").eq("is_active", true).order("sort_order"),
     supabase.from("quote_template_device_defaults").select("template_id, device_type, product_id"),
     supabase.from("quote_product_kit_contents").select("kit_product_id, component_product_id, quantity"),
+    supabase.from("quote_device_types").select("*").eq("is_active", true).order("sort_order"),
+    supabase.from("product_kit_components").select("*").eq("status", "approved").order("sort_order"),
+    supabase.from("quote_template_device_supply").select("template_id, device_type, supplied_by"),
   ]);
 
   const jobs = (jobsResult.data ?? []).map((j: any) => ({
@@ -41,6 +45,9 @@ export default async function NewQuotePage() {
           allRules={rulesResult.data ?? []}
           templateDeviceDefaults={deviceDefaultsResult.data ?? []}
           kitContents={(kitContentsResult.data ?? []).map((k) => ({ ...k, quantity: Number(k.quantity) }))}
+          deviceTypes={(deviceTypesResult.data ?? []) as never}
+          kitComponents={(kitComponentsResult.data ?? []) as never}
+          templateSupply={(templateSupplyResult.data ?? []) as never}
         />
       </div>
     </div>

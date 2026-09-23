@@ -10,7 +10,7 @@ export default async function EditQuotePage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [quoteResult, lineItemsResult, extrasResult, customersResult, productsResult, plansResult, linkedPlanResult, jobsResult, billingResult, timingsResult, templatesResult, rulesResult, deviceDefaultsResult, kitContentsResult] = await Promise.all([
+  const [quoteResult, lineItemsResult, extrasResult, customersResult, productsResult, plansResult, linkedPlanResult, jobsResult, billingResult, timingsResult, templatesResult, rulesResult, deviceDefaultsResult, kitContentsResult, deviceTypesResult, kitComponentsResult, templateSupplyResult] = await Promise.all([
     supabase.from("quotes").select("*").eq("id", id).single(),
     supabase.from("quote_line_items").select("*").eq("quote_id", id).order("sort_order"),
     supabase.from("quote_extras").select("*").eq("quote_id", id).order("sort_order"),
@@ -25,6 +25,9 @@ export default async function EditQuotePage({
     supabase.from("quote_dependency_rules").select("*").eq("is_active", true).order("sort_order"),
     supabase.from("quote_template_device_defaults").select("template_id, device_type, product_id"),
     supabase.from("quote_product_kit_contents").select("kit_product_id, component_product_id, quantity"),
+    supabase.from("quote_device_types").select("*").eq("is_active", true).order("sort_order"),
+    supabase.from("product_kit_components").select("*").eq("status", "approved").order("sort_order"),
+    supabase.from("quote_template_device_supply").select("template_id, device_type, supplied_by"),
   ]);
 
   if (quoteResult.error || !quoteResult.data) notFound();
@@ -72,6 +75,9 @@ export default async function EditQuotePage({
     lineItems: lineItemsResult.data ?? [],
     extras: extrasResult.data ?? [],
     quoteMode: (quote.quote_mode as "plan" | "manual" | undefined) ?? "plan",
+    kitAnswers: (quote.kit_answers ?? {}) as Record<string, boolean>,
+    interview: quote.interview ?? null,
+    lintOverrides: (quote.lint_overrides ?? {}) as Record<string, string>,
     isInterstate: quote.is_interstate ?? false,
     manualScope: quote.labour_data?.scope_of_works ?? "",
     manualLabourLines: Array.isArray(quote.labour_data?.manual_labour_lines)
@@ -123,6 +129,9 @@ export default async function EditQuotePage({
           allRules={rulesResult.data ?? []}
           templateDeviceDefaults={deviceDefaultsResult.data ?? []}
           kitContents={(kitContentsResult.data ?? []).map((k) => ({ ...k, quantity: Number(k.quantity) }))}
+          deviceTypes={(deviceTypesResult.data ?? []) as never}
+          kitComponents={(kitComponentsResult.data ?? []) as never}
+          templateSupply={(templateSupplyResult.data ?? []) as never}
         />
       </div>
     </div>

@@ -9,6 +9,7 @@ import { useToast } from "@/components/ui/toast";
 import { PRODUCT_CATEGORIES, DEVICE_TYPES } from "@/lib/quote-engine";
 import { RowXeroSyncButton } from "./row-xero-sync-button";
 import { KitPanel, type KitContentRow } from "./kit-panel";
+import { KitComponentsPanel, type KitComponentRow } from "./kit-components-panel";
 
 export interface ProductSubcategory {
   id: string;
@@ -100,6 +101,8 @@ export function ProductCatalog({
   subcategories,
   offers = [],
   kitContents = [],
+  kitComponents = [],
+  deviceTypes = [],
 }: {
   products: Product[];
   suppliers: Supplier[];
@@ -109,11 +112,13 @@ export function ProductCatalog({
   subcategories: ProductSubcategory[];
   offers?: ProductOffer[];
   kitContents?: KitContentRow[];
+  kitComponents?: KitComponentRow[];
+  deviceTypes?: { code: string; legend: string }[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
   // Products that are kits (have contents) — for the row badge.
-  const kitIds = useMemo(() => new Set(kitContents.map((k) => k.kit_product_id)), [kitContents]);
+  const kitIds = useMemo(() => new Set([...kitContents.map((k) => k.kit_product_id), ...kitComponents.filter((k) => k.status === "approved").map((k) => k.kit_product_id)]), [kitContents, kitComponents]);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [taggingFilter, setTaggingFilter] = useState<"" | "untagged_any" | "untagged_scope" | "untagged_labour" | "untagged_asset">("");
@@ -559,6 +564,8 @@ export function ProductCatalog({
             product={product}
             offers={offersByProduct.get(product.id) ?? []}
             kitContents={kitContents.filter((k) => k.kit_product_id === product.id)}
+            kitComponents={kitComponents.filter((k) => k.kit_product_id === product.id)}
+            deviceTypes={deviceTypes}
             allProducts={products}
             suppliers={sortedSuppliers}
             scopeRoles={sortedScopeRoles}
@@ -597,6 +604,8 @@ type ProductFormModalProps =
       product?: never;
       offers?: never;
       kitContents?: never;
+      kitComponents?: never;
+      deviceTypes?: never;
       allProducts?: never;
       onSave?: never;
     }
@@ -605,6 +614,8 @@ type ProductFormModalProps =
       product: Product;
       offers: ProductOffer[];
       kitContents: KitContentRow[];
+      kitComponents: KitComponentRow[];
+      deviceTypes: { code: string; legend: string }[];
       allProducts: Product[];
       suppliers: Supplier[];
       scopeRoles: ScopeRoleOption[];
@@ -1199,6 +1210,13 @@ function ProductFormModal(props: ProductFormModalProps) {
           {isEditing && (
             <div className="rounded-md border border-border bg-muted/20 px-3 py-3">
               <KitPanel product={props.product} contents={props.kitContents} products={props.allProducts} />
+            </div>
+          )}
+
+          {/* Kit components — what the engine ADDS when this product lands on a quote (quoting-v2) */}
+          {isEditing && (
+            <div className="rounded-md border border-border bg-muted/20 px-3 py-3">
+              <KitComponentsPanel product={props.product} rows={props.kitComponents} products={props.allProducts} deviceTypes={props.deviceTypes} />
             </div>
           )}
         </div>

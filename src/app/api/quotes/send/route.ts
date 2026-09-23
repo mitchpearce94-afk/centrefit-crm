@@ -67,6 +67,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Quote has no pricing" }, { status: 400 });
   }
 
+  // Quoting v2 D5: the completeness check blocks send unless every error was
+  // overridden with a reason in the wizard (kept on the quote for the audit).
+  const lintFindings = (quote.lint_findings ?? []) as { code: string; severity: string; message: string }[];
+  const lintOverrides = (quote.lint_overrides ?? {}) as Record<string, string>;
+  const blocking = lintFindings.filter((f) => f.severity === "error" && !(lintOverrides[`${f.code}|${f.message}`] ?? "").trim());
+  if (blocking.length) {
+    return NextResponse.json({ error: `Quote check failed — fix or override in the wizard: ${blocking.map((b) => b.message).join(" · ")}` }, { status: 409 });
+  }
+
   // Reuse the existing response_token if the quote has one — re-sends keep
   // the same link so any email already in a recipient's inbox still works.
   // Only mint a fresh token on the very first send.

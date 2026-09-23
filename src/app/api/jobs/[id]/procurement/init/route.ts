@@ -54,7 +54,7 @@ export async function POST(
   const { data: lineItems, error: liErr } = await supabase
     .from("quote_line_items")
     .select(`
-      id, product_id, product_name, sku, quantity, sort_order,
+      id, product_id, product_name, sku, quantity, sort_order, customer_supplied,
       quote_products ( supplier_id )
     `)
     .eq("quote_id", quote.id)
@@ -68,7 +68,7 @@ export async function POST(
   // to a real product (product_id set) with a positive quantity. This filters
   // out labour placeholders, freeform notes and $0 sundry lines.
   const orderable = (lineItems ?? []).filter(
-    (li) => li.product_id != null && Number(li.quantity) > 0,
+    (li) => li.product_id != null && Number(li.quantity) > 0 && !li.customer_supplied,
   );
 
   // Existing procurement rows for this job, split into:

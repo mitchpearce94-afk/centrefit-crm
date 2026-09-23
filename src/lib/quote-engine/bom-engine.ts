@@ -7,6 +7,23 @@ import { DEVICE_TYPES, DEFAULT_MARKUP } from './constants'
 import type { DeviceCounts, SiteInfo } from './constants'
 import { evaluateDependencyRules, autoAddItemsToBOM } from './dependency-engine'
 import type { DependencyRule, Product, BOMItem, ElecMaterialOptions } from './dependency-engine'
+import { applyTemplateSupply, expandKits, mergeKitLines } from './kits'
+import type { DeviceTypeRow, KitAnswers, KitComponent, KitDiagnostic, TemplateSupply } from './kits'
+
+/** Quoting v2 inputs (docs/quoting-v2-CONTEXT.md D1/D3): everything optional so old callers keep working. */
+export interface BOMv2Options {
+  deviceTypes?: DeviceTypeRow[]
+  kitComponents?: KitComponent[]
+  kitAnswers?: KitAnswers
+  templateSupply?: TemplateSupply[]
+  templateId?: string | null
+  retentionDays?: number
+  tbPerCamera?: number
+  /** out-param: what the engine could not do, for lint */
+  diagnostics?: KitDiagnostic[]
+  /** out-param: kit questions still unanswered */
+  kitQuestions?: { component: KitComponent; kit: BOMItem; product: Product }[]
+}
 
 export type { Product, DependencyRule, BOMItem } from './dependency-engine'
 
@@ -64,14 +81,26 @@ export function generateBOM(
   deviceDefaults: Record<string, string> = {},
   // Kit contents: components already inside a kit product get netted off any
   // rule/device line for the same product so nothing is quoted twice.
-  kitContents: KitContent[] = []
+  kitContents: KitContent[] = [],
+  v2: BOMv2Options = {}
 ): BOMItem[] {
   const bomItems: BOMItem[] = []
+  const diagnostics = v2.diagnostics ?? []
 
-  // Step 1: Map device types to products
-  DEVICE_TYPES.forEach((deviceType) => {
+  // Step 1: Map device types to products. The list is the DB table (D3 — so a
+  // plan symbol like card_reader or alarm_keypad can't fall through) merged
+  // over the code constant; DB rows win. has_hardware=false (data points,
+  // integration cables) count for rules and labour but never make a line.
+  const dbTypes = (v2.deviceTypes ?? []).filter((d) => d.is_active !== false)
+  const typeList = [
+    ...DEVICE_TYPES.map((d) => { const db = dbTypes.find((x) => x.code === d.code); return { code: d.code, legend: db?.legend ?? d.legend, category: db?.category ?? d.category, hasHardware: db ? db.has_hardware && !db.count_only : true } }),
+    ...dbTypes.filter((d) => !DEVICE_TYPES.some((x) => x.code === d.code)).map((d) => ({ code: d.code, legend: d.legend, category: d.category ?? '', hasHardware: d.has_hardware && !d.count_only })),
+  ]
+  const customerSupplied = new Set((v2.templateSupply ?? []).filter((s) => s.template_id === v2.templateId && s.supplied_by === 'customer').map((s) => s.device_type))
+  typeList.forEach((deviceType) => {
     const count = deviceCounts[deviceType.code] || 0
     if (count === 0) return
+    if (!deviceType.hasHardware) return
 
     const overrideId = deviceDefaults[deviceType.code]
     const pickedProduct = (overrideId
@@ -124,6 +153,9 @@ export function generateBOM(
     // Wall speakers come in boxes of 2 (both colour variants)
     const isWallSpeaker = deviceType.code === 'speaker_wall_black' || deviceType.code === 'speaker_wall_white'
     const orderQty = isWallSpeaker ? Math.ceil(count / 2) : count
+    if (!defaultProduct && !customerSupplied.has(deviceType.code)) {
+      diagnostics.push({ code: 'device_no_product', message: `${count} × ${deviceType.legend}: no active product carries device type "${deviceType.code}"` })
+    }
 
     bomItems.push({
       device_type_code: deviceType.code,
@@ -179,6 +211,24 @@ export function generateBOM(
         bomItems.push(autoItem)
       }
     })
+  }
+
+  // Step 2b (v2): customer-supplied device types on this template — keep the
+  // line for labour and cabling, strip the price, never procure.
+  let items = applyTemplateSupply(bomItems, v2.templateSupply ?? [], v2.templateId ?? null)
+  bomItems.length = 0
+  bomItems.push(...items)
+
+  // Step 2c (v2): kits — "quoting X requires these components" (D1). Additive.
+  if (v2.kitComponents?.length) {
+    const kitResult = expandKits(bomItems, products, v2.kitComponents, {
+      deviceCounts, siteInfo, kitAnswers: v2.kitAnswers ?? {}, retentionDays: v2.retentionDays, tbPerCamera: v2.tbPerCamera,
+    })
+    items = mergeKitLines(bomItems, kitResult.added)
+    bomItems.length = 0
+    bomItems.push(...items)
+    diagnostics.push(...kitResult.diagnostics)
+    if (v2.kitQuestions) v2.kitQuestions.push(...kitResult.questions)
   }
 
   // Step 3: Kits. A kit line already contains its components — net them off

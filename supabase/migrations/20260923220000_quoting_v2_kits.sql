@@ -124,3 +124,10 @@ insert into public.quote_template_device_supply (template_id, device_type, suppl
 select t.id, 'card_reader', 'centrefit', 'Veyla readers + controllers supplied by Centrefit (Mitchell 23 Sep 2026)'
 from public.quote_rule_templates t where t.slug = 'planet_fitness'
 on conflict do nothing;
+
+-- 20260923230000 quoting_v2_line_flags (applied via MCP): customer-supplied lines stay for labour, never procured;
+-- kit provenance on lines; kit answers + interview answers on the quote.
+alter table public.quote_line_items add column if not exists customer_supplied boolean not null default false;
+alter table public.quote_line_items add column if not exists kit_parent_product_id uuid;
+alter table public.quotes add column if not exists kit_answers jsonb;
+alter table public.quotes add column if not exists interview jsonb;
