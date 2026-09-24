@@ -134,10 +134,28 @@ const LEGACY_CODE_ALIASES: Record<string, string[]> = {
   speaker_wall: ['speaker_wall_black', 'speaker_wall_white'],
 }
 
+/** PoE ports on the NVRs CentreFit fits (16-ch and 32-ch Dahua both carry 16):
+ *  the first 16 cameras plug straight into the NVR and never touch the switch
+ *  or a patch panel. */
+export const NVR_POE_PORTS = 16
+
+/** Switch ports a site really needs (Mitchell, 24 Sep 2026, Winston Hills):
+ *  cardio + TVs + cameras beyond the NVR's PoE + tailgate box × 2 + WAPs + data
+ *  points. Drives the patch panels, leads, snap plugs, switch tier and router
+ *  through the virtual trigger code `switch_ports`. */
+export function switchPorts(deviceCounts: DeviceCounts, siteInfo: SiteInfo = {}): number {
+  const cams = (deviceCounts.camera_black || 0) + (deviceCounts.camera_white || 0)
+  return (siteInfo.cardio_count || 0) + (siteInfo.tv_count || 0) +
+    Math.max(0, cams - NVR_POE_PORTS) +
+    (deviceCounts.tailgate_system || 0) * 2 +
+    (deviceCounts.wap || 0) + (deviceCounts.data_point || 0)
+}
+
 function resolveTriggerCount(triggerCode: string | null, deviceCounts: DeviceCounts, siteInfo: SiteInfo = {}): number {
   if (!triggerCode) return 0
   const codes = triggerCode.split('+').map((c) => c.trim())
   return codes.reduce((sum, code) => {
+    if (code === 'switch_ports') return sum + switchPorts(deviceCounts, siteInfo)
     if (SITE_INFO_FIELDS.includes(code)) {
       return sum + (Number((siteInfo as Record<string, unknown>)[code]) || 0)
     }
@@ -246,10 +264,11 @@ function calculateCustomQuantity(key: string, deviceCounts: DeviceCounts, siteIn
     case 'switch_couplers':
     case 'switch_250mm_leads':
     case 'switch_snap_plugs': {
+      // every Cat6 run still needs a plug at both ends, NVR-fed cameras included
       const dataRuns =
         (dc.camera_black || 0) + (dc.camera_white || 0) + (dc.tailgate_system || 0) +
         (dc.wap || 0) + (dc.data_point || 0)
-      const ports = (si.cardio_count || 0) + (si.tv_count || 0) + dataRuns
+      const ports = switchPorts(dc, si)
       if (ports <= 0) return 0
       const panels = Math.ceil(ports / 24)
       if (key === 'switch_couplers') return panels * 2
@@ -725,7 +744,7 @@ export function getPlanetFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('Flush Mounted Piezo', 'DFMWP05'), { id: ruleId(), trigger_code: 'reed_switch', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'match_trigger', description: 'Flush piezo (DFMWP05) per cabled reed switch', preset, is_active: true })
 
   // Cloud Key instead of a router — PF supply their own router
-  pushRule(rules, find('Cloud Key', 'NHU-UCK-G2-SSD'), { id: ruleId(), trigger_code: 'cardio_count + tv_count + camera_black + camera_white + tailgate_system + wap + data_point', trigger_condition: 'greater_than_or_equal', trigger_value: 1, quantity_mode: 'fixed', quantity_value: 1, description: 'Ubiquiti Cloud Key+ — PF have their own router, key manages UniFi gear', preset, is_active: true })
+  pushRule(rules, find('Cloud Key', 'NHU-UCK-G2-SSD'), { id: ruleId(), trigger_code: 'switch_ports', trigger_condition: 'greater_than_or_equal', trigger_value: 1, quantity_mode: 'fixed', quantity_value: 1, description: 'Ubiquiti Cloud Key+ — PF have their own router, key manages UniFi gear', preset, is_active: true })
 
   // PF AV package — always on
   const pfAlways = { trigger_code: null, trigger_condition: 'always', preset, is_active: true }
@@ -753,7 +772,7 @@ export function getPlanetFitnessRules(products: Product[]): DependencyRule[] {
 
   // 500mm patch leads — PF plans carry no server cabinet, so trigger on the data
   // devices (same trigger as the Cloud Key rule) instead of Snap's cabinet count.
-  pushRule(rules, find('500mm', 'ECPLS-C6B0.5'), { id: ruleId(), trigger_code: 'cardio_count + tv_count + camera_black + camera_white + tailgate_system + wap + data_point', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'custom', quantity_custom_key: 'cabinet_500mm_patch_leads', description: '500mm Cat6 patch leads — base 2 + CEIL(card_reader / 2)', preset, is_active: true })
+  pushRule(rules, find('500mm', 'ECPLS-C6B0.5'), { id: ruleId(), trigger_code: 'switch_ports', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'custom', quantity_custom_key: 'cabinet_500mm_patch_leads', description: '500mm Cat6 patch leads — base 2 + CEIL(card_reader / 2)', preset, is_active: true })
 
   // REX per franchise: PF uses the DFMWES2261 timer button (Snap = WEL1911).
   // The placed-device default is ALSO overridden per template via

@@ -14,6 +14,9 @@ import { evalKitFormula } from "@/lib/quote-engine/kits";
 import type { CoverageData } from "@/app/(dashboard)/settings/rules/coverage-report";
 
 const SINCE = "2026-03-01";
+// Trigger terms that aren't device types: site fields and the engine's virtual codes.
+const SITE_FIELDS = new Set(["site_sqm", "door_count", "external_camera_count", "concrete_mount_black", "concrete_mount_white", "cardio_count", "tv_count", "ceiling_tv_count", "wall_tv_mount_count", "ceiling_tv_mount_count", "separate_studio_zone", "mag_lock_glass"]);
+const VIRTUAL_CODES = new Set(["reed_switch_all", "switch_ports", "speaker_roof", "speaker_wall"]);
 const PAGE = 1000; // PostgREST max-rows
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -145,7 +148,11 @@ export async function loadCoverageAndGaps(supabase: AnyClient): Promise<{ covera
     else if (pById.get(r.auto_add_product_id)?.discontinued_at) problems.push(`product "${pById.get(r.auto_add_product_id)?.name}" is discontinued`);
     if (!r.template_id && !r.is_universal) problems.push("no template and not universal — never runs");
     if (r.template_id && !tplName.has(r.template_id)) problems.push("template is inactive");
-    if (r.trigger_code && !dtCodes.has(r.trigger_code) && r.trigger_condition !== "always") problems.push(`trigger device type "${r.trigger_code}" isn't a known device type`);
+    if (r.trigger_code && r.trigger_condition !== "always") {
+      for (const code of r.trigger_code.split("+").map((c) => c.trim()).filter(Boolean)) {
+        if (!dtCodes.has(code) && !SITE_FIELDS.has(code) && !VIRTUAL_CODES.has(code)) problems.push(`trigger device type "${code}" isn't a known device type`);
+      }
+    }
     for (const problem of problems) rulesBroken.push({ id: r.id, description: r.description, problem, template: tpl ?? (r.is_universal ? "universal" : null) });
   }
 

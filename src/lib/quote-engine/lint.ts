@@ -113,7 +113,10 @@ export function lintQuote(input: LintInput): LintFinding[] {
   for (const r of input.rules) {
     if (r.trigger_site_field) siteFieldsUsed.add(r.trigger_site_field)
     if (r.quantity_site_field) siteFieldsUsed.add(r.quantity_site_field)
-    for (const code of String(r.trigger_code ?? '').split('+').map((s) => s.trim())) if (code in input.siteInfo) siteFieldsUsed.add(code)
+    for (const code of String(r.trigger_code ?? '').split('+').map((s) => s.trim())) {
+      if (code in input.siteInfo) siteFieldsUsed.add(code)
+      if (code === 'switch_ports') { siteFieldsUsed.add('cardio_count'); siteFieldsUsed.add('tv_count') }
+    }
   }
   if (input.quoteMode === 'plan') {
     for (const field of ['site_sqm', 'door_count']) if (siteFieldsUsed.has(field) && !(input.siteInfo as Record<string, unknown>)[field]) f.push({ code: 'site_field_zero', severity: 'warn', message: `${field.replace('_', ' ')} is 0 but rules depend on it`, fix: { kind: 'site_field', field } })
