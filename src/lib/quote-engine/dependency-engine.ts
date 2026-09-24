@@ -503,22 +503,29 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
     is_active: true,
   }
 
+  // Every panel part below lives in the K6000 kit now (product_kit_components,
+  // Mitchell 23 Sep). Seeded INACTIVE so a re-seed can't put them on an alarm
+  // quote twice — CF-2026-0079 had each one as a rule line and a kit line.
+  // The MP3560 PSU was rejected from the panel kit outright (it belongs to the
+  // mag-lock kit), so its rule stays off too.
+  const inKit = { ...securityTrigger, is_active: false }
+
   pushRule(rules, find('Solution 6000', 'K6000NODET'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Bosch Solution 6000 alarm kit' })
   // MW730B enclosure REMOVED from the seed (Sue, 2026-09-06): the Solution 6000
   // kit (K6000NODET) already ships with its enclosure, so this was double-
   // counting one on every Snap security quote. DB rule d75308d2 is inactive too.
-  pushRule(rules, find('LARGE Connector Board', 'CFLGE2022'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, is_universal: true, description: 'CentreFit large connector board for alarm panel' })
-  pushRule(rules, find('CM710B', 'CM710B'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Output expansion module for alarm panel' })
-  pushRule(rules, find('MY368AU', 'MY368AU'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '4G modem for alarm panel (1x)' })
-  pushRule(rules, find('CM444B', 'CM444B'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 3, description: '2 amp relay modules for alarm (3x)' })
-  pushRule(rules, find('5 Port', 'ANDDEAR-DG9'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '5 port switch for alarm comms' })
-  pushRule(rules, find('Reporting Lite Plus - SIM', null), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'MyAlarm monitoring subscription' })
-  pushRule(rules, find('ETHM-A', 'S-COM-ETHM-A'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Ethernet relay module for alarm comms' })
-  pushRule(rules, find('Finder Relay', 'FID55.32.007412VDC'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Finder relay for alarm automation (2x)' })
-  pushRule(rules, find('Relay Mount', 'FID9402'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Finder relay mount socket (2x)' })
-  pushRule(rules, find('Power Adaptor', 'MP3560'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, is_universal: true, description: 'Power adaptor for alarm system' })
-  pushRule(rules, find('Mounting Tape', 'SCOTCH-TAPE-25'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Scotch mounting tape for alarm panel' })
-  pushRule(rules, find('Crimp Ferrule', 'RS-FERRULE-20AWG'), { ...securityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 3, description: 'Crimp ferrules 20AWG for alarm wiring (3x)' })
+  pushRule(rules, find('LARGE Connector Board', 'CFLGE2022'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, is_universal: true, description: 'CentreFit large connector board for alarm panel' })
+  pushRule(rules, find('CM710B', 'CM710B'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Output expansion module for alarm panel' })
+  pushRule(rules, find('MY368AU', 'MY368AU'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '4G modem for alarm panel (1x)' })
+  pushRule(rules, find('CM444B', 'CM444B'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 3, description: '2 amp relay modules for alarm (3x)' })
+  pushRule(rules, find('5 Port', 'ANDDEAR-DG9'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '5 port switch for alarm comms' })
+  pushRule(rules, find('Reporting Lite Plus - SIM', null), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'MyAlarm monitoring subscription' })
+  pushRule(rules, find('ETHM-A', 'S-COM-ETHM-A'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Ethernet relay module for alarm comms' })
+  pushRule(rules, find('Finder Relay', 'FID55.32.007412VDC'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Finder relay for alarm automation (2x)' })
+  pushRule(rules, find('Relay Mount', 'FID9402'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Finder relay mount socket (2x)' })
+  pushRule(rules, find('Power Adaptor', 'MP3560'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, is_universal: true, description: 'Power adaptor for alarm system' })
+  pushRule(rules, find('Mounting Tape', 'SCOTCH-TAPE-25'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Scotch mounting tape for alarm panel' })
+  pushRule(rules, find('Crimp Ferrule', 'RS-FERRULE-20AWG'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 3, description: 'Crimp ferrules 20AWG for alarm wiring (3x)' })
 
   // === PIR ZONE EXPANSION ===
   const pirTrigger = 'pir_360_roof + pir_wall'
@@ -548,8 +555,12 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   // === SECURITY CABLE ===
   const totalSecurityCode = 'pir_360_roof + pir_wall + reed_switch + alarm_panel + door_strike + mag_lock + duress_button + duress_intercom + light_siren + siren_piezo + rf_receiver + break_glass'
   const secCableTrigger = { trigger_code: totalSecurityCode, trigger_condition: 'greater_than', trigger_value: 0, preset, is_active: true }
+  // The cable roll counts cable RUNS — the panel isn't one (a replacement panel
+  // with existing detectors was getting a 300 m roll, CF-2026-0079). Plugs keep
+  // the panel in their trigger: re-terminating existing runs still needs them.
+  const secCableRunTrigger = { ...secCableTrigger, trigger_code: totalSecurityCode.replace(' + alarm_panel', '') }
 
-  pushRule(rules, find('6 Core Security Cable', 'EC6C14020300B'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'ceil_formula', quantity_multiplier: 45, quantity_divisor: 300, is_universal: true, description: '6-core security cable — CEIL(total_security_devices × 45m / 300m rolls)', elec_supplied_phase: 'rough_in' })
+  pushRule(rules, find('6 Core Security Cable', 'EC6C14020300B'), { ...secCableRunTrigger, id: ruleId(), quantity_mode: 'ceil_formula', quantity_multiplier: 45, quantity_divisor: 300, is_universal: true, description: '6-core security cable — CEIL(total_security_devices × 45m / 300m rolls)', elec_supplied_phase: 'rough_in' })
   pushRule(rules, find('4 Way Plug', 'EC381V-04P'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'custom', quantity_custom_key: 'security_4w_plugs', is_universal: true, description: '4-way security plugs — door_count + PIR_count + 2' })
   pushRule(rules, find('3 Way Plug', 'EC381V-03P'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, is_universal: true, description: '3-way security plugs (2x fixed)' })
   pushRule(rules, find('2 Way Plug', 'EC381V-02P'), { ...secCableTrigger, id: ruleId(), quantity_mode: 'custom', quantity_custom_key: 'security_2w_plugs', is_universal: true, description: '2-way security plugs — door_count + 6' })
@@ -729,11 +740,13 @@ export function getPlanetFitnessRules(products: Product[]): DependencyRule[] {
   // UNIVERSAL rules on the Snap template, so they're deliberately not repeated
   // here — a PF copy would double them on every quote.
   const pfSecurityTrigger = { trigger_code: 'alarm_panel', trigger_condition: 'greater_than', trigger_value: 0, preset, is_active: true }
-  pushRule(rules, find('CM444B', 'CM444B'), { ...pfSecurityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 3, description: '2 amp relay modules for alarm (3x)' })
-  pushRule(rules, find('5 Port', 'ANDDEAR-DG9'), { ...pfSecurityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '5 port switch for alarm comms' })
-  pushRule(rules, find('ETHM-A', 'S-COM-ETHM-A'), { ...pfSecurityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Ethernet relay module for alarm comms' })
-  pushRule(rules, find('Finder Relay', 'FID55.32.007412VDC'), { ...pfSecurityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Finder relay for alarm automation (2x) — Haymans' })
-  pushRule(rules, find('Relay Mount', 'FID9402'), { ...pfSecurityTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Finder relay mount socket (2x) — Haymans' })
+  // All five are K6000 kit components now — seeded inactive (see the Snap block).
+  const pfInKit = { ...pfSecurityTrigger, is_active: false }
+  pushRule(rules, find('CM444B', 'CM444B'), { ...pfInKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 3, description: '2 amp relay modules for alarm (3x)' })
+  pushRule(rules, find('5 Port', 'ANDDEAR-DG9'), { ...pfInKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '5 port switch for alarm comms' })
+  pushRule(rules, find('ETHM-A', 'S-COM-ETHM-A'), { ...pfInKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Ethernet relay module for alarm comms' })
+  pushRule(rules, find('Finder Relay', 'FID55.32.007412VDC'), { ...pfInKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Finder relay for alarm automation (2x) — Haymans' })
+  pushRule(rules, find('Relay Mount', 'FID9402'), { ...pfInKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Finder relay mount socket (2x) — Haymans' })
 
   // 500mm patch leads — PF plans carry no server cabinet, so trigger on the data
   // devices (same trigger as the Cloud Key rule) instead of Snap's cabinet count.

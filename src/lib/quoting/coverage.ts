@@ -161,13 +161,38 @@ export async function loadCoverageAndGaps(supabase: AnyClient): Promise<{ covera
     }
   }
 
+  // Rules whose part a kit already adds. The engine nets the kit quantity off
+  // the rule line, so the quote is right either way — but the rule is dead
+  // weight that confuses the Rules tab (the Snap K6000 rules, 24 Sep). Only
+  // single-device-type triggers whose default product IS the kit qualify.
+  const kitsAdding = new Map<string, Set<string>>();
+  for (const k of approvedKits) kitsAdding.set(k.component_product_id, (kitsAdding.get(k.component_product_id) ?? new Set<string>()).add(k.kit_product_id));
+  const defaultFor = (code: string, templateId: string | null): string | null => {
+    const tpl = templateId ? defaults.find((d) => d.template_id === templateId && d.device_type === code && active(d.product_id)) : undefined;
+    if (tpl?.product_id) return tpl.product_id;
+    const g = productByDevice.get(code) ?? [];
+    return (g.find((p) => p.is_default) ?? g[0])?.id ?? null;
+  };
+  const rulesCoveredByKits: CoverageData["rulesCoveredByKits"] = [];
+  for (const r of activeRules) {
+    if (!r.auto_add_product_id || !r.trigger_code || r.trigger_condition === "always") continue;
+    const kitIds = kitsAdding.get(r.auto_add_product_id); if (!kitIds) continue;
+    const codes = r.trigger_code.split("+").map((s) => s.trim()).filter(Boolean);
+    if (codes.length !== 1) continue;
+    const picked = r.template_id
+      ? [defaultFor(codes[0], r.template_id)]
+      : Array.from(new Set([defaultFor(codes[0], null), ...defaults.filter((d) => d.device_type === codes[0] && active(d.product_id)).map((d) => d.product_id as string)]));
+    if (!picked.length || !picked.every((id) => !!id && kitIds.has(id))) continue;
+    rulesCoveredByKits.push({ id: r.id, description: r.description, product: pById.get(r.auto_add_product_id)?.name ?? r.auto_add_product_id, kit: pById.get(picked[0] as string)?.name ?? (picked[0] as string), template: r.template_id ? (tplName.get(r.template_id) ?? null) : "universal" });
+  }
+
   const rulesUsing = new Map<string, number>(); for (const r of activeRules) if (r.auto_add_product_id) rulesUsing.set(r.auto_add_product_id, (rulesUsing.get(r.auto_add_product_id) ?? 0) + 1);
   const kitsUsing = new Map<string, number>(); for (const k of approvedKits) kitsUsing.set(k.component_product_id, (kitsUsing.get(k.component_product_id) ?? 0) + 1);
   const zeroCost = products
     .filter((p) => p.is_active !== false && !(Number(p.cost_price) > 0) && (rulesUsing.has(p.id) || kitsUsing.has(p.id) || defaultProducts.has(p.id) || (p.is_default && p.device_type)))
     .map((p) => ({ id: p.id, name: p.name, sku: p.sku, used_by_rules: rulesUsing.get(p.id) ?? 0, used_by_kits: kitsUsing.get(p.id) ?? 0 }));
 
-  const coverage: CoverageData = { deviceTypesNoProduct, productsMissingTags, labourMismatch, rulesBroken, kitsBroken, zeroCost, templates, deviceTypes, supply };
+  const coverage: CoverageData = { deviceTypesNoProduct, productsMissingTags, labourMismatch, rulesBroken, rulesCoveredByKits, kitsBroken, zeroCost, templates, deviceTypes, supply };
 
   // ---- Gaps inbox ----
   const linesByQuote = new Map<string, LineRow[]>();

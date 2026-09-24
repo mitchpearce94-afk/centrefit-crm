@@ -65,6 +65,14 @@ export function lintQuote(input: LintInput): LintFinding[] {
     }
   }
 
+  // The same product on more than one non-kit line — a rule line plus a hand-
+  // added line, or two hand-added lines — is how a part gets ordered twice
+  // (CF-2026-0079, Mitchell 24 Sep). Kit lines are exempt: they belong to
+  // their kit and the engine already nets them off rule lines.
+  const byProduct = new Map<string, BOMItem[]>()
+  for (const b of lines) if (b.product_id && !b.kit_parent_product_id) byProduct.set(b.product_id, [...(byProduct.get(b.product_id) ?? []), b])
+  for (const [pid, ls] of byProduct) if (ls.length > 1) f.push({ code: 'duplicate_product', severity: 'error', message: `${ls[0].product_name} is on ${ls.length} lines (${ls.map((l) => l.quantity).join(' + ')}) — it would be ordered twice`, product_id: pid })
+
   // E13 — device counted, no product (from the engine)
   for (const [code, n] of Object.entries(dc)) {
     if (!n || n <= 0) continue

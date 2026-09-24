@@ -862,8 +862,15 @@ export function QuoteWizard({
           (counts[item.device_type_code] ?? 0) + item.quantity;
       }
     }
+    // Device types that never make a BOM line (existing PIRs, data/coax points,
+    // integration cables) only exist in the plan's counts — carry them over so
+    // labour still sees them once the BOM exists. CF-2026-0079 lost its
+    // "Re-terminate existing detectors" line this way (Mitchell, 24 Sep).
+    for (const dt of deviceTypes) {
+      if ((dt.count_only || !dt.has_hardware) && (deviceCounts[dt.code] || 0) > 0) counts[dt.code] = deviceCounts[dt.code];
+    }
     return counts;
-  }, [bomItems]);
+  }, [bomItems, deviceTypes, deviceCounts]);
 
   // Track formula-driven labour lines the user has explicitly deleted, so
   // regen doesn't resurrect them. Keyed as `${sectionName}::${itemName}`.
@@ -908,12 +915,24 @@ export function QuoteWizard({
       if (!code || code === 'none') continue;
       fitOffTotals.set(code, (fitOffTotals.get(code) ?? 0) + line.quantity);
     }
+    // 2. Per-line cable-run signals (Rough In)
+    const cableLines: { labour_code: null; quantity: number; requires_cable: true; scope_role: null }[] = [];
+
+    // Cable-only device types (data/coax points, integration cables) have no
+    // BOM line but are real cable runs with their own fit-off timing
+    // (quote_device_types.labour_code). Count-only types (existing PIRs) are
+    // neither — the labour engine re-terminates them from the device counts.
+    if (quoteMode !== "manual") {
+      for (const dt of deviceTypes) {
+        const n = deviceCounts[dt.code] || 0;
+        if (n <= 0 || dt.has_hardware || dt.count_only) continue;
+        if (dt.labour_code && dt.labour_code !== "none") fitOffTotals.set(dt.labour_code, (fitOffTotals.get(dt.labour_code) ?? 0) + n);
+        cableLines.push({ labour_code: null, quantity: n, requires_cable: true, scope_role: null });
+      }
+    }
     const fitOffLines = Array.from(fitOffTotals.entries()).map(
       ([labour_code, quantity]) => ({ labour_code, quantity, scope_role: null })
     );
-
-    // 2. Per-line cable-run signals (Rough In)
-    const cableLines: { labour_code: null; quantity: number; requires_cable: true; scope_role: null }[] = [];
     // 3. Per-line scope-role presence (Commissioning system detection)
     const scopeLines: { labour_code: null; scope_role: string; quantity: number }[] = [];
     for (const line of source) {
@@ -929,8 +948,7 @@ export function QuoteWizard({
     }
 
     return [...fitOffLines, ...cableLines, ...scopeLines];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bomItems, manualBomItems, quoteMode, rawProducts]);
+  }, [bomItems, manualBomItems, quoteMode, rawProducts, deviceTypes, deviceCounts]);
 
   function regenerateLabour() {
     const source = bomGenerated ? bomDeviceCounts : deviceCounts;

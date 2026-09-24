@@ -81,3 +81,16 @@ Plan builder, procurement, invoicing, Xero sync, the send/accept flow, PP1/PP2 s
 **Kit data decided with Mitchell 23 Sep:** see memory `centrefit-quotes-rework-2026-09-23` — K6000 panel kit, PIR wall mounts, ECA2010 SIM, RF reed piezo, FEM4300 mag lock kit (PSU lives here, ask glass/standard), PF access kit on the PFRRK scanner (Aero 1100C per 2 doors, X100 thereafter, PIM, USB-RS232, DB9, REX, loop), NVR `hdd_pack`. Rules retired: HDD ceil(cams/6), Dream Machine router; Snap AV fixed 'always' rules now conditional on `cardio_count + tv_count > 0`.
 
 **Open:** D9 document design (recommend keep-and-fix); costs for HID-X100 / NIDAC-PIMS4 / JAYCAR-USB-RS232 / DB9-F-SCREW; Mitchell to review the Coverage and Gaps tabs and decide proposals; interview questions live in code (`interview.ts`) — move to a table if the set grows.
+
+## Status — 24 Sep 2026 (first real quote, CF-2026-0079)
+
+Mitchell's first guided quote (Snap, alarm panel + 13 existing 360° PIRs) came out with every K6000 part twice, a 300 m roll of 6-core, a 12 V access PSU and no re-termination labour. Root causes and fixes:
+
+- **Rule + kit double-up.** The 23 Sep rule→kit migration created the kit components but never retired the rules (`quote_dependency_rules` had no link back). Engine now nets kit-supplied quantity off pure rule lines (rules = "ensure at least N", kit lines count toward N; a rule asking for more keeps the remainder — PF's 710B-per-4-reeds). The 17 Snap/PF `alarm_panel` rules whose part is in the K6000 kit, the rejected MP3560 panel-PSU rule, the OPTUS-SIM (ECA2010 kit) and PIR-bracket (ISC-BPQ2 kit) rules are `is_active = false`; the code seeds mark them inactive too so Re-seed can't resurrect them. Coverage tab has a new section **Rules a kit already covers**.
+- **Lint `duplicate_product` (error)** — the same product on two non-kit lines blocks send.
+- **CM704B carried `device_type = alarm_panel` + is_default** — the engine picked the expander as the panel line on every alarm quote (the K6000 came from a rule). CM704B and TF008-B device_type cleared; the K6000 is the only default panel.
+- **6-core cable rule counted the panel as a run** — `alarm_panel` removed from the cable rule's trigger (DB + seed). Plug rules keep it (re-terminated runs need plugs).
+- **Existing PIRs lost between BOM and labour** — `bomDeviceCounts` (labour's input once the BOM exists) only saw device types with a line. Count-only and cable-only device types are carried over from the plan counts; cable-only types (data/coax points, integration cable) also feed fit-off + cable-run labour via `quote_device_types.labour_code`.
+- **Piezo kit sat on the RF reed** — the migration attached the PF "flush piezo per CABLED reed" rule to the default reed product (RFDW-SM, the RF one). Moved to DFMWSS60W (wired). Kit component notes stripped of "(from X rules)".
+
+**Still Mitchell's call:** mag-lock kit adds one MP3560 PSU per lock but he said "one PSU per Snap club" (23 Sep) — kit content; PF now gets the full K6000 kit (4G modem, MyAlarm SIM, tape, ferrules) via the kit, not just its five old rules — confirm in the PF rules walk-through.

@@ -229,6 +229,27 @@ export function generateBOM(
     bomItems.push(...items)
     diagnostics.push(...kitResult.diagnostics)
     if (v2.kitQuestions) v2.kitQuestions.push(...kitResult.questions)
+
+    // Step 2d (v2): a dependency rule "ensures at least N" of a product and the
+    // kit lines just added count toward that N. Net the kit-supplied quantity
+    // off every pure rule line for the same product, so a part that lives in a
+    // kit AND still has a rule is never on the quote twice. CF-2026-0079
+    // (Mitchell, 24 Sep) carried every K6000 panel part as a rule line and a
+    // "kit: BOSCH 7087" line. Rules that ask for more than the kit supplies
+    // (PF's 710B-per-4-reeds) keep the remainder.
+    const kitSupplied = new Map<string, number>()
+    for (const a of kitResult.added) if (a.product_id) kitSupplied.set(a.product_id, (kitSupplied.get(a.product_id) ?? 0) + a.quantity)
+    for (let i = bomItems.length - 1; i >= 0; i--) {
+      const b = bomItems[i]
+      if (!b.product_id || !b.auto_added || b.kit_parent_product_id || b.device_type_code) continue
+      const supplied = kitSupplied.get(b.product_id) ?? 0
+      if (supplied <= 0) continue
+      const cut = Math.min(b.quantity, supplied)
+      kitSupplied.set(b.product_id, supplied - cut)
+      b.quantity -= cut
+      if (b.quantity <= 0) bomItems.splice(i, 1)
+      else b.notes = [b.notes, `${cut} covered by a kit`].filter(Boolean).join(' · ')
+    }
   }
 
   // Step 3: Kits. A kit line already contains its components — net them off

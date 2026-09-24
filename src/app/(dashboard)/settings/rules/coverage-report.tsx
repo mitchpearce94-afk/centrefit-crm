@@ -13,6 +13,7 @@ export interface CoverageData {
   productsMissingTags: { id: string; name: string; sku: string | null; missing: string[] }[];
   labourMismatch: { id: string; name: string; sku: string | null; device_type: string; problem: string }[];
   rulesBroken: { id: string; description: string | null; problem: string; template: string | null }[];
+  rulesCoveredByKits: { id: string; description: string | null; product: string; kit: string; template: string | null }[];
   kitsBroken: { kit: string; component: string; problem: string }[];
   zeroCost: { id: string; name: string; sku: string | null; used_by_rules: number; used_by_kits: number }[];
   templates: { id: string; name: string }[];
@@ -55,6 +56,10 @@ export function CoverageReport({ data }: { data: CoverageData }) {
       </Section>
       <Section title="Rules that can't fire" n={data.rulesBroken.length}>
         <ul className="space-y-1">{data.rulesBroken.map((r) => <li key={r.id}><span className="font-medium">{r.description ?? r.id.slice(0, 8)}</span> <span className="text-muted-foreground">({r.template ?? "universal"}) — {r.problem}</span></li>)}</ul>
+      </Section>
+      <Section title="Rules a kit already covers" n={data.rulesCoveredByKits.length}>
+        <p className="mb-1 text-muted-foreground">The kit adds this part on every quote the rule would fire on. The engine nets the two so nothing is quoted twice, but the rule is dead weight — disable it in the Rules tab.</p>
+        <ul className="space-y-1">{data.rulesCoveredByKits.map((r) => <li key={r.id}><span className="font-medium">{r.description ?? r.id.slice(0, 8)}</span> <span className="text-muted-foreground">({r.template ?? "universal"}) — {r.product} is in the {r.kit} kit</span></li>)}</ul>
       </Section>
       <Section title="Kit parts that can't expand" n={data.kitsBroken.length}>
         <ul className="space-y-1">{data.kitsBroken.map((k, i) => <li key={i}><span className="font-medium">{k.kit}</span> → {k.component} <span className="text-muted-foreground">— {k.problem}</span></li>)}</ul>
