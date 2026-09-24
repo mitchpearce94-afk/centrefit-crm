@@ -336,7 +336,10 @@ export function calculateLabour(
       })
   }
 
-  const tvCount = s.tv_count || 0
+  // Electrician doing fit-off = every fit-off line is theirs (Mitchell, 23 Sep:
+  // "fit-off strips all fit-off lines"), the fixed ones too — Winston Hills had
+  // Mount TVs / setup / cleanup / rack + panel wiring deleted by hand.
+  const tvCount = elecFitOff ? 0 : (s.tv_count || 0)
   if (tvCount > 0) {
     const tvHrs = round(tvCount * 2)
     fitOffItems.push({
@@ -347,10 +350,12 @@ export function calculateLabour(
     })
   }
 
-  fitOffItems.push(fixedItem('Site setup', 2))
-  fitOffItems.push(fixedItem('Cleanup', 2))
-  if (hasCabinet) fitOffItems.push(fixedItem('Server rack wiring in', 12))
-  if (hasAlarm) fitOffItems.push(fixedItem('Alarm panel wiring in', 4))
+  if (!elecFitOff) {
+    fitOffItems.push(fixedItem('Site setup', 2))
+    fitOffItems.push(fixedItem('Cleanup', 2))
+    if (hasCabinet) fitOffItems.push(fixedItem('Server rack wiring in', 12))
+    if (hasAlarm) fitOffItems.push(fixedItem('Alarm panel wiring in', 4))
+  }
 
   const fitOffDefaultTotal = fitOffItems.reduce((sum, i) => sum + i.defaultHours, 0)
   const hasFitOffWork = fitOffDefaultTotal > 0

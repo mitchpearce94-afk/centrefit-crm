@@ -94,3 +94,10 @@ Mitchell's first guided quote (Snap, alarm panel + 13 existing 360° PIRs) came 
 - **Piezo kit sat on the RF reed** — the migration attached the PF "flush piezo per CABLED reed" rule to the default reed product (RFDW-SM, the RF one). Moved to DFMWSS60W (wired). Kit component notes stripped of "(from X rules)".
 
 **Still Mitchell's call:** mag-lock kit adds one MP3560 PSU per lock but he said "one PSU per Snap club" (23 Sep) — kit content; PF now gets the full K6000 kit (4G modem, MyAlarm SIM, tape, ferrules) via the kit, not just its five old rules — confirm in the PF rules walk-through.
+
+**Winston Hills check (CF-2026-0070, 24 Sep evening — Mitchell: "check the quote for the new updated rules, and the plans"):** dry-run vs the 24 Aug lines found three more systemic gaps, fixed:
+- **Kits expanded under customer-supplied devices.** Snap's card reader is customer-supplied (template supply) but the PFRRK product carries the PF access kit, so a Snap quote grew an Aero X1100C ($2,190), PIM, USB-RS232, DB9, PF REX, door loop, enclosure. `expandKits` now skips customer-supplied lines.
+- **Nightlife server + kiosk tripped `zero_sell` on every Snap audio quote** (overridden by hand). Products flagged `customer_supplied`; rule/kit lines inherit the flag (still on the BOM at $0 for the document, never ordered).
+- **Alarm keypad = "no product" error on every alarm quote** (also overridden by hand). Keypads ship in the K6000 kit, so `alarm_keypad` is now a cable-only device type: cable run + fit-off labour from the plan symbol, no line.
+- **Electrician fit-off left the fixed lines** (Mount TVs, site setup, cleanup, rack + panel wiring in) — Winston Hills had them deleted by hand. `elecDoingFitOff` now strips them too. Callout was already QLD-only.
+Quote-specific findings (Mitchell's call, not changed): plan rev A says 1 × ceiling PIR and 1 door, the quote says 2 and 2; the touchless REX on the quote vs the Snap default WEL1911; terminations deleted by hand although the interstate rule keeps them ours; hand-added 6-way splitter; stale MW730B / MP3560 / 4 × 6 TB / 3 × cable-mgmt lines that Regenerate BOM will replace.

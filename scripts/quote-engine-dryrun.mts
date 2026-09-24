@@ -75,6 +75,10 @@ const siteInfo = {
   wall_tv_mount_count: quote.wall_tv_mount_count ?? 0, ceiling_tv_mount_count: quote.ceiling_tv_mount_count ?? 0,
   separate_studio_zone: !!quote.separate_studio_zone, reed_switch_uncabled: quote.reed_switch_uncabled ?? 0, mag_lock_glass: quote.mag_lock_glass ?? 0,
 }
+// state drives the QLD-only callout line; the wizard takes it from the plan / site address
+const plan = must(await sb.from('plan_files').select('state').eq('quote_id', quote.id).order('created_at', { ascending: false }).limit(1).maybeSingle(), 'plan') as { state?: string | null } | null
+const stateGuess = plan?.state ?? (/\b(QLD|NSW|VIC|SA|WA|TAS|NT|ACT)\b/i.exec(String(quote.site_address ?? ''))?.[1]?.toUpperCase() ?? null)
+if (stateGuess) (siteInfo as Record<string, unknown>).state = stateGuess
 const elec = { elecDoingRoughIn: !!quote.elec_doing_rough_in, elecDoingFitOff: !!quote.elec_doing_fit_off }
 const diagnostics: { code: string; message: string; product_id?: string | null }[] = []
 const kitQuestions: { component: KitComponent; kit: BOMItem; product: Product }[] = []

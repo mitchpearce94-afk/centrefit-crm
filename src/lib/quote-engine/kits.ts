@@ -128,6 +128,7 @@ function lineFor(product: Product, qty: number, kit: BOMItem, note: string): BOM
     auto_added: true,
     rule_description: `kit: ${kit.sku || kit.product_name}`,
     kit_parent_product_id: kit.product_id,
+    ...(product.customer_supplied ? { customer_supplied: true, cost_price: 0, sell_price: 0 } : {}),
   }
 }
 
@@ -208,7 +209,10 @@ export function expandKits(
       walk(line, depth + 1)
     }
   }
-  for (const line of [...bomItems]) walk(line, 1)
+  // A device the customer supplies (template supply — Snap's barcode reader)
+  // brings its own parts too: no kit expands under it. Winston Hills (CF-2026-0070)
+  // was getting the whole PF access kit, Aero controller included, on a Snap quote.
+  for (const line of [...bomItems]) if (!line.customer_supplied) walk(line, 1)
   return { added, questions, diagnostics }
 }
 

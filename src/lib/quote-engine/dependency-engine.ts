@@ -446,6 +446,9 @@ export function autoAddItemsToBOM(autoAddItems: AutoAddItem[]): BOMItem[] {
     notes: '',
     auto_added: true,
     rule_description: item.ruleDescriptions.join('; '),
+    // Products flagged customer-supplied (Nightlife server + kiosk) stay on the
+    // BOM at $0 for labour and the document, never trip zero_sell, never get ordered.
+    ...(item.product.customer_supplied ? { customer_supplied: true, cost_price: 0, sell_price: 0 } : {}),
   }))
 }
 
