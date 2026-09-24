@@ -369,12 +369,18 @@ export async function updateRepeatingInvoiceSchedule(
 }
 
 /**
- * Update an existing RepeatingInvoice template's line items in place. The
- * schedule (period, unit, nextScheduledDate, dueDays) is preserved by Xero
- * — sending only `lineItems` is a partial update, not a full replace. Used
+ * Update an existing RepeatingInvoice template's line items in place. Used
  * by the plan-edit flow when a customer adds or removes services from an
  * already-active plan: the next auto-generated child invoice fires with
  * the new lines, but the cadence and run dates don't reset.
+ *
+ * Xero's RepeatingInvoice update is a whole-document upsert, exactly as
+ * updateRepeatingInvoiceSchedule() documents: a body carrying only
+ * `lineItems` is validated as a NEW template (zero GUID, "Type must be
+ * specified", "A schedule must be specified", "A Contact must be
+ * specified") — Benowa, 2026-09-25, adding Security Monitoring to a live
+ * plan. So fetch the full RI, swap the lines, and resend it verbatim; the
+ * schedule, contact, status, branding and reference ride through untouched.
  */
 export async function updateRepeatingInvoiceLines(
   xero: XeroClient,
@@ -385,17 +391,17 @@ export async function updateRepeatingInvoiceLines(
   if (lineItems.length === 0) {
     throw new Error("Cannot update a RepeatingInvoice to zero line items — cancel it instead");
   }
+  const res = await xero.accountingApi.getRepeatingInvoice(tenantId, repeatingInvoiceId);
+  const ri = res.body.repeatingInvoices?.[0];
+  if (!ri) throw new Error(`Xero returned no RepeatingInvoice for ${repeatingInvoiceId}`);
+  ri.lineItems = lineItems.map((li) => ({
+    description: li.description.slice(0, 4000),
+    quantity: li.quantity ?? 1,
+    unitAmount: li.unitAmount,
+    accountCode: li.accountCode ?? DEFAULT_SALES_ACCOUNT_CODE,
+    taxType: li.taxType ?? DEFAULT_TAX_TYPE_INCLUSIVE,
+  }));
   await xero.accountingApi.updateRepeatingInvoice(tenantId, repeatingInvoiceId, {
-    repeatingInvoices: [
-      {
-        lineItems: lineItems.map((li) => ({
-          description: li.description.slice(0, 4000),
-          quantity: li.quantity ?? 1,
-          unitAmount: li.unitAmount,
-          accountCode: li.accountCode ?? DEFAULT_SALES_ACCOUNT_CODE,
-          taxType: li.taxType ?? DEFAULT_TAX_TYPE_INCLUSIVE,
-        })),
-      } as never,
-    ],
+    repeatingInvoices: [ri],
   });
 }
