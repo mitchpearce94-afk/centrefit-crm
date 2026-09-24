@@ -31,7 +31,8 @@ const sb = createClient(url, key, { auth: { persistSession: false } })
 
 const must = <T,>(r: { data: T | null; error: { message: string } | null }, what: string): T => { if (r.error) throw new Error(`${what}: ${r.error.message}`); return r.data as T }
 
-const quote = must(await sb.from('quotes').select('*').eq('ref', ref).maybeSingle(), 'quote')
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const quote = must(await sb.from('quotes').select('*').eq('ref', ref).maybeSingle(), 'quote') as Record<string, any> | null
 if (!quote) { console.error('no quote', ref); process.exit(1) }
 
 const [prodRes, tplRes, ruleRes, defRes, kcRes, dtRes, compRes, supRes, timRes, billRes] = await Promise.all([
