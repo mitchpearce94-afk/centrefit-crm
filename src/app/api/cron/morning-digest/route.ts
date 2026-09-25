@@ -231,6 +231,8 @@ export async function GET(req: NextRequest) {
   const { data: triageRows } = await svc
     .from("email_triage")
     .select("classification, action_taken")
+    // Mark's mailbox has its own digest (mailbox-digest) — never in Mitchell's.
+    .neq("mailbox", "mark@centrefit.com.au")
     .gte("created_at", new Date(nowMs - 24 * 3600_000).toISOString());
   const emailTriage = (triageRows ?? []).length
     ? {

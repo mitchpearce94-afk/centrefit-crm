@@ -100,3 +100,14 @@ never Xero sends.
 - Third-party task apps (Todoist/Planner/To Do) — another inbox to neglect.
 - Calendar integration, delegation/assignment, task comments.
 - Auto-replying to anyone.
+
+## Phase 4 — Mark's mailbox + leads to Mitchell (2026-09-25, Mitchell)
+
+Asked: "tools for Mark … integrate with both our emails, sorts them out, sends invoices to accounts, send plans/leads to me". Decided (Mitchell, 25 Sep): bills → Xero Bills inbox; a shadow week before any forwarding; both mailboxes. Cortex-side notes: Cortex repo `docs/mail-tools-CONTEXT.md`.
+
+- **P4-D1 Mark's mailbox joins the sweep** (`mark@centrefit.com.au`). Mark has NO CRM access ("keep that part separate"): no My List tasks for his mail; his "needs you" items stay in his inbox with the `Assistant: Needs you` category.
+- **P4-D2 New tier `lead`** = new business (enquiry, tender/EOI, quote request, builder/electrician plans or drawings to price). Mark's leads are FORWARDED to mitchell@ with a 3-line who/what/where summary; in Mitchell's mailboxes a lead is handled like `action`. The ledger's check constraint predates `lead`, so it's stored as `classification='action'`, `reason='LEAD: …'`, `action_taken` = `lead_forwarded` | `observed_lead` (no DDL needed).
+- **P4-D3 Per-mailbox mode.** `TRIAGE_SORT_MAILBOXES` = the shadow week (Mitchell picked "sorting is live, forwarding reported"): categories + junk filing on, no forwards/tasks — set for mark@ and mitchell@ on 25 Sep. `TRIAGE_MODE=live` = all live except `TRIAGE_OBSERVE_MAILBOXES`; otherwise `TRIAGE_LIVE_MAILBOXES` lists the live ones. Everything is still observe as of 25 Sep. Shadow week for mark@ ends ~2 Oct → review `email_triage where mailbox='mark@…'` with Mitchell, then add it to the live list.
+- **P4-D4 Mark's morning email** `/api/cron/mailbox-digest`, weekdays 07:05 AEST, Mondays cover the weekend, silent when empty. Large high-contrast text (Mark is visually impaired). Says "would have" during the shadow week.
+- **P4-D5 Privacy.** Mitchell's morning digest excludes mark@ rows. The ledger (service-role only, no UI) holds Mark's sender/subject/one-line reason, not bodies.
+- Hard rails unchanged: only internal forwards (Xero Bills inbox, Mitchell); never a customer or supplier; nothing deleted.

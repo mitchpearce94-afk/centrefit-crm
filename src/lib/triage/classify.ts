@@ -10,13 +10,17 @@ import Anthropic from "@anthropic-ai/sdk";
  *   action — needs Mitchell → becomes a My List task with a deep link
  *   fyi    — worth existing, needs nothing
  *   noise  — marketing / automated chatter
+ *   lead   — NEW business: enquiry, tender, quote request, site plans or
+ *            drawings to price (Phase 4, 2026-09-25: Mark's leads and plans
+ *            are forwarded to Mitchell; in Mitchell's own mailboxes a lead
+ *            is handled exactly like "action").
  *
  * Safety rule baked into the prompt AND the fallback paths: anything
  * ambiguous downgrades to `action`. A wrongly-flagged email costs Mitchell a
  * glance; a wrong auto-forward costs trust.
  */
 
-export type TriageClass = "bill" | "action" | "fyi" | "noise";
+export type TriageClass = "bill" | "action" | "fyi" | "noise" | "lead";
 
 export interface TriageVerdict {
   classification: TriageClass;
@@ -25,12 +29,14 @@ export interface TriageVerdict {
   actionSummary: string | null;
   /** Supplier name when classification is "bill". */
   billSupplier: string | null;
+  /** For "lead": who, what, where, due — max 3 short lines, for the forward note. */
+  leadSummary: string | null;
 }
 
 const VERDICT_SCHEMA = {
   type: "object",
   properties: {
-    classification: { type: "string", enum: ["bill", "action", "fyi", "noise"] },
+    classification: { type: "string", enum: ["bill", "action", "fyi", "noise", "lead"] },
     reason: { type: "string", description: "One short sentence justifying the classification." },
     action_summary: {
       type: ["string", "null"],
@@ -40,23 +46,30 @@ const VERDICT_SCHEMA = {
       type: ["string", "null"],
       description: "For 'bill' only: the supplier's name. Null otherwise.",
     },
+    lead_summary: {
+      type: ["string", "null"],
+      description: "For 'lead' only: up to 3 short lines — who (name, company, contact), what they want (site/system/scope), where and any due date. Null otherwise.",
+    },
   },
-  required: ["classification", "reason", "action_summary", "bill_supplier"],
+  required: ["classification", "reason", "action_summary", "bill_supplier", "lead_summary"],
   additionalProperties: false,
 } as const;
 
-const SYSTEM = `You triage inbound email for Centrefit Group, an Australian security/IT installation company (CCTV, access control, alarms, NBN) run by Mitchell. You classify each email into exactly one tier:
+const SYSTEM = `You triage inbound email for Centrefit Group, an Australian security/IT installation company (CCTV, access control, alarms, NBN). Mark Pearce is the founder/CEO (mark@); Mitchell runs operations, quoting and software (mitchell@, admin@, accounts@). "The owner" below means whoever the mailbox belongs to. You classify each email into exactly one tier:
 
 "bill" — a genuine supplier bill or invoice that Centrefit must PAY, from a supplier (e.g. Seadan, wholesalers, Kinetix/NBN carriage, software subscriptions, utilities). Usually has an attached invoice PDF. NOT: remittance advices, payment receipts/confirmations, statements of account, invoices Centrefit SENT to its customers, or customers paying Centrefit — those are "fyi".
 
-"action" — a real person (customer, supplier rep, staff, partner) needs Mitchell to do or decide something: quote requests, job queries, complaints, billing detail changes, approvals, scheduling. Also any email you cannot confidently place elsewhere.
+"lead" — NEW business for Centrefit: a new enquiry or quote request, a tender or EOI invitation, a builder/electrician/architect sending site plans, drawings or a scope to price, an introduction to a prospective customer. NOT: an existing job's follow-up, a supplier selling TO Centrefit, cold marketing, or a customer query about work already underway (those are "action" or "noise").
+
+"action" — a real person (customer, supplier rep, staff, partner) needs the owner to do or decide something: job queries, complaints, billing detail changes, approvals, scheduling. Also any email you cannot confidently place elsewhere.
 
 "fyi" — legitimately informative, nothing to do: remittances, receipts, delivery confirmations, statements, system reports that look healthy.
 
 "noise" — marketing, newsletters, cold sales outreach, social notifications, automated chatter.
 
 Hard rules:
-- When torn between "bill" and anything else, choose "action". A wrong bill-forward is worse than asking Mitchell.
+- When torn between "bill" and anything else, choose "action". A wrong bill-forward is worse than asking a human.
+- When torn between "lead" and "action", choose "lead" only if it is clearly new work to win.
 - An invoice FROM Centrefit (Centrefit's own branding/details, INV-xxxx to a customer) is never "bill".
 - Emails about changing a customer's billing/contact details are "action" (a human applies them for now).
 Respond with the JSON verdict only.`;
@@ -87,6 +100,7 @@ ${body}`;
     reason,
     actionSummary: `Review email from ${input.fromName ?? input.fromAddress ?? "unknown sender"}: ${(input.subject ?? "").slice(0, 50)}`,
     billSupplier: null,
+    leadSummary: null,
   });
 
   let response: Anthropic.Message;
@@ -117,8 +131,9 @@ ${body}`;
       reason: string;
       action_summary: string | null;
       bill_supplier: string | null;
+      lead_summary: string | null;
     };
-    if (!["bill", "action", "fyi", "noise"].includes(parsed.classification)) {
+    if (!["bill", "action", "fyi", "noise", "lead"].includes(parsed.classification)) {
       return flagFallback("Classifier returned an unknown tier.");
     }
     return {
@@ -126,6 +141,7 @@ ${body}`;
       reason: parsed.reason,
       actionSummary: parsed.action_summary,
       billSupplier: parsed.bill_supplier,
+      leadSummary: parsed.lead_summary ?? null,
     };
   } catch {
     return flagFallback("Classifier output was not valid JSON.");

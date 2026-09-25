@@ -45,6 +45,10 @@
       "schedule": "0 21 * * 0-4"
     },
     {
+      "path": "/api/cron/mailbox-digest",
+      "schedule": "5 21 * * 0-4"
+    },
+    {
       "path": "/api/cron/email-triage",
       "schedule": "*/30 * * * *"
     },
