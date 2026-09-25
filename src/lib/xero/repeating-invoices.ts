@@ -310,8 +310,11 @@ export async function authoriseRepeatingInvoice(
   // already-AUTHORISED template (Xero validation), so it goes in a second
   // call. Auto-send-when-authorised at the org level still drives whether
   // the next child actually emails — this just unblocks the flag.
+  // The id must ride in the element as well as the URL — a status-only body
+  // is validated as a NEW template (zero GUID, "Type must be specified").
+  // Confirmed against Xero 2026-09-25 while deleting Benowa's old template.
   await xero.accountingApi.updateRepeatingInvoice(tenantId, repeatingInvoiceId, {
-    repeatingInvoices: [{ status: "AUTHORISED", approvedForSending: true } as never],
+    repeatingInvoices: [{ repeatingInvoiceID: repeatingInvoiceId, status: "AUTHORISED", approvedForSending: true } as never],
   });
   return getRepeatingInvoice(xero, tenantId, repeatingInvoiceId);
 }
@@ -325,8 +328,9 @@ export async function cancelRepeatingInvoice(
   tenantId: string,
   repeatingInvoiceId: string,
 ): Promise<void> {
+  // id in the element too — see authoriseRepeatingInvoice.
   await xero.accountingApi.updateRepeatingInvoice(tenantId, repeatingInvoiceId, {
-    repeatingInvoices: [{ status: "DELETED" } as never],
+    repeatingInvoices: [{ repeatingInvoiceID: repeatingInvoiceId, status: "DELETED" } as never],
   });
 }
 
@@ -369,39 +373,175 @@ export async function updateRepeatingInvoiceSchedule(
 }
 
 /**
- * Update an existing RepeatingInvoice template's line items in place. Used
- * by the plan-edit flow when a customer adds or removes services from an
- * already-active plan: the next auto-generated child invoice fires with
- * the new lines, but the cadence and run dates don't reset.
+ * The human-readable reason inside a xero-node error. The SDK's `message`
+ * is the whole response body as JSON (1–2 KB); the part anyone needs is
+ * `Elements[0].ValidationErrors[].Message`, which the recurring_plans.notes
+ * column (1,000 chars) used to truncate away — Benowa 2026-09-25 hid
+ * "Repeating invoice status must be set to DELETED" for half a day.
+ */
+export function xeroErrorMessage(err: unknown): string {
+  const body = (err as { response?: { body?: unknown } })?.response?.body as
+    | { Message?: string; Elements?: { ValidationErrors?: { Message?: string }[]; LineItems?: { ValidationErrors?: { Message?: string }[] }[] }[]; ValidationErrors?: { Message?: string }[] }
+    | undefined;
+  if (body && typeof body === "object") {
+    const msgs = [
+      ...(body.ValidationErrors ?? []),
+      ...(body.Elements ?? []).flatMap((e) => [
+        ...(e.ValidationErrors ?? []),
+        ...(e.LineItems ?? []).flatMap((l) => l.ValidationErrors ?? []),
+      ]),
+    ].map((v) => v.Message).filter((m): m is string => !!m);
+    if (msgs.length) return `Xero: ${Array.from(new Set(msgs)).join("; ")}`;
+    if (body.Message) return `Xero: ${body.Message}`;
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Xero hands schedule dates back as "/Date(1792800000000+0000)/" (or ISO). */
+function xeroDateToISO(value: unknown): string | null {
+  if (!value) return null;
+  const s = String(value);
+  const m = /\/Date\((-?\d+)/.exec(s);
+  const d = m ? new Date(Number(m[1])) : new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+export interface UpdatedRepeatingInvoice {
+  /** The template that now carries the lines — a NEW id when replaced. */
+  repeatingInvoiceID: string;
+  /** True when Xero made us create a replacement and delete the original. */
+  replaced: boolean;
+  /** True when the lines already matched and nothing was sent. */
+  unchanged: boolean;
+}
+
+/**
+ * Put a new set of line items on a plan's RepeatingInvoice template. Used by
+ * the plan-edit flow (Edit services) and the add-service mirror when a
+ * customer adds or removes services on an already-billing plan.
  *
- * Xero's RepeatingInvoice update is a whole-document upsert, exactly as
- * updateRepeatingInvoiceSchedule() documents: a body carrying only
- * `lineItems` is validated as a NEW template (zero GUID, "Type must be
- * specified", "A schedule must be specified", "A Contact must be
- * specified") — Benowa, 2026-09-25, adding Security Monitoring to a live
- * plan. So fetch the full RI, swap the lines, and resend it verbatim; the
- * schedule, contact, status, branding and reference ride through untouched.
+ * What Xero actually allows (learned on Benowa, 2026-09-25):
+ *  - Updates are whole-document upserts: a body with only `lineItems` is
+ *    validated as a NEW template (zero GUID, "Type/Schedule/Contact must be
+ *    specified"). Any in-place update resends the fetched object.
+ *  - A DRAFT template can be edited in place.
+ *  - An AUTHORISED template cannot be edited at all — every field change is
+ *    refused with "Repeating invoice status must be set to DELETED". The
+ *    only way to change what it bills is to create a replacement on the
+ *    same schedule and delete the original. That is what this does: the
+ *    replacement starts on the original's NextScheduledDate, so the customer
+ *    sees the same cadence and the same next invoice date with the new
+ *    lines; status, ApprovedForSending, branding, IncludePDF and reference
+ *    are copied so auto-send behaviour is unchanged. If the delete of the
+ *    original fails after the replacement exists, the replacement is deleted
+ *    again so there is never a moment with two live templates.
+ *  - Lines that already match are a no-op (the yearly template must not be
+ *    churned every time the monthly one changes).
+ *
+ * Callers MUST persist the returned id — it changes when `replaced` is true.
  */
 export async function updateRepeatingInvoiceLines(
   xero: XeroClient,
   tenantId: string,
   repeatingInvoiceId: string,
   lineItems: RepeatingInvoiceLineInput[],
-): Promise<void> {
+): Promise<UpdatedRepeatingInvoice> {
   if (lineItems.length === 0) {
     throw new Error("Cannot update a RepeatingInvoice to zero line items — cancel it instead");
   }
   const res = await xero.accountingApi.getRepeatingInvoice(tenantId, repeatingInvoiceId);
   const ri = res.body.repeatingInvoices?.[0];
   if (!ri) throw new Error(`Xero returned no RepeatingInvoice for ${repeatingInvoiceId}`);
-  ri.lineItems = lineItems.map((li) => ({
+  const status = String(ri.status ?? "UNKNOWN");
+  const wanted = lineItems.map((li) => ({
     description: li.description.slice(0, 4000),
     quantity: li.quantity ?? 1,
     unitAmount: li.unitAmount,
     accountCode: li.accountCode ?? DEFAULT_SALES_ACCOUNT_CODE,
     taxType: li.taxType ?? DEFAULT_TAX_TYPE_INCLUSIVE,
   }));
-  await xero.accountingApi.updateRepeatingInvoice(tenantId, repeatingInvoiceId, {
-    repeatingInvoices: [ri],
-  });
+  const key = (l: { description?: string; quantity?: number; unitAmount?: number; accountCode?: string; taxType?: string }) =>
+    `${(l.description ?? "").trim()}|${Number(l.quantity ?? 1)}|${Number(l.unitAmount ?? 0).toFixed(2)}|${l.accountCode ?? ""}|${l.taxType ?? ""}`;
+  const current = (ri.lineItems ?? []).map((l) => key(l as never)).sort().join("\n");
+  if (current === wanted.map(key).sort().join("\n")) {
+    return { repeatingInvoiceID: repeatingInvoiceId, replaced: false, unchanged: true };
+  }
+
+  if (status === "DRAFT") {
+    ri.lineItems = wanted;
+    try {
+      await xero.accountingApi.updateRepeatingInvoice(tenantId, repeatingInvoiceId, { repeatingInvoices: [ri] });
+    } catch (err) {
+      throw new Error(xeroErrorMessage(err));
+    }
+    return { repeatingInvoiceID: repeatingInvoiceId, replaced: false, unchanged: false };
+  }
+  if (status !== "AUTHORISED") {
+    throw new Error(`RepeatingInvoice ${repeatingInvoiceId} is ${status} — nothing to update`);
+  }
+
+  // AUTHORISED: replace on the same schedule, then delete the original.
+  const sched = (ri.schedule ?? {}) as Record<string, unknown>;
+  const nextRun = xeroDateToISO(sched.nextScheduledDate) ?? xeroDateToISO(sched.startDate);
+  if (!nextRun) throw new Error(`RepeatingInvoice ${repeatingInvoiceId} has no next scheduled date to carry over`);
+  const extra = ri as unknown as { approvedForSending?: boolean; includePDF?: boolean; sendCopy?: boolean; markAsSent?: boolean; brandingThemeID?: string; reference?: string; lineAmountTypes?: string };
+  const endDate = xeroDateToISO(sched.endDate);
+  const payload: Record<string, unknown> = {
+    type: ri.type ?? "ACCREC",
+    status: "AUTHORISED",
+    contact: { contactID: ri.contact?.contactID },
+    schedule: {
+      period: sched.period ?? 1,
+      unit: sched.unit ?? "MONTHLY",
+      dueDate: sched.dueDate ?? 7,
+      dueDateType: sched.dueDateType ?? "DAYSAFTERBILLDATE",
+      startDate: nextRun,
+      nextScheduledDate: nextRun,
+      ...(endDate ? { endDate } : {}),
+    },
+    lineAmountTypes: extra.lineAmountTypes ?? "Inclusive",
+    lineItems: wanted,
+    approvedForSending: extra.approvedForSending ?? true,
+    includePDF: extra.includePDF ?? true,
+    sendCopy: extra.sendCopy ?? false,
+    markAsSent: extra.markAsSent ?? false,
+  };
+  if (extra.reference) payload.reference = String(extra.reference).slice(0, 255);
+  if (extra.brandingThemeID) payload.brandingThemeID = extra.brandingThemeID;
+  // Same lines against the same original → same key, so an SDK retry after a
+  // 429 cannot mint a second replacement (the 2026-05-11 duplicate factory).
+  const idempotencyKey = `replace-${repeatingInvoiceId}-${crypto
+    .createHash("sha256")
+    .update(wanted.map(key).sort().join("\n"))
+    .digest("hex")
+    .slice(0, 32)}`;
+  let newId: string;
+  try {
+    const created = await xero.accountingApi.createRepeatingInvoices(
+      tenantId,
+      { repeatingInvoices: [payload as never] },
+      undefined,
+      idempotencyKey,
+    );
+    newId = created.body.repeatingInvoices?.[0]?.repeatingInvoiceID ?? "";
+    if (!newId) throw new Error("Xero did not return a RepeatingInvoiceID for the replacement");
+  } catch (err) {
+    throw new Error(`replacement create failed: ${xeroErrorMessage(err)}`);
+  }
+  try {
+    await xero.accountingApi.updateRepeatingInvoice(tenantId, repeatingInvoiceId, {
+      repeatingInvoices: [{ repeatingInvoiceID: repeatingInvoiceId, status: "DELETED" } as never],
+    });
+  } catch (err) {
+    // Never leave two live templates: roll the replacement back, then report.
+    try {
+      await xero.accountingApi.updateRepeatingInvoice(tenantId, newId, {
+        repeatingInvoices: [{ repeatingInvoiceID: newId, status: "DELETED" } as never],
+      });
+    } catch {
+      throw new Error(`original ${repeatingInvoiceId} could not be deleted (${xeroErrorMessage(err)}) AND the replacement ${newId} is still live — fix in Xero by hand`);
+    }
+    throw new Error(`original could not be deleted, replacement rolled back: ${xeroErrorMessage(err)}`);
+  }
+  return { repeatingInvoiceID: newId, replaced: true, unchanged: false };
 }

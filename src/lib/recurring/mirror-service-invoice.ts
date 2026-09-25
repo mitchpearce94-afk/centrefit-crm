@@ -107,7 +107,7 @@ export async function mirrorServiceToXero(
     }
     if (state.status === "DELETED" || state.schedulePeriod !== wantPeriod) continue;
 
-    await updateRepeatingInvoiceLines(xero, conn.tenant_id, riId, [
+    const updated = await updateRepeatingInvoiceLines(xero, conn.tenant_id, riId, [
       ...state.lines.map((l) => ({
         description: l.description,
         quantity: l.quantity,
@@ -117,11 +117,18 @@ export async function mirrorServiceToXero(
       })),
       newLine,
     ]);
+    // An AUTHORISED template gets REPLACED (Xero refuses in-place edits), so
+    // the plan must point at the new id or the next edit talks to a DELETED one.
+    const liveId = updated.repeatingInvoiceID;
+    if (updated.replaced) {
+      const col = plan.xero_repeating_invoice_id === riId ? "xero_repeating_invoice_id" : "xero_repeating_invoice_secondary_id";
+      await supabase.from("recurring_plans").update({ [col]: liveId }).eq("id", planId);
+    }
     await supabase
       .from("recurring_plan_gc_subscriptions")
-      .update({ xero_repeating_invoice_id: riId, xero_mirrored_at: new Date().toISOString() })
+      .update({ xero_repeating_invoice_id: liveId, xero_mirrored_at: new Date().toISOString() })
       .eq("id", subscriptionLinkId);
-    return { repeatingInvoiceId: riId, createdTemplate: false, alreadyMirrored: false };
+    return { repeatingInvoiceId: liveId, createdTemplate: false, alreadyMirrored: false };
   }
 
   // ── Create path: no usable RI for this cadence (imported legacy plans) ──

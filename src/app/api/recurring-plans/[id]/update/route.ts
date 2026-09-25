@@ -158,9 +158,14 @@ export async function POST(
       catch (err) { errors.push(`cancel ${freq} RI: ${err instanceof Error ? err.message : String(err)}`); }
       if (freq === "monthly") monthlyRiId = null; else yearlyRiId = null;
     } else if (newLines.length > 0 && oldRiId) {
-      // Cadence still has items — update lines in place. Schedule preserved.
-      try { await updateRepeatingInvoiceLines(client, conn.tenant_id, oldRiId, newLines); }
-      catch (err) { errors.push(`update ${freq} RI: ${err instanceof Error ? err.message : String(err)}`); }
+      // Cadence still has items — put the new lines on its template. A DRAFT
+      // template is edited in place; an AUTHORISED one is replaced on the
+      // same schedule (Xero refuses edits to AUTHORISED templates), so the
+      // id we persist may change. Unchanged lines are a no-op.
+      try {
+        const r = await updateRepeatingInvoiceLines(client, conn.tenant_id, oldRiId, newLines);
+        if (freq === "monthly") monthlyRiId = r.repeatingInvoiceID; else yearlyRiId = r.repeatingInvoiceID;
+      } catch (err) { errors.push(`update ${freq} RI: ${err instanceof Error ? err.message : String(err)}`); }
     } else if (newLines.length > 0 && !oldRiId) {
       // Cadence newly populated — create a fresh RI starting today.
       try {
