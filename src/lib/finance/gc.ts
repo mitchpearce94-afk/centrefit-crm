@@ -53,6 +53,9 @@ export const listPayoutItems = (payoutId: string) => gcList<GcPayoutItem>("payou
 export const getPayment = async (id: string) => (await gcGet<{ payments: GcPayment }>(`payments/${id}`)).payments;
 export const getMandate = async (id: string) => (await gcGet<{ mandates: GcMandate }>(`mandates/${id}`)).mandates;
 export const getCustomer = async (id: string) => (await gcGet<{ customers: GcCustomer }>(`customers/${id}`)).customers;
+/** Payments whose charge_date falls in [fromISODate, toISODate] (inclusive). */
+export const listPaymentsByChargeDate = (fromISODate: string, toISODate: string) =>
+  gcList<GcPayment>("payments", { "charge_date[gte]": fromISODate, "charge_date[lte]": toISODate });
 export const listActiveMandates = () => gcList<GcMandate>("mandates", { status: "active" });
 export const listCustomers = () => gcList<GcCustomer>("customers", {});
 export const gcCustomerName = (c: GcCustomer) => (c.company_name ?? `${c.given_name ?? ""} ${c.family_name ?? ""}`).trim();

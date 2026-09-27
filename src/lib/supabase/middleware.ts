@@ -87,6 +87,9 @@ const PUBLIC_PATH_PREFIXES = [
   "/api/resend/webhook",
   "/api/cron/",
   "/api/public/",
+  // Read-only daily stats for Mark's Cortex briefing — bearer-token auth
+  // (STATS_READONLY_TOKEN) inside the route, no session path.
+  "/api/stats/",
   "/quote-response",
   "/proposal/",
   "/recurring-thanks",
