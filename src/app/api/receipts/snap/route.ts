@@ -37,6 +37,9 @@ export async function POST(req: NextRequest) {
   if (!ALLOWED_MIME.has(file.type)) return NextResponse.json({ error: "Receipt must be an image or PDF" }, { status: 400 });
 
   const jobId = String(form.get("job_id") ?? "").trim() || null;
+  const t0 = Date.now();
+  // Timing breadcrumb (28 Sep 2026: bulk uploads crawled) — prep on the phone, bytes before/after, server time; read it in Vercel logs.
+  const timing = { orig_bytes: Number(form.get("orig_bytes") ?? -1), sent_bytes: file.size, prep_ms: Number(form.get("prep_ms") ?? -1) };
   const source = String(form.get("source") ?? "snap") === "bulk" ? "bulk" : "snap";
   const ext = file.type === "application/pdf" ? "pdf" : (file.name.split(".").pop() || "jpg").toLowerCase();
   const path = `${new Date().getFullYear()}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
@@ -70,6 +73,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Saved image but failed to record: ${insErr?.message ?? "unknown"}` }, { status: 500 });
   }
 
+  console.log(`[snap] stored ${path} in ${Date.now() - t0} ms · prep ${timing.prep_ms} ms · ${timing.orig_bytes} → ${timing.sent_bytes} bytes · ${file.type}`);
   after(async () => {
     await processSnapReceipt({
       db: svc,

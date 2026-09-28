@@ -38,6 +38,7 @@ interface QueueItem {
   amount?: number | null;
   attempts: number;
   savedAt?: number;
+  prepMs?: number;
 }
 
 type Banner =
@@ -45,10 +46,11 @@ type Banner =
   | { kind: "pending"; title: string; detail: string | null; at: number }
   | { kind: "error"; title: string; detail: string | null; at: number; retryKey: string };
 
-const MAX_EDGE = 2400;
-const JPEG_QUALITY = 0.85;
-const UPLOAD_CONCURRENCY = 2;
-const PREP_CONCURRENCY = 2;
+const MAX_EDGE = 2000; // 2400 → 2000 (28 Sep 2026: bulk uploads crawled; receipts read fine at 2000)
+const JPEG_QUALITY = 0.8;
+const SEND_AS_IS_BYTES = 1_800_000; // already a small JPEG/PNG/WebP → skip the decode + re-encode entirely
+const UPLOAD_CONCURRENCY = 3;
+const PREP_CONCURRENCY = 3;
 const UPLOAD_TIMEOUT_MS = 90_000;
 const POLL_MS = 3_000;
 const POLL_GIVE_UP_MS = 150_000;
@@ -59,11 +61,20 @@ const POLL_GIVE_UP_MS = 150_000;
 // decoding is sent as-is.
 async function normalise(file: Blob, name: string): Promise<{ blob: Blob; name: string }> {
   if (file.type === "application/pdf") return { blob: file, name };
+  // Small web-format images go straight up: the decode + canvas re-encode on a phone was the slow part
+  // (28 Sep 2026: 12 receipts took 2m44s with 45–66 s stalls between pairs), not the upload itself.
+  if (/^image\/(jpeg|png|webp)$/.test(file.type) && file.size <= SEND_AS_IS_BYTES) return { blob: file, name };
   try {
-    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
-    const scale = Math.min(1, MAX_EDGE / Math.max(bmp.width, bmp.height));
-    const w = Math.max(1, Math.round(bmp.width * scale));
-    const h = Math.max(1, Math.round(bmp.height * scale));
+    // Let the decoder downscale while decoding (much cheaper than decoding 12 MP and drawing it), then re-encode.
+    const probe = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(1, MAX_EDGE / Math.max(probe.width, probe.height));
+    const w = Math.max(1, Math.round(probe.width * scale));
+    const h = Math.max(1, Math.round(probe.height * scale));
+    let bmp = probe;
+    if (scale < 1) {
+      probe.close?.();
+      bmp = await createImageBitmap(file, { imageOrientation: "from-image", resizeWidth: w, resizeHeight: h, resizeQuality: "medium" });
+    }
     const canvas = document.createElement("canvas");
     canvas.width = w;
     canvas.height = h;
@@ -190,6 +201,8 @@ export function SnapClient({
       fd.append("file", blob, item.name);
       if (jobRef.current) fd.append("job_id", jobRef.current.id);
       fd.append("source", item.source);
+      fd.append("orig_bytes", String(item.original.size));
+      fd.append("prep_ms", String(item.prepMs ?? -1));
       const res = await fetch("/api/receipts/snap", { method: "POST", body: fd, signal: ctrl.signal });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -266,11 +279,12 @@ export function SnapClient({
       if (!next) break;
       (next as QueueItem & { _prepping?: boolean })._prepping = true;
       preparing.current += 1;
+      const t0 = Date.now();
       void normalise(next.original, next.name)
         .then(({ blob, name }) => {
           // swap the preview to the (smaller) encoded image
           const preview = blob !== next.original ? URL.createObjectURL(blob) : next.preview;
-          patch(next.key, { blob, name, preview, status: "queued" });
+          patch(next.key, { blob, name, preview, status: "queued", prepMs: Date.now() - t0 });
         })
         .catch(() => patch(next.key, { blob: next.original, status: "queued" }))
         .finally(() => {
