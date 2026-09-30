@@ -177,13 +177,13 @@ const HANDLED_ROLES = new Set([
   // AV / Cardio
   'modulator', 'tv_mount_wall', 'tv_mount_ceiling',
   // Data & Network
-  'router', 'network_switch', 'wap', 'cabinet',
+  'router', 'network_switch', 'wap', 'cabinet', 'patch_panel',
   // Tailgate
   'tailgate_system',
   // Nightlife
   'nightlife',
   // Subscriptions / generic-mention roles
-  'monitoring_subscription', 'cabling', 'mounting_bracket',
+  'monitoring_subscription', 'cabling', 'mounting_bracket', 'hdd', 'emergency_door_release',
 ]);
 
 export interface UnhandledLineForScope {
@@ -196,6 +196,8 @@ export interface UnhandledLineForScope {
 
 export class BOMRollup {
   private byRole = new Map<string, number>();
+  /** Distinct products per role (name/sku/qty) so bullets can name what is quoted. */
+  private prodsByRole = new Map<string, Map<string, { name: string; sku: string; qty: number }>>();
   /** Line items whose scope_role is null/empty or not in HANDLED_ROLES. */
   public readonly unhandled: UnhandledLineForScope[] = [];
 
@@ -209,6 +211,10 @@ export class BOMRollup {
       const role = product.scope_role && product.scope_role.length > 0 ? product.scope_role : null;
       if (role) {
         this.byRole.set(role, (this.byRole.get(role) ?? 0) + qty);
+        if (!this.prodsByRole.has(role)) this.prodsByRole.set(role, new Map());
+        const m = this.prodsByRole.get(role)!;
+        const e = m.get(product.id);
+        if (e) e.qty += qty; else m.set(product.id, { name: product.name ?? '', sku: product.sku ?? '', qty });
       }
       if (!role || !HANDLED_ROLES.has(role)) {
         this.unhandled.push({
@@ -224,6 +230,11 @@ export class BOMRollup {
 
   count(...roles: string[]): number {
     return roles.reduce((sum, r) => sum + (this.byRole.get(r) ?? 0), 0);
+  }
+
+  /** Products quoted under a role, in BOM order. */
+  products(role: string): { name: string; sku: string; qty: number }[] {
+    return [...(this.prodsByRole.get(role)?.values() ?? [])];
   }
 
   hasAny(...roles: string[]): boolean {
@@ -328,8 +339,18 @@ export function generateScopeOfWorks(
   const routers         = r.count('router');
   const waps            = r.count('wap');
   const cabinets        = r.count('cabinet');
+  const switches        = r.count('network_switch');
+  const patchPanels     = r.count('patch_panel');
   const tailgates       = r.count('tailgate_system');
+  // Product-aware wording (30 Sep 2026, PF Bundaberg): Veyla access + Protect,
+  // QR readers, the named switch and the Cloud Key read as what they are.
+  const isVeyla = (p: { name: string; sku: string }) => /veyla/i.test(`${p.name} ${p.sku}`);
+  const veylaAccess = r.products('access_control_system').some(isVeyla);
+  const veylaTailgate = r.products('tailgate_system').some(isVeyla);
+  const qrReaders = r.products('card_reader').length > 0 && r.products('card_reader').every((p) => /barcode|scanner|GFS4950|QR/i.test(`${p.name} ${p.sku}`));
   const nightlifeUnits  = r.count('nightlife');
+  const breakGlass      = r.count('emergency_door_release');
+  const monitoringSubs  = r.count('monitoring_subscription');
 
   // ── Counts (siteInfo) ───────────────────────────────────────────────────
   const tvCount        = siteInfo.tv_count ?? 0;
@@ -369,7 +390,7 @@ export function generateScopeOfWorks(
       iconLabel: 'S',
       countSummary: counts.join(' · '),
       lead: panels > 0
-        ? 'Bosch Solution 6000 alarm with full intrusion and member-detection coverage, 24/7 monitoring, and external siren/strobe. Fully integrated with lighting and music control.'
+        ? `Bosch Solution 6000 alarm with full intrusion and member-detection coverage${monitoringSubs > 0 ? ', 24/7 monitoring' : ''}${sirens > 0 ? ', and external siren/strobe' : ''}.${speakers + amplifiers > 0 ? ' Fully integrated with lighting and music control.' : ' Integrated with lighting control and the access-control system.'}`
         : 'Intrusion and member-detection sensors with cabling and full commissioning.',
       items,
       included: true,
@@ -380,7 +401,7 @@ export function generateScopeOfWorks(
   // ── System: Access Control ──────────────────────────────────────────────
   const accessSystem: ScopeSystemBlock | null = (() => {
     const totalDoors = doorStrikes + magLocks;
-    const has = totalDoors + rexButtons + accessControllers + cardReaders + keypads > 0;
+    const has = totalDoors + rexButtons + accessControllers + cardReaders + keypads + breakGlass > 0;
     if (!has) return null;
     const counts: string[] = [];
     if (totalDoors > 0)        counts.push(`${totalDoors} ${plural(totalDoors, 'door')}`);
@@ -391,12 +412,17 @@ export function generateScopeOfWorks(
 
     const items: string[] = [];
     items.push(`Cabling and termination for ${totalDoors > 0 ? `${totalDoors} ${plural(totalDoors, 'door position')}` : 'each door position'}`);
-    if (accessControllers > 0) items.push(roleBullet(roleDescriptions, 'access_control_system', accessControllers, `<strong>(${accessControllers}) UniFi Access ${plural(accessControllers, 'controller')}</strong> — central management for doors, readers and keypads`));
-    if (cardReaders > 0)       items.push(roleBullet(roleDescriptions, 'card_reader', cardReaders, `<strong>(${cardReaders}) card ${plural(cardReaders, 'reader')}</strong> — proximity / NFC, integrated with the access controller`));
+    if (accessControllers > 0) items.push(veylaAccess
+      ? `<strong>(${accessControllers}) Veyla Access door ${plural(accessControllers, 'controller')}</strong> — HID Aero X1100C, cloud-managed by Veyla, runs every access-controlled door on site`
+      : roleBullet(roleDescriptions, 'access_control_system', accessControllers, `<strong>(${accessControllers}) UniFi Access ${plural(accessControllers, 'controller')}</strong> — central management for doors, readers and keypads`));
+    if (cardReaders > 0)       items.push(qrReaders
+      ? `<strong>(${cardReaders}) QR code ${plural(cardReaders, 'reader')}</strong> — members scan the club app at the door; ${veylaAccess ? 'feeds Veyla Access' : 'integrated with the access controller'}`
+      : roleBullet(roleDescriptions, 'card_reader', cardReaders, `<strong>(${cardReaders}) card ${plural(cardReaders, 'reader')}</strong> — proximity / NFC, integrated with the access controller`));
     if (keypads > 0)           items.push(roleBullet(roleDescriptions, 'standalone_keypad', keypads, `<strong>(${keypads}) standalone PIN ${plural(keypads, 'keypad')}</strong> — code-based door entry`));
     if (doorStrikes > 0)       items.push(roleBullet(roleDescriptions, 'door_strike', doorStrikes, `<strong>(${doorStrikes}) FES20 electric ${plural(doorStrikes, 'striker')}</strong> and door ${plural(doorStrikes, 'loop')}`));
     if (magLocks > 0)          items.push(roleBullet(roleDescriptions, 'mag_lock', magLocks, `<strong>(${magLocks}) magnetic ${plural(magLocks, 'lock')}</strong> with mounting hardware`));
     if (rexButtons > 0)        items.push(roleBullet(roleDescriptions, 'rex_button', rexButtons, `<strong>(${rexButtons}) REX (request-to-exit) push ${plural(rexButtons, 'button')}</strong>`));
+    if (breakGlass > 0)        items.push(`<strong>(${breakGlass}) emergency door ${plural(breakGlass, 'release')}</strong> — break-glass unit that drops the lock for egress`);
     items.push(`Integration with the alarm panel for app-based door control`);
 
     return {
@@ -404,7 +430,9 @@ export function generateScopeOfWorks(
       name: 'Access Control',
       iconLabel: 'A',
       countSummary: counts.join(' · '),
-      lead: accessControllers > 0
+      lead: veylaAccess
+        ? 'Veyla Access door controller integrated with the club\'s member-management system — every door, reader and lock on site managed from the Veyla app, with 24/7 member entry outside staffed hours.'
+        : accessControllers > 0
         ? 'UniFi Access controller integrated with the alarm panel and member-management app — central control of all doors, readers and keypads on site.'
         : 'Door automation integrated with the alarm and member-management app for unlocking outside staffed hours.',
       items,
@@ -512,16 +540,32 @@ export function generateScopeOfWorks(
 
   // ── System: Data & Wireless ─────────────────────────────────────────────
   const dataSystem: ScopeSystemBlock | null = (() => {
-    if (cabinets + waps + routers === 0) return null;
+    if (cabinets + waps + routers + switches === 0) return null;
     const counts: string[] = [];
     if (cabinets > 0) counts.push(`${cabinets} ${plural(cabinets, 'cabinet')}`);
+    if (switches > 0) counts.push(`${switches} ${plural(switches, 'switch', 'switches')}`);
     if (routers > 0)  counts.push(`${routers} ${plural(routers, 'router')}`);
     if (waps > 0)     counts.push(`${waps} ${plural(waps, 'AP')}`);
 
     const items: string[] = [];
     if (cabinets > 0) items.push(`Server ${plural(cabinets, 'rack')} with patch panels, UPS, cable management and power boards`);
-    items.push(`Gigabit managed PoE switching`);
-    if (routers > 0)  items.push(`<strong>(${routers}) UniFi ${plural(routers, 'router')}</strong> — gateway, firewall and Wi-Fi controller in one`);
+    // Name the switch: "(1) 48-port PoE Gigabit managed switch — <product>" (Mitchell 30 Sep).
+    const switchProds = r.products('network_switch');
+    if (switchProds.length > 0) {
+      for (const sp of switchProds) {
+        const ports = /(\d+)[\s-]?port/i.exec(sp.name)?.[1];
+        const poe = /poe/i.test(`${sp.name} ${sp.sku}`);
+        items.push(`<strong>(${sp.qty}) ${ports ? `${ports}-port ` : ''}${poe ? 'PoE ' : ''}Gigabit managed ${plural(sp.qty, 'switch', 'switches')}</strong> — ${sp.name}`);
+      }
+    } else {
+      items.push(`Gigabit managed PoE switching`);
+    }
+    if (patchPanels > 0) items.push(`<strong>(${patchPanels}) 24-port patch ${plural(patchPanels, 'panel')}</strong> — every data run terminated on keystones and patched to the switch`);
+    for (const rp of r.products('router')) {
+      items.push(/cloud key/i.test(rp.name)
+        ? `<strong>(${rp.qty}) UniFi Cloud ${plural(rp.qty, 'Key')}</strong> — network controller for the switch and Wi-Fi (site router and internet supplied by the customer)`
+        : `<strong>(${rp.qty}) UniFi ${plural(rp.qty, 'router')}</strong> — gateway, firewall and Wi-Fi controller in one`);
+    }
     if (waps > 0)     items.push(`<strong>(${waps}) Wi-Fi access ${plural(waps, 'point')}</strong>, supplied, installed and configured`);
     items.push(`All Cat6 patch leads, snap plugs and rack terminations`);
 
@@ -530,9 +574,16 @@ export function generateScopeOfWorks(
       name: 'Data & Wireless',
       iconLabel: 'D',
       countSummary: counts.join(' · '),
-      lead: routers > 0
-        ? 'Server cabinet, gigabit managed switching, UPS power and UniFi-managed Wi-Fi covering the whole site.'
-        : 'Server cabinet, gigabit managed switching, UPS power and managed Wi-Fi covering the whole site.',
+      lead: (() => {
+        const parts = [
+          cabinets > 0 ? 'server cabinet' : null,
+          'gigabit managed PoE switching',
+          cabinets > 0 ? 'UPS power' : null,
+          waps > 0 ? (routers > 0 ? 'UniFi-managed Wi-Fi covering the whole site' : 'managed Wi-Fi covering the whole site') : null,
+        ].filter((x): x is string => !!x);
+        const text = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
+        return `${text.charAt(0).toUpperCase()}${text.slice(1)}${patchPanels > 0 ? ', with every data run landed on patch panels in the comms rack' : ''}.`;
+      })(),
       items,
       included: true,
       isCustom: false,
@@ -561,6 +612,24 @@ export function generateScopeOfWorks(
   // ── System: Tailgate ────────────────────────────────────────────────────
   const tailgateSystem: ScopeSystemBlock | null = (() => {
     if (tailgates === 0) return null;
+    if (veylaTailgate) {
+      return {
+        id: 'tailgate',
+        name: 'Veyla Protect Tailgating',
+        iconLabel: 'T',
+        countSummary: `${tailgates} ${plural(tailgates, 'system')}`,
+        lead: 'Veyla Protect watches every covered entry door and catches the two things a swipe can\'t: tailgating (a second person slipping in behind a member) and let-ins (a member opening the door for someone else). Each event is tied to the door and the credential that opened it, comes with a short video clip, and lands in the Veyla app for staff to act on.',
+        items: [
+          `<strong>(${tailgates}) Veyla Protect ${plural(tailgates, 'kit')}</strong> — on-site Protect server plus Veyla's own cameras covering the entry door`,
+          `Live tailgating and let-in detection at each covered door, cross-referenced against the club's member access system`,
+          `Alert with a video clip per event to the Veyla app; tailgates attributed to the credential that opened the door, let-ins flagged to the door`,
+          `Cat6 cabling and terminations to the comms rack, powered over PoE from the switch`,
+          `Installation and commissioning by Centrefit; remote calibration, monitoring and support by Veyla`,
+        ],
+        included: true,
+        isCustom: false,
+      };
+    }
     return {
       id: 'tailgate',
       name: 'FelixGate Tailgating',
@@ -627,8 +696,8 @@ export function generateScopeOfWorks(
     const parts: string[] = [];
     if (doorStrikes > 0) parts.push(`electronic door ${plural(doorStrikes, 'strike')}`);
     if (magLocks > 0) parts.push(`magnetic ${plural(magLocks, 'lock')}`);
-    // "all" only reads right against plurals — a single device gets "the".
-    const determiner = doorStrikes + magLocks === 1 ? 'the' : 'all';
+    // "all" only reads right against plurals — one of each gets "the".
+    const determiner = doorStrikes <= 1 && magLocks <= 1 ? 'the' : 'all';
     locksmithItems.push(`<strong>Fitting of ${determiner} ${parts.join(' and ')}</strong> — invoiced directly by the locksmith to the customer`);
   }
 
@@ -653,7 +722,9 @@ export function generateScopeOfWorks(
   if (intercoms > 0) {
     baseOngoing.push({ id: 'intercom_sim',desc: '4G postpaid SIM per duress intercom',                  price: '$22.50 / month ex GST',  included: true });
   }
-  if (tailgates > 0) {
+  if (tailgates > 0 && veylaTailgate) {
+    baseOngoing.push({ id: 'veyla_protect', desc: 'Veyla Protect subscription — detection, alerts and clips (billed by Veyla)', price: 'As per Veyla agreement', included: true });
+  } else if (tailgates > 0) {
     baseOngoing.push({ id: 'felixgate',   desc: 'FelixGate cloud subscription (billed by Gibson Global)', price: 'As per Gibson agreement', included: true });
   }
   const ongoingCosts = baseOngoing
@@ -671,7 +742,7 @@ export function generateScopeOfWorks(
   // same reason.
   // Lowercase the system names for prose, but keep acronyms (CCTV, AV, TV)
   // and brand names intact, and join the list with a final "and".
-  const PROSE_PROPER = new Set(['Nightlife', 'FelixGate']);
+  const PROSE_PROPER = new Set(['Nightlife', 'FelixGate', 'Veyla', 'Protect']);
   const proseCase = (name: string) =>
     name
       .split(' ')
