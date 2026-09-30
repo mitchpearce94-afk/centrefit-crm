@@ -223,8 +223,17 @@ export function expandKits(
 export function mergeKitLines(bomItems: BOMItem[], added: BOMItem[]): BOMItem[] {
   const out = [...bomItems]
   for (const a of added) {
-    const existing = out.find((b) => b.product_id === a.product_id && b.kit_parent_product_id === a.kit_parent_product_id)
-    if (existing) { existing.quantity += a.quantity; continue }
+    // ONE line per product (Mitchell 30 Sep 2026: "the items need to be (2),
+    // not on separate lines"). A kit part that is already on the BOM — as a
+    // placed device, a rule line or another kit's part — adds to that line
+    // and says where it came from; customer-supplied lines stay apart.
+    const existing = out.find((b) => b.product_id === a.product_id && !!b.customer_supplied === !!a.customer_supplied)
+    if (existing) {
+      existing.quantity += a.quantity
+      const from = `${a.quantity} from ${a.rule_description ?? 'kit'}`
+      if (existing.kit_parent_product_id !== a.kit_parent_product_id) existing.notes = [existing.notes, from].filter(Boolean).join(' · ')
+      continue
+    }
     out.push(a)
   }
   return out

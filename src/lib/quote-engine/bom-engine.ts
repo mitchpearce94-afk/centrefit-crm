@@ -228,19 +228,15 @@ export function generateBOM(
     const kitResult = expandKits(bomItems, products, v2.kitComponents, {
       deviceCounts, siteInfo, kitAnswers: v2.kitAnswers ?? {}, retentionDays: v2.retentionDays, tbPerCamera: v2.tbPerCamera,
     })
-    items = mergeKitLines(bomItems, kitResult.added)
-    bomItems.length = 0
-    bomItems.push(...items)
-    diagnostics.push(...kitResult.diagnostics)
-    if (v2.kitQuestions) v2.kitQuestions.push(...kitResult.questions)
-
     // Step 2d (v2): a dependency rule "ensures at least N" of a product and the
     // kit lines just added count toward that N. Net the kit-supplied quantity
     // off every pure rule line for the same product, so a part that lives in a
     // kit AND still has a rule is never on the quote twice. CF-2026-0079
     // (Mitchell, 24 Sep) carried every K6000 panel part as a rule line and a
     // "kit: BOSCH 7087" line. Rules that ask for more than the kit supplies
-    // (PF's 710B-per-4-reeds) keep the remainder.
+    // (PF's 710B-per-4-reeds) keep the remainder. Runs BEFORE the kit lines
+    // are merged in (30 Sep 2026: one line per product), so the cut only ever
+    // comes off the rule's own quantity — total = max(rule, kit-supplied).
     const kitSupplied = new Map<string, number>()
     for (const a of kitResult.added) if (a.product_id) kitSupplied.set(a.product_id, (kitSupplied.get(a.product_id) ?? 0) + a.quantity)
     for (let i = bomItems.length - 1; i >= 0; i--) {
@@ -254,6 +250,13 @@ export function generateBOM(
       if (b.quantity <= 0) bomItems.splice(i, 1)
       else b.notes = [b.notes, `${cut} covered by a kit`].filter(Boolean).join(' · ')
     }
+
+    items = mergeKitLines(bomItems, kitResult.added)
+    bomItems.length = 0
+    bomItems.push(...items)
+    diagnostics.push(...kitResult.diagnostics)
+    if (v2.kitQuestions) v2.kitQuestions.push(...kitResult.questions)
+
   }
 
   // Step 3: Kits. A kit line already contains its components — net them off
