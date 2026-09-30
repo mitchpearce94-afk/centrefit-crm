@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { CLASSIFIER_ERROR_PREFIX } from "@/lib/triage/classify";
 import { Resend } from "resend";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { FROM_NO_REPLY } from "@/lib/emails/from-addresses";
@@ -60,7 +61,10 @@ export async function GET(req: NextRequest) {
     const sorting = (process.env.TRIAGE_SORT_MAILBOXES ?? "").toLowerCase().split(",").map((x) => x.trim()).includes(d.mailbox);
     const leads = rows.filter((r) => r.action_taken === "lead_forwarded" || r.action_taken === "observed_lead");
     const bills = rows.filter((r) => r.classification === "bill");
-    const needs = rows.filter((r) => r.classification === "action" && !leads.includes(r));
+    // Classifier failures (bridge down) are one plain line, never a list of
+    // every email with error text under it (Mark, 30 Sep 2026).
+    const failed = rows.filter((r) => (r.reason ?? "").startsWith(CLASSIFIER_ERROR_PREFIX));
+    const needs = rows.filter((r) => r.classification === "action" && !leads.includes(r) && !failed.includes(r));
     const fyi = rows.filter((r) => r.classification === "fyi").length;
     const noise = rows.filter((r) => r.classification === "noise").length;
     const errors = rows.filter((r) => r.action_taken === "error").length;
@@ -71,6 +75,18 @@ export async function GET(req: NextRequest) {
       ? `<h2 style="font-size:22px;margin:28px 0 10px;color:#111">${title}</h2><ul style="padding-left:22px;margin:0">${items.join("")}</ul>` : "";
     const li = (html: string) => `<li style="margin:0 0 14px;font-size:19px;line-height:1.5;color:#111">${html}</li>`;
 
+    if (failed.length === rows.length) {
+      const html = `<!doctype html><html><body style="margin:0;background:#ffffff">
+<div style="max-width:640px;margin:0 auto;padding:24px 20px;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111">
+<p style="font-size:20px;margin:0 0 6px"><strong>Morning ${esc(d.name)}</strong> — your inbox, ${esc(dateLabel)}</p>
+<p style="font-size:19px;line-height:1.5;margin:18px 0 0">The assistant couldn't classify your mail this time (${rows.length} email${rows.length === 1 ? "" : "s"}, classifier unavailable). Nothing has been moved, forwarded or filed — it's all still in your inbox. Mitchell has been told.</p>
+</div></body></html>`;
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      const { error: sendErr } = await resend.emails.send({ from: FROM_NO_REPLY, to: d.to, subject: `Your inbox: the assistant couldn't classify ${rows.length} email${rows.length === 1 ? "" : "s"}`, html });
+      out.push({ mailbox: d.mailbox, sent: !sendErr, error: sendErr?.message, classifier_failed: rows.length });
+      continue;
+    }
+
     const html = `<!doctype html><html><body style="margin:0;background:#ffffff">
 <div style="max-width:640px;margin:0 auto;padding:24px 20px;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111">
 <p style="font-size:20px;margin:0 0 6px"><strong>Morning ${esc(d.name)}</strong> — your inbox, ${esc(dateLabel)}</p>
@@ -80,7 +96,7 @@ ${section(live ? `Sent to Mitchell — leads and plans (${leads.length})` : `Wou
 ${section(`Needs you (${needs.length})`, needs.map((r) => li(`<a href="${open(r)}" style="color:#0a4fd6"><strong>${who(r)}</strong> — ${esc(r.subject)}</a><br><span style="color:#333">${esc(r.reason)}</span>`)))}
 ${section(live ? `Bills sent to Xero (${bills.length})` : `Bills it would send to Xero (${bills.length})`,
   bills.map((r) => li(`<strong>${esc(r.bill_supplier || r.from_name || r.from_address)}</strong> — ${esc(r.subject)}`)))}
-<p style="font-size:18px;margin:28px 0 0;color:#333">Also: ${fyi} for your info, ${noise} junk or marketing ${live || sorting ? "filed out of your inbox" : "(would be filed)"}.${errors ? ` ${errors} couldn't be handled — they're untouched in your inbox.` : ""}</p>
+<p style="font-size:18px;margin:28px 0 0;color:#333">Also: ${fyi} for your info, ${noise} junk or marketing ${live || sorting ? "filed out of your inbox" : "(would be filed)"}.${errors ? ` ${errors} couldn't be handled — they're untouched in your inbox.` : ""}${failed.length ? ` ${failed.length} couldn't be classified (classifier unavailable) — untouched in your inbox.` : ""}</p>
 <p style="font-size:15px;margin:24px 0 0;color:#555">From the Centrefit assistant. Nothing is ever deleted, and it never emails customers or suppliers.</p>
 </div></body></html>`;
 

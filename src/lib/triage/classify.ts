@@ -1,8 +1,11 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
+import { callBridge } from "@/lib/llm/bridge";
 
 /**
  * Email triage classifier (assistant-CONTEXT.md D6/D7).
+ *
+ * Runs on the Cortex LLM bridge (Mitchell's Claude subscription on the office
+ * mini) — never on a paid API key. See src/lib/llm/bridge.ts.
  *
  * Tiers:
  *   bill   — genuine supplier bill/invoice payable BY Centrefit → forwarded
@@ -18,6 +21,10 @@ import Anthropic from "@anthropic-ai/sdk";
  * Safety rule baked into the prompt AND the fallback paths: anything
  * ambiguous downgrades to `action`. A wrongly-flagged email costs Mitchell a
  * glance; a wrong auto-forward costs trust.
+ *
+ * A bridge failure returns `action` with a reason starting
+ * "Classifier error:" — the mailbox digest collapses those into one line
+ * rather than listing every email (Mark, 30 Sep 2026).
  */
 
 export type TriageClass = "bill" | "action" | "fyi" | "noise" | "lead";
@@ -33,27 +40,9 @@ export interface TriageVerdict {
   leadSummary: string | null;
 }
 
-const VERDICT_SCHEMA = {
-  type: "object",
-  properties: {
-    classification: { type: "string", enum: ["bill", "action", "fyi", "noise", "lead"] },
-    reason: { type: "string", description: "One short sentence justifying the classification." },
-    action_summary: {
-      type: ["string", "null"],
-      description: "For 'action' only: imperative task title, max 80 chars, e.g. 'Reply to Sarah re Anytime Carindale camera quote'. Null otherwise.",
-    },
-    bill_supplier: {
-      type: ["string", "null"],
-      description: "For 'bill' only: the supplier's name. Null otherwise.",
-    },
-    lead_summary: {
-      type: ["string", "null"],
-      description: "For 'lead' only: up to 3 short lines — who (name, company, contact), what they want (site/system/scope), where and any due date. Null otherwise.",
-    },
-  },
-  required: ["classification", "reason", "action_summary", "bill_supplier", "lead_summary"],
-  additionalProperties: false,
-} as const;
+export const CLASSIFIER_ERROR_PREFIX = "Classifier error:";
+
+const TIERS: TriageClass[] = ["bill", "action", "fyi", "noise", "lead"];
 
 const SYSTEM = `You triage inbound email for Centrefit Group, an Australian security/IT installation company (CCTV, access control, alarms, NBN). Mark Pearce is the founder/CEO (mark@); Mitchell runs operations, quoting and software (mitchell@, admin@, accounts@). "The owner" below means whoever the mailbox belongs to. You classify each email into exactly one tier:
 
@@ -72,11 +61,13 @@ Hard rules:
 - When torn between "lead" and "action", choose "lead" only if it is clearly new work to win.
 - An invoice FROM Centrefit (Centrefit's own branding/details, INV-xxxx to a customer) is never "bill".
 - Emails about changing a customer's billing/contact details are "action" (a human applies them for now).
-Respond with the JSON verdict only.`;
 
-function getClient() {
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-}
+Respond with ONLY a JSON object, no prose, no code fences, exactly this shape:
+{"classification": "bill"|"action"|"fyi"|"noise"|"lead",
+ "reason": "one short sentence justifying the classification",
+ "action_summary": "for 'action' only: imperative task title, max 80 chars, e.g. 'Reply to Sarah re Anytime Carindale camera quote'; otherwise null",
+ "bill_supplier": "for 'bill' only: the supplier's name; otherwise null",
+ "lead_summary": "for 'lead' only: up to 3 short lines — who (name, company, contact), what they want (site/system/scope), where and any due date; otherwise null"}`;
 
 export async function classifyEmail(input: {
   mailbox: string;
@@ -103,47 +94,30 @@ ${body}`;
     leadSummary: null,
   });
 
-  let response: Anthropic.Message;
+  let parsed: unknown;
   try {
-    response = await getClient().messages.create({
-      model: "claude-opus-5",
-      max_tokens: 1024,
-      system: SYSTEM,
-      output_config: {
-        effort: "low",
-        format: { type: "json_schema", schema: VERDICT_SCHEMA as unknown as Record<string, unknown> },
-      },
-      messages: [{ role: "user", content: prompt }],
-    });
+    const out = await callBridge({ system: SYSTEM, prompt, model: "sonnet", json: true, timeoutMs: 60_000 });
+    parsed = out.json;
   } catch (err) {
-    // API failure → the email still gets in front of Mitchell.
-    return flagFallback(`Classifier error: ${err instanceof Error ? err.message : String(err)}`);
+    // Bridge down → the email still gets in front of a human.
+    return flagFallback(`${CLASSIFIER_ERROR_PREFIX} ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  if (response.stop_reason === "refusal") {
-    return flagFallback("Classifier declined this content — review manually.");
-  }
-
-  const text = response.content.find((b) => b.type === "text")?.text ?? "";
-  try {
-    const parsed = JSON.parse(text) as {
-      classification: TriageClass;
-      reason: string;
-      action_summary: string | null;
-      bill_supplier: string | null;
-      lead_summary: string | null;
-    };
-    if (!["bill", "action", "fyi", "noise", "lead"].includes(parsed.classification)) {
-      return flagFallback("Classifier returned an unknown tier.");
-    }
-    return {
-      classification: parsed.classification,
-      reason: parsed.reason,
-      actionSummary: parsed.action_summary,
-      billSupplier: parsed.bill_supplier,
-      leadSummary: parsed.lead_summary ?? null,
-    };
-  } catch {
-    return flagFallback("Classifier output was not valid JSON.");
-  }
+  if (!parsed || typeof parsed !== "object") return flagFallback("Classifier output was not valid JSON.");
+  const v = parsed as {
+    classification?: unknown;
+    reason?: unknown;
+    action_summary?: unknown;
+    bill_supplier?: unknown;
+    lead_summary?: unknown;
+  };
+  if (!TIERS.includes(v.classification as TriageClass)) return flagFallback("Classifier returned an unknown tier.");
+  const str = (x: unknown, max: number) => (typeof x === "string" && x.trim() ? x.trim().slice(0, max) : null);
+  return {
+    classification: v.classification as TriageClass,
+    reason: str(v.reason, 300) ?? "No reason given.",
+    actionSummary: str(v.action_summary, 120),
+    billSupplier: str(v.bill_supplier, 120),
+    leadSummary: str(v.lead_summary, 600),
+  };
 }

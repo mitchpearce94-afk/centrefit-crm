@@ -90,6 +90,9 @@ const PUBLIC_PATH_PREFIXES = [
   // Read-only daily stats for Mark's Cortex briefing — bearer-token auth
   // (STATS_READONLY_TOKEN) inside the route, no session path.
   "/api/stats/",
+  // Mark's Cortex CRM API — bearer-token auth (CORTEX_API_TOKEN) inside the
+  // routes, no session path. docs/cortex-api.md.
+  "/api/cortex/",
   "/quote-response",
   "/proposal/",
   "/recurring-thanks",

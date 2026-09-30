@@ -10,6 +10,10 @@ import {
 } from "@/lib/msgraph/messages";
 import { classifyEmail, type TriageVerdict } from "@/lib/triage/classify";
 
+// Classification goes through the Cortex LLM bridge (~3–6 s an email); a busy
+// Monday sweep can hold a few dozen.
+export const maxDuration = 300;
+
 /**
  * Email triage sweep — every 30 minutes (assistant-CONTEXT.md D5–D7).
  *
