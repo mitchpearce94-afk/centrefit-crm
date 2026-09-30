@@ -42,7 +42,9 @@ if (ref.startsWith('plan:')) {
   const tpl = slug ? must(await sb.from('quote_rule_templates').select('id').eq('slug', slug).maybeSingle(), 'template') as { id: string } | null : null
   if (slug && !tpl) { console.error('no template slug', slug); process.exit(1) }
   const si = (pf.site_info ?? {}) as Record<string, unknown>
-  quote = { id: null, ref: `${pf.name} (plan, no quote)`, template_id: tpl?.id ?? null, quote_mode: 'plan', device_counts: pf.device_counts ?? {}, site_address: pf.site_address, ...si }
+  // plan:<id>:<slug>:<sqm> — floor area isn't on the plan file; drives the pendant rules
+  const sqm = Number(ref.split(':')[3]) || 0
+  quote = { id: null, ref: `${pf.name} (plan, no quote)`, template_id: tpl?.id ?? null, quote_mode: 'plan', device_counts: pf.device_counts ?? {}, site_address: pf.site_address, ...si, site_sqm: sqm }
 } else {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   quote = must(await sb.from('quotes').select('*').eq('ref', ref).maybeSingle(), 'quote') as Record<string, any> | null

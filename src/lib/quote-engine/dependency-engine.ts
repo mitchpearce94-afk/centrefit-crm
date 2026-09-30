@@ -773,6 +773,12 @@ export function getPlanetFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('24 Port Patch Panel', '24PPWK'), { id: ruleId(), trigger_code: 'data_runs', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'per_n', quantity_value: 24, quantity_divisor: 24, description: 'PF patch panels — ALL data runs incl. cameras: CEIL(runs / 24)', preset, is_active: true })
   pushRule(rules, find('160mm Patch Lead', 'CPL160'), { id: ruleId(), trigger_code: 'data_runs', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'custom', quantity_custom_key: 'panel_leads_all_runs', description: 'PF 160mm patch leads — panels × 24 on ALL data runs', preset, is_active: true })
 
+  // Duress pendants by floor area — same as Snap (Mitchell 30 Sep 2026: "the 5
+  // pendants aren't adding when I choose 1200" on a PF quote).
+  const pfPendant = find('Duress Single Button Pendant', 'RFPB-SB')
+  pushRule(rules, pfPendant, { id: ruleId(), trigger_code: 'rf_receiver', trigger_condition: 'compound', trigger_value: 0, trigger_site_field: 'site_sqm', trigger_site_op: '<=', trigger_site_value: 400, quantity_mode: 'fixed', quantity_value: 3, description: 'Duress pendants (3x) for sites ≤ 400 sqm', preset, is_active: true })
+  pushRule(rules, pfPendant, { id: ruleId(), trigger_code: 'rf_receiver', trigger_condition: 'compound', trigger_value: 0, trigger_site_field: 'site_sqm', trigger_site_op: '>', trigger_site_value: 400, quantity_mode: 'fixed', quantity_value: 5, description: 'Duress pendants (5x) for sites > 400 sqm', preset, is_active: true })
+
   const pfAlways = { trigger_code: null, trigger_condition: 'always', preset, is_active: true }
   pushRule(rules, find('15m HDMI Cable', 'CB8W-RC-HDMI-10'), { ...pfAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '15m HDMI cable (1x) — PF AV' })
   pushRule(rules, find('HDMI 1x2 Splitter', 'CBAT-HDMI-TO-HDMIX2'), { ...pfAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'HDMI 1x2 splitter CBAT-HDMI-TO-HDMIX2 (1x) — PF AV' })
