@@ -143,6 +143,17 @@ export const NVR_POE_PORTS = 16
  *  cardio + TVs + cameras beyond the NVR's PoE + tailgate box × 2 + WAPs + data
  *  points. Drives the patch panels, leads, snap plugs, switch tier and router
  *  through the virtual trigger code `switch_ports`. */
+/** Every Cat6 run on the plan, NVR-fed cameras included (Mitchell, 30 Sep 2026,
+ *  Bundaberg: "for PF, all data cables including the cameras go into the patch
+ *  panels"). Virtual trigger code `data_runs`; drives the PF patch panels and
+ *  160mm leads. The switch tier still uses switchPorts(). */
+export function dataRuns(deviceCounts: DeviceCounts, siteInfo: SiteInfo = {}): number {
+  return (deviceCounts.camera_black || 0) + (deviceCounts.camera_white || 0) +
+    (deviceCounts.tailgate_system || 0) * 2 +
+    (deviceCounts.wap || 0) + (deviceCounts.data_point || 0) +
+    (siteInfo.cardio_count || 0) + (siteInfo.tv_count || 0)
+}
+
 export function switchPorts(deviceCounts: DeviceCounts, siteInfo: SiteInfo = {}): number {
   const cams = (deviceCounts.camera_black || 0) + (deviceCounts.camera_white || 0)
   return (siteInfo.cardio_count || 0) + (siteInfo.tv_count || 0) +
@@ -156,6 +167,7 @@ function resolveTriggerCount(triggerCode: string | null, deviceCounts: DeviceCou
   const codes = triggerCode.split('+').map((c) => c.trim())
   return codes.reduce((sum, code) => {
     if (code === 'switch_ports') return sum + switchPorts(deviceCounts, siteInfo)
+    if (code === 'data_runs') return sum + dataRuns(deviceCounts, siteInfo)
     if (SITE_INFO_FIELDS.includes(code)) {
       return sum + (Number((siteInfo as Record<string, unknown>)[code]) || 0)
     }
@@ -261,6 +273,11 @@ function calculateCustomQuantity(key: string, deviceCounts: DeviceCounts, siteIn
     //   couplers (12-pack Cat6A) = panels × 2
     //   250mm patch leads        = panels × 24
     //   snap plugs (pkt 100)     = CEIL((panels×24 + dataRuns×2) / 100)
+    case 'panel_leads_all_runs': {
+      // PF: 160mm leads = patch panels × 24 where panels = CEIL(all data runs / 24)
+      const runs = dataRuns(dc, si)
+      return runs > 0 ? Math.ceil(runs / 24) * 24 : 0
+    }
     case 'switch_couplers':
     case 'switch_250mm_leads':
     case 'switch_snap_plugs': {
@@ -750,6 +767,12 @@ export function getPlanetFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('Cloud Key', 'NHU-UCK-G2-SSD'), { id: ruleId(), trigger_code: 'switch_ports', trigger_condition: 'greater_than_or_equal', trigger_value: 1, quantity_mode: 'fixed', quantity_value: 1, description: 'Ubiquiti Cloud Key+ — PF have their own router, key manages UniFi gear', preset, is_active: true })
 
   // PF AV package — always on
+  // PF: every data run (cameras included, even the NVR-fed ones) lands on the
+  // patch panels — Mitchell 30 Sep 2026. Same products as the universal
+  // switch-port rules; the engine keeps the larger quantity per product.
+  pushRule(rules, find('24 Port Patch Panel', '24PPWK'), { id: ruleId(), trigger_code: 'data_runs', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'per_n', quantity_value: 24, quantity_divisor: 24, description: 'PF patch panels — ALL data runs incl. cameras: CEIL(runs / 24)', preset, is_active: true })
+  pushRule(rules, find('160mm Patch Lead', 'CPL160'), { id: ruleId(), trigger_code: 'data_runs', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'custom', quantity_custom_key: 'panel_leads_all_runs', description: 'PF 160mm patch leads — panels × 24 on ALL data runs', preset, is_active: true })
+
   const pfAlways = { trigger_code: null, trigger_condition: 'always', preset, is_active: true }
   pushRule(rules, find('15m HDMI Cable', 'CB8W-RC-HDMI-10'), { ...pfAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: '15m HDMI cable (1x) — PF AV' })
   pushRule(rules, find('HDMI 1x2 Splitter', 'CBAT-HDMI-TO-HDMIX2'), { ...pfAlways, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'HDMI 1x2 splitter CBAT-HDMI-TO-HDMIX2 (1x) — PF AV' })
