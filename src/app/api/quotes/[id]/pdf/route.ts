@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { withLiveSite } from "@/lib/quotes/live-site";
 import { createClient } from "@/lib/supabase/server";
 import { generateScopeOfWorks, manualScopeDocument } from "@/lib/quote-engine";
 import { generateQuotePdfBuffer, type QuoteForPdf } from "@/lib/quote-pdf";
@@ -38,7 +39,7 @@ export async function GET(
     return NextResponse.json({ error: "Quote not found" }, { status: 404 });
   }
 
-  const quote = quoteResult.data as Record<string, unknown> & {
+  const quote = (await withLiveSite(supabase, quoteResult.data)) as Record<string, unknown> & {
     ref: string;
     created_at: string;
     customer?: { name: string } | null;

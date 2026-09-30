@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
+import { withLiveSite } from "@/lib/quotes/live-site";
 import Link from "next/link";
 import { DEVICE_TYPES } from "@/lib/quote-engine";
 import { QuoteActions } from "./quote-actions";
@@ -52,7 +53,8 @@ export default async function QuoteDetailPage({
 
   if (quoteResult.error || !quoteResult.data) notFound();
 
-  const quote = quoteResult.data as any;
+  // Drafts follow the site record; sent quotes keep their frozen copy.
+  const quote = (await withLiveSite(supabase, quoteResult.data as any)) as any;
   const lineItems = (lineItemsResult.data ?? []) as any[];
   const extras = (extrasResult.data ?? []) as any[];
   const invoices = (invoicesResult.data ?? []) as any[];

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { withLiveSite } from "@/lib/quotes/live-site";
 import { createClient } from "@/lib/supabase/server";
 import { Resend } from "resend";
 import { generateScopeOfWorks, manualScopeDocument, renderScopeAsText, type ScopeDocument } from "@/lib/quote-engine";
@@ -53,6 +54,13 @@ export async function POST(req: NextRequest) {
   if (error || !quote) {
     return NextResponse.json({ error: "Quote not found" }, { status: 404 });
   }
+  // Last refresh of the site name/address from the site record before the
+  // copy on the quote is frozen for the customer.
+  {
+    const live = await withLiveSite(supabase, quote, { force: quote.status === "draft" });
+    quote.site_name = live.site_name;
+    quote.site_address = live.site_address;
+  }
 
   const pricing = quote.pricing_snapshot as {
     totalExGST: number;
@@ -83,6 +91,8 @@ export async function POST(req: NextRequest) {
     (quote.response_token as string | null) ?? crypto.randomBytes(32).toString("hex");
   await supabase.from("quotes").update({
     status: "sent",
+    site_name: quote.site_name,
+    site_address: quote.site_address,
     sent_at: new Date().toISOString(),
     sent_to_email: email,
     response_token: responseToken,
