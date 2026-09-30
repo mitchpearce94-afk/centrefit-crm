@@ -951,7 +951,9 @@ export function QuoteWizard({
   }, [bomItems, manualBomItems, quoteMode, rawProducts, deviceTypes, deviceCounts]);
 
   function regenerateLabour() {
-    const source = bomGenerated ? bomDeviceCounts : deviceCounts;
+    // A saved quote with lines is "generated" even if a count edit flipped
+    // the flag — labour must read the lines that are actually on the quote.
+    const source = bomGenerated || (quoteMode === "plan" && bomItems.length > 0) ? bomDeviceCounts : deviceCounts;
     const fresh = calculateLabour(source, siteInfo, billingSettings ? {
       labourCostRate: billingSettings.labour_cost_rate,
       labourSellRate: billingSettings.labour_sell_rate,
@@ -1094,6 +1096,81 @@ export function QuoteWizard({
     }
     setBomItems(generateWithKits());
     setBomGenerated(true);
+    setCountBaseline({ ...deviceCounts });
+  }
+
+  // ── Per-device count changes (Mitchell 30 Sep) ──
+  // A saved quote's lines never move on their own. Changing one device count
+  // runs the engine twice — at the saved counts and at saved + this change —
+  // and nets only the DIFFERENCE onto the existing lines. Hand tweaks (price
+  // overrides, deleted rule lines, custom additions) survive; a full
+  // "Regenerate BOM" is the only thing that replaces the lot.
+  const [countBaseline, setCountBaseline] = useState<DeviceCounts>(existingQuote?.deviceCounts || {});
+
+  function engineAt(counts: DeviceCounts): BOMItem[] {
+    const rules = rulesForTemplate(allRules, templateId, products);
+    return generateBOM(counts, products, rules, siteInfo, { elecDoingRoughIn, elecDoingFitOff }, deviceDefaults, kitContents, {
+      deviceTypes, kitComponents, kitAnswers, templateSupply, templateId, diagnostics: [], kitQuestions: [],
+    });
+  }
+
+  function bomLineKey(b: BOMItem): string {
+    return `${b.device_type_code ?? ""}|${b.product_id ?? b.product_name}|${b.auto_added ? 1 : 0}|${b.kit_parent_product_id ?? ""}`;
+  }
+
+  /** Device codes whose count differs from the saved (or last-applied) count. */
+  const changedDeviceCodes = useMemo(() => {
+    const codes = new Set([...Object.keys(countBaseline), ...Object.keys(deviceCounts)]);
+    return [...codes].filter((c) => (deviceCounts[c] || 0) !== (countBaseline[c] || 0)).sort();
+  }, [deviceCounts, countBaseline]);
+
+  function applyDeviceChanges(codes: string[]) {
+    if (codes.length === 0) return;
+    const target: DeviceCounts = { ...countBaseline };
+    for (const c of codes) target[c] = deviceCounts[c] || 0;
+
+    const sum = (items: BOMItem[]) => {
+      const m = new Map<string, { qty: number; line: BOMItem }>();
+      for (const b of items) {
+        const k = bomLineKey(b);
+        const e = m.get(k);
+        if (e) e.qty += b.quantity; else m.set(k, { qty: b.quantity, line: b });
+      }
+      return m;
+    };
+    const before = sum(engineAt(countBaseline));
+    const after = sum(engineAt(target));
+    const deltas: { key: string; delta: number; line: BOMItem }[] = [];
+    for (const [k, v] of after) {
+      const d = v.qty - (before.get(k)?.qty ?? 0);
+      if (d !== 0) deltas.push({ key: k, delta: d, line: v.line });
+    }
+    for (const [k, v] of before) if (!after.has(k)) deltas.push({ key: k, delta: -v.qty, line: v.line });
+
+    const next = [...bomItems];
+    const changes: string[] = [];
+    for (const { key, delta, line } of deltas) {
+      let idx = next.findIndex((x) => bomLineKey(x) === key);
+      if (idx < 0 && line.product_id) idx = next.findIndex((x) => x.product_id === line.product_id);
+      if (idx >= 0) {
+        const q = next[idx].quantity + delta;
+        changes.push(`${next[idx].product_name} ${delta > 0 ? "+" : ""}${delta}`);
+        if (q <= 0) next.splice(idx, 1); else next[idx] = { ...next[idx], quantity: q };
+      } else if (delta > 0) {
+        next.push({ ...line, quantity: delta });
+        changes.push(`${line.product_name} +${delta} (new)`);
+      }
+    }
+    setBomItems(next);
+    setCountBaseline(target);
+    setBomGenerated(true);
+    const legend = codes.map((c) => deviceTypes.find((d) => d.code === c)?.legend ?? c).join(", ");
+    if (changes.length === 0) {
+      toast(`${legend}: no BOM lines change (count-only or cable-only) — recalculate labour on the Labour step`);
+    } else {
+      const shown = changes.slice(0, 3).join(" · ");
+      toast(`${legend}: ${changes.length} line${changes.length === 1 ? "" : "s"} adjusted — ${shown}${changes.length > 3 ? ` +${changes.length - 3} more` : ""}. Recalculate labour on the Labour step.`);
+    }
   }
 
   // Reconcile electrician-supplied materials when the elec scope toggles flip.
@@ -1988,8 +2065,80 @@ export function QuoteWizard({
             const universalRules = allRules.filter((r) => r.is_universal && r.is_active && r.auto_add_product_id);
             const templateRules = allRules.filter((r) => !r.is_universal && r.template_id === templateId && r.is_active && r.auto_add_product_id);
             const activeTpl = templates.find((t) => t.id === templateId);
+            const countRows = deviceTypes
+              .filter((d) => d.is_active && ((deviceCounts[d.code] || 0) > 0 || (countBaseline[d.code] || 0) > 0))
+              .sort((a, b) => (a.category ?? "").localeCompare(b.category ?? "") || a.legend.localeCompare(b.legend));
+            const addable = deviceTypes.filter((d) => d.is_active && !countRows.some((r) => r.code === d.code));
             return (
               <>
+                {/* Device counts — the plan's counts, editable per device. On a
+                    saved quote each change nets only its own difference onto the
+                    BOM via Apply; nothing else on the quote moves. */}
+                <div className="rounded-lg border border-border bg-card">
+                  <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border">
+                    <div>
+                      <h3 className="text-sm font-semibold">Device counts</h3>
+                      <p className="text-[11px] text-muted-foreground">
+                        {isEditing
+                          ? "Change a count, then Apply — only that device's lines move. Everything else on the quote stays as saved."
+                          : "From the plan. Edit here and the BOM regenerates on the next step."}
+                      </p>
+                    </div>
+                    {isEditing && changedDeviceCodes.length > 1 && (
+                      <button type="button" onClick={() => applyDeviceChanges(changedDeviceCodes)} className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
+                        Apply all ({changedDeviceCodes.length})
+                      </button>
+                    )}
+                  </div>
+                  <div className="divide-y divide-border">
+                    {countRows.length === 0 && (
+                      <p className="px-4 py-3 text-xs text-muted-foreground">No device counts on this quote yet.</p>
+                    )}
+                    {countRows.map((d) => {
+                      const cur = deviceCounts[d.code] || 0;
+                      const base = countBaseline[d.code] || 0;
+                      const changed = isEditing && cur !== base;
+                      return (
+                        <div key={d.code} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 px-4 py-2">
+                          <div className="min-w-0">
+                            <p className="text-sm truncate">{d.legend}</p>
+                            <p className="text-[11px] font-mono text-muted-foreground">{d.code}{d.category ? ` · ${d.category}` : ""}{d.count_only ? " · count only" : ""}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {changed && <span className="text-[11px] font-mono text-muted-foreground">was {base}</span>}
+                            <input
+                              type="number"
+                              min={0}
+                              value={cur}
+                              onChange={(e) => setDC(d.code, parseInt(e.target.value, 10) || 0)}
+                              className={`w-20 rounded-md border bg-input px-2 py-1 text-sm font-mono text-right focus:border-primary focus:outline-none ${changed ? "border-primary" : "border-border"}`}
+                            />
+                          </div>
+                          <div className="w-16 text-right">
+                            {changed && (
+                              <button type="button" onClick={() => applyDeviceChanges([d.code])} className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
+                                Apply
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {addable.length > 0 && (
+                    <div className="px-4 py-2 border-t border-border">
+                      <select
+                        value=""
+                        onChange={(e) => { if (e.target.value) setDC(e.target.value, 1); }}
+                        className="rounded-md border border-border bg-input px-2 py-1 text-xs text-muted-foreground focus:border-primary focus:outline-none"
+                      >
+                        <option value="">+ Add a device type…</option>
+                        {addable.map((d) => <option key={d.code} value={d.code}>{d.legend} ({d.code})</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
                 {/* Active template card */}
                 <div className="rounded-lg border border-border bg-card p-4">
                   <div className="flex items-start justify-between gap-4">
@@ -2844,6 +2993,22 @@ export function QuoteWizard({
             <div className="rounded-lg border-2 border-red-500 bg-red-500/10 p-4">
               <p className="text-sm font-bold text-red-400">WARNING — MANDATORY LABOUR MISSING</p>
               {labourWarnings.map((w, i) => (<p key={i} className="text-xs text-red-400 mt-1">{w.name}: {w.warning}</p>))}
+            </div>
+          )}
+
+          {/* Saved quotes never recalc labour on their own (the BOM can change
+              under it via Apply / Regenerate BOM). Explicit button; keeps hour
+              overrides and custom lines. */}
+          {isEditing && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card/50 px-4 py-2.5">
+              <p className="text-xs text-muted-foreground">Labour is as saved. If the BOM or device counts changed, recalculate — your hour overrides and custom lines are kept.</p>
+              <button
+                type="button"
+                onClick={() => { regenerateLabour(); toast("Labour recalculated from the BOM — overrides and custom lines kept"); }}
+                className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              >
+                Recalculate labour
+              </button>
             </div>
           )}
 
