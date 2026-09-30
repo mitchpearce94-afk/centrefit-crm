@@ -566,6 +566,11 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('Finder Relay', 'FID55.32.007412VDC'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Finder relay for alarm automation (2x)' })
   pushRule(rules, find('Relay Mount', 'FID9402'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 2, description: 'Finder relay mount socket (2x)' })
   pushRule(rules, find('Power Adaptor', 'MP3560'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, is_universal: true, description: 'Power adaptor for alarm system' })
+  // Access-control supply: one MP3560 per club whenever a door lock is quoted
+  // (Mitchell 23 Sep "always for access control"; Warwick 30 Sep had a strike
+  // and no mag lock, so the FEM4300 kit's PSU never came). The kit's PSU and
+  // this rule net to one line.
+  pushRule(rules, find('Power Adaptor', 'MP3560'), { id: ruleId(), trigger_code: 'door_strike + mag_lock', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, is_universal: true, description: 'Access-control 12V 5A supply (MP3560) — one per club when any door lock is quoted (Mitchell 23 Sep: always for access control)', preset, is_active: true })
   pushRule(rules, find('Mounting Tape', 'SCOTCH-TAPE-25'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Scotch mounting tape for alarm panel' })
   pushRule(rules, find('Crimp Ferrule', 'RS-FERRULE-20AWG'), { ...inKit, id: ruleId(), quantity_mode: 'fixed', quantity_value: 3, description: 'Crimp ferrules 20AWG for alarm wiring (3x)' })
 

@@ -248,7 +248,10 @@ export function applyTemplateSupply(bomItems: BOMItem[], supply: TemplateSupply[
   if (!templateId) return bomItems
   const customer = new Set(supply.filter((s) => s.template_id === templateId && s.supplied_by === 'customer').map((s) => s.device_type))
   if (!customer.size) return bomItems
+  // The line keeps its product_id (labour code, procurement skip) but reads as
+  // the device, not the PF product that happens to carry the device type —
+  // Warwick 30 Sep: "the Datalogic readers have made their way into Snap".
   return bomItems.map((b) => (b.device_type_code && customer.has(b.device_type_code)
-    ? { ...b, cost_price: 0, sell_price: 0, customer_supplied: true, notes: [b.notes, 'customer supplied — labour & cabling only'].filter(Boolean).join(' · ') }
+    ? { ...b, product_name: `${b.device_type_legend ?? b.product_name} — supplied by the customer`, sku: '', cost_price: 0, sell_price: 0, customer_supplied: true, notes: [b.notes, 'customer supplied — labour & cabling only'].filter(Boolean).join(' · ') }
     : b))
 }
