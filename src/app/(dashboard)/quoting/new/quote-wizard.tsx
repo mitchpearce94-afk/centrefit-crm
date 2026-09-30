@@ -276,6 +276,8 @@ interface ExistingQuote {
   manualPp2?: number;
   /** Plan progress quotes: PP1 set by hand on the Summary step (ex GST); PP2 = total − PP1. */
   pp1Override?: number;
+  /** Negotiated total typed on the Summary step (ex GST) — replaces the engine's total. */
+  priceOverride?: number;
   // Quoting v2
   kitAnswers?: KitAnswers;
   interview?: InterviewResult | null;
@@ -341,6 +343,12 @@ export function QuoteWizard({
   // balancing without the totals moving).
   const [pp1Override, setPp1Override] = useState<string>(
     existingQuote?.pp1Override != null ? String(existingQuote.pp1Override) : ""
+  );
+  // Negotiated total (Mitchell, 2026-10-01: Snap Winston Hills "make the
+  // quote 70,000 + GST"). Typed on the Summary step; the engine keeps its
+  // list price alongside (pricing_snapshot.override) and PP2 absorbs the gap.
+  const [priceOverride, setPriceOverride] = useState<string>(
+    existingQuote?.priceOverride != null ? String(existingQuote.priceOverride) : ""
   );
 
   // Job linking. Accept either ?job= (from /plans CompletePlanModal) or
@@ -777,6 +785,7 @@ export function QuoteWizard({
       if (d.manualPp1 != null) setManualPp1(d.manualPp1);
       if (d.manualPp2 != null) setManualPp2(d.manualPp2);
       if (d.pp1Override != null) setPp1Override(d.pp1Override);
+      if (d.priceOverride != null) setPriceOverride(d.priceOverride);
       if (d.electricianCost != null) setElectricianCost(d.electricianCost);
       if (d.elecDoingRoughIn != null) setElecDoingRoughIn(d.elecDoingRoughIn);
       if (d.elecDoingFitOff != null) setElecDoingFitOff(d.elecDoingFitOff);
@@ -798,7 +807,7 @@ export function QuoteWizard({
           step, quoteMode, customerId, siteId, clientName, siteName, siteAddress, siteInfo,
           deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
           linkedJobId, selectedPlanId, manualScope, manualBomItems, manualLabourLines,
-          manualPp1, manualPp2, pp1Override,
+          manualPp1, manualPp2, pp1Override, priceOverride,
           electricianCost,
           elecDoingRoughIn, elecDoingFitOff,
         }));
@@ -808,7 +817,7 @@ export function QuoteWizard({
   }, [step, quoteMode, customerId, siteId, clientName, siteName, siteAddress, siteInfo,
     deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
     linkedJobId, selectedPlanId, manualScope, manualBomItems, manualLabourLines,
-    manualPp1, manualPp2, pp1Override,
+    manualPp1, manualPp2, pp1Override, priceOverride,
     electricianCost,
     elecDoingRoughIn, elecDoingFitOff]);
 
@@ -1330,17 +1339,22 @@ export function QuoteWizard({
     ).slice(0, 10);
   }, [products, manualBomSearch]);
 
+  // Parsed once here so the summary memo (below) and the Summary-step
+  // validation both see the same number. Manual progress quotes type PP1/PP2
+  // directly, so the override doesn't apply there.
+  const priceOverrideNum = Math.round((parseFloat(priceOverride) || 0) * 100) / 100;
+  const priceOverrideExGST = quoteMode === "manual" && quoteType === "progress" ? 0 : priceOverrideNum;
   const summary: QuoteSummary | null = useMemo(() => {
     if (quoteMode === "manual") {
       // Manual mode is driven by the line-item editor — no BOM-derived
       // labour and no extras rows, but the electrician quote gets the same
       // treatment as plan mode (cost + 30% margin, 2x interstate) so its
       // margin lands in profit.
-      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, [], { discountPercent, electricianCost, isInterstate });
+      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, [], { discountPercent, electricianCost, isInterstate, priceOverrideExGST });
     }
     if (!labourData) return null;
-    return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent, electricianCost, isInterstate });
-  }, [quoteMode, bomItems, labourData, extras, discountPercent, electricianCost, isInterstate, manualBomAsBomItems, manualLabourData]);
+    return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent, electricianCost, isInterstate, priceOverrideExGST });
+  }, [quoteMode, bomItems, labourData, extras, discountPercent, electricianCost, isInterstate, priceOverrideExGST, manualBomAsBomItems, manualLabourData]);
 
   // Manual progress quotes use directly-entered PP1/PP2 amounts; everything
   // else derives the split from the cost/sell breakdown in `summary`.
@@ -1365,6 +1379,14 @@ export function QuoteWizard({
     : pp1OverrideValid
       ? Math.round((totalForSplit - pp1OverrideNum) * 100) / 100
       : (summary?.pp2.total ?? 0);
+  const priceOverrideOn = !isManualProgress && priceOverride !== "";
+  const priceOverrideError = !priceOverrideOn
+    ? null
+    : priceOverrideNum <= 0
+      ? "Enter the negotiated total (ex GST)"
+      : quoteType === "progress" && priceOverrideNum <= effPp1
+        ? `Total must be more than PP1 ($${fmt(effPp1)} ex GST) or PP2 goes to zero`
+        : null;
 
   const labourWarnings = useMemo(() => {
     if (quoteMode === "manual") return [];
@@ -1484,6 +1506,10 @@ export function QuoteWizard({
     }
     if (pp1OverrideOn && pp1OverrideError) {
       toast(pp1OverrideError, "error");
+      return;
+    }
+    if (priceOverrideOn && priceOverrideError) {
+      toast(priceOverrideError, "error");
       return;
     }
 
@@ -3363,7 +3389,13 @@ export function QuoteWizard({
 
           {/* Totals */}
           <div className="rounded-lg border-2 border-primary/30 bg-card p-6 text-center space-y-3">
-            <div><p className="text-xs text-muted-foreground uppercase">Total Price (ex GST)</p><p className="text-2xl font-bold font-mono">${fmt(isManualProgress ? effPp1 + effPp2 : summary.totalExGST)}</p></div>
+            <div>
+              <p className="text-xs text-muted-foreground uppercase">Total Price (ex GST)</p>
+              <p className="text-2xl font-bold font-mono">${fmt(isManualProgress ? effPp1 + effPp2 : summary.totalExGST)}</p>
+              {!isManualProgress && summary.override && (
+                <p className="text-[11px] text-amber-400">Negotiated — list ${fmt(summary.override.listExGST)} ex GST</p>
+              )}
+            </div>
             <div><p className="text-xs text-muted-foreground">GST (10%)</p><p className="text-lg font-mono">${fmt(isManualProgress ? (effPp1 + effPp2) * 0.1 : summary.gst)}</p></div>
             <div className="border-t border-border pt-3"><p className="text-xs text-muted-foreground uppercase">Total (inc GST)</p><p className="text-3xl font-bold font-mono">${fmt(isManualProgress ? (effPp1 + effPp2) * 1.1 : summary.totalIncGST)}</p></div>
 
@@ -3390,6 +3422,44 @@ export function QuoteWizard({
                 <p className="mt-1 text-xs text-muted-foreground">Full price: ${fmt(summary.fullPriceExGST)} ex GST — showing ${fmt(summary.targetExGST)} (saves ${fmt(summary.discount.amount)})</p>
               )}
             </div>
+            {!isManualProgress && (
+              <div className="flex-1">
+                <label className="flex items-center gap-3 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setPriceOverride(priceOverrideOn ? "" : String(Math.round((summary.override?.listExGST ?? summary.totalExGST) * 100) / 100))}
+                    className={`relative h-5 w-9 rounded-full transition-colors ${priceOverrideOn ? "bg-primary" : "bg-muted"}`}
+                  >
+                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${priceOverrideOn ? "left-[18px]" : "left-0.5"}`} />
+                  </button>
+                  Set quote total manually
+                </label>
+                {priceOverrideOn ? (
+                  <div className="mt-3 rounded-lg border border-border bg-card p-4">
+                    <label className="block text-xs font-medium text-muted-foreground mb-1">Negotiated total (ex GST)</label>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-muted-foreground">$</span>
+                      <input
+                        type="number" step="0.01" min="0" inputMode="decimal"
+                        value={priceOverride}
+                        onChange={(e) => setPriceOverride(e.target.value)}
+                        className="block w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      inc GST ${fmt(priceOverrideNum * 1.1)}
+                      {summary.override && (
+                        <> · list ${fmt(summary.override.listExGST)} ex GST — {summary.override.saving >= 0 ? "saves" : "adds"} ${fmt(Math.abs(summary.override.saving))}</>
+                      )}
+                    </p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">Customer sees the list price struck through and this total. PP1 stays at cost; PP2 takes the difference.</p>
+                    {priceOverrideError && <p className="mt-2 text-xs text-red-400">{priceOverrideError}</p>}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-xs text-muted-foreground">Negotiated a price? Type the agreed total and the quote shows it.</p>
+                )}
+              </div>
+            )}
             {quoteType === "progress" && !isManualProgress && (
               <div className="flex-1">
                 <label className="flex items-center gap-3 text-sm">

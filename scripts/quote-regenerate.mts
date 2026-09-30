@@ -19,6 +19,11 @@ const write = args.includes('--write')
 // --keep SKU=qty,SKU=0 — hand edits on the saved quote to carry across the regenerate (0 removes the line)
 const keep = new Map<string, number>()
 for (const a of args) if (a.startsWith('--keep=')) for (const kv of a.slice(7).split(',')) { const [k, v] = kv.split('='); if (k) keep.set(k.trim(), Number(v)) }
+// --counts=code=qty,code=qty — override device counts before regenerating (e.g. cameras added on a plan revision)
+const countOverrides = new Map<string, number>()
+for (const a of args) if (a.startsWith('--counts=')) for (const kv of a.slice(9).split(',')) { const [k, v] = kv.split('='); if (k) countOverrides.set(k.trim(), Number(v)) }
+// --price=70000 — negotiated total ex GST (pricing_snapshot.override); --price=0 clears; omitted = keep whatever the quote has
+const priceArg = args.find((a) => a.startsWith('--price='))
 const [ref, envArg] = args.filter((a) => !a.startsWith('--'))
 if (!ref) { console.error('usage: npx tsx scripts/quote-regenerate.mts CF-2026-0086 [envfile] [--write]'); process.exit(1) }
 const envFile = envArg ?? '.env.local'
@@ -66,7 +71,8 @@ const rules: DependencyRule[] = rows
   .map((r) => { const p = products.find((x) => x.id === r.auto_add_product_id); return { ...(r as unknown as DependencyRule), preset: '', auto_add_product_sku: p?.sku ?? null, auto_add_product_name: p?.name ?? null } })
 const deviceDefaults: Record<string, string> = {}
 for (const d of defaults) if (d.template_id === templateId) deviceDefaults[d.device_type] = d.product_id
-const deviceCounts: Record<string, number> = quote.device_counts ?? {}
+const deviceCounts: Record<string, number> = { ...(quote.device_counts ?? {}) }
+for (const [code, qty] of countOverrides) { console.log(`  counts: ${code} ${deviceCounts[code] ?? 0} → ${qty}`); deviceCounts[code] = qty }
 const siteInfo = {
   site_sqm: quote.site_sqm ?? 0, door_count: quote.door_count ?? 0, external_camera_count: quote.external_camera_count ?? 0,
   concrete_mount_black: quote.concrete_mount_black ?? 0, concrete_mount_white: quote.concrete_mount_white ?? 0,
@@ -152,7 +158,8 @@ const merged: LabourData = {
 const labour = recalcLabour(merged)
 
 // ── Pricing ──
-const opts = { discountPercent: Number(quote.discount_percent) || 0, electricianCost: Number(quote.electrician_cost) || 0, isInterstate: !!quote.is_interstate }
+const priceOverrideExGST = priceArg ? Number(priceArg.slice(8)) || 0 : Number(quote.pricing_snapshot?.override?.exGST) || 0
+const opts = { discountPercent: Number(quote.discount_percent) || 0, electricianCost: Number(quote.electrician_cost) || 0, isInterstate: !!quote.is_interstate, priceOverrideExGST }
 const summary = calculateQuoteSummary(bom, labour, extras, opts)
 const oldSplit = quote.pricing_snapshot?.split
 const total = Math.round(summary.totalExGST * 100) / 100
@@ -176,6 +183,7 @@ const oldQty = new Map<string, number>(); for (const l of oldLines) oldQty.set(s
 const newQty = new Map<string, number>(); for (const b of bom) newQty.set(b.sku || b.product_name, (newQty.get(b.sku || b.product_name) ?? 0) + b.quantity)
 console.log(`\n${ref} — ${write ? 'WRITING' : 'dry run'}`)
 console.log(`lines ${oldLines.length} → ${bom.length} · materials $${summary.materials.sell.toFixed(2)} · labour ${labour.grandTotalHours} h $${labour.grandTotalSell.toFixed(2)} · total ex GST $${oldTotal.toFixed(2)} → $${total.toFixed(2)}`)
+if (summary.override) console.log(`negotiated price: $${summary.override.exGST.toFixed(2)} ex GST (list $${summary.override.listExGST.toFixed(2)}, ${summary.override.saving >= 0 ? 'saving' : 'adds'} $${Math.abs(summary.override.saving).toFixed(2)}) · PP1 $${Number(pricing.pp1 && (pricing.pp1 as { total: number }).total).toFixed(2)} / PP2 $${Number(pricing.pp2 && (pricing.pp2 as { total: number }).total).toFixed(2)}`)
 console.log('\nBOM changes (qty by product)')
 for (const [sku, q] of newQty) { const o = oldQty.get(sku) ?? 0; if (o !== q) console.log(`  ${sku.padEnd(24)} ${o} → ${q}`) }
 for (const [sku, q] of oldQty) if (!newQty.has(sku)) console.log(`  ${sku.padEnd(24)} ${q} → 0 (removed)`)
@@ -201,6 +209,7 @@ must(await sb.from('quote_line_items').insert(bom.map((item, i) => ({
   kit_parent_product_id: item.kit_parent_product_id ?? null,
 }))), 'insert lines')
 must(await sb.from('quotes').update({
+  ...(countOverrides.size ? { device_counts: deviceCounts } : {}),
   labour_data: { ...labour, deleted_labour_keys: Array.from(deleted), quote_mode: 'plan' },
   pricing_snapshot: pricing,
   lint_findings: findings,

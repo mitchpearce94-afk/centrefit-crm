@@ -54,6 +54,12 @@ export interface QuoteSummary {
    *  Summary step (Total Fusion SB, 2026-09-15); PP2 is always total − PP1,
    *  so the headline total never moves. Absent on older snapshots = cost. */
   split?: { mode: "cost" } | { mode: "manual"; pp1ExGST: number; costPp1: number; adjustment: number }
+  /** Quote total typed by hand on the Summary step (negotiated price — Snap
+   *  Winston Hills, 2026-10-01). `exGST` IS the customer-facing total;
+   *  `listExGST` is what the engine priced it at (after any 5% discount) and
+   *  `saving` = list − negotiated (negative when priced UP). PP1 stays at cost;
+   *  PP2 absorbs the difference so PP1 + PP2 still equals the total. */
+  override?: { exGST: number; listExGST: number; saving: number }
   totalExGST: number
   gst: number
   totalIncGST: number
@@ -67,9 +73,10 @@ export function calculateQuoteSummary(
   bomItems: BOMItem[],
   labourData: LabourData,
   extras: ExtraItem[],
-  options: { discountPercent?: number; electricianCost?: number; isInterstate?: boolean } = {}
+  options: { discountPercent?: number; electricianCost?: number; isInterstate?: boolean; priceOverrideExGST?: number } = {}
 ): QuoteSummary {
   const { discountPercent = 0, electricianCost = 0, isInterstate = false } = options
+  const priceOverride = Math.round((Number(options.priceOverrideExGST) || 0) * 100) / 100
 
   // Materials
   const materialsCost = bomItems.reduce((sum, item) => sum + (item.cost_price || 0) * (item.quantity || 0), 0)
@@ -145,7 +152,10 @@ export function calculateQuoteSummary(
   const fullPriceIncGST = fullPriceExGST + fullPriceGst
   const discountAmount = fullPriceExGST - targetExGST
 
-  const displayExGST = discountPercent > 0 ? targetExGST : fullPriceExGST
+  // Negotiated price (override) replaces the engine's total outright; the
+  // list price is kept alongside so quote/PDF/customer pages can show it.
+  const listExGST = discountPercent > 0 ? targetExGST : fullPriceExGST
+  const displayExGST = priceOverride > 0 ? priceOverride : listExGST
   const displayGst = displayExGST * GST_RATE
   const displayIncGST = displayExGST + displayGst
 
@@ -199,6 +209,9 @@ export function calculateQuoteSummary(
       total: pp2Total,
     },
     discount: { percent: discountPercent, amount: discountAmount },
+    ...(priceOverride > 0
+      ? { override: { exGST: priceOverride, listExGST: Math.round(listExGST * 100) / 100, saving: Math.round((listExGST - priceOverride) * 100) / 100 } }
+      : {}),
     totalExGST: displayExGST,
     gst: displayGst,
     totalIncGST: displayIncGST,

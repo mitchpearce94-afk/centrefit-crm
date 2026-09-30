@@ -50,6 +50,7 @@ export interface QuoteForPdf {
     gst: number;
     fullPriceExGST?: number;
     discount?: { percent: number; amount: number };
+    override?: { exGST: number; listExGST: number; saving: number };
     pp1?: { total: number };
     pp2?: { total: number };
   };
@@ -689,7 +690,24 @@ export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDo
         </View>
         <View style={styles.pricingBox} wrap={false}>
           <View style={styles.pricingTop}>
-            {!!quote.pricing.discount && quote.pricing.discount.percent > 0 && (
+            {!!quote.pricing.override && quote.pricing.override.saving > 0 ? (
+              // Negotiated price: list (struck) → adjustment → total. When the
+              // negotiation went UP (saving < 0) the total simply stands alone.
+              <>
+                <View style={styles.pricingRow}>
+                  <Text style={styles.pricingLabel}>List price (ex GST)</Text>
+                  <Text style={[styles.pricingValue, { color: "#94a3b8", textDecoration: "line-through" }]}>
+                    ${fmtMoney(quote.pricing.override.listExGST)}
+                  </Text>
+                </View>
+                <View style={styles.pricingRow}>
+                  <Text style={[styles.pricingLabel, { color: "#16a34a" }]}>Negotiated price adjustment</Text>
+                  <Text style={[styles.pricingValue, { color: "#16a34a" }]}>
+                    -${fmtMoney(quote.pricing.override.saving)}
+                  </Text>
+                </View>
+              </>
+            ) : !!quote.pricing.discount && quote.pricing.discount.percent > 0 && (
               <>
                 <View style={styles.pricingRow}>
                   <Text style={styles.pricingLabel}>Subtotal (ex GST)</Text>

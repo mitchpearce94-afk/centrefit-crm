@@ -19,6 +19,7 @@ interface Props {
     gst: number;
     fullPriceExGST?: number;
     discount?: { percent: number; amount: number };
+    override?: { exGST: number; listExGST: number; saving: number };
     pp1?: { total: number };
     pp2?: { total: number };
   };
@@ -244,6 +245,11 @@ export function QuoteResponseView(props: Props) {
           <p style={{ fontSize: "12px", color: "#94a3b8", margin: "3px 0 0" }}>
             ${fmt(pricing.totalExGST)} ex GST · ${fmt(pricing.gst)} GST
           </p>
+          {pricing.override && pricing.override.saving > 0 && (
+            <p style={{ fontSize: "12px", color: "#86efac", margin: "6px 0 0" }}>
+              Negotiated price — list <span style={{ textDecoration: "line-through", color: "#94a3b8" }}>${fmt(pricing.override.listExGST)}</span> ex GST, saving ${fmt(pricing.override.saving)}
+            </p>
+          )}
         </div>
 
         {isProgress && pricing.pp1 && pricing.pp2 && (

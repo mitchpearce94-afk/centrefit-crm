@@ -92,6 +92,11 @@ export default async function EditQuotePage({
       quote.quote_mode === "manual" && quote.quote_type === "progress"
         ? quote.pricing_snapshot?.pp2?.total ?? undefined
         : undefined,
+    // Negotiated total typed on the Summary step (pricing_snapshot.override).
+    priceOverride:
+      quote.pricing_snapshot?.override?.exGST != null && Number(quote.pricing_snapshot.override.exGST) > 0
+        ? Number(quote.pricing_snapshot.override.exGST)
+        : undefined,
     // Plan progress quotes: PP1 set by hand on the Summary step (PP2 derived).
     pp1Override:
       quote.quote_mode !== "manual" && quote.quote_type === "progress" && quote.pricing_snapshot?.split?.mode === "manual"

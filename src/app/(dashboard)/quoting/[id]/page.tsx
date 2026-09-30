@@ -194,6 +194,9 @@ export default async function QuoteDetailPage({
           <div className="rounded-lg border border-border bg-card p-4 text-center">
             <p className="text-[10px] font-medium text-muted-foreground uppercase">Total (ex GST)</p>
             <p className="text-lg font-bold font-mono mt-1">${fmt(pricing.totalExGST)}</p>
+            {(() => { const o = priceOverride(pricing); return o ? (
+              <p className="mt-1 text-[10px] text-amber-400">Negotiated · list ${fmt(o.listExGST)} ({o.saving >= 0 ? "−" : "+"}${fmt(Math.abs(o.saving))})</p>
+            ) : null; })()}
           </div>
           <div className="rounded-lg border border-border bg-card p-4 text-center">
             <p className="text-[10px] font-medium text-muted-foreground uppercase">GST</p>
@@ -433,6 +436,14 @@ export default async function QuoteDetailPage({
       <p className="mt-6 text-xs text-muted-foreground">Created {new Date(quote.created_at).toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
     </div>
   );
+}
+
+/** Negotiated total typed on the Summary step (pricing_snapshot.override, 2026-10-01). */
+function priceOverride(pricing: unknown): { exGST: number; listExGST: number; saving: number } | null {
+  const o = (pricing as { override?: { exGST?: number; listExGST?: number; saving?: number } } | null)?.override;
+  return o && Number(o.exGST) > 0
+    ? { exGST: Number(o.exGST), listExGST: Number(o.listExGST ?? 0), saving: Number(o.saving ?? 0) }
+    : null;
 }
 
 /** PP1 set by hand on the Summary step (pricing_snapshot.split, 2026-09-15):
