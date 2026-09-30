@@ -48,6 +48,15 @@ export async function GET(req: NextRequest) {
       query = query.or(ors.join(","));
     }
   }
+  // Date window: find the diary entries first so the row limit never hides a job.
+  if (isISODate(from) || isISODate(to)) {
+    let se = db.from("schedule_entries").select("job_id").not("job_id", "is", null).limit(1000);
+    if (isISODate(to)) se = se.lte("schedule_date", to);
+    if (isISODate(from)) se = se.or(`end_date.gte.${from},and(end_date.is.null,schedule_date.gte.${from})`);
+    const ids = [...new Set(((await se).data ?? []).map((r) => r.job_id as string))];
+    if (!ids.length) return ok({ count: 0, jobs: [] });
+    query = query.in("id", ids);
+  }
   if (status) {
     const sid = await statusIdByName(db, status);
     if (!sid) return bad(`Unknown status "${status}"`, 404);
@@ -58,8 +67,6 @@ export async function GET(req: NextRequest) {
   if (error) return bad(error.message, 500);
   let jobs = ((data ?? []) as unknown as JobRow[]).map(shapeJob);
   if (staff) jobs = jobs.filter((j) => j.staff.some((s) => String(s).toLowerCase().includes(staff.toLowerCase())));
-  if (isISODate(from)) jobs = jobs.filter((j) => j.schedule.some((s) => (s.end_date ?? s.date) >= from));
-  if (isISODate(to)) jobs = jobs.filter((j) => j.schedule.some((s) => s.date <= to));
   return ok({ count: jobs.length, jobs });
 }
 
