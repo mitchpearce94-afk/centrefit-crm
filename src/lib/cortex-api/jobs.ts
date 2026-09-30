@@ -9,9 +9,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const JOB_SELECT =
   "id, number, reference, description, due_date, priority, created_at, updated_at, " +
   "status:statuses(name), customer:customers(id, name), site:customer_sites(id, name, address, suburb, state, postcode), " +
-  "category_1:categories!jobs_category_1_id_fkey(name), category_2:categories!jobs_category_2_id_fkey(name), " +
+  "category_1:categories!category_1_id(name), category_2:categories!category_2_id(name), " +
   "staff:job_staff(staff:staff(id, display_name, email)), " +
-  "schedule:schedule_entries(id, schedule_date, end_date, start_time, end_time, notes, staff:staff(display_name))";
+  "schedule:schedule_entries(id, schedule_date, end_date, start_time, end_time, notes, staff:staff!schedule_entries_staff_id_fkey(display_name))";
 
 type Rel<T> = T | T[] | null | undefined;
 export const one = <T,>(v: Rel<T>): T | null => (Array.isArray(v) ? v[0] ?? null : v ?? null);
