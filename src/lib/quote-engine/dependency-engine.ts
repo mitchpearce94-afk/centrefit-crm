@@ -687,7 +687,7 @@ export function getSnapFitnessRules(products: Product[]): DependencyRule[] {
   pushRule(rules, find('UPS', 'PSD2000'), { ...cabinetTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'UPS for server cabinet' })
   pushRule(rules, find('Shelf', 'EPR-FS600'), { ...cabinetTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Cantilever shelf for cabinet' })
   pushRule(rules, find('250mm', 'ECPLS-C6B0.25'), { ...cabinetTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 48, description: '250mm Cat6 patch leads (48x)' })
-  pushRule(rules, find('500mm', 'ECPLS-C6B0.5'), { ...cabinetTrigger, id: ruleId(), quantity_mode: 'custom', quantity_custom_key: 'cabinet_500mm_patch_leads', description: '500mm Cat6 patch leads — base 2 + CEIL(card_reader / 2)' })
+  pushRule(rules, find('500mm', 'CFC500MM'), { ...cabinetTrigger, id: ruleId(), quantity_mode: 'custom', quantity_custom_key: 'cabinet_500mm_patch_leads', description: '500mm Cat6 patch leads — base 2 + CEIL(card_reader / 2)' })
   pushRule(rules, find('Snap Plug', 'EMP-CAT6UTPST'), { ...cabinetTrigger, id: ruleId(), quantity_mode: 'fixed', quantity_value: 1, description: 'Cat6 snap-in plugs (1 pack)' })
 
   // Clipsal mounting brackets
@@ -798,7 +798,7 @@ export function getPlanetFitnessRules(products: Product[]): DependencyRule[] {
 
   // 500mm patch leads — PF plans carry no server cabinet, so trigger on the data
   // devices (same trigger as the Cloud Key rule) instead of Snap's cabinet count.
-  pushRule(rules, find('500mm', 'ECPLS-C6B0.5'), { id: ruleId(), trigger_code: 'switch_ports', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'custom', quantity_custom_key: 'cabinet_500mm_patch_leads', description: '500mm Cat6 patch leads — base 2 + CEIL(card_reader / 2)', preset, is_active: true })
+  pushRule(rules, find('500mm', 'CFC500MM'), { id: ruleId(), trigger_code: 'switch_ports', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'custom', quantity_custom_key: 'cabinet_500mm_patch_leads', description: '500mm Cat6 patch leads — base 2 + CEIL(card_reader / 2)', preset, is_active: true })
 
   // REX per franchise: PF uses the NEMEVAQEX30M-MUGRN/SS button (Mitchell
   // 30 Sep 2026; was the DFMWES2261 timer button). Snap = WEL1911. The
