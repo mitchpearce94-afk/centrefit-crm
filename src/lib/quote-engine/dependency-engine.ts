@@ -777,10 +777,12 @@ export function getPlanetFitnessRules(products: Product[]): DependencyRule[] {
   // devices (same trigger as the Cloud Key rule) instead of Snap's cabinet count.
   pushRule(rules, find('500mm', 'ECPLS-C6B0.5'), { id: ruleId(), trigger_code: 'switch_ports', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'custom', quantity_custom_key: 'cabinet_500mm_patch_leads', description: '500mm Cat6 patch leads — base 2 + CEIL(card_reader / 2)', preset, is_active: true })
 
-  // REX per franchise: PF uses the DFMWES2261 timer button (Snap = WEL1911).
-  // The placed-device default is ALSO overridden per template via
-  // quote_template_device_defaults (bom-engine step 1).
-  pushRule(rules, find('30x75mm timer', 'DFMWES2261'), { id: ruleId(), trigger_code: 'door_strike + mag_lock', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, description: 'REX button DFMWES2261 (1x) when door locks present', preset, is_active: true })
+  // REX per franchise: PF uses the NEMEVAQEX30M-MUGRN/SS button (Mitchell
+  // 30 Sep 2026; was the DFMWES2261 timer button). Snap = WEL1911. The
+  // placed-device default is ALSO overridden per template via
+  // quote_template_device_defaults (bom-engine step 1), and the PFRRK kit
+  // carries one per door.
+  pushRule(rules, find('Request to exit button', 'NEMEVAQEX30M-MUGRN/SS'), { id: ruleId(), trigger_code: 'door_strike + mag_lock', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, description: 'REX button NEMEVAQEX30M-MUGRN/SS (1x) when door locks present', preset, is_active: true })
 
   return rules
 }
