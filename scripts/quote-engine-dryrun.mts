@@ -32,7 +32,21 @@ const sb = createClient(url, key, { auth: { persistSession: false } })
 const must = <T,>(r: { data: T | null; error: { message: string } | null }, what: string): T => { if (r.error) throw new Error(`${what}: ${r.error.message}`); return r.data as T }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const quote = must(await sb.from('quotes').select('*').eq('ref', ref).maybeSingle(), 'quote') as Record<string, any> | null
+let quote: Record<string, any> | null = null
+if (ref.startsWith('plan:')) {
+  // plan:<plan_files.id>[:<template slug>] — dry-run a plan that has no quote yet (Bundaberg, 30 Sep)
+  const [, planId, slug] = ref.split(':')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pf = must(await sb.from('plan_files').select('*').eq('id', planId).maybeSingle(), 'plan') as Record<string, any> | null
+  if (!pf) { console.error('no plan', planId); process.exit(1) }
+  const tpl = slug ? must(await sb.from('quote_rule_templates').select('id').eq('slug', slug).maybeSingle(), 'template') as { id: string } | null : null
+  if (slug && !tpl) { console.error('no template slug', slug); process.exit(1) }
+  const si = (pf.site_info ?? {}) as Record<string, unknown>
+  quote = { id: null, ref: `${pf.name} (plan, no quote)`, template_id: tpl?.id ?? null, quote_mode: 'plan', device_counts: pf.device_counts ?? {}, site_address: pf.site_address, ...si }
+} else {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  quote = must(await sb.from('quotes').select('*').eq('ref', ref).maybeSingle(), 'quote') as Record<string, any> | null
+}
 if (!quote) { console.error('no quote', ref); process.exit(1) }
 
 const [prodRes, tplRes, ruleRes, defRes, kcRes, dtRes, compRes, supRes, timRes, billRes] = await Promise.all([
@@ -76,7 +90,7 @@ const siteInfo = {
   separate_studio_zone: !!quote.separate_studio_zone, reed_switch_uncabled: quote.reed_switch_uncabled ?? 0, mag_lock_glass: quote.mag_lock_glass ?? 0,
 }
 // state drives the QLD-only callout line; the wizard takes it from the plan / site address
-const plan = must(await sb.from('plan_files').select('state').eq('quote_id', quote.id).order('created_at', { ascending: false }).limit(1).maybeSingle(), 'plan') as { state?: string | null } | null
+const plan = quote.id ? must(await sb.from('plan_files').select('state').eq('quote_id', quote.id).order('created_at', { ascending: false }).limit(1).maybeSingle(), 'plan') as { state?: string | null } | null : null
 const stateGuess = plan?.state ?? (/\b(QLD|NSW|VIC|SA|WA|TAS|NT|ACT)\b/i.exec(String(quote.site_address ?? ''))?.[1]?.toUpperCase() ?? null)
 if (stateGuess) (siteInfo as Record<string, unknown>).state = stateGuess
 const elec = { elecDoingRoughIn: !!quote.elec_doing_rough_in, elecDoingFitOff: !!quote.elec_doing_fit_off }

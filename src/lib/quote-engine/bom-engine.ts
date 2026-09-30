@@ -215,7 +215,11 @@ export function generateBOM(
 
   // Step 2b (v2): customer-supplied device types on this template — keep the
   // line for labour and cabling, strip the price, never procure.
-  let items = applyTemplateSupply(bomItems, v2.templateSupply ?? [], v2.templateId ?? null)
+  // NOTE: applyTemplateSupply may hand back the SAME array when the template
+  // has no customer-supplied device types (PF, Total Fusion, Inner Range);
+  // clearing bomItems before copying from it wiped every BOM on those
+  // templates (Bundaberg, 30 Sep). Copy first.
+  let items = [...applyTemplateSupply(bomItems, v2.templateSupply ?? [], v2.templateId ?? null)]
   bomItems.length = 0
   bomItems.push(...items)
 

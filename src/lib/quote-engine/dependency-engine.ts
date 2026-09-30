@@ -269,11 +269,14 @@ function calculateCustomQuantity(key: string, deviceCounts: DeviceCounts, siteIn
         (dc.camera_black || 0) + (dc.camera_white || 0) + (dc.tailgate_system || 0) +
         (dc.wap || 0) + (dc.data_point || 0)
       const ports = switchPorts(dc, si)
-      if (ports <= 0) return 0
-      const panels = Math.ceil(ports / 24)
+      const panels = ports > 0 ? Math.ceil(ports / 24) : 0
       if (key === 'switch_couplers') return panels * 2
       if (key === 'switch_250mm_leads') return panels * 24
-      return Math.ceil((panels * 24 + dataRuns * 2) / 100) // switch_snap_plugs
+      // switch_snap_plugs — a pack is needed as soon as there is ONE Cat6 run,
+      // switch or no switch (Mitchell 30 Sep: PF clubs on the NVR's PoE alone
+      // still terminate every camera). The rule's trigger includes the runs.
+      if (panels === 0 && dataRuns === 0) return 0
+      return Math.max(1, Math.ceil((panels * 24 + dataRuns * 2) / 100))
     }
 
     default:

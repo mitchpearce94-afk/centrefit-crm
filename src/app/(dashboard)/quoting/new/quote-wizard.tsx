@@ -617,7 +617,20 @@ export function QuoteWizard({
     }
 
     const totalDevices = Object.values(plan.device_counts || {}).reduce((a, b) => a + (b as number), 0);
-    toast(`Loaded ${totalDevices} devices from plan`);
+
+    // Pick the template from the plan's naming (Bundaberg 30 Sep: a Planet
+    // Fitness plan quoted on the default Snap template → fibre gateway, no PF
+    // AV set). Only on a fresh quote and only before a BOM exists.
+    let tplNote = "";
+    if (!isEditing && !bomGenerated) {
+      const hay = `${plan.client_name ?? ""} ${plan.site_name ?? ""} ${plan.name}`.toLowerCase();
+      const match = templates.find((t) => t.name && hay.includes(t.name.toLowerCase()));
+      if (match && match.id !== templateId) {
+        setTemplateId(match.id);
+        tplNote = ` · template set to ${match.name}`;
+      }
+    }
+    toast(`Loaded ${totalDevices} devices from plan${tplNote}`);
   }
 
   // Guided quote: /quoting/guided stores the interview result in sessionStorage
@@ -1046,6 +1059,13 @@ export function QuoteWizard({
     // (Explicit user actions like clicking "Regenerate BOM" or editing a
     // BOM line still work — those go through other code paths.)
     if (isEditing) {
+      // Nothing to protect when there are no lines (template changed →
+      // BOM cleared, or a saved plan quote that never had one): generate.
+      if (quoteMode === "plan" && newStep === 2 && bomItems.length === 0) {
+        setBomItems(generateWithKits());
+        setBomGenerated(true);
+        setCountBaseline({ ...deviceCounts });
+      }
       setStep(newStep);
       document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' });
       return;
