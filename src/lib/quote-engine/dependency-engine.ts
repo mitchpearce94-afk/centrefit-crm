@@ -805,7 +805,10 @@ export function getPlanetFitnessRules(products: Product[]): DependencyRule[] {
   // placed-device default is ALSO overridden per template via
   // quote_template_device_defaults (bom-engine step 1), and the PFRRK kit
   // carries one per door.
-  pushRule(rules, find('Request to exit button', 'NEMEVAQEX30M-MUGRN/SS'), { id: ruleId(), trigger_code: 'door_strike + mag_lock', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, description: 'REX button NEMEVAQEX30M-MUGRN/SS (1x) when door locks present', preset, is_active: true })
+  // RETIRED 30 Sep 2026 (Mitchell): the REX count comes from the plan symbols
+  // only — no rule, and no per-door REX in the PFRRK kit. Seeded inactive so
+  // Re-seed can't resurrect it.
+  pushRule(rules, find('Request to exit button', 'NEMEVAQEX30M-MUGRN/SS'), { id: ruleId(), trigger_code: 'door_strike + mag_lock', trigger_condition: 'greater_than', trigger_value: 0, quantity_mode: 'fixed', quantity_value: 1, description: 'REX button NEMEVAQEX30M-MUGRN/SS (1x) when door locks present — RETIRED 30 Sep 2026: REX count comes from the plan symbols', preset, is_active: false })
 
   return rules
 }
