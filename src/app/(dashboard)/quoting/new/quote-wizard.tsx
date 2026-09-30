@@ -58,6 +58,7 @@ interface PlanFile {
   device_counts: Record<string, number>;
   site_info: Record<string, number | boolean>;
   customer_id: string | null;
+  job_id?: string | null;
   created_at: string;
 }
 
@@ -393,14 +394,23 @@ export function QuoteWizard({
   //
   // Default routing for a fresh wizard:
   //   - ?plan=…           → plan-based (came from a plan file)
-  //   - ?job=… (no plan)  → manual (came from a job that wasn't planned)
+  //   - ?job=… (no plan)  → plan if the job already has an unquoted plan
+  //                         (PF Bundaberg 30 Sep: the job page link never
+  //                         passed the plan, so the BOM opened empty);
+  //                         otherwise manual (a job that wasn't planned)
   //   - no params         → plan (the standalone "New Quote" button)
   // Editing an existing quote always restores the saved mode.
+  const jobParamPlan = (() => {
+    if (existingQuote || searchParams.get("plan")) return null;
+    const jobParam = searchParams.get("job") || searchParams.get("jobId");
+    if (!jobParam) return null;
+    return plans.find((p) => p.job_id === jobParam) ?? null;
+  })();
   const [quoteMode, setQuoteMode] = useState<"plan" | "manual">(() => {
     if (existingQuote?.quoteMode) return existingQuote.quoteMode;
     const hasPlanParam = !!searchParams.get("plan");
     const hasJobParam = !!(searchParams.get("job") || searchParams.get("jobId"));
-    if (hasJobParam && !hasPlanParam) return "manual";
+    if (hasJobParam && !hasPlanParam && !jobParamPlan) return "manual";
     return "plan";
   });
 
@@ -650,7 +660,15 @@ export function QuoteWizard({
   // Auto-select plan from URL params (sent from Plan Builder's "Complete Plan")
   useEffect(() => {
     const planParam = searchParams.get("plan");
-    if (!planParam || selectedPlanId) return;
+    if (selectedPlanId) return;
+    // Opened from a job that already has a plan (no ?plan=): use that plan.
+    if (!planParam) {
+      if (jobParamPlan) {
+        selectPlan(jobParamPlan.id);
+        toast(`Using plan "${jobParamPlan.name}" from this job`);
+      }
+      return;
+    }
     const plan = plans.find((p) => p.id === planParam);
     if (plan) {
       selectPlan(planParam);
