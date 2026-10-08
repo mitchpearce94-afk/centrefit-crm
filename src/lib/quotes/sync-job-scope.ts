@@ -70,7 +70,7 @@ export async function syncQuoteScopeToJob(
       ? (quote.labour_data?.scope_of_works ?? "").trim()
       : "";
   const scope = manualScopeText
-    ? manualScopeDocument(manualScopeText)
+    ? manualScopeDocument(manualScopeText, quote.labour_data?.ongoing_costs)
     : generateScopeOfWorks(
         bom,
         products,

@@ -92,8 +92,9 @@ export async function GET(
       ? ((quote as { labour_data?: { scope_of_works?: string } }).labour_data?.scope_of_works ?? "").trim()
       : "";
 
+  const manualOngoingCosts = (quote as { labour_data?: { ongoing_costs?: string[] } }).labour_data?.ongoing_costs;
   const scope = manualScopeText
-    ? manualScopeDocument(manualScopeText)
+    ? manualScopeDocument(manualScopeText, manualOngoingCosts)
     : generateScopeOfWorks(
         scopeBom,
         scopeProducts,

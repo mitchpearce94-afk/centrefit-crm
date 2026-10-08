@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
       ? (quote.labour_data?.scope_of_works ?? "").trim()
       : "";
   const scope: ScopeDocument = manualScopeText
-    ? manualScopeDocument(manualScopeText)
+    ? manualScopeDocument(manualScopeText, quote.labour_data?.ongoing_costs)
     : generateScopeOfWorks(scopeBom, scopeProducts, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions, (quote.device_counts as Record<string, number> | null) ?? undefined);
 
   // Mirror the scope-of-works + payment terms into the linked job's description.

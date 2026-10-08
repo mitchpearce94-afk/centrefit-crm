@@ -90,7 +90,7 @@ export default async function QuoteResponsePage({
       ? (quote.labour_data?.scope_of_works ?? "").trim()
       : "";
   const scope = manualScopeText
-    ? manualScopeDocument(manualScopeText)
+    ? manualScopeDocument(manualScopeText, quote.labour_data?.ongoing_costs)
     : generateScopeOfWorks(bom, products, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions, (quote.device_counts as Record<string, number> | null) ?? undefined);
 
   const clientName = quote.customer?.name || quote.client_name;

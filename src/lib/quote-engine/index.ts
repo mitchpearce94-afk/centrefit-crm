@@ -72,6 +72,7 @@ export type { QuoteSummary } from './pricing'
 export {
   generateScopeOfWorks,
   manualScopeDocument,
+  ONGOING_COST_CATALOGUE,
   renderScopeAsHtml,
   renderScopeAsText,
   parseScopeItem,

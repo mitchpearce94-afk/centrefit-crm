@@ -88,7 +88,7 @@ export async function GET(
       : "";
 
   const scope = manualScopeText
-    ? manualScopeDocument(manualScopeText)
+    ? manualScopeDocument(manualScopeText, quote.labour_data?.ongoing_costs)
     : generateScopeOfWorks(
         scopeBom,
         scopeProducts,

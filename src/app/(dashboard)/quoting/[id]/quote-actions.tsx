@@ -32,6 +32,8 @@ interface Props {
   roleDescriptions: Record<string, string>;
   quoteMode?: "plan" | "manual";
   manualScopeText?: string;
+  /** Manual quotes: ongoing-cost ids ticked on the Scope step (labour_data.ongoing_costs). */
+  manualOngoingCosts?: string[];
   contactEmail: string | null;
   jobId: string | null;
   jobs?: { id: string; number: string; customer_name: string | null }[];
@@ -41,7 +43,7 @@ export function QuoteActions({
   quoteId, status, quoteRef, clientName, siteName, siteAddress,
   quoteType, pricing, deviceCounts, lineItems, createdAt,
   siteInfo, scopeOverrides, productScopeRoles, roleDescriptions,
-  quoteMode = "plan", manualScopeText = "",
+  quoteMode = "plan", manualScopeText = "", manualOngoingCosts = [],
   contactEmail, jobId, jobs = [],
 }: Props) {
   const router = useRouter();
@@ -161,7 +163,7 @@ export function QuoteActions({
   // and in the PDF attachment).
   const manualScopeTrimmed = quoteMode === "manual" ? manualScopeText.trim() : "";
   const scope = manualScopeTrimmed
-    ? manualScopeDocument(manualScopeTrimmed)
+    ? manualScopeDocument(manualScopeTrimmed, manualOngoingCosts)
     : generateScopeOfWorks(scopeBom, productScopeRoles, siteInfo, scopeOverrides ?? undefined, roleDescriptions, deviceCounts);
   const hasScopeOverrides = !!scopeOverrides;
 

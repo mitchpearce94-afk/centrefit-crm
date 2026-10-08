@@ -42,6 +42,27 @@ export interface ScopeOngoingCost {
   included: boolean;
 }
 
+/**
+ * Every ongoing (recurring) cost the quote can show, in display order. Plan
+ * quotes pick from this list by BOM contents (see generateScopeOfWorks);
+ * manual quotes pick by the ids the operator ticked on the Scope step
+ * (labour_data.ongoing_costs). One list so the wording and prices stay
+ * identical across both paths.
+ */
+export const ONGOING_COST_CATALOGUE: readonly ScopeOngoingCost[] = [
+  { id: 'monitoring',    desc: '24/7 alarm monitoring (MyAlarm)',                                               price: '$65.00 / month ex GST',   included: true },
+  { id: 'app',           desc: 'Mobile app subscription (security + cameras)',                                 price: '$133.50 / year ex GST',   included: true },
+  { id: 'intercom_sim',  desc: '4G postpaid SIM per duress intercom',                                          price: '$22.50 / month ex GST',   included: true },
+  { id: 'veyla_protect', desc: 'Veyla Protect subscription — detection, alerts and clips (billed by Veyla)',   price: 'As per Veyla agreement',  included: true },
+  { id: 'felixgate',     desc: 'FelixGate cloud subscription (billed by Gibson Global)',                       price: 'As per Gibson agreement', included: true },
+];
+
+function ongoingCost(id: string): ScopeOngoingCost {
+  const row = ONGOING_COST_CATALOGUE.find((c) => c.id === id);
+  if (!row) throw new Error(`Unknown ongoing cost id: ${id}`);
+  return { ...row };
+}
+
 export interface ScopeSummary {
   /** Single paragraph for the executive summary card. */
   lead: string;
@@ -716,16 +737,16 @@ export function generateScopeOfWorks(
   // ── Ongoing costs ────────────────────────────────────────────────────────
   const baseOngoing: ScopeOngoingCost[] = [];
   if (panels > 0 || motion > 0 || reeds > 0) {
-    baseOngoing.push({ id: 'monitoring',  desc: '24/7 alarm monitoring (MyAlarm)',                       price: '$65.00 / month ex GST',  included: true });
-    baseOngoing.push({ id: 'app',         desc: 'Mobile app subscription (security + cameras)',         price: '$133.50 / year ex GST',  included: true });
+    baseOngoing.push(ongoingCost('monitoring'));
+    baseOngoing.push(ongoingCost('app'));
   }
   if (intercoms > 0) {
-    baseOngoing.push({ id: 'intercom_sim',desc: '4G postpaid SIM per duress intercom',                  price: '$22.50 / month ex GST',  included: true });
+    baseOngoing.push(ongoingCost('intercom_sim'));
   }
   if (tailgates > 0 && veylaTailgate) {
-    baseOngoing.push({ id: 'veyla_protect', desc: 'Veyla Protect subscription — detection, alerts and clips (billed by Veyla)', price: 'As per Veyla agreement', included: true });
+    baseOngoing.push(ongoingCost('veyla_protect'));
   } else if (tailgates > 0) {
-    baseOngoing.push({ id: 'felixgate',   desc: 'FelixGate cloud subscription (billed by Gibson Global)', price: 'As per Gibson agreement', included: true });
+    baseOngoing.push(ongoingCost('felixgate'));
   }
   const ongoingCosts = baseOngoing
     .map((o) => {
@@ -815,18 +836,24 @@ export function generateScopeOfWorks(
 // Manual quotes opt out of the BOM-driven scope generator entirely. The
 // operator wrote the scope free-hand in the wizard's Scope step; we wrap that
 // raw text into a ScopeDocument so the existing PDF/customer-page renderers
-// keep working without a separate code path. All structured blocks (systems,
-// byOthers, hardExclusion, ongoingCosts, assumptions, standards) are empty —
-// the operator's text is the entire scope, exclusion and closing paragraph
-// included. summary.rows is empty so the system × count grid doesn't render.
+// keep working without a separate code path. The structured blocks (systems,
+// byOthers, hardExclusion, assumptions, standards) are empty — the operator's
+// text is the entire scope, exclusion and closing paragraph included.
+// summary.rows is empty so the system × count grid doesn't render.
+//
+// Ongoing costs are the one structured block manual quotes DO carry: the
+// operator ticks them on the Scope step (2026-10-08) and the ids are stored in
+// labour_data.ongoing_costs. They resolve against ONGOING_COST_CATALOGUE so
+// the wording/prices match a plan quote exactly. Unknown ids are dropped.
 
-export function manualScopeDocument(scopeText: string): ScopeDocument {
+export function manualScopeDocument(scopeText: string, ongoingCostIds?: readonly string[] | null): ScopeDocument {
+  const ticked = new Set(Array.isArray(ongoingCostIds) ? ongoingCostIds : []);
   return {
     summary: { lead: scopeText, rows: [] },
     systems: [],
     byOthers: [],
     hardExclusion: '',
-    ongoingCosts: [],
+    ongoingCosts: ONGOING_COST_CATALOGUE.filter((c) => ticked.has(c.id)).map((c) => ({ ...c })),
     assumptions: [],
     standards: [],
   };

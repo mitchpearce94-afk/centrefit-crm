@@ -80,6 +80,9 @@ export default async function EditQuotePage({
     lintOverrides: (quote.lint_overrides ?? {}) as Record<string, string>,
     isInterstate: quote.is_interstate ?? false,
     manualScope: quote.labour_data?.scope_of_works ?? "",
+    manualOngoingCosts: Array.isArray(quote.labour_data?.ongoing_costs)
+      ? quote.labour_data.ongoing_costs
+      : undefined,
     manualLabourLines: Array.isArray(quote.labour_data?.manual_labour_lines)
       ? quote.labour_data.manual_labour_lines
       : undefined,

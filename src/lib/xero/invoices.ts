@@ -393,6 +393,8 @@ export interface ScopeDescriptionOptions {
    * body — matching the scope the customer accepted on the quote.
    */
   manualScopeText?: string;
+  /** Manual quotes: ongoing-cost ids ticked on the Scope step (labour_data.ongoing_costs). */
+  manualOngoingCosts?: string[];
 }
 
 /**
@@ -412,7 +414,7 @@ export function formatScopeDescription(
 ): string {
   const manualText = opts.manualScopeText?.trim();
   const scope = manualText
-    ? manualScopeDocument(manualText)
+    ? manualScopeDocument(manualText, opts.manualOngoingCosts)
     : generateScopeOfWorks(bom, products, siteInfo, overrides ?? undefined, opts.roleDescriptions);
   const body = renderScopeAsText(scope);
   const parts: string[] = [INVOICE_LINE_HEADLINE];

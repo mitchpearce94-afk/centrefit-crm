@@ -126,6 +126,7 @@ export default async function QuoteDetailPage({
           roleDescriptions={roleDescriptions}
           quoteMode={(quote.quote_mode as "plan" | "manual") ?? "plan"}
           manualScopeText={quote.labour_data?.scope_of_works ?? ""}
+          manualOngoingCosts={Array.isArray(quote.labour_data?.ongoing_costs) ? quote.labour_data.ongoing_costs : []}
           contactEmail={quote.customer?.customer_contacts?.find((c: any) => c.is_primary)?.email ?? null}
           jobId={quote.job_id ?? null}
           jobs={jobs}

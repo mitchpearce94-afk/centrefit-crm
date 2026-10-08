@@ -20,6 +20,7 @@ import {
   checkMandatoryLabour,
   calculateQuoteSummary,
   generateScopeOfWorks,
+  ONGOING_COST_CATALOGUE,
   parseScopeItem,
   lintQuote,
   blockingFindings,
@@ -270,6 +271,8 @@ interface ExistingQuote {
   quoteMode?: "plan" | "manual";
   isInterstate?: boolean;
   manualScope?: string;
+  /** Ongoing-cost ids ticked on the manual Scope step (ONGOING_COST_CATALOGUE ids). */
+  manualOngoingCosts?: string[];
   manualLabourLines?: ManualLabourLine[];
   // Manually-entered PP1/PP2 amounts (manual progress quotes from the old system).
   manualPp1?: number;
@@ -498,6 +501,22 @@ export function QuoteWizard({
         (existingQuote?.quoteMode === "manual" ? "" : MANUAL_SCOPE_BOILERPLATE),
     ),
   );
+  // Ongoing costs on a manual quote. Plan quotes derive these from the BOM;
+  // manual quotes have no BOM to read, so the operator ticks the ones that
+  // apply on the Scope step. Stored as catalogue ids in labour_data.ongoing_costs
+  // and rendered on the SoW (PDF, response page, proposal, job mirror) exactly
+  // like a plan quote's.
+  const [manualOngoingCosts, setManualOngoingCosts] = useState<string[]>(
+    Array.isArray(existingQuote?.manualOngoingCosts) ? existingQuote.manualOngoingCosts : [],
+  );
+  function toggleManualOngoingCost(id: string, on: boolean) {
+    setManualOngoingCosts((prev) => {
+      const set = new Set(prev);
+      if (on) set.add(id); else set.delete(id);
+      // Keep catalogue order so the SoW lists them consistently.
+      return ONGOING_COST_CATALOGUE.filter((c) => set.has(c.id)).map((c) => c.id);
+    });
+  }
   const [manualLabourLines, setManualLabourLines] = useState<ManualLabourLine[]>(
     existingQuote?.manualLabourLines && existingQuote.manualLabourLines.length > 0
       ? backfillLineCosts(existingQuote.manualLabourLines, billingSettings?.labour_cost_rate ?? 75)
@@ -777,6 +796,7 @@ export function QuoteWizard({
       if (d.linkedJobId) setLinkedJobId(d.linkedJobId);
       if (d.selectedPlanId) setSelectedPlanId(d.selectedPlanId);
       if (d.manualScope) setManualScope(d.manualScope);
+      if (Array.isArray(d.manualOngoingCosts)) setManualOngoingCosts(d.manualOngoingCosts.filter((x: unknown) => typeof x === "string"));
       if (d.manualBomItems) setManualBomItems(d.manualBomItems);
       if (d.manualLabourHours != null) setManualLabourHours(d.manualLabourHours);
       if (d.manualLabourAmount != null) setManualLabourAmount(d.manualLabourAmount);
@@ -806,7 +826,7 @@ export function QuoteWizard({
         localStorage.setItem(DRAFT_KEY, JSON.stringify({
           step, quoteMode, customerId, siteId, clientName, siteName, siteAddress, siteInfo,
           deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
-          linkedJobId, selectedPlanId, manualScope, manualBomItems, manualLabourLines,
+          linkedJobId, selectedPlanId, manualScope, manualOngoingCosts, manualBomItems, manualLabourLines,
           manualPp1, manualPp2, pp1Override, priceOverride,
           electricianCost,
           elecDoingRoughIn, elecDoingFitOff,
@@ -816,7 +836,7 @@ export function QuoteWizard({
     return () => clearTimeout(timer);
   }, [step, quoteMode, customerId, siteId, clientName, siteName, siteAddress, siteInfo,
     deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
-    linkedJobId, selectedPlanId, manualScope, manualBomItems, manualLabourLines,
+    linkedJobId, selectedPlanId, manualScope, manualOngoingCosts, manualBomItems, manualLabourLines,
     manualPp1, manualPp2, pp1Override, priceOverride,
     electricianCost,
     elecDoingRoughIn, elecDoingFitOff]);
@@ -1543,7 +1563,7 @@ export function QuoteWizard({
         // resurrect them next time the quote is edited.
         deleted_labour_keys: Array.from(deletedLabourKeys),
         ...(quoteMode === "manual"
-          ? { scope_of_works: manualScope, quote_mode: "manual", manual_labour_lines: manualLabourLines }
+          ? { scope_of_works: manualScope, ongoing_costs: manualOngoingCosts, quote_mode: "manual", manual_labour_lines: manualLabourLines }
           : { quote_mode: "plan" }),
       },
       discount_percent: discountPercent,
@@ -3226,6 +3246,36 @@ export function QuoteWizard({
               Reset to boilerplate
             </button>
           </div>
+
+          {/* Ongoing costs — same list a plan quote derives from its BOM.
+              Tick the ones that apply; they print under "Ongoing Costs" on
+              the PDF, response page and proposal exactly like a plan quote. */}
+          <div className="rounded-lg border border-border bg-card">
+            <div className="px-4 py-2.5 border-b border-border">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Ongoing Costs</span>
+              <span className="text-[11px] text-muted-foreground ml-2">— recurring charges shown on the quote. Tick the ones that apply.</span>
+            </div>
+            <div className="p-3 space-y-1.5">
+              {ONGOING_COST_CATALOGUE.map((c) => {
+                const on = manualOngoingCosts.includes(c.id);
+                return (
+                  <label
+                    key={c.id}
+                    className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent ${on ? "" : "opacity-60"}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={(e) => toggleManualOngoingCost(c.id, e.target.checked)}
+                      className="h-4 w-4 rounded accent-primary"
+                    />
+                    <span className={`flex-1 text-xs ${on ? "text-foreground" : "text-muted-foreground"}`}>{c.desc}</span>
+                    <span className="font-mono text-[11px] text-muted-foreground">{c.price}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 
@@ -3294,6 +3344,17 @@ export function QuoteWizard({
                 className="prose prose-sm dark:prose-invert max-w-none [&_p]:my-1.5 [&_h1]:text-base [&_h1]:font-bold [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_ul]:list-disc [&_ul]:ml-5 [&_ol]:list-decimal [&_ol]:ml-5"
                 dangerouslySetInnerHTML={{ __html: manualScope }}
               />
+              {manualOngoingCosts.length > 0 && (
+                <div className="mt-3 rounded-md border border-border bg-muted/20 px-3 py-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Ongoing Costs</p>
+                  {ONGOING_COST_CATALOGUE.filter((c) => manualOngoingCosts.includes(c.id)).map((c, i, arr) => (
+                    <div key={c.id} className={`flex justify-between gap-3 py-0.5 text-[11px] ${i < arr.length - 1 ? "border-b border-dashed border-border" : ""}`}>
+                      <span className="text-muted-foreground">{c.desc}</span>
+                      <span className="font-mono text-foreground">{c.price}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
