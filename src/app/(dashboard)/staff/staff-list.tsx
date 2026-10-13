@@ -135,7 +135,7 @@ export function StaffList({
                         color: roleColours[member.role],
                       }}
                     >
-                      {roleLabels[member.role]}
+                      {roleLabels[member.role]}{member.is_external ? " · External" : ""}
                     </span>
                     <span className="text-xs text-muted-foreground">
                       {member.email}
@@ -363,6 +363,7 @@ function StaffEditForm({
   const [role, setRole] = useState<StaffRole>(member.role);
   const [phone, setPhone] = useState(member.phone ?? "");
   const [isActive, setIsActive] = useState(member.is_active);
+  const [isExternal, setIsExternal] = useState(!!member.is_external);
   const [jobsDefaultFilter, setJobsDefaultFilter] = useState<string>(
     member.jobs_default_staff_filter ?? ""
   );
@@ -380,6 +381,7 @@ function StaffEditForm({
         role,
         phone: phone.trim() || null,
         is_active: isActive,
+        is_external: isExternal,
         jobs_default_staff_filter: jobsDefaultFilter || null,
       })
       .eq("id", member.id);
@@ -453,6 +455,20 @@ function StaffEditForm({
           />
         </div>
       </div>
+
+      {/* External / subcontractor (Mark, 14 Oct 2026): placeholder records like
+          "Electical Contractor" are never scored on the work-status KPI — their
+          jobs land on the coordinator who booked them. */}
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={isExternal}
+          onChange={(e) => setIsExternal(e.target.checked)}
+          className="h-4 w-4 rounded border-border"
+        />
+        <span>External contractor</span>
+        <span className="text-xs text-muted-foreground">— not a staff member, excluded from staff KPIs</span>
+      </label>
 
       {/* Colour picker */}
       <div>

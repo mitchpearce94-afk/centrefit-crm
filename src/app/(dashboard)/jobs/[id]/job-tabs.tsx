@@ -476,6 +476,11 @@ function JobOverview({
                     weekday: "short", day: "numeric", month: "short",
                   })}
                 </span>
+                {se.attendance && (
+                  <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-500/20 text-amber-300">
+                    {se.attendance === "did_not_attend" ? "Did not attend" : "Rescheduled"}
+                  </span>
+                )}
                 {se.start_time && se.end_time && (
                   <span className="text-xs text-muted-foreground">
                     {se.start_time.slice(0, 5)} - {se.end_time.slice(0, 5)}

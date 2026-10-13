@@ -62,7 +62,7 @@ export default async function JobDetailPage({
         .order("name"),
       supabase
         .from("schedule_entries")
-        .select("id, schedule_date, start_time, end_time, notes, staff_id, staff:staff!schedule_entries_staff_id_fkey(display_name, initials, colour)")
+        .select("id, schedule_date, start_time, end_time, notes, attendance, staff_id, staff:staff!schedule_entries_staff_id_fkey(display_name, initials, colour)")
         .eq("job_id", id)
         .order("schedule_date", { ascending: false })
         .limit(10),

@@ -18,6 +18,8 @@ export interface Staff {
   phone: string | null;
   is_active: boolean;
   jobs_default_staff_filter: string | null;
+  /** Subcontractor / placeholder (e.g. "Electical Contractor") — never scored on staff KPIs. */
+  is_external?: boolean;
   created_at: string;
   updated_at: string;
 }

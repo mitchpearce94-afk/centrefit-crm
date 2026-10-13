@@ -16,8 +16,10 @@ route is the only gate. Base URL `https://crm.centrefit.com.au`.
 
 | Method | Path | What |
 |---|---|---|
-| GET | `/api/cortex/jobs?q=&status=&staff=&from=&to=&limit=` | Search jobs. `q` matches a job number (`CFA05256`, `5256`), reference, description, customer or site/suburb. `status` = a status name (`Scheduled`, `Pending Schedule`, `Ready to Invoice` …). `from`/`to` (YYYY-MM-DD) keep jobs with a diary entry in that window. `staff` filters by assigned name. Newest first, max 50. |
-| GET | `/api/cortex/jobs/CFA05256` | One job with its diary, staff, last 20 updates and notes, and linked quotes (sell total only). |
+| GET | `/api/cortex/jobs?q=&status=&staff=&from=&to=&limit=&offset=&updated_since=` | Search jobs. `q` matches a job number (`CFA05256`, `5256`), reference, description, customer or site/suburb. `status` = a status name (`Scheduled`, `Pending Schedule`, `Ready to Invoice` …) or `none` for jobs with no status. `from`/`to` (YYYY-MM-DD) keep jobs with a diary entry in that window. `staff` filters by assigned name. `updated_since` = ISO date/time. Newest first, `limit` up to 500, `offset` for paging. |
+| GET | `/api/cortex/jobs/CFA05256` | One job with its diary (incl. `attendance`), staff (`staff_detail[].external`), **Work Completed** (`work_completed` text, `work_entries[]`, `photo_count`, `materials_count`, `labour_hours`, `time_entries[]`, `last_work_date`), `no_charge_reason`, last 20 updates and notes, and linked quotes (sell total only). |
+| POST | `/api/cortex/jobs/CFA05256/status` | Move a job: `{ "status": "Ready to Invoice" \| "Complete" \| "No Charge" \| "In Progress" \| "Scheduled" \| "Follow Up" \| "On Hold", "reason"?, "note"? }`. The DB write-up gate applies — Ready to Invoice / Complete with an empty Work Completed log returns `409 { code: "WRITEUP_REQUIRED" }`. `No Charge` needs a `reason`. |
+| GET | `/api/cortex/suggestions?status=new\|done\|all&staff=` | The CRM lightbulb queue (ref, who, category, text, status, resolution note). Defaults to open. |
 | POST | `/api/cortex/jobs` | Create a job. Body below. |
 | POST | `/api/cortex/jobs/CFA05256/schedule` | Add a diary entry to an existing job. |
 | POST | `/api/cortex/jobs/CFA05256/updates` | Add a job update (the running log on the job page) in Mark's name. |
@@ -56,6 +58,19 @@ if they aren't, and moves `Unassigned` / `Assigned` / `Pending Schedule` to
 ```json
 { "content": "Spoke to the club manager, reader replaced under warranty." }
 ```
+
+## Work status report (14 Oct 2026)
+The CRM emails the work status report itself: weekdays 16:00 Brisbane from
+`/api/cron/work-status-report` — admins get the whole report, everyone else
+their own section, per-staff opt-out via the "Work status report (4pm)"
+notification preference. Rules the report applies (so Mark's Cortex can mirror
+them): a visit counts once its end has passed; diary entries marked
+`did_not_attend` / `rescheduled` never count; staff with `is_external` are
+never scored (their jobs land on the assigned staff, else the creator); a job
+stays listed until written up **and** sent to invoice (`day N` is remembered in
+`work_status_report_items`). A job cannot enter Ready to Invoice / Complete
+with an empty Work Completed log (DB trigger `jobs_writeup_gate`); "No Charge"
+is the close-out for free jobs.
 
 ## Rails
 - Supabase service role, every select names its columns; quote money is the one

@@ -11,9 +11,11 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * GET  /api/cortex/jobs?q=&status=&staff=&from=&to=&limit=
+ * GET  /api/cortex/jobs?q=&status=&staff=&from=&to=&limit=&offset=&updated_since=
  *   Search jobs (number, reference, description, customer or site name).
  *   `from`/`to` filter on scheduled dates; `staff` on assigned staff name.
+ *   `status=none` = jobs with no status at all; `limit` up to 500 with
+ *   `offset` for paging; `updated_since` (ISO date/time) for deltas.
  * POST /api/cortex/jobs
  *   Create (and optionally schedule) a job. docs/cortex-api.md.
  */
@@ -26,9 +28,15 @@ export async function GET(req: NextRequest) {
   const status = (p.get("status") ?? "").trim();
   const staff = (p.get("staff") ?? "").trim();
   const from = p.get("from"), to = p.get("to");
-  const limit = Math.min(Math.max(Number(p.get("limit") ?? 25) || 25, 1), 50);
+  const limit = Math.min(Math.max(Number(p.get("limit") ?? 25) || 25, 1), 500);
+  const offset = Math.max(Number(p.get("offset") ?? 0) || 0, 0);
+  const updatedSince = (p.get("updated_since") ?? "").trim();
 
-  let query = db.from("jobs").select(JOB_SELECT).order("created_at", { ascending: false }).limit(limit);
+  let query = db.from("jobs").select(JOB_SELECT).order("created_at", { ascending: false }).range(offset, offset + limit - 1);
+  if (updatedSince) {
+    if (Number.isNaN(Date.parse(updatedSince))) return bad("updated_since must be an ISO date or date-time");
+    query = query.gte("updated_at", new Date(updatedSince).toISOString());
+  }
 
   if (q) {
     const num = normaliseJobNumber(q);
@@ -57,7 +65,9 @@ export async function GET(req: NextRequest) {
     if (!ids.length) return ok({ count: 0, jobs: [] });
     query = query.in("id", ids);
   }
-  if (status) {
+  if (status === "none" || p.get("missing_status") === "1") {
+    query = query.is("status_id", null);
+  } else if (status) {
     const sid = await statusIdByName(db, status);
     if (!sid) return bad(`Unknown status "${status}"`, 404);
     query = query.eq("status_id", sid);
@@ -67,7 +77,7 @@ export async function GET(req: NextRequest) {
   if (error) return bad(error.message, 500);
   let jobs = ((data ?? []) as unknown as JobRow[]).map(shapeJob);
   if (staff) jobs = jobs.filter((j) => j.staff.some((s) => String(s).toLowerCase().includes(staff.toLowerCase())));
-  return ok({ count: jobs.length, jobs });
+  return ok({ count: jobs.length, offset, limit, jobs });
 }
 
 export async function POST(req: NextRequest) {

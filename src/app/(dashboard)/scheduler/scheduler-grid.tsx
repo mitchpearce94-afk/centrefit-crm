@@ -18,6 +18,7 @@ interface ScheduleEntry {
   start_time: string | null;
   end_time: string | null;
   notes: string | null;
+  attendance?: "did_not_attend" | "rescheduled" | null;
   entry_type: EntryType;
   title: string | null;
   recurrence_group_id: string | null;
@@ -775,6 +776,14 @@ function TimedEntryBlock({
                 title={`Recurring — ${entry.recurrence_pattern ?? "series"}`}
               >
                 ↻
+              </span>
+            )}
+            {entry.attendance && (
+              <span
+                className="rounded px-1 text-[9px] font-semibold uppercase tracking-wide bg-amber-500/20 text-amber-300"
+                title={entry.attendance === "did_not_attend" ? "Did not attend" : "Rescheduled"}
+              >
+                {entry.attendance === "did_not_attend" ? "DNA" : "Resch"}
               </span>
             )}
           </div>

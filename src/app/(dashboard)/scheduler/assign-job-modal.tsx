@@ -30,6 +30,7 @@ interface ScheduleEntry {
   start_time: string | null;
   end_time: string | null;
   notes: string | null;
+  attendance?: "did_not_attend" | "rescheduled" | null;
   entry_type: EntryType;
   title: string | null;
   recurrence_group_id?: string | null;
@@ -180,6 +181,9 @@ export function AssignJobModal({
   const [startTime, setStartTime] = useState(entry?.start_time?.slice(0, 5) ?? defaultStartTime ?? "");
   const [endTime, setEndTime] = useState(entry?.end_time?.slice(0, 5) ?? "");
   const [notes, setNotes] = useState(entry?.notes ?? "");
+  // Attendance (Mark, 14 Oct 2026): a visit that never happened must not
+  // count against the tech on the work-status report. Per occurrence only.
+  const [attendance, setAttendance] = useState<"" | "did_not_attend" | "rescheduled">(entry?.attendance ?? "");
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -340,6 +344,7 @@ export function AssignJobModal({
       start_time: startTime || null,
       end_time: endTime || null,
       notes: notes.trim() || null,
+      ...(isEditing ? { attendance: entryType === "job" && attendance ? attendance : null } : {}),
       created_by: user?.id ?? null,
     };
 
@@ -1100,6 +1105,26 @@ export function AssignJobModal({
                 className={`${inputClass} resize-y`}
               />
             </div>
+
+            {isEditing && entryType === "job" && (
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Attendance
+                </label>
+                <select
+                  value={attendance}
+                  onChange={(e) => setAttendance(e.target.value as "" | "did_not_attend" | "rescheduled")}
+                  className={inputClass}
+                >
+                  <option value="">Attended as planned</option>
+                  <option value="did_not_attend">Did not attend</option>
+                  <option value="rescheduled">Rescheduled</option>
+                </select>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  A visit that didn&apos;t happen isn&apos;t counted as a missing write-up on the 4pm work status report.
+                </p>
+              </div>
+            )}
 
             <div className="flex items-center gap-3 pt-2">
               <button

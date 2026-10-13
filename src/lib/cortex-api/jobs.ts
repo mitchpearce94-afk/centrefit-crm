@@ -7,11 +7,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  */
 
 export const JOB_SELECT =
-  "id, number, reference, description, due_date, priority, created_at, updated_at, " +
+  "id, number, reference, description, due_date, priority, created_at, updated_at, no_charge_reason, " +
   "status:statuses(name), customer:customers(id, name), site:customer_sites(id, name, address, suburb, state, postcode), " +
   "category_1:categories!category_1_id(name), category_2:categories!category_2_id(name), " +
-  "staff:job_staff(staff:staff(id, display_name, email)), " +
-  "schedule:schedule_entries(id, schedule_date, end_date, start_time, end_time, notes, staff:staff!schedule_entries_staff_id_fkey(display_name))";
+  "staff:job_staff(staff:staff(id, display_name, email, is_external)), " +
+  "schedule:schedule_entries(id, schedule_date, end_date, start_time, end_time, notes, attendance, staff:staff!schedule_entries_staff_id_fkey(display_name)), " +
+  // Work Completed log + time entries (Mark, 14 Oct 2026: the work-status KPI
+  // can't score anyone without them). Sell-side only: no cost columns exist here.
+  "work:job_work_entries(id, work_date, content, labour_hours, materials, call_out, image_urls, created_at, staff:staff(display_name)), " +
+  "time:job_time(id, start_time, end_time, billable, staff:staff(display_name))";
 
 type Rel<T> = T | T[] | null | undefined;
 export const one = <T,>(v: Rel<T>): T | null => (Array.isArray(v) ? v[0] ?? null : v ?? null);
@@ -19,20 +23,37 @@ const many = <T,>(v: Rel<T>): T[] => (Array.isArray(v) ? v : v ? [v] : []);
 
 export interface JobRow {
   id: string; number: string; reference: string | null; description: string | null; due_date: string | null; priority: number | null;
-  created_at: string; updated_at: string;
+  created_at: string; updated_at: string; no_charge_reason?: string | null;
   status: Rel<{ name: string }>; customer: Rel<{ id: string; name: string }>;
   site: Rel<{ id: string; name: string; address: string | null; suburb: string | null; state: string | null; postcode: string | null }>;
   category_1: Rel<{ name: string }>; category_2: Rel<{ name: string }>;
-  staff: Rel<{ staff: Rel<{ id: string; display_name: string; email: string | null }> }>;
-  schedule: Rel<{ id: string; schedule_date: string; end_date: string | null; start_time: string | null; end_time: string | null; notes: string | null; staff: Rel<{ display_name: string }> }>;
+  staff: Rel<{ staff: Rel<{ id: string; display_name: string; email: string | null; is_external?: boolean | null }> }>;
+  schedule: Rel<{ id: string; schedule_date: string; end_date: string | null; start_time: string | null; end_time: string | null; notes: string | null; attendance?: string | null; staff: Rel<{ display_name: string }> }>;
+  work?: Rel<{ id: string; work_date: string; content: string | null; labour_hours: number | null; materials: unknown; call_out: boolean | null; image_urls: unknown; created_at: string; staff: Rel<{ display_name: string }> }>;
+  time?: Rel<{ id: string; start_time: string; end_time: string | null; billable: boolean | null; staff: Rel<{ display_name: string }> }>;
 }
 
 export function shapeJob(j: JobRow) {
   const site = one(j.site);
   const address = site ? [site.address, site.suburb, site.state, site.postcode].filter(Boolean).join(" ") : null;
   const schedule = many(j.schedule)
-    .map((s) => ({ id: s.id, date: s.schedule_date, end_date: s.end_date, start: s.start_time?.slice(0, 5) ?? null, end: s.end_time?.slice(0, 5) ?? null, staff: one(s.staff)?.display_name ?? null, notes: s.notes }))
+    .map((s) => ({ id: s.id, date: s.schedule_date, end_date: s.end_date, start: s.start_time?.slice(0, 5) ?? null, end: s.end_time?.slice(0, 5) ?? null, staff: one(s.staff)?.display_name ?? null, notes: s.notes, attendance: s.attendance ?? "attended" }))
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const work = many(j.work)
+    .filter((w) => (w.content ?? "").trim().length > 0 || (Array.isArray(w.image_urls) && w.image_urls.length > 0))
+    .map((w) => ({
+      id: w.id, date: w.work_date, by: one(w.staff)?.display_name ?? null, content: w.content ?? "",
+      labour_hours: w.labour_hours != null ? Number(w.labour_hours) : null,
+      materials_count: Array.isArray(w.materials) ? w.materials.length : 0,
+      photo_count: Array.isArray(w.image_urls) ? w.image_urls.length : 0,
+      call_out: !!w.call_out, created_at: w.created_at,
+    }))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const time = many(j.time)
+    .map((t) => ({ id: t.id, by: one(t.staff)?.display_name ?? null, start: t.start_time, end: t.end_time, billable: t.billable ?? null,
+      hours: t.end_time ? Math.round(((Date.parse(t.end_time) - Date.parse(t.start_time)) / 36e5) * 100) / 100 : null }))
+    .sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+  const staffRows = many(j.staff).map((s) => one(s.staff)).filter((s): s is NonNullable<typeof s> => !!s);
   return {
     number: j.number,
     reference: j.reference,
@@ -43,8 +64,20 @@ export function shapeJob(j: JobRow) {
     site_address: address,
     category: one(j.category_1)?.name ?? null,
     business_unit: one(j.category_2)?.name ?? null,
-    staff: many(j.staff).map((s) => one(s.staff)?.display_name).filter(Boolean),
+    staff: staffRows.map((s) => s.display_name),
+    staff_detail: staffRows.map((s) => ({ name: s.display_name, email: s.email, external: !!s.is_external })),
     schedule,
+    // Work Completed — the write-up log. `work_completed` is the joined text
+    // (empty string when nothing has been written), `work_entries` the rows.
+    work_completed: work.map((w) => w.content).filter(Boolean).join("\n\n"),
+    work_entries: work,
+    work_entry_count: work.length,
+    last_work_date: work.length ? work[work.length - 1].date : null,
+    photo_count: work.reduce((n, w) => n + w.photo_count, 0),
+    materials_count: work.reduce((n, w) => n + w.materials_count, 0),
+    labour_hours: Math.round(work.reduce((n, w) => n + (w.labour_hours ?? 0), 0) * 100) / 100,
+    time_entries: time,
+    no_charge_reason: j.no_charge_reason ?? null,
     next_scheduled: schedule.find((s) => s.date >= new Date().toISOString().slice(0, 10)) ?? null,
     due_date: j.due_date,
     priority: j.priority,
