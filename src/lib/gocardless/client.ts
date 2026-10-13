@@ -469,6 +469,31 @@ export async function getSubscription(subscriptionId: string): Promise<GcSubscri
   return res.subscriptions;
 }
 
+export interface GcSubscriptionUpdate {
+  /** New amount in integer cents. Applies to payments GC has not yet created
+   *  (it raises each payment a few days before the charge date). */
+  amount?: number;
+  name?: string;
+  metadata?: Record<string, string>;
+}
+
+/**
+ * Re-price (or rename) an existing subscription. A subscription carries a
+ * FIXED amount — editing a plan's services in the CRM does nothing to what
+ * GoCardless collects unless this is called (Golden Bay, Oct 2026: Xero
+ * invoiced $96.25, GoCardless kept taking $24.75).
+ */
+export async function updateSubscription(
+  subscriptionId: string,
+  input: GcSubscriptionUpdate,
+): Promise<GcSubscription> {
+  const res = await gcFetch<{ subscriptions: GcSubscription }>(`/subscriptions/${subscriptionId}`, {
+    method: "PUT",
+    body: { subscriptions: input },
+  });
+  return res.subscriptions;
+}
+
 /**
  * Cancel a subscription so GoCardless stops charging. Idempotent at GC for an
  * already-cancelled subscription.

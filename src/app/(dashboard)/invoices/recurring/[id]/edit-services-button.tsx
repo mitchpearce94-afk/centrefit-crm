@@ -104,7 +104,10 @@ export function EditServicesButton({
       if (json.warnings?.length) {
         toast(`Updated with warnings: ${json.warnings.join("; ")}`, "error");
       } else {
-        toast("Plan updated — next invoice will reflect the new services");
+        const gc = Array.isArray(json.gocardless) && json.gocardless.length > 0
+          ? ` GoCardless: ${json.gocardless.join("; ")}.`
+          : "";
+        toast(`Plan updated — next invoice and debit will reflect the new services.${gc}`);
       }
       setOpen(false);
       setSubmitting(false);
