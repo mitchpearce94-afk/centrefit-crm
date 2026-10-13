@@ -42,7 +42,9 @@ export async function GET(req: NextRequest) {
   const muted = new Set((prefs ?? []).filter((r) => r.email_enabled === false).map((r) => r.staff_id as string));
 
   const results: { to: string; scope: string; items: number; ok: boolean; error?: string }[] = [];
-  for (const s of report.staff) {
+  // Admins first so ?preview=1 shows the whole report, not the first tech's slice.
+  const ordered = [...report.staff].sort((a, b) => Number(b.role === "admin") - Number(a.role === "admin"));
+  for (const s of ordered) {
     if (!s.email || s.is_external) continue;
     const email = s.email.toLowerCase();
     if (only && email !== only) continue;
