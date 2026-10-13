@@ -23,6 +23,7 @@ import {
  */
 
 const OWNER_EMAIL = "mitchell@centrefit.com.au";
+const DIGEST_TYPE_CODE = "digest.morning";
 const STALE_TASK_DAYS = 7;
 const MANDATE_GRACE_DAYS = 3;
 const DAY_MS = 86_400_000;
@@ -303,6 +304,18 @@ export async function GET(req: NextRequest) {
   if (!hasContent) {
     // Silence IS the all-clear (D3).
     return NextResponse.json({ ok: true, sent: false, reason: "nothing actionable" });
+  }
+
+  // Per-staff mute via Settings → Notifications ("Morning brief" row). Tasks
+  // and snoozes above still run; only the email is skipped.
+  const { data: digestPref } = await svc
+    .from("staff_notification_preferences")
+    .select("email_enabled")
+    .eq("staff_id", owner.id)
+    .eq("type_code", DIGEST_TYPE_CODE)
+    .maybeSingle();
+  if (digestPref?.email_enabled === false) {
+    return NextResponse.json({ ok: true, sent: false, reason: "email muted in preferences" });
   }
 
   const dateLabel = new Date().toLocaleDateString("en-AU", {
