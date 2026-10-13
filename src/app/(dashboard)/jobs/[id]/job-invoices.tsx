@@ -580,9 +580,9 @@ export function JobInvoices({
       {showModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={closeModal} />
-          <div className="relative w-full max-w-[760px] max-h-[90dvh] overflow-hidden rounded-xl bg-background border border-border shadow-2xl flex flex-col">
-            <div className="flex items-center justify-between border-b border-border px-5 py-3">
-              <div>
+          <div className="relative w-[calc(100%-1.5rem)] sm:w-full max-w-[760px] max-h-[90dvh] overflow-hidden rounded-xl bg-background border border-border shadow-2xl flex flex-col">
+            <div className="flex items-start justify-between gap-2 border-b border-border px-4 sm:px-5 py-3">
+              <div className="min-w-0">
                 <p className="text-sm font-semibold text-foreground">
                   {isVarianceMode ? "Variance Invoice" : "Generate Invoice"}
                 </p>
@@ -600,7 +600,7 @@ export function JobInvoices({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+            <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-4 sm:px-5 py-4 space-y-4">
               {/* Narrative */}
               <div>
                 <div className="flex items-center justify-between mb-1">
@@ -667,13 +667,13 @@ export function JobInvoices({
 
                 <div className="space-y-1.5">
                   {rows.map((r) => (
-                    <div key={r.id} className="flex items-start gap-1.5">
+                    <div key={r.id} className="flex flex-wrap items-start gap-1.5">
                       <input
                         type="text"
                         value={r.description}
                         onChange={(e) => updateRow(r.id, { description: e.target.value })}
                         placeholder="e.g. Labour — call-out + 2hrs"
-                        className="flex-1 rounded-md border border-border bg-input px-2 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none"
+                        className="min-w-0 basis-full sm:basis-0 sm:flex-1 rounded-md border border-border bg-input px-2 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none"
                       />
                       <input
                         type="number"
@@ -682,7 +682,7 @@ export function JobInvoices({
                         value={r.quantity}
                         onChange={(e) => updateRow(r.id, { quantity: e.target.value })}
                         placeholder="Qty"
-                        className="w-16 rounded-md border border-border bg-input px-2 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none text-right font-mono"
+                        className="w-16 min-w-0 shrink-0 rounded-md border border-border bg-input px-2 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none text-right font-mono"
                       />
                       <input
                         type="number"
@@ -691,12 +691,12 @@ export function JobInvoices({
                         value={r.unitAmount}
                         onChange={(e) => updateRow(r.id, { unitAmount: e.target.value })}
                         placeholder="Unit $ ex GST"
-                        className="w-32 rounded-md border border-border bg-input px-2 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none text-right font-mono"
+                        className="w-28 min-w-0 flex-1 sm:flex-none sm:w-32 rounded-md border border-border bg-input px-2 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none text-right font-mono"
                       />
                       <button
                         onClick={() => removeRow(r.id)}
                         disabled={rows.length <= 1}
-                        className="rounded-md border border-border px-2 py-1.5 text-[11px] text-muted-foreground hover:text-red-400 disabled:opacity-30 transition-colors"
+                        className="shrink-0 rounded-md border border-border px-2 py-1.5 text-[11px] text-muted-foreground hover:text-red-400 disabled:opacity-30 transition-colors"
                       >
                         ×
                       </button>
