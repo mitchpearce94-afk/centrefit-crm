@@ -38,6 +38,9 @@ interface QueueItem {
   tagLabel?: string;
   attempts: number;
   savedAt?: number;
+  /** When the item entered the queue — prep_ms on the upload = queued − this. */
+  enqueuedAt: number;
+  prepMs?: number;
 }
 
 type Banner =
@@ -45,23 +48,33 @@ type Banner =
   | { kind: "pending"; title: string; detail: string | null; at: number }
   | { kind: "error"; title: string; detail: string | null; at: number; retryKey: string };
 
-const MAX_EDGE = 2400;
-const JPEG_QUALITY = 0.85;
+const MAX_EDGE = 2000;
+const JPEG_QUALITY = 0.8;
+/** Camera-roll JPEG/PNG/WebP up to this size go as-is — no decode, no re-encode. */
+const SEND_AS_IS_BYTES = 6 * 1024 * 1024;
+/** If a decode + re-encode hasn't finished by now, send the original instead. */
+const PREP_TIMEOUT_MS = 12_000;
 const UPLOAD_CONCURRENCY = 2;
 const PREP_CONCURRENCY = 2;
 const UPLOAD_TIMEOUT_MS = 90_000;
 const POLL_MS = 3_000;
 const POLL_GIVE_UP_MS = 150_000;
 
-// Camera-roll photos arrive as 3–4 MB HEIC/JPEG. Re-encode to a capped JPEG so
-// uploads are quick on 4G and the accountant gets a format anything can open.
-// Safari decodes HEIC natively via createImageBitmap; anything that fails
-// decoding is sent as-is. (Do NOT touch this path without a real-iPhone test —
-// the 28 Sep 2026 "speed-up" silently stopped every upload.)
+// Camera-roll photos arrive as 2–4 MB JPEG (iOS transcodes HEIC for file
+// inputs) or occasionally HEIC. 15 Oct 2026 (Mitchell: "still says preparing
+// for ages… well over a minute"): the decode + canvas re-encode on the phone
+// was the whole wait, so JPEG/PNG/WebP under SEND_AS_IS_BYTES now go exactly
+// as they are, and only HEIC / oversized files take the decode path — with a
+// timeout that falls back to the original. The shutter never comes through
+// here at all (it draws straight to a capped canvas).
+// (Do NOT touch this path without a real-iPhone test — the 28 Sep 2026
+// "speed-up" silently stopped every upload.)
 async function normalise(file: Blob, name: string): Promise<{ blob: Blob; name: string }> {
   if (file.type === "application/pdf") return { blob: file, name };
+  if (/^image\/(jpeg|jpg|png|webp)$/i.test(file.type) && file.size <= SEND_AS_IS_BYTES) return { blob: file, name };
+  const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("prep timeout")), PREP_TIMEOUT_MS));
   try {
-    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const bmp = await Promise.race([createImageBitmap(file, { imageOrientation: "from-image" }), timeout]);
     const scale = Math.min(1, MAX_EDGE / Math.max(bmp.width, bmp.height));
     const w = Math.max(1, Math.round(bmp.width * scale));
     const h = Math.max(1, Math.round(bmp.height * scale));
@@ -72,7 +85,7 @@ async function normalise(file: Blob, name: string): Promise<{ blob: Blob; name: 
     if (!ctx) throw new Error("no canvas");
     ctx.drawImage(bmp, 0, 0, w, h);
     bmp.close?.();
-    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", JPEG_QUALITY));
+    const blob = await Promise.race([new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", JPEG_QUALITY)), timeout]);
     if (!blob) throw new Error("encode failed");
     return { blob, name: name.replace(/\.[^.]+$/, "") + ".jpg" };
   } catch {
@@ -206,6 +219,8 @@ export function SnapClient({
         fd.append("job_id", jobRef.current.id);
       }
       fd.append("source", item.source);
+      fd.append("orig_bytes", String(item.original.size));
+      fd.append("prep_ms", String(item.prepMs ?? 0));
       const res = await fetch("/api/receipts/snap", { method: "POST", body: fd, signal: ctrl.signal });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -286,9 +301,9 @@ export function SnapClient({
         .then(({ blob, name }) => {
           // swap the preview to the (smaller) encoded image
           const preview = blob !== next.original ? URL.createObjectURL(blob) : next.preview;
-          patch(next.key, { blob, name, preview, status: "queued" });
+          patch(next.key, { blob, name, preview, status: "queued", prepMs: Date.now() - next.enqueuedAt });
         })
-        .catch(() => patch(next.key, { blob: next.original, status: "queued" }))
+        .catch(() => patch(next.key, { blob: next.original, status: "queued", prepMs: Date.now() - next.enqueuedAt }))
         .finally(() => {
           preparing.current -= 1;
           setTimeout(() => {
@@ -300,21 +315,27 @@ export function SnapClient({
   }, [patch, pump]);
 
   const enqueue = useCallback(
-    (files: Array<{ blob: Blob; name: string }>, source: "snap" | "bulk") => {
+    (files: Array<{ blob: Blob; name: string }>, source: "snap" | "bulk", ready = false) => {
       const items: QueueItem[] = files.map((f) => ({
         key: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         original: f.blob,
-        blob: null,
+        // `ready` = the shutter's own capped JPEG: nothing to prepare.
+        blob: ready ? f.blob : null,
         name: f.name,
         source,
-        status: "preparing",
+        status: ready ? "queued" : "preparing",
         preview: URL.createObjectURL(f.blob),
         attempts: 0,
+        enqueuedAt: Date.now(),
+        prepMs: ready ? 0 : undefined,
       }));
       setQueue((q) => [...q, ...items]);
-      setTimeout(prepPump, 0);
+      setTimeout(() => {
+        prepPump();
+        pump();
+      }, 0);
     },
-    [prepPump],
+    [prepPump, pump],
   );
 
   // ── Poll saved receipts until the email has gone ────────────────────────
@@ -399,16 +420,24 @@ export function SnapClient({
       toast("Camera not ready yet", "error");
       return;
     }
+    // One canvas, already capped to MAX_EDGE: the blob this produces is the
+    // upload. No second decode/encode pass (that was the "Preparing" wait).
+    const scale = Math.min(1, MAX_EDGE / Math.max(v.videoWidth, v.videoHeight));
     const canvas = document.createElement("canvas");
-    canvas.width = v.videoWidth;
-    canvas.height = v.videoHeight;
-    canvas.getContext("2d")?.drawImage(v, 0, 0);
-    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", JPEG_QUALITY));
-    if (!blob) return;
+    canvas.width = Math.round(v.videoWidth * scale);
+    canvas.height = Math.round(v.videoHeight * scale);
+    canvas.getContext("2d")?.drawImage(v, 0, 0, canvas.width, canvas.height);
     setFlash(true);
     setTimeout(() => setFlash(false), 120);
     navigator.vibrate?.(30);
-    enqueue([{ blob, name: `receipt-${Date.now()}.jpg` }], "snap");
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", JPEG_QUALITY));
+    canvas.width = 0; // release iOS canvas memory straight away
+    canvas.height = 0;
+    if (!blob) {
+      toast("Couldn't capture that — try again", "error");
+      return;
+    }
+    enqueue([{ blob, name: `receipt-${Date.now()}.jpg` }], "snap", true);
   }
 
   function onFiles(list: FileList | null, source: "snap" | "bulk") {
