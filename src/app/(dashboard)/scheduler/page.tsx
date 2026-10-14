@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { SchedulerView } from "./scheduler-grid";
 import { AGENDA_WINDOW_DAYS } from "./constants";
+import { FillRemainingHeight } from "@/components/fill-remaining-height";
 
 export const dynamic = "force-dynamic";
 
@@ -99,15 +100,20 @@ export default async function SchedulerPage({
   // One solid-page layout: lock <main>'s outer scroll on this route via an
   // inline style (auto-removed when the user navigates away) so the page
   // can't scroll past the time grid. The grid inside still scrolls
-  // internally via its own overflow-y-auto + flex-1 min-h-0.
+  // internally via its own overflow-y-auto + flex-1 min-h-0. The calc()
+  // heights are only the pre-JS first paint — FillRemainingHeight measures
+  // the real space down to the mobile nav once mounted.
   return (
     <>
       {/* Lock <main>'s outer scroll while the scheduler is mounted — when
           the user navigates away the <style> unmounts and main returns to
           its normal overflow-y-auto behaviour. */}
       <style>{`main { overflow-y: hidden !important; }`}</style>
-      <div className="flex flex-col overflow-hidden h-[calc(var(--app-height,100dvh)-12rem)] lg:h-[calc(var(--app-height,100dvh)-6rem)]">
+      <FillRemainingHeight className="flex flex-col overflow-hidden h-[calc(var(--app-height,100dvh)-12rem)] lg:h-[calc(var(--app-height,100dvh)-6rem)]">
+        {/* Keyed by week so a client-side week change (swipe past Sunday,
+            day arrows) remounts the view and re-seeds day/view from the URL. */}
         <SchedulerView
+          key={mondayISO}
           staff={staffResult.data ?? []}
           entries={entriesResult.data ?? []}
           jobs={(jobsResult.data ?? []) as any}
@@ -115,7 +121,7 @@ export default async function SchedulerPage({
           currentUserId={currentUserId}
           isAdmin={isAdmin}
         />
-      </div>
+      </FillRemainingHeight>
     </>
   );
 }

@@ -189,8 +189,22 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   // so swiping through days is native smooth scrolling with momentum, not a
   // jump per swipe. selectedDay follows the settled panel; button nav
   // smooth-scrolls the strip to the target day.
+  //
+  // 15 Oct 2026 (Mitchell: "not swiping correctly… all moving around"):
+  //  - a swipe-driven day change must NOT be answered with scrollTo() — the
+  //    settle timer could fire mid-gesture (finger paused > 120 ms), set
+  //    selectedDay, and the effect then yanked the strip under the finger.
+  //    pagerDrivenDay marks changes that came from the strip itself.
+  //  - nothing settles while a finger is down, and only once the strip is
+  //    actually on a snap point.
+  //  - one sentinel panel each side: swiping past Sunday/Monday rolls into
+  //    the next/previous week (client-side nav, state re-seeds from the URL).
+  const PAGER_PAD = 1;
   const pagerRef = useRef<HTMLDivElement>(null);
   const pagerSettleTimer = useRef<number | null>(null);
+  const pagerDrivenDay = useRef<string | null>(null);
+  const pagerTouching = useRef(false);
+  const pagerNavigating = useRef(false);
 
   useEffect(() => {
     if (view !== "day") return;
@@ -200,7 +214,9 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
     // selectedDay outside the visible week (stale URL, deep link) — clamp to
     // Monday so the banner and the visible panel always agree.
     if (idx < 0) { setSelectedDay(weekDates[0]); return; }
-    const target = idx * el.clientWidth;
+    // The swipe already put the strip on this day — leave it alone.
+    if (pagerDrivenDay.current === selectedDay) { pagerDrivenDay.current = null; return; }
+    const target = (idx + PAGER_PAD) * el.clientWidth;
     if (Math.abs(el.scrollLeft - target) < 4) return;
     // Long hops (initial mount, Today from far away) jump instantly;
     // single-day moves glide.
@@ -209,15 +225,30 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
     el.scrollTo({ left: target, behavior });
   }, [view, selectedDay, weekDates]);
 
+  function settlePager() {
+    const el = pagerRef.current;
+    if (!el || el.clientWidth === 0 || pagerTouching.current || pagerNavigating.current) return;
+    const raw = el.scrollLeft / el.clientWidth;
+    const idx = Math.round(raw);
+    // Mid-glide reading — the strip hasn't snapped yet; the next scroll
+    // event (or touchend) re-arms the timer.
+    if (Math.abs(raw - idx) * el.clientWidth > 6) return;
+    if (idx <= 0) { crossWeek(addDaysStr(weekStart, -1)); return; }
+    if (idx >= weekDates.length + PAGER_PAD) { crossWeek(addDaysStr(weekStart, 7)); return; }
+    const d = weekDates[idx - PAGER_PAD];
+    if (d && d !== selectedDay) {
+      pagerDrivenDay.current = d;
+      setSelectedDay(d);
+    }
+  }
   function onPagerScroll() {
     if (pagerSettleTimer.current) window.clearTimeout(pagerSettleTimer.current);
-    pagerSettleTimer.current = window.setTimeout(() => {
-      const el = pagerRef.current;
-      if (!el || el.clientWidth === 0) return;
-      const idx = Math.max(0, Math.min(6, Math.round(el.scrollLeft / el.clientWidth)));
-      const d = weekDates[idx];
-      if (d && d !== selectedDay) setSelectedDay(d);
-    }, 120);
+    pagerSettleTimer.current = window.setTimeout(settlePager, 100);
+  }
+  function onPagerTouchStart() { pagerTouching.current = true; }
+  function onPagerTouchEnd() {
+    pagerTouching.current = false;
+    onPagerScroll();
   }
 
   // Auto-open the assign modal when arriving from a job detail page with
@@ -324,11 +355,19 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
     window.history.replaceState({}, "", url.toString());
   }
 
+  // Day view on another week: client-side nav (page.tsx keys SchedulerView
+  // by week, so state re-seeds from ?day= on arrival). Was a full
+  // window.location reload — slow, and the shell re-measured itself.
+  function crossWeek(target: string) {
+    if (pagerNavigating.current) return;
+    pagerNavigating.current = true;
+    router.push(`/scheduler?week=${getMondayOf(target)}&${viewQuery}&day=${target}`);
+  }
+
   function goDay(dir: "prev" | "next" | "today") {
     const target = dir === "today" ? todayStr() : addDaysStr(selectedDay, dir === "prev" ? -1 : 1);
-    const mon = getMondayOf(target);
-    if (mon !== weekStart) {
-      window.location.href = `/scheduler?week=${mon}&${viewQuery}&day=${target}`;
+    if (getMondayOf(target) !== weekStart) {
+      crossWeek(target);
       return;
     }
     setSelectedDay(target);
@@ -348,7 +387,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   function switchToDayView() {
     const today = todayStr();
     if (getMondayOf(today) !== weekStart) {
-      window.location.href = `/scheduler?view=day${staffFilter !== "all" ? `&staff=${staffFilter}` : ""}`;
+      router.push(`/scheduler?view=day${staffFilter !== "all" ? `&staff=${staffFilter}` : ""}&day=${today}`);
       return;
     }
     setSelectedDay(today);
@@ -367,9 +406,9 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Heading + nav controls on a single row */}
-      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Scheduler</h1>
+      <div className="flex items-center justify-between mb-2 lg:mb-3 flex-wrap gap-x-2 gap-y-1.5">
+        <div className="flex items-center gap-2 lg:gap-3">
+          <h1 className="text-lg lg:text-2xl font-bold tracking-tight">Scheduler</h1>
           <div className="flex rounded-md border border-border p-0.5">
             <button onClick={switchToWeek} className={`rounded px-3 py-1 text-xs font-medium transition-colors ${view === "week" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Week</button>
             <button onClick={switchToDayView} className={`rounded px-3 py-1 text-xs font-medium transition-colors ${view === "day" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Day</button>
@@ -579,11 +618,14 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
       {/* DAY VIEW — days render as a snap-scroll pager: swipe glides
           between them with native momentum. */}
       {view === "day" && (
-        <div className="rounded-lg border border-border bg-card overflow-hidden flex-1 min-h-0 flex flex-col">
+        <div className="relative rounded-lg border border-border bg-card overflow-hidden flex-1 min-h-0 flex flex-col">
           {/* Date banner (mobile only — desktop shows the date in the page
-              header). Updates as the pager settles on a day. */}
-          <div className={`lg:hidden border-b border-border px-4 py-1.5 text-xs font-semibold ${isToday(selectedDay) ? "bg-primary/10 text-primary" : "bg-muted/40"}`}>
-            {fmtLong(selectedDay)}
+              header). Updates as the pager settles on a day; the arrows are
+              for people who'd rather tap than swipe. */}
+          <div className={`lg:hidden flex items-center border-b border-border text-xs font-semibold ${isToday(selectedDay) ? "bg-primary/10 text-primary" : "bg-muted/40"}`}>
+            <button type="button" onClick={() => goDay("prev")} aria-label="Previous day" className="px-4 py-2 text-base leading-none text-muted-foreground active:text-foreground">‹</button>
+            <span className="flex-1 text-center">{fmtLong(selectedDay)}</span>
+            <button type="button" onClick={() => goDay("next")} aria-label="Next day" className="px-4 py-2 text-base leading-none text-muted-foreground active:text-foreground">›</button>
           </div>
           {(untimedByDate.get(selectedDay) ?? []).length > 0 && (
             <div className="border-b border-border px-4 py-2 bg-muted/30">
@@ -614,24 +656,35 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
               <div
                 ref={pagerRef}
                 onScroll={onPagerScroll}
+                onTouchStart={onPagerTouchStart}
+                onTouchEnd={onPagerTouchEnd}
+                onTouchCancel={onPagerTouchEnd}
                 className="flex-1 min-w-0 flex overflow-x-auto snap-x snap-mandatory overscroll-x-contain [&::-webkit-scrollbar]:hidden"
-                style={{ scrollbarWidth: "none" }}
+                style={{ scrollbarWidth: "none", touchAction: "pan-x pan-y" }}
               >
+                <div className="w-full min-w-full snap-center flex items-start justify-center pt-24 text-xs font-medium text-muted-foreground" aria-hidden>
+                  ← Previous week
+                </div>
                 {weekDates.map(date => (
                   <div key={date} className="w-full min-w-full snap-center flex">
                     <DayCol date={date} hours={hours} entries={timedByDate.get(date) ?? []} getStaff={getStaff} isAdmin={isAdmin} isTouchDevice={isTouchDevice} onCellClick={openAssign} onEntryClick={openEntry} onDrop={handleDrop} draggingId={draggingId} />
                   </div>
                 ))}
+                <div className="w-full min-w-full snap-center flex items-start justify-center pt-24 text-xs font-medium text-muted-foreground" aria-hidden>
+                  Next week →
+                </div>
               </div>
             </div>
           </div>
-          <button onClick={switchToWeek} className="w-full border-t border-border px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">← Back to week</button>
+          <button onClick={switchToWeek} className="hidden lg:block w-full border-t border-border px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">← Back to week</button>
 
-          {/* Floating "Today" pill (mobile) — thumb-reachable jump back. */}
+          {/* Floating "Today" pill (mobile) — thumb-reachable jump back.
+              Absolute inside the card, not fixed: fixed elements float
+              around on iOS while the viewport is still being measured. */}
           {selectedDay !== todayStr() && (
             <button
               onClick={() => goDay("today")}
-              className="lg:hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-40 rounded-full bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground shadow-xl active:scale-95 transition-transform"
+              className="lg:hidden absolute bottom-3 left-1/2 -translate-x-1/2 z-30 rounded-full bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground shadow-xl active:scale-95 transition-transform"
             >
               Today
             </button>
@@ -639,7 +692,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
         </div>
       )}
 
-      <p className="mt-2 text-[10px] text-muted-foreground">
+      <p className="hidden lg:block mt-2 text-[10px] text-muted-foreground">
         {visibleEntries.filter((e) => e.schedule_date >= weekDates[0] && e.schedule_date <= weekDates[6]).length} entries this week{staffFilter !== "all" ? ` for ${staff.find((s) => s.id === staffFilter)?.display_name ?? "selected staff"}` : ""}
       </p>
 
