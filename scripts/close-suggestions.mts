@@ -35,7 +35,8 @@ for (const [email, g] of byEmail) {
 }
 if (SEND) {
   for (const r of resolutions) {
-    const status = r.outcome === "done" ? "done" : r.outcome === "declined" ? "declined" : "noted";
+    // staff_suggestions_status_check allows new / in_progress / done / wont_fix only.
+    const status = r.outcome === "done" ? "done" : r.outcome === "declined" ? "wont_fix" : "in_progress";
     const { error: ue } = await db.from("staff_suggestions").update({ status, notes: r.notes ?? r.resolution, updated_at: new Date().toISOString() }).eq("id", r.id);
     console.log(ue ? `row ${r.id.slice(0, 8)} FAILED ${ue.message}` : `row ${r.id.slice(0, 8)} → ${status}`);
   }
