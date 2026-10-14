@@ -330,13 +330,19 @@ export function SnapClient({
         prepMs: ready ? 0 : undefined,
       }));
       setQueue((q) => [...q, ...items]);
-      setTimeout(() => {
-        prepPump();
-        pump();
-      }, 0);
     },
-    [prepPump, pump],
+    [],
   );
+
+  // The ONE place uploads get kicked off: every time the queue changes
+  // (after React has rendered it, so queueRef is current), prepare what
+  // needs preparing and upload what's ready. A setTimeout(0) kicker could
+  // run before the render and leave an item sitting on "Waiting" forever
+  // (Mitchell, 15 Oct 2026 08:40, fuel receipt 743QU5).
+  useEffect(() => {
+    prepPump();
+    pump();
+  }, [queue, prepPump, pump]);
 
   // ── Poll saved receipts until the email has gone ────────────────────────
   useEffect(() => {
@@ -380,7 +386,6 @@ export function SnapClient({
       setBanner(null);
       if (item.status === "failed") {
         patch(key, { status: "queued", error: undefined, attempts: 0 });
-        setTimeout(pump, 0);
         return;
       }
       if (item.status === "forward_failed" && item.receiptId) {
@@ -410,7 +415,7 @@ export function SnapClient({
         }
       }
     },
-    [patch, pump, show, destLabel],
+    [patch, show, destLabel],
   );
 
   // ── Capture ─────────────────────────────────────────────────────────────
