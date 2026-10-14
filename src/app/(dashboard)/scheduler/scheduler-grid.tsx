@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -185,71 +185,117 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
     box.scrollTop = anchor.offsetTop;
   }, [view, weekStart]);
 
-  // Day-view pager: the 7 days render side-by-side in a snap-scroll strip,
-  // so swiping through days is native smooth scrolling with momentum, not a
-  // jump per swipe. selectedDay follows the settled panel; button nav
-  // smooth-scrolls the strip to the target day.
-  //
-  // 15 Oct 2026 (Mitchell: "not swiping correctly… all moving around"):
-  //  - a swipe-driven day change must NOT be answered with scrollTo() — the
-  //    settle timer could fire mid-gesture (finger paused > 120 ms), set
-  //    selectedDay, and the effect then yanked the strip under the finger.
-  //    pagerDrivenDay marks changes that came from the strip itself.
-  //  - nothing settles while a finger is down, and only once the strip is
-  //    actually on a snap point.
-  //  - one sentinel panel each side: swiping past Sunday/Monday rolls into
-  //    the next/previous week (client-side nav, state re-seeds from the URL).
+  // Day-view pager — a translated track driven by our own touch handling,
+  // NOT a native horizontal scroller (15 Oct 2026, Mitchell: "when I try and
+  // scroll down it's swiping across"). A snap-x strip nested inside the
+  // vertical scroller let iOS hand the sideways component of a mostly
+  // vertical drag to the strip, and snap-mandatory then committed a whole
+  // day change. Now `touch-action: pan-y` leaves vertical panning to the
+  // browser, the track only moves once a gesture has proven horizontal
+  // (|dx| > |dy| after an 8 px dead zone), and a horizontal gesture cancels
+  // the touch so the outer scroller can't take the vertical remainder.
+  // Sentinel panels either side roll into the previous/next week.
   const PAGER_PAD = 1;
   const pagerRef = useRef<HTMLDivElement>(null);
-  const pagerSettleTimer = useRef<number | null>(null);
-  const pagerDrivenDay = useRef<string | null>(null);
-  const pagerTouching = useRef(false);
+  const trackRef = useRef<HTMLDivElement>(null);
   const pagerNavigating = useRef(false);
+  const pagerPositioned = useRef(false);
+  const dayIdxRef = useRef(0);
+  dayIdxRef.current = Math.max(0, weekDates.indexOf(selectedDay));
 
+  const positionTrack = useCallback((animate: boolean) => {
+    const el = pagerRef.current;
+    const track = trackRef.current;
+    if (!el || !track) return;
+    track.style.transition = animate ? "transform 260ms cubic-bezier(.2,.8,.2,1)" : "none";
+    track.style.transform = `translate3d(${-(dayIdxRef.current + PAGER_PAD) * el.clientWidth}px,0,0)`;
+  }, []);
+
+  useEffect(() => {
+    if (view !== "day") { pagerPositioned.current = false; return; }
+    // selectedDay outside the visible week (stale URL, deep link) — clamp to
+    // Monday so the banner and the visible panel always agree.
+    if (weekDates.indexOf(selectedDay) < 0) { setSelectedDay(weekDates[0]); return; }
+    // First placement is instant; later moves (buttons, swipe release) glide.
+    positionTrack(pagerPositioned.current);
+    pagerPositioned.current = true;
+  }, [view, selectedDay, weekDates, positionTrack]);
+
+  // Keep the track on the current day through rotation / viewport settles.
   useEffect(() => {
     if (view !== "day") return;
     const el = pagerRef.current;
     if (!el) return;
-    const idx = weekDates.indexOf(selectedDay);
-    // selectedDay outside the visible week (stale URL, deep link) — clamp to
-    // Monday so the banner and the visible panel always agree.
-    if (idx < 0) { setSelectedDay(weekDates[0]); return; }
-    // The swipe already put the strip on this day — leave it alone.
-    if (pagerDrivenDay.current === selectedDay) { pagerDrivenDay.current = null; return; }
-    const target = (idx + PAGER_PAD) * el.clientWidth;
-    if (Math.abs(el.scrollLeft - target) < 4) return;
-    // Long hops (initial mount, Today from far away) jump instantly;
-    // single-day moves glide.
-    const behavior: ScrollBehavior =
-      Math.abs(el.scrollLeft - target) > el.clientWidth * 1.5 ? "auto" : "smooth";
-    el.scrollTo({ left: target, behavior });
-  }, [view, selectedDay, weekDates]);
+    const ro = new ResizeObserver(() => positionTrack(false));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [view, positionTrack]);
 
-  function settlePager() {
+  // Native listeners (React's touch events are passive — preventDefault
+  // would be ignored there).
+  const crossWeekRef = useRef<(target: string) => void>(() => {});
+  useEffect(() => {
+    if (view !== "day") return;
     const el = pagerRef.current;
-    if (!el || el.clientWidth === 0 || pagerTouching.current || pagerNavigating.current) return;
-    const raw = el.scrollLeft / el.clientWidth;
-    const idx = Math.round(raw);
-    // Mid-glide reading — the strip hasn't snapped yet; the next scroll
-    // event (or touchend) re-arms the timer.
-    if (Math.abs(raw - idx) * el.clientWidth > 6) return;
-    if (idx <= 0) { crossWeek(addDaysStr(weekStart, -1)); return; }
-    if (idx >= weekDates.length + PAGER_PAD) { crossWeek(addDaysStr(weekStart, 7)); return; }
-    const d = weekDates[idx - PAGER_PAD];
-    if (d && d !== selectedDay) {
-      pagerDrivenDay.current = d;
-      setSelectedDay(d);
-    }
-  }
-  function onPagerScroll() {
-    if (pagerSettleTimer.current) window.clearTimeout(pagerSettleTimer.current);
-    pagerSettleTimer.current = window.setTimeout(settlePager, 100);
-  }
-  function onPagerTouchStart() { pagerTouching.current = true; }
-  function onPagerTouchEnd() {
-    pagerTouching.current = false;
-    onPagerScroll();
-  }
+    const track = trackRef.current;
+    if (!el || !track) return;
+    let startX = 0, startY = 0, lastX = 0, startT = 0;
+    let axis: "x" | "y" | null = null;
+
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      startX = lastX = t.clientX;
+      startY = t.clientY;
+      startT = Date.now();
+      axis = null;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1 || pagerNavigating.current) return;
+      const t = e.touches[0];
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      if (axis === null) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      }
+      if (axis !== "x") return;
+      if (e.cancelable) e.preventDefault();
+      lastX = t.clientX;
+      track.style.transition = "none";
+      track.style.transform = `translate3d(${-(dayIdxRef.current + PAGER_PAD) * el.clientWidth + dx}px,0,0)`;
+    };
+    const onEnd = () => {
+      if (axis !== "x") { axis = null; return; }
+      axis = null;
+      const w = el.clientWidth;
+      const dx = lastX - startX;
+      const velocity = dx / Math.max(1, Date.now() - startT); // px per ms
+      const step = Math.abs(dx) > w * 0.22 || Math.abs(velocity) > 0.45 ? (dx < 0 ? 1 : -1) : 0;
+      const next = dayIdxRef.current + step;
+      if (next < 0 || next > weekDates.length - 1) {
+        // Glide onto the sentinel, then roll into the neighbouring week.
+        pagerNavigating.current = true;
+        track.style.transition = "transform 220ms ease-out";
+        track.style.transform = `translate3d(${-(next < 0 ? 0 : weekDates.length + PAGER_PAD) * w}px,0,0)`;
+        crossWeekRef.current(next < 0 ? addDaysStr(weekStart, -1) : addDaysStr(weekStart, 7));
+        return;
+      }
+      if (step !== 0) setSelectedDay(weekDates[next]);
+      else positionTrack(true);
+    };
+
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, [view, weekDates, weekStart, positionTrack]);
 
   // Auto-open the assign modal when arriving from a job detail page with
   // ?jobId=… so the user lands ready to pick date/staff/time. Runs once on
@@ -359,10 +405,10 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   // by week, so state re-seeds from ?day= on arrival). Was a full
   // window.location reload — slow, and the shell re-measured itself.
   function crossWeek(target: string) {
-    if (pagerNavigating.current) return;
     pagerNavigating.current = true;
     router.push(`/scheduler?week=${getMondayOf(target)}&${viewQuery}&day=${target}`);
   }
+  crossWeekRef.current = crossWeek;
 
   function goDay(dir: "prev" | "next" | "today") {
     const target = dir === "today" ? todayStr() : addDaysStr(selectedDay, dir === "prev" ? -1 : 1);
@@ -615,8 +661,8 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
         </div>
       )}
 
-      {/* DAY VIEW — days render as a snap-scroll pager: swipe glides
-          between them with native momentum. */}
+      {/* DAY VIEW — days render on a swipe pager (JS-driven track; vertical
+          scrolling stays native). */}
       {view === "day" && (
         <div className="relative rounded-lg border border-border bg-card overflow-hidden flex-1 min-h-0 flex flex-col">
           {/* Date banner (mobile only — desktop shows the date in the page
@@ -651,27 +697,21 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
                   </div>
                 ))}
               </div>
-              {/* Snap pager: hour labels stay put on the left; the seven day
-                  panels scroll horizontally beside them with snap points. */}
-              <div
-                ref={pagerRef}
-                onScroll={onPagerScroll}
-                onTouchStart={onPagerTouchStart}
-                onTouchEnd={onPagerTouchEnd}
-                onTouchCancel={onPagerTouchEnd}
-                className="flex-1 min-w-0 flex overflow-x-auto snap-x snap-mandatory overscroll-x-contain [&::-webkit-scrollbar]:hidden"
-                style={{ scrollbarWidth: "none", touchAction: "pan-x pan-y" }}
-              >
-                <div className="w-full min-w-full snap-center flex items-start justify-center pt-24 text-xs font-medium text-muted-foreground" aria-hidden>
-                  ← Previous week
-                </div>
-                {weekDates.map(date => (
-                  <div key={date} className="w-full min-w-full snap-center flex">
-                    <DayCol date={date} hours={hours} entries={timedByDate.get(date) ?? []} getStaff={getStaff} isAdmin={isAdmin} isTouchDevice={isTouchDevice} onCellClick={openAssign} onEntryClick={openEntry} onDrop={handleDrop} draggingId={draggingId} />
+              {/* Swipe pager: hour labels stay put on the left; the seven day
+                  panels sit on a translated track beside them. */}
+              <div ref={pagerRef} className="flex-1 min-w-0 overflow-hidden" style={{ touchAction: "pan-y" }}>
+                <div ref={trackRef} className="flex h-full will-change-transform">
+                  <div className="w-full min-w-full shrink-0 flex items-start justify-center pt-24 text-xs font-medium text-muted-foreground" aria-hidden>
+                    ← Previous week
                   </div>
-                ))}
-                <div className="w-full min-w-full snap-center flex items-start justify-center pt-24 text-xs font-medium text-muted-foreground" aria-hidden>
-                  Next week →
+                  {weekDates.map(date => (
+                    <div key={date} className="w-full min-w-full shrink-0 flex">
+                      <DayCol date={date} hours={hours} entries={timedByDate.get(date) ?? []} getStaff={getStaff} isAdmin={isAdmin} isTouchDevice={isTouchDevice} onCellClick={openAssign} onEntryClick={openEntry} onDrop={handleDrop} draggingId={draggingId} />
+                    </div>
+                  ))}
+                  <div className="w-full min-w-full shrink-0 flex items-start justify-center pt-24 text-xs font-medium text-muted-foreground" aria-hidden>
+                    Next week →
+                  </div>
                 </div>
               </div>
             </div>
