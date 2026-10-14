@@ -1701,6 +1701,11 @@ export function QuoteWizard({
         return;
       }
       quoteId = newQuoteId;
+      // Staff suggestion 6B9C6180: PMs get a bell/email when a Snap Fitness
+      // draft is created so the proposal isn't forgotten. The route decides
+      // eligibility (template, draft, dedupe); fire-and-forget — never blocks
+      // or fails the save.
+      fetch(`/api/quotes/${newQuoteId}/proposal-ready`, { method: "POST" }).catch(() => {});
     }
 
     const lineItemsToSave = quoteMode === "manual" ? manualBomAsBomItems : bomItems;

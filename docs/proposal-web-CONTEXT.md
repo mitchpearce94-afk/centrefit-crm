@@ -49,6 +49,21 @@ opens). Existing notification on first open carries over.
 rotation (Snap proof for Snap, TF for TF, breadth for non-gym), section-level
 engagement analytics, embedded video walkthrough, e-sign embedded in-page.
 
+**D9 — "Snap proposal ready" notification (staff suggestion 6B9C6180, Lily,
+2026-07-21).** Trigger: a NEW quote is inserted by the wizard with
+`quote_rule_templates.slug = 'snap_fitness'`, `status = 'draft'` and no
+`sent_at` — i.e. the moment a Snap Fitness draft exists (typically straight
+after CompletePlanModal → "Send to quote"). The wizard fires
+`POST /api/quotes/{id}/proposal-ready` fire-and-forget; the route re-checks
+eligibility and dedupes on an existing `quote.proposal_ready` notification for
+that quote. Audience: every active `project_manager` (bell + email by default,
+per-staff opt-out via preferences). Link goes to `/quoting/{id}`.
+Open question — NOT built: "ready to be completed" may instead mean "the
+electrician's price has come back" (`quotes.electrician_cost` populated), which
+is the actual blocker on a Snap proposal. If so, the trigger moves to the
+electrician-cost update rather than quote creation; same type code, same
+audience.
+
 ## Non-negotiables
 
 - All four Mark-review fixes (name dedupe, formatted address, no Additional

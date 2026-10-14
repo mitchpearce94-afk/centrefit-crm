@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
+import { ProductSearch, type ProductPick } from "@/components/product-search";
 import {
   DEFAULT_SALES_ACCOUNT_CODE,
   XERO_SALES_ACCOUNTS,
@@ -57,6 +58,7 @@ export function LineItemsEditor({
   );
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [showPartSearch, setShowPartSearch] = useState(false);
 
   const totals = useMemo(() => {
     let subtotal = 0;
@@ -92,6 +94,23 @@ export function LineItemsEditor({
         accountCode: DEFAULT_SALES_ACCOUNT_CODE,
         taxType: "OUTPUT",
         descriptionOnly,
+      },
+    ]);
+    setDirty(true);
+  }
+
+  // Ad-hoc part from the catalogue (Sue, 0EEB63C7) — priced at the product's
+  // ex-GST sell price with the editor's default account/tax codes.
+  function addPickedPart(p: ProductPick) {
+    setLines((prev) => [
+      ...prev,
+      {
+        description: p.sku ? `${p.sku} — ${p.name}` : p.name,
+        quantity: 1,
+        unitAmount: Number(p.sell_price.toFixed(2)),
+        accountCode: DEFAULT_SALES_ACCOUNT_CODE,
+        taxType: "OUTPUT",
+        descriptionOnly: false,
       },
     ]);
     setDirty(true);
@@ -304,6 +323,12 @@ export function LineItemsEditor({
         })}
       </div>
 
+      {showPartSearch && (
+        <div className="mt-3">
+          <ProductSearch onPick={addPickedPart} />
+        </div>
+      )}
+
       <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <button
@@ -320,6 +345,18 @@ export function LineItemsEditor({
             className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors"
           >
             <span className="text-base leading-none">+</span> Add text line
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowPartSearch((v) => !v)}
+            title="Search the parts catalogue and add one as a line at its sell price"
+            className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors ${
+              showPartSearch
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-dashed border-primary/40 text-primary hover:bg-primary/10"
+            }`}
+          >
+            <span className="text-base leading-none">+</span> Add part
           </button>
         </div>
 

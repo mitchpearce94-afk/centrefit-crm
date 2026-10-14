@@ -5,6 +5,7 @@ type ItemRow = {
   job_id: string;
   status: string;
   xero_po_number: string | null;
+  ordered_at: string | null;
 };
 
 type JobRow = {
@@ -36,7 +37,7 @@ export default async function ProcurementIndexPage() {
   const [itemsRes, jobsRes, acceptedQuotesRes, paidPp1Res] = await Promise.all([
     supabase
       .from("job_procurement_items")
-      .select("job_id, status, xero_po_number"),
+      .select("job_id, status, xero_po_number, ordered_at"),
     supabase
       .from("jobs")
       .select("id, number, description, procurement_not_required, customer:customers(id, name), site:customer_sites(id, name)"),
@@ -75,6 +76,8 @@ export default async function ProcurementIndexPage() {
     received: number;
     total: number;
     poNumbers: Set<string>;
+    /** Earliest ordered_at across the job's lines — when ordering started */
+    orderedAt: string | null;
   };
   const statsByJob = new Map<string, Stats>();
   const KNOWN_STATUSES: StatusKey[] = ["pending", "in_stock", "order", "ordered", "received"];
@@ -89,6 +92,7 @@ export default async function ProcurementIndexPage() {
         received: 0,
         total: 0,
         poNumbers: new Set<string>(),
+        orderedAt: null,
       } as Stats);
     // ordered_online (bought direct, no Xero PO) is awaiting delivery just like
     // ordered — it used to fall through every bucket, so jobs with an online
@@ -99,6 +103,7 @@ export default async function ProcurementIndexPage() {
     }
     s.total += 1;
     if (it.xero_po_number) s.poNumbers.add(it.xero_po_number);
+    if (it.ordered_at && (!s.orderedAt || it.ordered_at < s.orderedAt)) s.orderedAt = it.ordered_at;
     statsByJob.set(it.job_id, s);
   }
 
@@ -121,6 +126,7 @@ export default async function ProcurementIndexPage() {
     ordered: stats.ordered,
     received: stats.received,
     poCount: stats.poNumbers.size,
+    orderedAt: stats.orderedAt,
   }));
 
   // "Needs work" = anything still to triage or order. "Awaiting delivery" =

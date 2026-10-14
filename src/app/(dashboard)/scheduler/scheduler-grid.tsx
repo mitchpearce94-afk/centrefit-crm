@@ -117,6 +117,16 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   const [selectedDay, setSelectedDay] = useState(
     urlDay && /^\d{4}-\d{2}-\d{2}$/.test(urlDay) ? urlDay : todayStr(),
   );
+  // Staff filter (Mark, suggestion B148D4EE 15 Sep 2026: "choose a single
+  // staff member in the schedule so I can see only my appointments").
+  // "all" shows everyone; otherwise a staff id. Lives in ?staff= so the
+  // week arrows (full navigations) keep it.
+  const urlStaff = searchParams.get("staff");
+  const [staffFilter, setStaffFilter] = useState<string>(urlStaff && urlStaff !== "all" ? urlStaff : "all");
+  const visibleEntries = useMemo(
+    () => (staffFilter === "all" ? entries : entries.filter((e) => e.staff_id === staffFilter)),
+    [entries, staffFilter],
+  );
   // Touch devices fall back to tap-to-open-modal because HTML5
   // draggable doesn't fire reliably on iOS/Android — a long-press
   // there triggers the OS text-selection menu, not a drag. Disabling
@@ -268,7 +278,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
     // slivers. Multi-day entries repeat on each day of their span.
     const untimed = new Map<string, ScheduleEntry[]>();
     const timed = new Map<string, ScheduleEntry[]>();
-    for (const e of entries) {
+    for (const e of visibleEntries) {
       const isMultiDay = !!e.end_date && e.end_date > e.schedule_date;
       const pool = e.start_time && e.end_time ? timed : untimed;
       let cursor = e.schedule_date;
@@ -290,14 +300,22 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
       });
     }
     return { untimedByDate: untimed, timedByDate: timed };
-  }, [entries, staff]);
+  }, [visibleEntries, staff]);
 
   // Keep `view` in the URL so a full navigation (next-week arrow, cross-week
   // day-nav) doesn't drop the user's view choice.
-  const viewQuery = `view=${view}`;
+  const viewQuery = `view=${view}${staffFilter !== "all" ? `&staff=${staffFilter}` : ""}`;
   const prevWeekHref = `/scheduler?week=${addDaysStr(weekStart, -7)}&${viewQuery}`;
   const nextWeekHref = `/scheduler?week=${addDaysStr(weekStart, 7)}&${viewQuery}`;
   const todayWeekHref = `/scheduler?${viewQuery}`;
+
+  function changeStaffFilter(next: string) {
+    setStaffFilter(next);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (next === "all") url.searchParams.delete("staff"); else url.searchParams.set("staff", next);
+    window.history.replaceState({}, "", url.toString());
+  }
 
   function updateViewParam(next: "week" | "day") {
     if (typeof window === "undefined") return;
@@ -330,7 +348,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   function switchToDayView() {
     const today = todayStr();
     if (getMondayOf(today) !== weekStart) {
-      window.location.href = `/scheduler?view=day`;
+      window.location.href = `/scheduler?view=day${staffFilter !== "all" ? `&staff=${staffFilter}` : ""}`;
       return;
     }
     setSelectedDay(today);
@@ -381,9 +399,32 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
             </div>
           )}
         </div>
-        {/* One date, one place: desktop shows it here; mobile day view has
-            the banner, mobile agenda has per-day headers. */}
-        <span className="hidden lg:inline text-sm font-medium">{view === "week" ? `${fmtShort(weekDates[0])} — ${fmtShort(weekDates[6])}` : fmtLong(selectedDay)}</span>
+        <div className="flex items-center gap-2">
+          {/* Staff filter — everyone by default; "Just me" for the logged-in tech. */}
+          <select
+            value={staffFilter}
+            onChange={(e) => changeStaffFilter(e.target.value)}
+            aria-label="Show staff"
+            className={`rounded-md border border-border bg-background px-2 py-1.5 text-xs font-medium ${staffFilter === "all" ? "text-muted-foreground" : "text-foreground"}`}
+          >
+            <option value="all">All staff</option>
+            {staff.map((s) => (
+              <option key={s.id} value={s.id}>{s.display_name}</option>
+            ))}
+          </select>
+          {staff.some((s) => s.id === currentUserId) && (
+            <button
+              type="button"
+              onClick={() => changeStaffFilter(staffFilter === currentUserId ? "all" : currentUserId)}
+              className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${staffFilter === currentUserId ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground hover:text-foreground"}`}
+            >
+              Just me
+            </button>
+          )}
+          {/* One date, one place: desktop shows it here; mobile day view has
+              the banner, mobile agenda has per-day headers. */}
+          <span className="hidden lg:inline text-sm font-medium">{view === "week" ? `${fmtShort(weekDates[0])} — ${fmtShort(weekDates[6])}` : fmtLong(selectedDay)}</span>
+        </div>
       </div>
 
       {/* WEEK VIEW — desktop: time grid. Mobile: agenda list (below); the
@@ -463,7 +504,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
       {view === "week" && (
         <div ref={agendaRef} className="lg:hidden relative rounded-lg border border-border bg-card overflow-y-auto flex-1 min-h-0">
           <a
-            href={`/scheduler?week=${addDaysStr(weekStart, -AGENDA_WINDOW_DAYS)}&view=week`}
+            href={`/scheduler?week=${addDaysStr(weekStart, -AGENDA_WINDOW_DAYS)}&view=week${staffFilter !== "all" ? `&staff=${staffFilter}` : ""}`}
             className="block border-b border-border px-3 py-2.5 text-center text-xs font-medium text-primary"
           >
             ↑ Earlier weeks
@@ -527,7 +568,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
             );
           })}
           <a
-            href={`/scheduler?week=${addDaysStr(weekStart, AGENDA_WINDOW_DAYS)}&view=week`}
+            href={`/scheduler?week=${addDaysStr(weekStart, AGENDA_WINDOW_DAYS)}&view=week${staffFilter !== "all" ? `&staff=${staffFilter}` : ""}`}
             className="block px-3 py-2.5 text-center text-xs font-medium text-primary"
           >
             ↓ Later weeks
@@ -599,7 +640,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
       )}
 
       <p className="mt-2 text-[10px] text-muted-foreground">
-        {entries.filter((e) => e.schedule_date >= weekDates[0] && e.schedule_date <= weekDates[6]).length} entries this week
+        {visibleEntries.filter((e) => e.schedule_date >= weekDates[0] && e.schedule_date <= weekDates[6]).length} entries this week{staffFilter !== "all" ? ` for ${staff.find((s) => s.id === staffFilter)?.display_name ?? "selected staff"}` : ""}
       </p>
 
       {modal && (

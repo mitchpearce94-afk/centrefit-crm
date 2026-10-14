@@ -673,6 +673,16 @@ function NoteDetail({
                     </div>
                   </a>
                   )}
+                  <a
+                    href={downloadHref(att.url, att.name)}
+                    download={att.name || undefined}
+                    onClick={(e) => e.stopPropagation()}
+                    title="Download"
+                    aria-label={`Download ${att.name}`}
+                    className="absolute -top-1.5 -left-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-white shadow ring-1 ring-white/10 hover:bg-primary transition-colors"
+                  >
+                    <DownloadIcon className="h-3 w-3" />
+                  </a>
                   <button
                     type="button"
                     onClick={(e) => {
@@ -972,6 +982,23 @@ function FileIcon({ className }: { className?: string }) {
   );
 }
 
+function DownloadIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
+/* Save-as link for an attachment (Sue, suggestion B14F7A0D). The attachments
+   route honours ?download=<name> with a Content-Disposition header (signed
+   URL with download for videos), so this works for the legacy note.image_url
+   too — those were rewritten to /api/attachments/… in the same migration. */
+function downloadHref(url: string, name: string): string {
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}download=${encodeURIComponent(name || "attachment")}`;
+}
+
 /* Fullscreen swipeable photo viewer (Michael 2026-08-17): flick left/right
    between a note's photos instead of opening each in a new tab. Images only —
    videos keep their inline player and other files still open in a new tab. */
@@ -1027,6 +1054,16 @@ function PhotoViewer({
         onClick={(e) => e.stopPropagation()}
         className="max-h-[92dvh] max-w-[96vw] select-none object-contain"
       />
+      <a
+        href={downloadHref(att.url, att.name)}
+        download={att.name || undefined}
+        onClick={(e) => e.stopPropagation()}
+        aria-label={`Download ${att.name}`}
+        title="Download"
+        className="absolute top-3 right-16 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+      >
+        <DownloadIcon className="h-5 w-5" />
+      </a>
       <button
         type="button"
         onClick={onClose}

@@ -26,6 +26,8 @@ export interface ActiveEntry {
   ordered: number;
   received: number;
   poCount: number;
+  /** Earliest ordered_at on the job (ISO) — null until something is ordered */
+  orderedAt: string | null;
 }
 
 type Tab = "needs" | "ready" | "awaiting" | "complete";
@@ -268,6 +270,7 @@ function ActiveTable({
             <th className="px-3 py-2 font-medium text-right w-20">Ordered</th>
             <th className="px-3 py-2 font-medium text-right w-20">Received</th>
             <th className="px-3 py-2 font-medium text-right w-20">POs</th>
+            <th className="px-3 py-2 font-medium text-right w-24">Ordered</th>
             {onRemove && <th className="px-3 py-2 font-medium text-right w-24"></th>}
           </tr>
         </thead>
@@ -291,6 +294,9 @@ function ActiveTable({
               <td className="px-3 py-2 text-right font-mono text-indigo-400">{e.ordered || "—"}</td>
               <td className="px-3 py-2 text-right font-mono text-emerald-400">{e.received || "—"}</td>
               <td className="px-3 py-2 text-right font-mono text-muted-foreground">{e.poCount || "—"}</td>
+              <td className="px-3 py-2 text-right text-muted-foreground" title="Earliest order date on this job">
+                {e.orderedAt ? new Date(e.orderedAt).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) : "—"}
+              </td>
               {onRemove && (
                 <td className="px-3 py-2 text-right">
                   <button

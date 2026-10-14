@@ -15,6 +15,8 @@ export interface ProcurementItem {
   actual_supplier_id: string | null;
   default_supplier_id: string | null;
   backorder_note: string | null;
+  /** Supplier/online order number (Jaycar, DJ City…) — editable at any status */
+  order_ref: string | null;
   xero_po_id: string | null;
   xero_po_number: string | null;
   ordered_at: string | null;
@@ -50,6 +52,11 @@ function effectiveCost(i: ProcurementItem, offer?: SupplierOffer | null): number
   if (offer && Number(offer.cost_price) > 0) return Number(offer.cost_price);
   const live = Number(i.product?.cost_price ?? 0);
   return live > 0 ? live : Number(i.line?.cost_price ?? 0);
+}
+
+/** "14 Oct" — short day-month for the Status cell. */
+function shortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short" });
 }
 
 interface Supplier {
@@ -847,6 +854,16 @@ export function JobProcurement({
                             {item.xero_po_number}
                           </span>
                         )}
+                        {item.order_ref && (
+                          <span className="text-[10px] text-muted-foreground font-mono" title="Supplier order number">
+                            {item.order_ref}
+                          </span>
+                        )}
+                        {item.ordered_at && (
+                          <span className="text-[10px] text-muted-foreground">
+                            Ordered {shortDate(item.ordered_at)}
+                          </span>
+                        )}
                         {item.received_at && item.received_by_staff && (
                           <span className="text-[10px] text-muted-foreground">
                             by {item.received_by_staff.display_name}
@@ -899,7 +916,30 @@ export function JobProcurement({
                   </td>
                   {tab !== "complete" && (
                     <td className="px-2 py-2">
-                      {isLocked ? (
+                      {tab === "awaiting" ? (
+                        // Awaiting Delivery: the supplier's order number for stock
+                        // bought online (Sue, 2026-10-15). Editable even though
+                        // the line is locked — it's a note, not a Xero field.
+                        <div className="flex flex-col gap-0.5">
+                          <input
+                            type="text"
+                            key={`${item.id}:${item.order_ref ?? ""}`}
+                            defaultValue={item.order_ref ?? ""}
+                            onBlur={(e) => {
+                              const val = e.target.value.trim();
+                              if (val !== (item.order_ref ?? "")) {
+                                patchItem(item.id, { order_ref: val || null });
+                              }
+                            }}
+                            disabled={rowBusy}
+                            placeholder="Order # (Jaycar, DJ City…)"
+                            className="w-full min-w-[9rem] rounded-md border border-border bg-input px-2 py-1 font-mono text-xs text-foreground placeholder:font-sans placeholder:text-muted-foreground focus:border-primary focus:outline-none disabled:opacity-50"
+                          />
+                          {item.backorder_note && (
+                            <span className="text-[10px] text-muted-foreground">{item.backorder_note}</span>
+                          )}
+                        </div>
+                      ) : isLocked ? (
                         <span className="text-muted-foreground">{item.backorder_note ?? ""}</span>
                       ) : (
                         <input

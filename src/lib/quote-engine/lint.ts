@@ -5,6 +5,7 @@
  */
 import type { DeviceCounts, SiteInfo } from './constants'
 import type { BOMItem, DependencyRule, Product } from './dependency-engine'
+import { parseSlots } from './kits'
 import type { DeviceTypeRow, KitComponent, KitDiagnostic, TemplateSupply } from './kits'
 
 export type LintSeverity = 'error' | 'warn'
@@ -87,6 +88,15 @@ export function lintQuote(input: LintInput): LintFinding[] {
   const hddPresent = has((p) => roleOf(p) === 'hdd' || nameHas(p, /\bHDD\b|surveillance.*TB/i))
   const cameraLines = withProduct.filter(({ p }) => roleOf(p) === 'camera').reduce((t, { b }) => t + b.quantity, 0)
   if (nvrPresent && !hddPresent) f.push({ code: 'nvr_without_hdd', severity: 'error', message: 'An NVR is quoted with no hard drive — nothing would record' })
+  // More drives than the recorder can hold (CF-2026-0062: 3 × 6 TB on a 2-bay
+  // NVR, Sue 2026-10-15). Bays = Σ parseSlots(NVR) × line qty. A product whose
+  // scope_role is set to something other than nvr (e.g. the UCG router, whose
+  // name mentions "NVR Storage") contributes no bays.
+  const nvrLines = withProduct.filter(({ p }) => roleOf(p) === 'nvr' || (roleOf(p) == null && nameHas(p, /\bNVR\b/i)))
+  const hddLines = withProduct.filter(({ p }) => roleOf(p) === 'hdd' || (roleOf(p) == null && nameHas(p, /\bHDD\b|surveillance.*TB/i)))
+  const bays = nvrLines.reduce((t, { b, p }) => t + (p ? parseSlots(p) : 2) * b.quantity, 0)
+  const drives = hddLines.reduce((t, { b }) => t + b.quantity, 0)
+  if (nvrLines.length && drives > bays) f.push({ code: 'hdd_exceeds_bays', severity: 'error', message: `${drives} drives quoted but the NVR${nvrLines.length > 1 ? 's' : ''} only ${bays === 1 ? 'has' : 'have'} ${bays} bay${bays === 1 ? '' : 's'} — use bigger drives or a larger NVR` })
   if ((cams > 0 || cameraLines > 0) && !nvrPresent) f.push({ code: 'cameras_without_recorder', severity: 'error', message: `${cams || cameraLines} cameras quoted with no recorder` })
   const lockLines = withProduct.filter(({ p, b }) => roleOf(p) === 'mag_lock' || roleOf(p) === 'door_strike' || b.device_type_code === 'mag_lock' || b.device_type_code === 'door_strike')
   const psuPresent = has((p) => nameHas(p, /12V\s*(DC)?\s*\d+A|switchmode|power supply|PSU/i) && !nameHas(p, /18V|24V|battery/i))

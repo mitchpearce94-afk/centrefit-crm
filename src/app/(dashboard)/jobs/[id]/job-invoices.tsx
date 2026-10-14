@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
+import { ProductSearch, type ProductPick } from "@/components/product-search";
 
 interface Invoice {
   id: string;
@@ -280,6 +281,7 @@ export function JobInvoices({
   // When on, collapse the individual material rows into one "Parts Used" line
   // so the customer doesn't see every SKU (Sue, 2026-06-02).
   const [combineParts, setCombineParts] = useState(false);
+  const [showPartSearch, setShowPartSearch] = useState(false);
 
   const hasLinkedQuote = linkedQuotes.length > 0;
   const primaryQuote = linkedQuotes[0] ?? null;
@@ -337,6 +339,20 @@ export function JobInvoices({
     setRows((prev) => [
       ...prev,
       { id: `row_it_${Math.random().toString(36).slice(2, 8)}`, description: "IT Service", quantity: "1", unitAmount: billingSettings.it_service_labour_rate.toFixed(2) },
+    ]);
+  }
+
+  // Ad-hoc part from the catalogue (Sue, 0EEB63C7). The row_mat_ prefix means
+  // it folds into the combined "Parts Used" line like any other material.
+  function addPickedPart(p: ProductPick) {
+    setRows((prev) => [
+      ...prev,
+      {
+        id: `row_mat_pick_${Date.now()}`,
+        description: p.sku ? `${p.sku} — ${p.name}` : p.name,
+        quantity: "1",
+        unitAmount: p.sell_price.toFixed(2),
+      },
     ]);
   }
 
@@ -635,7 +651,7 @@ export function JobInvoices({
                   <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Priced Line Items
                   </label>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center justify-end gap-1.5">
                     <button
                       onClick={addRow}
                       className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
@@ -649,8 +665,24 @@ export function JobInvoices({
                     >
                       + IT Service (${billingSettings.it_service_labour_rate.toFixed(2)}/hr)
                     </button>
+                    <button
+                      onClick={() => setShowPartSearch((v) => !v)}
+                      className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
+                        showPartSearch
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10"
+                      }`}
+                      title="Search the parts catalogue and add one as a line at its sell price"
+                    >
+                      + Add part
+                    </button>
                   </div>
                 </div>
+                {showPartSearch && (
+                  <div className="mb-2">
+                    <ProductSearch onPick={addPickedPart} />
+                  </div>
+                )}
                 <p className="text-[11px] text-muted-foreground mb-2">
                   Auto-filled at quoted rates: labour @ ${billingSettings.labour_sell_rate.toFixed(2)}/hr, call-out @ ${billingSettings.callout_fee_sell.toFixed(2)}, materials at their sell price. Unit price is ex GST — Xero adds 10% GST.
                 </p>

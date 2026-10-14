@@ -109,7 +109,8 @@ export function hddPack(requiredTb: number, slots: number, drives: { product: Pr
 }
 
 const parseTb = (p: Product) => { const m = /(\d+(?:\.\d+)?)\s*TB/i.exec(p.name); return m ? Number(m[1]) : 0 }
-const parseSlots = (p: Product) => { const m = /(\d+)\s*X\s*SATA/i.exec(p.name); return m ? Number(m[1]) : 2 }
+/** Drive bays on an NVR from its name ("2X SATA"); unknown → 2. Shared with lint (hdd_exceeds_bays). */
+export const parseSlots = (p: Product) => { const m = /(\d+)\s*X\s*SATA/i.exec(p.name); return m ? Number(m[1]) : 2 }
 
 function lineFor(product: Product, qty: number, kit: BOMItem, note: string): BOMItem {
   return {
@@ -185,7 +186,8 @@ export function expandKits(
           diagnostics.push({ code: 'hdd_pack_skipped', message: `${kitLine.product_name}: no camera count to size the drives — add drives by hand (1 TB per camera, 30 days)`, product_id: kitLine.product_id })
           continue
         }
-        const packed = hddPack(required, parseSlots(pById.get(kitLine.product_id) ?? product), drives)
+        // Bays scale with the number of NVRs on the line (2 × 2-bay NVRs = 4 bays).
+        const packed = hddPack(required, parseSlots(pById.get(kitLine.product_id) ?? product) * Math.max(1, kitQty), drives)
         if (!packed.length) diagnostics.push({ code: 'hdd_pack_failed', message: `no surveillance drives with a cost to size ${required} TB for ${cams} cameras`, product_id: kitLine.product_id })
         for (const d of packed) added.push(lineFor(d.product, d.qty, kitLine, `${required} TB for ${cams} cameras at ${ctx.tbPerCamera ?? 1} TB/camera, ${ctx.retentionDays ?? 30} days — cheapest fill`))
         continue

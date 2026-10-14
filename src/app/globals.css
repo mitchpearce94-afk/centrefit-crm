@@ -21,9 +21,10 @@
 
   /* Neutral chips */
   --secondary: #1a1a26;
-  --secondary-foreground: #b3b3c2;
+  /* Dark-mode secondary/muted text lifted to near-white — Mark's suggestion 908E4314 (15 Sep 2026): "make all fonts white not grey". Light mode untouched. */
+  --secondary-foreground: #e0e0ea;
   --muted: #11111a;
-  --muted-foreground: #6e6e85;
+  --muted-foreground: #d4d4de;
   --accent: #1a1a26;
   --accent-foreground: #f4f4f8;
 
@@ -48,6 +49,14 @@
      light mode leaves the natural colour. Consumed inline by every Image
      that renders /centrefit-logo.png. */
   --logo-filter: brightness(0) invert(1);
+}
+
+/* Dark mode only: --muted-foreground is now near-white (908E4314), so
+   placeholders need their own grey or they read as typed values. Scoped to
+   html:not(.light) so it also beats the `placeholder:text-muted-foreground`
+   utility used on inputs. */
+html:not(.light) ::placeholder {
+  color: #8a8aa0;
 }
 
 /* Light mode — class is set by ThemeToggle / the no-FOUC inline script in

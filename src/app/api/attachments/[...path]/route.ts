@@ -13,6 +13,20 @@ import { createServiceRoleClient } from "@/lib/supabase/service";
  * Stored historical URLs were rewritten in the same migration
  * (20260706020000_job_attachments_private).
  */
+/** Safe Content-Disposition filename: ASCII letters/digits/._- and spaces only. */
+function sanitiseFilename(raw: string | null, fallback: string): string {
+  const cleaned = (raw ?? "")
+    .replace(/[\\/]/g, "-")
+    .replace(/[^A-Za-z0-9._ \-()]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 150);
+  const base = cleaned.replace(/^\.+/, "");
+  if (base) return base;
+  const fb = fallback.replace(/[^A-Za-z0-9._\-()]/g, "").replace(/^\.+/, "");
+  return fb || "attachment";
+}
+
 export async function GET(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
   const objectPath = (path ?? []).map(decodeURIComponent).join("/");
@@ -26,13 +40,23 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
 
   const sb = createServiceRoleClient();
 
+  // ?download=<filename> forces a save-as instead of inline display (Sue,
+  // suggestion B14F7A0D — download photos from job notes + site key info).
+  // The name is sanitised to a safe ASCII subset; falls back to the object's
+  // own basename when the caller sends nothing usable.
+  const downloadName = sanitiseFilename(
+    req.nextUrl.searchParams.get("download"),
+    objectPath.split("/").pop() ?? "attachment",
+  );
+  const wantsDownload = req.nextUrl.searchParams.has("download");
+
   // Videos need byte-range support (iOS Safari refuses to play without 206
   // responses, and buffering a whole clip into serverless memory is wasteful).
   // Redirect to a short-lived signed URL — Supabase's CDN handles Range natively.
   if (/\.(mp4|mov|m4v|webm|avi|mkv|3gp)$/i.test(objectPath)) {
     const { data: signed, error: signErr } = await sb.storage
       .from("job-attachments")
-      .createSignedUrl(objectPath, 3600);
+      .createSignedUrl(objectPath, 3600, wantsDownload ? { download: downloadName } : undefined);
     if (signErr || !signed?.signedUrl) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -43,6 +67,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
   if (error || !data) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const buf = Buffer.from(await data.arrayBuffer());
+
+  if (wantsDownload) {
+    return new NextResponse(new Uint8Array(buf), {
+      headers: {
+        "Content-Type": data.type || "application/octet-stream",
+        "Content-Disposition": `attachment; filename="${downloadName}"`,
+        "Cache-Control": "private, max-age=3600",
+      },
+    });
+  }
 
   // ?w=<px> serves a downscaled thumbnail so grids don't decode full-size
   // photos into 128px tiles. Object paths embed Date.now()+random and are

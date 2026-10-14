@@ -11,9 +11,14 @@ import { checkLowStock } from "@/lib/inventory/low-stock";
  *   - actual_supplier_id: staff supplier override
  *   - quantity: edit qty (usually via /split, but raw edits are OK too)
  *   - backorder_note: freeform text
+ *   - order_ref: the supplier's own order number for stock bought online
+ *     (Jaycar, DJ City…) — Sue's ask 2026-10-15. Editable at any status.
+ *
+ * ordered_at is stamped here only for the Order Online path (there's no PO
+ * to stamp it) and cleared when a line goes back to triage/stock.
  *
  * Explicitly NOT patchable here:
- *   - ordered_at / xero_po_id — set only by /generate-pos
+ *   - ordered_at (for PO lines) / xero_po_id — set only by /generate-pos
  *   - received_at / received_by — set only by /receive
  *   - default_supplier_id — initialisation value, immutable
  */
@@ -34,6 +39,7 @@ export async function PATCH(
     actual_supplier_id?: string | null;
     quantity?: number;
     backorder_note?: string | null;
+    order_ref?: string | null;
   };
   try {
     body = await req.json();
@@ -52,6 +58,9 @@ export async function PATCH(
       );
     }
     update.status = body.status;
+    // Order Online has no PO to stamp the order date, so stamp it here;
+    // anything back to triage/stock is no longer "ordered".
+    update.ordered_at = body.status === "ordered_online" ? new Date().toISOString() : null;
   }
   if (body.actual_supplier_id !== undefined) {
     update.actual_supplier_id = body.actual_supplier_id;
@@ -65,10 +74,18 @@ export async function PATCH(
   if (body.backorder_note !== undefined) {
     update.backorder_note = body.backorder_note;
   }
+  if (body.order_ref !== undefined) {
+    const ref = body.order_ref == null ? null : String(body.order_ref).trim();
+    update.order_ref = ref || null;
+  }
 
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: "No patchable fields in request body" }, { status: 400 });
   }
+
+  // Notes-only edits (order_ref / backorder_note) never touch Xero or stock,
+  // so they're allowed through the ordered/received lock below.
+  const notesOnly = Object.keys(update).every((k) => k === "order_ref" || k === "backorder_note");
 
   // Block edits to rows that are already ordered/received — those are
   // effectively immutable from Xero's perspective
@@ -79,7 +96,7 @@ export async function PATCH(
     .maybeSingle();
   if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
   if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (current.status === "ordered" || current.status === "received") {
+  if (!notesOnly && (current.status === "ordered" || current.status === "received")) {
     return NextResponse.json(
       { error: `Cannot edit a ${current.status} procurement item` },
       { status: 400 },

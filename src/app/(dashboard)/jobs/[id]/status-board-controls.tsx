@@ -30,6 +30,8 @@ interface Props {
   fitOffEndDate: string | null;
   fitOffStaffIds: string[];
   openingDate: string | null;
+  handoverDate: string | null;
+  datesTbc: boolean;
   contact?: Contact | null;
 }
 
@@ -52,6 +54,8 @@ export function StatusBoardControls({
   fitOffEndDate: initFoEnd,
   fitOffStaffIds: initFoStaff,
   openingDate: initOpening,
+  handoverDate: initHandover,
+  datesTbc: initTbc,
   contact,
 }: Props) {
   const router = useRouter();
@@ -65,6 +69,8 @@ export function StatusBoardControls({
   const [foEnd, setFoEnd] = useState(initFoEnd ?? "");
   const [foStaff, setFoStaff] = useState<string[]>(initFoStaff ?? []);
   const [opening, setOpening] = useState(initOpening ?? "");
+  const [handover, setHandover] = useState(initHandover ?? "");
+  const [tbc, setTbc] = useState(initTbc);
   const [busy, setBusy] = useState(false);
   // Collapsed by default on phones (Mitchell 2026-08-18): the build-dates
   // panel is admin/status-board tooling and was eating the whole screen for
@@ -78,6 +84,8 @@ export function StatusBoardControls({
     riStart: string; riEnd: string; riStaff: string[];
     foStart: string; foEnd: string; foStaff: string[];
     opening: string;
+    handover: string;
+    tbc: boolean;
   }> = {}) {
     const payload = {
       isNewBuild: over.isNewBuild ?? isNewBuild,
@@ -88,6 +96,8 @@ export function StatusBoardControls({
       fitOffEndDate: (over.foEnd ?? foEnd) || null,
       fitOffStaffIds: over.foStaff ?? foStaff,
       openingDate: (over.opening ?? opening) || null,
+      handoverDate: (over.handover ?? handover) || null,
+      datesTbc: over.tbc ?? tbc,
     };
     setBusy(true);
     try {
@@ -116,22 +126,52 @@ export function StatusBoardControls({
     else toast(next ? "Added to status board" : "Removed from status board");
   }
 
+  // Dates TBC — Sue 2026-10 (8E5060AF): flags every date in the box as
+  // provisional. Saves immediately, same path as the new-build toggle.
+  async function toggleTbc() {
+    const next = !tbc;
+    setTbc(next);
+    const ok = await sync({ tbc: next });
+    if (!ok) setTbc(!next);
+  }
+
   return (
     <div>
-      <button
-        type="button"
-        onClick={toggle}
-        disabled={busy}
-        title="Mark this job as a full fit-out / new build — shows it on the status board"
-        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
-          isNewBuild
-            ? "border-violet-500/40 bg-violet-500/10 text-violet-300"
-            : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
-        }`}
-      >
-        <span className={`h-1.5 w-1.5 rounded-full ${isNewBuild ? "bg-violet-400" : "bg-muted-foreground"}`} />
-        New Build / Fit-Out
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={toggle}
+          disabled={busy}
+          title="Mark this job as a full fit-out / new build — shows it on the status board"
+          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+            isNewBuild
+              ? "border-violet-500/40 bg-violet-500/10 text-violet-300"
+              : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+          }`}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${isNewBuild ? "bg-violet-400" : "bg-muted-foreground"}`} />
+          New Build / Fit-Out
+        </button>
+        {isNewBuild && (
+          <label
+            title="Dates are provisional / to be confirmed — shows a TBC flag on the status board"
+            className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+              tbc
+                ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+            } ${busy ? "opacity-50" : ""}`}
+          >
+            <input
+              type="checkbox"
+              checked={tbc}
+              disabled={busy}
+              onChange={toggleTbc}
+              className="h-3 w-3 accent-amber-400"
+            />
+            TBC
+          </label>
+        )}
+      </div>
 
       {isNewBuild && (
         <button
@@ -143,7 +183,9 @@ export function StatusBoardControls({
             Build dates
             {riStart && ` · RI ${riStart.slice(8, 10)}/${riStart.slice(5, 7)}`}
             {foStart && ` · FO ${foStart.slice(8, 10)}/${foStart.slice(5, 7)}`}
+            {handover && ` · HO ${handover.slice(8, 10)}/${handover.slice(5, 7)}`}
             {opening && ` · Opens ${opening.slice(8, 10)}/${opening.slice(5, 7)}`}
+            {tbc && " · TBC"}
           </span>
           <svg
             className={`h-4 w-4 shrink-0 transition-transform ${mobileOpen ? "rotate-180" : ""}`}
@@ -184,6 +226,23 @@ export function StatusBoardControls({
               onEndCommit={(v) => sync({ foEnd: v })}
               onStaff={(v) => { setFoStaff(v); sync({ foStaff: v }); }}
             />
+            {/* Base Builder Handover — Sue 2026-10 (FB6EE0B8): single date, no crew booking */}
+            <div className="rounded-md border border-border/60 bg-background/40 p-3 sm:col-span-2">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-sky-400" />
+                <span className="text-xs font-semibold">Base Builder Handover</span>
+              </div>
+              <label className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                Handover
+                <input
+                  type="date"
+                  value={handover}
+                  onChange={(e) => setHandover(e.target.value)}
+                  onBlur={(e) => sync({ handover: e.target.value })}
+                  className={dateInput}
+                />
+              </label>
+            </div>
             {/* Opening Date — Sue 2026-07-03: single date, no crew booking */}
             <div className="rounded-md border border-border/60 bg-background/40 p-3 sm:col-span-2">
               <div className="mb-2 flex items-center gap-2">

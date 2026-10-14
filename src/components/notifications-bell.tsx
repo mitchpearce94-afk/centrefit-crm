@@ -120,13 +120,30 @@ export function NotificationsBell() {
     setUnread(0);
   }
 
+  // Per-row read/unread toggle (Sue, suggestion B642EBAF 24 Sep 2026: some
+  // notifications are "noted", others need "actioned", and Mark-all was the
+  // only option). Same client path as markAllRead — the RLS update policy is
+  // staff_id = auth.uid() with no WITH CHECK, so flipping read_at back to
+  // null on your own row is allowed.
+  async function toggleRead(row: NotificationRow, e: React.MouseEvent) {
+    e.stopPropagation();
+    const next = row.read_at ? null : new Date().toISOString();
+    const supabase = createClient();
+    const { error } = await supabase.from("notifications").update({ read_at: next }).eq("id", row.id);
+    if (error) return;
+    setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, read_at: next } : r)));
+    setUnread((u) => (next ? Math.max(0, u - 1) : u + 1));
+  }
+
   async function pickRow(row: NotificationRow) {
     if (!row.read_at) {
+      const now = new Date().toISOString();
       const supabase = createClient();
       await supabase
         .from("notifications")
-        .update({ read_at: new Date().toISOString() })
+        .update({ read_at: now })
         .eq("id", row.id);
+      setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, read_at: now } : r)));
       setUnread((u) => Math.max(0, u - 1));
     }
     if (row.href) {
@@ -186,20 +203,40 @@ export function NotificationsBell() {
               <p className="px-4 py-6 text-center text-xs text-muted-foreground">You&apos;re all caught up.</p>
             )}
             {rows.map((r) => (
-              <button
+              <div
                 key={r.id}
-                onClick={() => pickRow(r)}
-                className={`w-full text-left px-4 py-2.5 border-b border-border hover:bg-accent transition-colors ${r.read_at ? "" : "bg-primary/5"}`}
+                className={`flex items-start border-b border-border hover:bg-accent transition-colors ${r.read_at ? "" : "bg-primary/5"}`}
               >
-                <div className="flex items-start gap-2">
-                  {!r.read_at && <span className="mt-1.5 inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full bg-primary" />}
-                  <div className={`flex-1 min-w-0 ${r.read_at ? "" : "pl-0"}`}>
-                    <div className="text-sm font-medium leading-snug">{r.title}</div>
-                    {r.body && <div className="text-xs text-muted-foreground mt-0.5 leading-snug">{r.body}</div>}
-                    <div className="text-[11px] text-muted-foreground mt-1">{fmtRelative(r.created_at)}</div>
+                <button
+                  type="button"
+                  onClick={() => pickRow(r)}
+                  className="flex-1 min-w-0 text-left px-4 py-2.5"
+                >
+                  <div className="flex items-start gap-2">
+                    {!r.read_at && <span className="mt-1.5 inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full bg-primary" />}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium leading-snug">{r.title}</div>
+                      {r.body && <div className="text-xs text-muted-foreground mt-0.5 leading-snug">{r.body}</div>}
+                      <div className="text-[11px] text-muted-foreground mt-1">{fmtRelative(r.created_at)}</div>
+                    </div>
                   </div>
-                </div>
-              </button>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => toggleRead(r, e)}
+                  title={r.read_at ? "Mark as unread" : "Mark as read"}
+                  aria-label={r.read_at ? "Mark as unread" : "Mark as read"}
+                  className="flex-shrink-0 px-3 py-2.5 text-muted-foreground hover:text-foreground"
+                >
+                  {r.read_at ? (
+                    // closed envelope = currently read; click to mark unread
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="3 7 12 13 21 7"/></svg>
+                  ) : (
+                    // tick = mark this one read without opening it
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  )}
+                </button>
+              </div>
             ))}
           </div>
         </div>

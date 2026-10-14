@@ -23,6 +23,8 @@ interface BoardJob {
   fit_off_date: string | null;
   fit_off_end_date: string | null;
   opening_date: string | null;
+  handover_date: string | null;
+  dates_tbc: boolean | null;
   rough_in_staff_ids: string[] | null;
   fit_off_staff_ids: string[] | null;
   customer: { name: string } | { name: string }[] | null;
@@ -177,7 +179,7 @@ export default async function StatusBoardPage({
   const { data } = await supabase
     .from("jobs")
     .select(
-      "id, number, reference, rough_in_date, rough_in_end_date, fit_off_date, fit_off_end_date, opening_date, rough_in_staff_ids, fit_off_staff_ids, customer:customers(name), site:customer_sites(name), status:statuses(name, colour, sort_order)",
+      "id, number, reference, rough_in_date, rough_in_end_date, fit_off_date, fit_off_end_date, opening_date, handover_date, dates_tbc, rough_in_staff_ids, fit_off_staff_ids, customer:customers(name), site:customer_sites(name), status:statuses(name, colour, sort_order)",
     )
     .eq("is_new_build", true);
 
@@ -286,12 +288,27 @@ export default async function StatusBoardPage({
                       <div className="min-w-0">
                         <div className="truncate font-bold tracking-tight text-white text-[clamp(1.05rem,1.35vw,1.6rem)]">{title}</div>
                         {subtitle && <div className="truncate text-white/45 text-[clamp(0.75rem,0.9vw,0.95rem)]">{subtitle}</div>}
+                        {/* Base builder handover — Sue 2026-10 (FB6EE0B8). Sits under the
+                            site name so the column grid stays unchanged. */}
+                        {j.handover_date && (
+                          <div className="truncate text-sky-300/80 text-[clamp(0.7rem,0.85vw,0.9rem)]">
+                            Handover {fmtShort(j.handover_date)}
+                          </div>
+                        )}
                       </div>
 
                       {/* Rough In */}
                       <div>
                         <div className="md:hidden mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-white/35">Rough In</div>
-                        <PhaseBlock start={j.rough_in_date} end={j.rough_in_end_date} crew={crewOf(j.rough_in_staff_ids)} />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <PhaseBlock start={j.rough_in_date} end={j.rough_in_end_date} crew={crewOf(j.rough_in_staff_ids)} />
+                          {/* Dates TBC — Sue 2026-10 (8E5060AF): every date on this row is provisional. */}
+                          {j.dates_tbc && (
+                            <span className="inline-flex items-center rounded-full border border-amber-400/50 bg-amber-400/15 px-2 py-0.5 text-[clamp(0.65rem,0.75vw,0.8rem)] font-semibold uppercase tracking-wider text-amber-300">
+                              TBC
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Fit Off */}
