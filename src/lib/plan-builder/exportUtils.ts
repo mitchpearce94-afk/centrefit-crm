@@ -103,25 +103,63 @@ async function loadAndInjectSvg(pageNum: number, titleBlock: TitleBlockInfo, cli
   // border. Address is the worst offender ("Unit 12/345 Some Long Street,
   // Suburb QLD 4000" easily overruns the cell at 130pt bold).
   const MAIN_CELL_MAX_W = 2400; // client / project / address shared cell
-  const fields: Array<{ x: number; y: number; text: string; fontSize: number; bold: boolean; anchor: 'middle' | 'end' | 'start'; maxWidth?: number }> = [];
+  // wrapLines: let a long value drop onto a second line (centred, lineGap
+  // apart) before resorting to glyph squeezing. The works-address cell is
+  // 700 units tall (rules at 12103 / 12803, label to ~12274) so two 130pt
+  // lines fit comfortably; squeezing only kicks in if a single line is still
+  // too wide after the split. (Mitchell 14 Oct 2026: "I'd rather it drop to
+  // a second line" — the compressed text was unreadable.)
+  const fields: Array<{ x: number; y: number; text: string; fontSize: number; bold: boolean; anchor: 'middle' | 'end' | 'start'; maxWidth?: number; wrapLines?: number; lineGap?: number }> = [];
   if (titleBlock.client) fields.push({ x: TB.mainFieldX, y: TB.clientY, text: titleBlock.client, fontSize: TB.mainFontSize, bold: true, anchor: 'middle', maxWidth: MAIN_CELL_MAX_W });
   if (titleBlock.projectName) fields.push({ x: TB.mainFieldX, y: TB.projectY, text: titleBlock.projectName, fontSize: TB.mainFontSize, bold: true, anchor: 'middle', maxWidth: MAIN_CELL_MAX_W });
-  if (titleBlock.worksAddress) fields.push({ x: TB.mainFieldX, y: TB.addressY, text: titleBlock.worksAddress, fontSize: TB.mainFontSize, bold: true, anchor: 'middle', maxWidth: MAIN_CELL_MAX_W });
+  if (titleBlock.worksAddress) fields.push({ x: TB.mainFieldX, y: TB.addressY, text: titleBlock.worksAddress, fontSize: TB.mainFontSize, bold: true, anchor: 'middle', maxWidth: MAIN_CELL_MAX_W, wrapLines: 2, lineGap: 160 });
   if (titleBlock.date) fields.push({ x: TB.rightColX, y: TB.dateY, text: titleBlock.date, fontSize: TB.smallFontSize, bold: true, anchor: 'middle' });
   if (titleBlock.drawingNumber) fields.push({ x: 20655, y: TB.drawingNoY, text: titleBlock.drawingNumber, fontSize: TB.smallFontSize, bold: true, anchor: 'end' });
   if (titleBlock.revision) fields.push({ x: TB.rightColX, y: TB.revisionY, text: titleBlock.revision, fontSize: TB.smallFontSize, bold: true, anchor: 'middle' });
 
+  // Estimate natural width — Arial bold averages ~0.55 × fontSize per char.
+  const estWidth = (text: string, fontSize: number) => text.length * fontSize * 0.55;
+  // Split text into up to `maxLines` lines at a space or just after a comma,
+  // picking the break that keeps the longer of the two pieces shortest so
+  // the lines come out balanced ("Tenancy 4 & 5, 1185-1197 Pascoe" /
+  // "Vale Road, Broadmeadows VIC 3047"). A comma break wins ties within two
+  // characters. Falls back to the whole string when there's nowhere to break.
+  const wrapText = (text: string, maxLines: number): string[] => {
+    const lines: string[] = [];
+    let rest = text.trim();
+    while (lines.length < maxLines - 1 && rest.length > 0) {
+      let best = -1, bestScore = Infinity;
+      for (let i = 1; i < rest.length - 1; i++) {
+        const ch = rest[i];
+        if (ch !== ' ' && ch !== ',') continue;
+        const pos = ch === ',' ? i + 1 : i;
+        const a = rest.slice(0, pos).trim().length, b = rest.slice(pos).trim().length;
+        const score = Math.max(a, b) - (ch === ',' ? 2 : 0);
+        if (score < bestScore) { bestScore = score; best = pos; }
+      }
+      if (best < 0) break;
+      lines.push(rest.slice(0, best).trim());
+      rest = rest.slice(best).trim();
+    }
+    if (rest) lines.push(rest);
+    return lines;
+  };
+
   let injection = '';
   for (const f of fields) {
     const weight = f.bold ? ' font-weight="bold"' : '';
-    // Estimate natural width — Arial bold averages ~0.55 × fontSize per char.
-    // If the text fits, render it natural; if it'd overflow the cell, force
-    // it to fit via textLength + lengthAdjust='spacingAndGlyphs'. The
-    // glyphs compress very slightly but the address stays inside the box.
-    const estWidth = f.text.length * f.fontSize * 0.55;
-    const needsFit = f.maxWidth !== undefined && estWidth > f.maxWidth;
-    const fitAttrs = needsFit ? ` textLength="${f.maxWidth}" lengthAdjust="spacingAndGlyphs"` : '';
-    injection += `<text x="${f.x}" y="${f.y}" font-family="Arial, sans-serif" font-size="${f.fontSize}"${weight} text-anchor="${f.anchor}" fill="black"${fitAttrs}>${escapeXml(f.text)}</text>\n`;
+    const overflows = f.maxWidth !== undefined && estWidth(f.text, f.fontSize) > f.maxWidth;
+    // Overflow + wrapping allowed → drop onto extra lines first, centred on
+    // the original baseline. Each line still gets the textLength clamp if it
+    // is individually too wide (very long single words / no break points).
+    const lines = overflows && f.wrapLines && f.wrapLines > 1 ? wrapText(f.text, f.wrapLines) : [f.text];
+    const gap = f.lineGap ?? f.fontSize * 1.2;
+    const firstY = f.y - ((lines.length - 1) * gap) / 2;
+    lines.forEach((line, i) => {
+      const needsFit = f.maxWidth !== undefined && estWidth(line, f.fontSize) > f.maxWidth;
+      const fitAttrs = needsFit ? ` textLength="${f.maxWidth}" lengthAdjust="spacingAndGlyphs"` : '';
+      injection += `<text x="${f.x}" y="${firstY + i * gap}" font-family="Arial, sans-serif" font-size="${f.fontSize}"${weight} text-anchor="${f.anchor}" fill="black"${fitAttrs}>${escapeXml(line)}</text>\n`;
+    });
   }
   if (clientLogo) {
     // Constrain logo to the title block box — centered within, never overflows
