@@ -7,6 +7,16 @@ import { useToast } from "@/components/ui/toast";
 
 const inputClass = "block w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
 
+/** Regos typed one per line → upper-case, no spaces, de-duplicated, blanks dropped. */
+function parseRegos(text: string): string[] {
+  const out: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const rego = line.trim().toUpperCase().replace(/\s+/g, "");
+    if (rego && !out.includes(rego)) out.push(rego);
+  }
+  return out;
+}
+
 interface Settings {
   id: string;
   labour_cost_rate: number;
@@ -26,7 +36,7 @@ interface Settings {
   default_payment_terms: string;
   progress_payment_enabled: boolean;
   receipt_forward_email: string;
-  xero_bills_email: string | null;
+  fuel_regos: string[] | null;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -57,6 +67,7 @@ export function BillingSettings({ settings }: { settings: Settings | null }) {
   const supabase = createClient();
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
+  const [regosText, setRegosText] = useState((settings?.fuel_regos ?? []).join("\n"));
 
   const [s, setS] = useState<Settings>(settings ?? {
     id: "", labour_cost_rate: 75, labour_sell_rate: 150, it_service_labour_rate: 120,
@@ -68,16 +79,17 @@ export function BillingSettings({ settings }: { settings: Settings | null }) {
     default_payment_terms: "Due on completion",
     progress_payment_enabled: true,
     receipt_forward_email: "accounts@centrefit.com.au",
-    xero_bills_email: "",
+    fuel_regos: [],
   });
 
-  function set(field: keyof Settings, value: number | string | boolean) {
+  function set(field: keyof Settings, value: number | string | boolean | string[]) {
     setS(prev => ({ ...prev, [field]: value }));
   }
 
   async function handleSave() {
     setSaving(true);
-    const { id, ...payload } = s;
+    const { id, ...rest } = s;
+    const payload = { ...rest, fuel_regos: parseRegos(regosText) };
     const { error } = await supabase.from("billing_settings").update(payload).eq("id", id);
     if (error) toast(error.message, "error");
     else { toast("Billing settings saved"); router.refresh(); }
@@ -124,11 +136,18 @@ export function BillingSettings({ settings }: { settings: Settings | null }) {
         <Field label="Default Payment Terms">
           <input type="text" value={s.default_payment_terms} onChange={e => set("default_payment_terms", e.target.value)} className={inputClass} />
         </Field>
-        <Field label="Receipt forwarding email">
-          <input type="text" value={s.receipt_forward_email} onChange={e => set("receipt_forward_email", e.target.value)} placeholder="accounts@centrefit.com.au" className={inputClass} />
+        <Field label="Receipts go to (email)">
+          <input type="email" value={s.receipt_forward_email} onChange={e => set("receipt_forward_email", e.target.value)} placeholder="jeremiah@centrefit.com.au" className={inputClass} />
         </Field>
-        <Field label="Xero bills inbox (email bills to Xero)">
-          <input type="text" value={s.xero_bills_email ?? ""} onChange={e => set("xero_bills_email", e.target.value)} placeholder="bills.xxxx@xerofiles.com" className={inputClass} />
+        <Field label="Fuel vehicles — regos, one per line (Snap app Fuel toggle)">
+          <textarea
+            rows={4}
+            value={regosText}
+            onChange={e => setRegosText(e.target.value)}
+            onBlur={() => set("fuel_regos", parseRegos(regosText))}
+            placeholder={"CFT002\nCFT003"}
+            className={`${inputClass} font-mono uppercase`}
+          />
         </Field>
         <div className="flex items-center gap-2 pt-5">
           <button

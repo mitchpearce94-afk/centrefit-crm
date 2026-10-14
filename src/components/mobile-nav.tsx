@@ -37,7 +37,7 @@ const TABS: NavItem[] = [
   { name: "Jobs", href: "/jobs", icon: BriefcaseIcon, flag: "jobs.view" },
   { name: "Schedule", href: "/scheduler", icon: CalendarIcon, flag: null },
   { name: "Quotes", href: "/quoting", icon: QuoteIcon, flag: "quoting.view" },
-  { name: "Receipts", href: "/receipts", icon: ReceiptIcon, flag: null },
+  { name: "Receipts", href: "/snap", icon: ReceiptIcon, flag: null },
 ];
 
 const MORE_LINKS: NavItem[] = [

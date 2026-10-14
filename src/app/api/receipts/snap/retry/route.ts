@@ -7,7 +7,7 @@ export const maxDuration = 60;
 
 /**
  * POST /api/receipts/snap/retry { id } — the phone's "Retry" for a receipt
- * that was stored but never reached Xero. Re-reads the image from storage
+ * that was stored but never reached the accountant. Re-reads the image from storage
  * and re-runs the read + forward in the request (so the phone gets a real
  * answer, not a fire-and-forget). Only the uploader can retry their own.
  */
@@ -22,6 +22,6 @@ export async function POST(req: NextRequest) {
   if (!own) return NextResponse.json({ error: "Receipt not found" }, { status: 404 });
 
   const result = await reprocessSnapReceipt(svc, id);
-  const { data: row } = await svc.from("receipts").select("id, email_sent, email_error, forwarded_to, vendor, amount").eq("id", id).single();
+  const { data: row } = await svc.from("receipts").select("id, email_sent, email_error, forwarded_to").eq("id", id).single();
   return NextResponse.json({ ok: result.ok, error: result.error ?? null, status: row ? snapStatusOf(row) : null }, { status: result.ok ? 200 : 502 });
 }

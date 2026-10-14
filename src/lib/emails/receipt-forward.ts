@@ -1,20 +1,44 @@
 import { Resend } from "resend";
-import { FROM_NO_REPLY, REPLY_TO_ACCOUNTS } from "@/lib/emails/from-addresses";
+import { REPLY_TO_ACCOUNTS } from "@/lib/emails/from-addresses";
 
 function getResend() {
   return new Resend(process.env.RESEND_API_KEY);
 }
 
+/** What a receipt is attached to — drives the one-line template. */
+export interface ReceiptTag {
+  /** Fuel receipt → rego instead of a job. */
+  isFuel: boolean;
+  vehicleRego: string | null;
+  jobNumber: string | null;
+}
+
+/**
+ * The email line Jig gets — exactly Mitchell's template (2026-10-15):
+ *   Please see attached receipt - no job attached
+ *   Please see attached receipt - CFA05281
+ *   Please see attached fuel receipt - CFT003
+ * Used as both the subject and the body, and echoed on the phone.
+ */
+export function receiptEmailLine(tag: ReceiptTag): string {
+  if (tag.isFuel) return `Please see attached fuel receipt - ${tag.vehicleRego ?? "rego not set"}`;
+  if (tag.jobNumber) return `Please see attached receipt - ${tag.jobNumber}`;
+  return "Please see attached receipt - no job attached";
+}
+
+/** The bit after the dash — what the phone shows in its green banner. */
+export function receiptTagLabel(tag: ReceiptTag): string {
+  if (tag.isFuel) return `Fuel · ${tag.vehicleRego ?? "no rego"}`;
+  return tag.jobNumber ?? "No job attached";
+}
+
 export interface ForwardReceiptInput {
   to: string;
-  cc?: string[];
   filename: string;
-  /** Raw image bytes. */
+  /** Raw image/PDF bytes. */
   content: Buffer;
-  vendor?: string | null;
-  amount?: number | null;
-  receiptDate?: string | null;
-  jobNumber?: string | null;
+  tag: ReceiptTag;
+  /** Who scanned it — becomes the From display name so the accountant knows whose card it was. */
   uploadedByName?: string | null;
 }
 
@@ -23,9 +47,10 @@ function escapeHtml(s: string): string {
 }
 
 /**
- * Forward a scanned receipt to the configured accounts mailbox as an
- * attachment. Best-effort — the caller decides whether a failure is fatal
- * (it isn't: the receipt is already stored in the CRM regardless).
+ * Email a scanned receipt to the accounts destination (the accountant's
+ * mailbox) as an attachment. Subject and body are the template line only —
+ * nothing else to read. Best-effort: the caller records the outcome on the
+ * receipts row; the image is already safe in storage regardless.
  */
 export async function forwardReceiptEmail(
   input: ForwardReceiptInput,
@@ -33,47 +58,17 @@ export async function forwardReceiptEmail(
   if (!process.env.RESEND_API_KEY) {
     return { ok: false, error: "RESEND_API_KEY not configured" };
   }
-
-  const row = (label: string, value: string) =>
-    `<tr><td style="padding:6px 12px;font-size:12px;color:#64748b;width:120px">${escapeHtml(label)}</td><td style="padding:6px 12px;font-size:13px;color:#0a1628;font-weight:600">${escapeHtml(value)}</td></tr>`;
-
-  const rows = [
-    input.vendor ? row("Vendor", input.vendor) : "",
-    input.amount != null ? row("Amount", `$${Number(input.amount).toFixed(2)}`) : "",
-    input.receiptDate ? row("Date", input.receiptDate) : "",
-    input.jobNumber ? row("Job", input.jobNumber) : row("Job", "Not linked to a job"),
-    input.uploadedByName ? row("Scanned by", input.uploadedByName) : "",
-  ].filter(Boolean).join("");
-
-  const html = `<!doctype html><html><body style="margin:0;background:#f1f5f9;font-family:-apple-system,Segoe UI,Roboto,sans-serif">
-    <table width="100%" style="background:#f1f5f9"><tr><td align="center" style="padding:28px 12px">
-      <table width="100%" style="max-width:560px;background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden">
-        <tr><td style="padding:20px 24px;background:#0a1628;color:#fff">
-          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;color:#fbbf24;text-transform:uppercase">Centrefit · Receipt</div>
-          <h1 style="margin:8px 0 0;font-size:18px;font-weight:700">Scanned receipt attached</h1>
-        </td></tr>
-        <tr><td style="padding:12px"><table width="100%" style="border-collapse:collapse">${rows}</table></td></tr>
-        <tr><td style="padding:12px 24px 20px;font-size:12px;color:#64748b">The original receipt image is attached to this email. Captured via the Centrefit CRM receipt scanner.</td></tr>
-      </table>
-    </td></tr></table>
-  </body></html>`;
-
-  const subjectBits = [
-    "Receipt",
-    input.vendor ? `· ${input.vendor}` : "",
-    input.amount != null ? `· $${Number(input.amount).toFixed(2)}` : "",
-    input.jobNumber ? `· ${input.jobNumber}` : "",
-    input.uploadedByName ? `· ${input.uploadedByName}` : "",
-  ].filter(Boolean);
+  const line = receiptEmailLine(input.tag);
+  const fromName = input.uploadedByName?.trim() ? `${input.uploadedByName.trim()} via Centrefit CRM` : "Centrefit CRM";
 
   try {
     const { error } = await getResend().emails.send({
-      from: FROM_NO_REPLY,
+      from: `${fromName} <noreply@centrefit.com.au>`,
       to: input.to,
-      ...(input.cc && input.cc.length ? { cc: input.cc } : {}),
       replyTo: REPLY_TO_ACCOUNTS,
-      subject: subjectBits.join(" "),
-      html,
+      subject: line,
+      text: line,
+      html: `<p style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;color:#0a1628">${escapeHtml(line)}</p>`,
       attachments: [{ filename: input.filename, content: input.content.toString("base64") }],
     });
     if (error) return { ok: false, error: String(error.message ?? error) };

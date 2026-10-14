@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { resolveSnapStaff } from "@/lib/receipts/snap-device";
-import { processSnapReceipt } from "@/lib/receipts/snap";
+import { fuelRegos, processSnapReceipt } from "@/lib/receipts/snap";
+import { receiptTagLabel, type ReceiptTag } from "@/lib/emails/receipt-forward";
 
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"]);
 const MAX_BYTES = 15 * 1024 * 1024;
 
 /**
  * POST /api/receipts/snap — one receipt from the phone camera or photo
- * picker. Multipart: file (required), job_id?, source? ("snap" | "bulk").
+ * picker. Multipart: file (required), job_id?, source? ("snap" | "bulk"),
+ * fuel? ("1" = fuel receipt), rego? (one of Settings → Billing fuel regos).
  *
  * Responds the moment the image is stored and the row exists, so the
- * shutter feels instant; reading the receipt and forwarding it to Xero
+ * shutter feels instant; emailing it to the accountant and reading it
  * happen in `after()`. Who sent it is always stamped (uploaded_by).
+ * A fuel receipt never carries a job — the rego is its tag.
  */
 export const maxDuration = 60;
 
@@ -36,7 +39,17 @@ export async function POST(req: NextRequest) {
   if (file.size > MAX_BYTES) return NextResponse.json({ error: "File too large (max 15 MB)" }, { status: 400 });
   if (!ALLOWED_MIME.has(file.type)) return NextResponse.json({ error: "Receipt must be an image or PDF" }, { status: 400 });
 
-  const jobId = String(form.get("job_id") ?? "").trim() || null;
+  const isFuel = String(form.get("fuel") ?? "") === "1";
+  let vehicleRego: string | null = null;
+  if (isFuel) {
+    const wanted = String(form.get("rego") ?? "").trim().toUpperCase().replace(/\s+/g, "");
+    const allowed = await fuelRegos(svc);
+    if (!wanted || !allowed.includes(wanted)) {
+      return NextResponse.json({ error: "Pick a vehicle rego for a fuel receipt" }, { status: 400 });
+    }
+    vehicleRego = wanted;
+  }
+  const jobId = isFuel ? null : String(form.get("job_id") ?? "").trim() || null;
   const t0 = Date.now();
   // Timing breadcrumb (28 Sep 2026: bulk uploads crawled) — prep on the phone, bytes before/after, server time; read it in Vercel logs.
   const timing = { orig_bytes: Number(form.get("orig_bytes") ?? -1), sent_bytes: file.size, prep_ms: Number(form.get("prep_ms") ?? -1) };
@@ -58,6 +71,7 @@ export async function POST(req: NextRequest) {
     const { data: job } = await svc.from("jobs").select("number").eq("id", jobId).maybeSingle();
     jobNumber = job?.number ?? null;
   }
+  const tag: ReceiptTag = { isFuel, vehicleRego, jobNumber };
 
   const { data: receipt, error: insErr } = await svc
     .from("receipts")
@@ -66,6 +80,8 @@ export async function POST(req: NextRequest) {
       job_id: jobId,
       uploaded_by: staff.id,
       source,
+      is_fuel: isFuel,
+      vehicle_rego: vehicleRego,
     })
     .select("id")
     .single();
@@ -73,7 +89,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Saved image but failed to record: ${insErr?.message ?? "unknown"}` }, { status: 500 });
   }
 
-  console.log(`[snap] stored ${path} in ${Date.now() - t0} ms · prep ${timing.prep_ms} ms · ${timing.orig_bytes} → ${timing.sent_bytes} bytes · ${file.type}`);
+  console.log(`[snap] stored ${path} in ${Date.now() - t0} ms · prep ${timing.prep_ms} ms · ${timing.orig_bytes} → ${timing.sent_bytes} bytes · ${file.type} · ${receiptTagLabel(tag)}`);
   after(async () => {
     await processSnapReceipt({
       db: svc,
@@ -82,9 +98,9 @@ export async function POST(req: NextRequest) {
       mime: file.type,
       ext,
       staffName: staff.display_name,
-      jobNumber,
+      tag,
     });
   });
 
-  return NextResponse.json({ ok: true, id: receipt.id, jobNumber });
+  return NextResponse.json({ ok: true, id: receipt.id, tagLabel: receiptTagLabel(tag) });
 }

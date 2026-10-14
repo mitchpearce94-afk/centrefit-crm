@@ -5,8 +5,7 @@ import { snapStatusOf } from "@/lib/receipts/snap";
 
 /**
  * GET /api/receipts/snap/status?ids=a,b,c — what happened to the phone's
- * uploads after the shutter: still processing, forwarded to Xero (with the
- * vendor/amount we read), or failed (with the reason). Only the caller's own
+ * uploads after the shutter: still processing, emailed to the accountant, or failed (with the reason). Only the caller's own
  * uploads are returned. Polled by the Snap app for ~2 minutes per receipt.
  */
 export async function GET(req: NextRequest) {
@@ -21,7 +20,7 @@ export async function GET(req: NextRequest) {
   const svc = createServiceRoleClient();
   const { data, error } = await svc
     .from("receipts")
-    .select("id, email_sent, email_error, forwarded_to, vendor, amount")
+    .select("id, email_sent, email_error, forwarded_to")
     .in("id", ids)
     .eq("uploaded_by", auth.staff.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

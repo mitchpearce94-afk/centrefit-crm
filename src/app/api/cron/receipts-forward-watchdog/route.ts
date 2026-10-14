@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
-import { reprocessSnapReceipt } from "@/lib/receipts/snap";
+import { reprocessSnapReceipt, resolveReceiptDestination } from "@/lib/receipts/snap";
 
 export const maxDuration = 300;
 
 /**
- * Daily ~6:30am AEST — receipts that were stored but never reached Xero
+ * Daily ~6:30am AEST — receipts that were stored but never reached the accountant
  * (Mitchell 2026-09-16: "sometimes it's not sending through properly").
  *
  * A Snap upload answers the phone as soon as the image is stored; the read +
@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
     results.push({ id: r.id, ok: res.ok, error: res.error });
   }
   const stillFailing = results.filter((r) => !r.ok);
+  const dest = await resolveReceiptDestination(svc);
   if (stillFailing.length > 0) {
     await enqueueNotification({
       supabase: svc,
@@ -50,9 +51,9 @@ export async function GET(req: NextRequest) {
       refType: "receipt",
       refId: stillFailing[0].id,
       audience: { role: "admin" },
-      title: `${stillFailing.length} receipt${stillFailing.length === 1 ? "" : "s"} still not forwarded to Xero`,
-      body: `Retried this morning and failed again: ${stillFailing.map((r) => r.error ?? "unknown").slice(0, 3).join("; ")}. Open Receipts to check.`,
-      href: "/receipts",
+      title: `${stillFailing.length} receipt${stillFailing.length === 1 ? "" : "s"} still not forwarded to ${dest.to}`,
+      body: `Retried this morning and failed again: ${stillFailing.map((r) => r.error ?? "unknown").slice(0, 3).join("; ")}. Check Settings → Billing and the Vercel logs.`,
+      href: "/settings/billing",
     });
   }
   return NextResponse.json({ checked: stuck?.length ?? 0, reforwarded: results.filter((r) => r.ok).length, stillFailing: stillFailing.length, results });
