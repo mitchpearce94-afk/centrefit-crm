@@ -38,6 +38,31 @@ function addDaysStr(d: string, n: number): string { const x = new Date(d + "T00:
 function getMondayOf(d: string): string { const x = new Date(d + "T00:00:00"); const day = x.getDay(); x.setDate(x.getDate() - day + (day === 0 ? -6 : 1)); return localISO(x); }
 function todayStr(): string { return localISO(new Date()); }
 function isToday(d: string): boolean { return d === todayStr(); }
+
+// Where you were in the scheduler, remembered across the job page and the
+// bottom-nav tab (Mitchell, 15 Oct 2026: "on the weekly if I click into a
+// job it just takes me back to today's date and on the daily"). A bare
+// /scheduler or /scheduler?jobId= arrival carries no position, so it
+// restores this one. Week-or-day is a lasting preference (localStorage);
+// the day itself is only kept for a couple of hours (sessionStorage) so a
+// fresh morning still opens on today.
+const POS_KEY = "cf-scheduler-pos";
+const VIEW_KEY = "cf-scheduler-view";
+const POS_TTL_MS = 2 * 60 * 60 * 1000;
+type SavedPos = { view: "week" | "day"; day: string; staff: string; at: number };
+function readSavedView(): "week" | "day" | null {
+  try { const v = localStorage.getItem(VIEW_KEY); return v === "week" || v === "day" ? v : null; } catch { return null; }
+}
+function readSavedPos(): SavedPos | null {
+  try {
+    const raw = sessionStorage.getItem(POS_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as SavedPos;
+    if (!p || typeof p.at !== "number" || Date.now() - p.at > POS_TTL_MS) return null;
+    if ((p.view !== "week" && p.view !== "day") || !/^\d{4}-\d{2}-\d{2}$/.test(p.day)) return null;
+    return p;
+  } catch { return null; }
+}
 function timeMins(t: string): number { const [h, m] = t.split(":").map(Number); return h * 60 + m; }
 
 // ── Lane layout for overlapping entries ────────────────────────────────────
@@ -140,14 +165,40 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   // can read the viewport. Only force "day" when the URL doesn't already
   // specify a view — otherwise a user who explicitly picked Week on mobile
   // would get bounced back to Day every time the week arrows navigate.
+  // When the URL names no position (bare /scheduler, /scheduler?jobId=…)
+  // restore the remembered one instead — see POS_KEY.
+  const restoring = useRef(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!urlView && window.matchMedia("(max-width: 767px)").matches) setView("day");
     setIsTouchDevice(!window.matchMedia("(hover: hover)").matches);
-    // urlView is captured at mount — re-running on URL change would
-    // override the user's in-session toggles.
+    if (urlView) return; // the URL names a position — it wins
+    const mobile = window.matchMedia("(max-width: 767px)").matches;
+    const saved = readSavedPos();
+    const wantView = saved?.view ?? readSavedView() ?? (mobile ? "day" : "week");
+    const wantDay = saved?.day ?? todayStr();
+    const url = new URL(window.location.href);
+    const sameWeek = getMondayOf(wantDay) === weekStart;
+    if (!url.searchParams.has("week") && !sameWeek) {
+      // Another week: a client nav remounts the view (page keys by week)
+      // and it re-seeds from these params. ?jobId= rides along.
+      restoring.current = true;
+      url.searchParams.set("week", getMondayOf(wantDay));
+      url.searchParams.set("view", wantView);
+      url.searchParams.set("day", wantDay);
+      if (saved?.staff && saved.staff !== "all" && !url.searchParams.has("staff")) url.searchParams.set("staff", saved.staff);
+      router.replace(url.pathname + url.search);
+      return;
+    }
+    setView(wantView);
+    url.searchParams.set("view", wantView);
+    if (!urlDay && sameWeek) { setSelectedDay(wantDay); url.searchParams.set("day", wantDay); }
+    if (saved?.staff && !urlStaff) { setStaffFilter(saved.staff); if (saved.staff !== "all") url.searchParams.set("staff", saved.staff); }
+    window.history.replaceState({}, "", url.toString());
+    // Captured at mount — re-running on URL change would override the
+    // user's in-session toggles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
   const [modal, setModal] = useState<{ staffId: string; date: string; startTime?: string; entry?: ScheduleEntry; siblings?: ScheduleEntry[]; defaultJobId?: string } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
@@ -166,6 +217,14 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   }
 
   const weekDates = useMemo(() => [0,1,2,3,4,5,6].map(i => addDaysStr(weekStart, i)), [weekStart]);
+  // Remember the position for the next bare arrival.
+  useEffect(() => {
+    try {
+      const day = weekDates.includes(selectedDay) ? selectedDay : weekStart;
+      sessionStorage.setItem(POS_KEY, JSON.stringify({ view, day, staff: staffFilter, at: Date.now() } satisfies SavedPos));
+      localStorage.setItem(VIEW_KEY, view);
+    } catch { /* private mode etc. — nothing to remember into */ }
+  }, [view, selectedDay, weekStart, weekDates, staffFilter]);
   // Continuous agenda range: ±AGENDA_WINDOW_DAYS around the focused week.
   const agendaDates = useMemo(
     () => Array.from({ length: AGENDA_WINDOW_DAYS * 2 + 7 }, (_, i) => addDaysStr(weekStart, i - AGENDA_WINDOW_DAYS)),
@@ -305,12 +364,16 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
     const jobId = searchParams.get("jobId");
     if (!jobId) return;
     if (!isAdmin) return;
+    if (restoring.current) return; // the restore nav above remounts us with ?jobId= still set
     // Only auto-open if the job exists in the list — otherwise the dropdown
     // can't pre-select it. Stale URLs just fall through to the normal grid.
     if (!jobs.some((j) => j.id === jobId)) return;
+    // Default the date to where the user was looking, not blindly today.
+    const saved = readSavedPos();
+    const date = saved && getMondayOf(saved.day) === weekStart ? saved.day : weekDates.includes(todayStr()) ? todayStr() : weekStart;
     setModal({
       staffId: "",
-      date: todayStr(),
+      date,
       defaultJobId: jobId,
     });
     const url = new URL(window.location.href);
@@ -506,6 +569,21 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
               Just me
             </button>
           )}
+          {/* Add a job or event from either view — the weekly agenda had no
+              way in (Mitchell, 15 Oct 2026). Day view adds on the day you're
+              looking at; week view on today, or Monday when today is
+              elsewhere. The date is editable in the sheet anyway. */}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => openAssign(view === "day" ? selectedDay : weekDates.includes(todayStr()) ? todayStr() : weekStart)}
+              aria-label="Add a job or event to the schedule"
+              title="Add a job or event"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-lg font-bold leading-none text-primary-foreground active:scale-95 transition-transform"
+            >
+              +
+            </button>
+          )}
           {/* One date, one place: desktop shows it here; mobile day view has
               the banner, mobile agenda has per-day headers. */}
           <span className="hidden lg:inline text-sm font-medium">{view === "week" ? `${fmtShort(weekDates[0])} — ${fmtShort(weekDates[6])}` : fmtLong(selectedDay)}</span>
@@ -603,18 +681,37 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
             const items = [...dayUntimed, ...dayTimed];
             return (
               <div key={date} ref={isAnchor ? agendaAnchorRef : undefined}>
-                <button
-                  onClick={() => switchToDay(date)}
-                  className={`sticky top-0 z-10 flex w-full items-baseline gap-2 border-b border-l-2 border-b-border px-3 py-2 text-left ${today ? "border-l-primary bg-primary/25" : "border-l-primary/60 bg-primary/10"}`}
-                >
-                  <span className="text-sm font-bold text-primary">{d.toLocaleDateString("en-AU", { weekday: "long" })}</span>
-                  <span className="text-xs font-semibold text-primary/70">
-                    {d.getDate()} {d.toLocaleDateString("en-AU", { month: "short" })}
-                  </span>
-                  {today && <span className="ml-auto rounded-full bg-primary px-2 py-0.5 text-[9px] font-bold text-primary-foreground">TODAY</span>}
-                </button>
+                <div className={`sticky top-0 z-10 flex w-full items-stretch border-b border-l-2 border-b-border ${today ? "border-l-primary bg-primary/25" : "border-l-primary/60 bg-primary/10"}`}>
+                  <button
+                    type="button"
+                    onClick={() => switchToDay(date)}
+                    className="flex min-w-0 flex-1 items-baseline gap-2 px-3 py-2 text-left"
+                  >
+                    <span className="text-sm font-bold text-primary">{d.toLocaleDateString("en-AU", { weekday: "long" })}</span>
+                    <span className="text-xs font-semibold text-primary/70">
+                      {d.getDate()} {d.toLocaleDateString("en-AU", { month: "short" })}
+                    </span>
+                    {today && <span className="ml-auto rounded-full bg-primary px-2 py-0.5 text-[9px] font-bold text-primary-foreground">TODAY</span>}
+                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => openAssign(date)}
+                      aria-label={`Add a job or event on ${fmtLong(date)}`}
+                      className="px-4 text-lg font-bold leading-none text-primary active:bg-primary/20"
+                    >
+                      +
+                    </button>
+                  )}
+                </div>
                 {items.length === 0 ? (
-                  <p className="px-3 py-2.5 text-xs text-muted-foreground/50">Nothing scheduled</p>
+                  isAdmin ? (
+                    <button type="button" onClick={() => openAssign(date)} className="block w-full px-3 py-2.5 text-left text-xs text-muted-foreground/50 active:bg-accent">
+                      Nothing scheduled · tap to add
+                    </button>
+                  ) : (
+                    <p className="px-3 py-2.5 text-xs text-muted-foreground/50">Nothing scheduled</p>
+                  )
                 ) : (
                   items.map(e => {
                     const s = getStaff(e);
