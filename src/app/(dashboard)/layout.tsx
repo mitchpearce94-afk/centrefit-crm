@@ -74,6 +74,7 @@ export default async function DashboardLayout({
           standalone mis-measures dvh at launch. relative so the mobile nav
           can anchor to the SHELL bottom instead of the broken viewport. */}
       <div
+        data-app-shell
         className="relative flex overflow-hidden"
         style={{ height: "var(--app-height, 100dvh)" }}
       >

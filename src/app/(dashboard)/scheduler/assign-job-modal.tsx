@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ShellOverlay } from "@/components/shell-overlay";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
@@ -211,6 +212,11 @@ export function AssignJobModal({
   const selectedJob =
     jobs.find((j) => j.id === jobId) ??
     (entry?.job && entry.job.id === jobId ? entry.job : undefined);
+
+  // No autofocus on touch devices: it raises the on-screen keyboard the
+  // instant the sheet opens, which shoves the whole sheet up as it lands.
+  // Lazy initial state: the modal only mounts client-side, after a tap.
+  const [touchDevice] = useState(() => typeof window !== "undefined" && !window.matchMedia("(hover: hover)").matches);
 
   // Lock body scroll while the modal is open — prevents the page behind it
   // from scrolling on mobile and stops the visual "jumping" Mitchell saw
@@ -634,10 +640,12 @@ export function AssignJobModal({
           : "New Reminder";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+    // ShellOverlay (not `fixed inset-0`): anchored to the app shell and sized
+    // to the visual viewport, so the sheet stops sliding about on iOS and
+    // stays above the keyboard while typing.
+    <ShellOverlay onBackdropClick={onClose}>
       <div
-        className="relative w-full max-w-lg rounded-t-2xl lg:rounded-2xl border border-border bg-card shadow-2xl max-h-[90dvh] overflow-y-auto"
+        className="relative w-full max-w-lg rounded-t-2xl lg:rounded-2xl border border-border bg-card shadow-2xl max-h-[92%] lg:max-h-[90%] overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]"
         style={{
           transform:
             dragOffset.x || dragOffset.y
@@ -815,7 +823,7 @@ export function AssignJobModal({
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder="Search by job number, customer, or site..."
-                      autoFocus={!isEditing}
+                      autoFocus={!isEditing && !touchDevice}
                       className={inputClass}
                     />
                     {filteredJobs.length > 0 && (
@@ -877,7 +885,7 @@ export function AssignJobModal({
                       ? "e.g. Stock arrival, Site visit"
                       : "e.g. Follow up with Snap Warner"
                   }
-                  autoFocus={!isEditing}
+                  autoFocus={!isEditing && !touchDevice}
                   className={inputClass}
                 />
               </div>
@@ -1161,6 +1169,6 @@ export function AssignJobModal({
           </form>
         </div>
       </div>
-    </div>
+    </ShellOverlay>
   );
 }
