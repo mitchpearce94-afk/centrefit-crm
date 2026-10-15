@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { parseXeroRateLimit } from "@/lib/xero/pace";
 
 /**
  * Local cooldown for the Xero API quota.
@@ -88,26 +89,11 @@ export async function captureXeroRateLimit(
   supabase: AnySupabaseClient,
   err: unknown,
 ): Promise<boolean> {
-  // xero-node v15 throws Error instances where the structured response is
-  // JSON-stringified into err.message rather than left as err.response. Try
-  // the direct property first, then fall back to parsing err.message.
-  type ParsedResponse = { statusCode?: number; headers?: Record<string, string | undefined> };
-  let response: ParsedResponse | undefined =
-    (err as { response?: ParsedResponse })?.response;
-  if (!response?.statusCode && err instanceof Error && err.message?.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(err.message) as { response?: ParsedResponse };
-      response = parsed.response;
-    } catch {
-      // err.message wasn't structured JSON — not a xero-node error we recognise.
-    }
-  }
-  if (response?.statusCode !== 429) return false;
-  const headers = response.headers ?? {};
-  const retryAfter = parseInt(String(headers["retry-after"] ?? "60"), 10);
-  const problem = String(headers["x-rate-limit-problem"] ?? "rate_limit");
-  if (Number.isFinite(retryAfter)) {
-    await recordXeroRateLimit(supabase, retryAfter, problem);
-  }
+  // xero-node v15 rejects with a plain JSON *string* most of the time (not an
+  // Error), so the old `err instanceof Error` check never saw a 429 — pace.ts
+  // handles every shape it throws.
+  const info = parseXeroRateLimit(err);
+  if (!info) return false;
+  await recordXeroRateLimit(supabase, info.retryAfterSeconds, info.problem);
   return true;
 }

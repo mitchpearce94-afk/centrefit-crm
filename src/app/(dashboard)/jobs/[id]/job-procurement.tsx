@@ -348,7 +348,14 @@ export function JobProcurement({
       }
       const createdCount = json.created?.length ?? 0;
       const failCount = json.failures?.length ?? 0;
-      if (createdCount > 0) {
+      if (json.rateLimited) {
+        // Xero's per-minute window closed mid-run (Austral, 2026-10-16). The
+        // route stops cleanly; one more press finishes the rest, no duplicates.
+        toast(
+          `Xero rate limit hit after ${createdCount} PO${createdCount === 1 ? "" : "s"} — ${failCount} supplier${failCount === 1 ? "" : "s"} still to go. Wait a minute and press Generate again.`,
+          "error",
+        );
+      } else if (createdCount > 0) {
         toast(
           `Created ${createdCount} draft PO${createdCount === 1 ? "" : "s"} in Xero${
             failCount ? ` (${failCount} failed)` : ""
@@ -724,7 +731,7 @@ export function JobProcurement({
             className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             title={orderCount === 0 ? "Flip some rows to ORDER first" : "Create draft POs in Xero, grouped by supplier"}
           >
-            {generating ? "Generating…" : `Generate Draft POs${orderCount ? ` (${orderCount})` : ""}`}
+            {generating ? "Creating POs in Xero… (a minute or two on big jobs)" : `Generate Draft POs${orderCount ? ` (${orderCount})` : ""}`}
           </button>
         </div>
       </div>

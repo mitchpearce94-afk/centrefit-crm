@@ -1,5 +1,6 @@
 import type { XeroClient, Item } from "xero-node";
 import { DEFAULT_PURCHASE_ACCOUNT_CODE } from "@/lib/xero/purchase-orders";
+import { parseXeroRateLimit, unpaced, type XeroPace } from "@/lib/xero/pace";
 
 export interface SyncableProduct {
   id: string;
@@ -30,6 +31,8 @@ export async function ensureXeroItem(
   client: XeroClient,
   tenantId: string,
   product: SyncableProduct,
+  /** Pace every Xero call through this (see pace.ts) — PO runs sync dozens of items in a row. */
+  pace: XeroPace = unpaced,
 ): Promise<string | null> {
   if (!product.sku || product.sku.trim() === "") return null;
 
@@ -51,7 +54,7 @@ export async function ensureXeroItem(
 
   if (product.xero_item_id) {
     try {
-      await client.accountingApi.updateItem(tenantId, product.xero_item_id, { items: [item] });
+      await pace(() => client.accountingApi.updateItem(tenantId, product.xero_item_id!, { items: [item] }));
       return product.xero_item_id;
     } catch {
       // Stale ID — the item was deleted or merged in Xero after we stored it.
@@ -63,7 +66,7 @@ export async function ensureXeroItem(
     // summarizeErrors=true so validation failures THROW instead of coming back
     // as a 200 with hasValidationErrors — otherwise a duplicate code returns
     // no ItemID and the product silently never syncs.
-    const res = await client.accountingApi.createItems(tenantId, { items: [item] }, true);
+    const res = await pace(() => client.accountingApi.createItems(tenantId, { items: [item] }, true));
     const created = res.body.items?.[0]?.itemID;
     if (created) return created;
     throw new Error("Xero accepted the item but returned no ItemID");
@@ -71,14 +74,14 @@ export async function ensureXeroItem(
     // Whatever the create failure was, an item with this Code may already
     // exist in Xero (e.g. made by hand — Xero's message is "Code must be
     // unique", NOT "already exists", which the old check missed). Adopt it.
-    const existing = await client.accountingApi.getItems(
+    const existing = await pace(() => client.accountingApi.getItems(
       tenantId,
       undefined,
       `Code=="${(item.code ?? "").replace(/"/g, '\\"')}"`,
-    );
+    ));
     const found = existing.body.items?.[0];
     if (!found?.itemID) throw new Error(xeroErrorMessage(createErr));
-    await client.accountingApi.updateItem(tenantId, found.itemID, { items: [item] });
+    await pace(() => client.accountingApi.updateItem(tenantId, found.itemID!, { items: [item] }));
     return found.itemID;
   }
 }
@@ -89,9 +92,27 @@ export async function ensureXeroItem(
  * generation warning tells staff what to fix instead of "see console".
  */
 export function xeroErrorMessage(err: unknown): string {
+  // 429s first — the body is empty/HTML, so the generic path below would
+  // hand staff a JSON blob (Austral POs, 2026-10-16).
+  const limited = parseXeroRateLimit(err);
+  if (limited) {
+    return limited.problem === "minute"
+      ? "Xero rate limit reached — wait a minute and try again"
+      : `Xero ${limited.problem} limit reached — try again in ${Math.ceil(limited.retryAfterSeconds / 60)} min`;
+  }
   try {
-    const anyErr = err as { response?: { body?: unknown }; body?: unknown };
-    const body = (anyErr.response?.body ?? anyErr.body) as {
+    // xero-node v15 usually rejects with a JSON *string*, not an Error.
+    const anyErr = (typeof err === "string" && err.startsWith("{")
+      ? (JSON.parse(err) as unknown)
+      : err) as { response?: { body?: unknown; statusCode?: number }; body?: unknown };
+    const rawBody = anyErr.response?.body ?? anyErr.body;
+    if (typeof rawBody === "string") {
+      // Plain-text body (Xero's 4xx one-liners); skip HTML error pages and
+      // anything JSON-ish that the structured path below should handle.
+      const text = rawBody.trim();
+      if (text && !text.startsWith("<") && !text.startsWith("{")) return text.slice(0, 300);
+    }
+    const body = (typeof rawBody === "object" ? rawBody : undefined) as {
       Elements?: { ValidationErrors?: { Message?: string }[] }[];
       elements?: { validationErrors?: { message?: string }[] }[];
       Message?: string;
@@ -104,8 +125,10 @@ export function xeroErrorMessage(err: unknown): string {
       .filter((m): m is string => !!m);
     if (messages.length) return messages.join("; ");
     if (typeof body?.Message === "string") return body.Message;
+    if (anyErr?.response?.statusCode) return `Xero returned HTTP ${anyErr.response.statusCode}`;
   } catch {
     // fall through to the generic message
   }
-  return err instanceof Error ? err.message : String(err);
+  if (err instanceof Error) return err.message;
+  return String(err).slice(0, 300);
 }

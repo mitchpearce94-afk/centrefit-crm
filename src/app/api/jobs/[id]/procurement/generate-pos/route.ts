@@ -9,6 +9,16 @@ import {
   type XeroPOLineItem,
 } from "@/lib/xero/purchase-orders";
 import { ensureXeroItem, xeroErrorMessage, type SyncableProduct } from "@/lib/xero/items";
+import { XeroPacer, XeroRateLimitError } from "@/lib/xero/pace";
+import {
+  assertXeroAvailable,
+  recordXeroRateLimit,
+  XeroRateLimitedError,
+} from "@/lib/xero/rate-limit";
+
+// Paced at ~1 Xero call per second a big job (65 lines, 17 suppliers) runs for
+// a minute or two. Vercel's default would cut it off mid-run.
+export const maxDuration = 300;
 
 interface ItemRow {
   id: string;
@@ -30,6 +40,21 @@ interface SupplierRow {
   xero_contact_id: string | null;
 }
 
+/** quote_products row with the sync bookkeeping columns the skip check needs. */
+type LiveProduct = SyncableProduct & { updated_at: string | null; xero_synced_at: string | null };
+
+// The Xero Item for a product is current when the product row hasn't changed
+// since we last pushed it. Our own `xero_synced_at` write fires the
+// updated_at trigger a few ms later, hence the tolerance.
+const SYNC_TOLERANCE_MS = 15_000;
+function xeroItemIsCurrent(p: LiveProduct): boolean {
+  if (!p.xero_item_id || !p.xero_synced_at || !p.updated_at) return false;
+  return new Date(p.updated_at).getTime() - new Date(p.xero_synced_at).getTime() < SYNC_TOLERANCE_MS;
+}
+
+const fmtBrisbane = (d: Date) =>
+  d.toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", timeZone: "Australia/Brisbane" });
+
 /**
  * Generate draft Xero POs for all status='order' items on this job.
  * Groups by actual_supplier_id — one PO per supplier.
@@ -37,6 +62,12 @@ interface SupplierRow {
  * Best-effort per supplier: if one supplier group fails (bad data, Xero
  * outage), others still proceed. Failures are returned in a per-group
  * summary so staff can retry after fixing the offending rows.
+ *
+ * Every Xero call goes through one XeroPacer (~1/s, 429-aware). 2026-10-16:
+ * Snap Austral fired ~100 calls in 60 s unpaced, Xero's 60/min window cut it
+ * off at the minute mark and the last five suppliers failed with a JSON blob
+ * in the toast. Same on Buderim 14 Oct. Pressing Generate again is always
+ * safe — the idempotency key below stops duplicates.
  */
 export async function POST(
   _req: NextRequest,
@@ -93,13 +124,13 @@ export async function POST(
         .filter((v): v is string => !!v),
     ),
   );
-  const liveProducts = new Map<string, SyncableProduct>();
+  const liveProducts = new Map<string, LiveProduct>();
   if (productIds.length > 0) {
     const { data: prods } = await supabase
       .from("quote_products")
-      .select("id, name, sku, category, supplier, cost_price, sell_price, xero_item_id")
+      .select("id, name, sku, category, supplier, cost_price, sell_price, xero_item_id, xero_synced_at, updated_at")
       .in("id", productIds);
-    for (const p of (prods ?? []) as SyncableProduct[]) {
+    for (const p of (prods ?? []) as LiveProduct[]) {
       liveProducts.set(p.id, p);
     }
   }
@@ -166,17 +197,48 @@ export async function POST(
   const supplierById = new Map<string, SupplierRow>();
   for (const s of (suppliers ?? []) as SupplierRow[]) supplierById.set(s.id, s);
 
+  // Known cooldown from an earlier 429 (ours or another route's)? Say so in
+  // plain words instead of burning a call to be told again.
+  try {
+    await assertXeroAvailable(supabase);
+  } catch (err) {
+    if (err instanceof XeroRateLimitedError) {
+      return NextResponse.json(
+        {
+          error: `Xero is rate-limited until ${fmtBrisbane(err.until)} — press Generate Draft POs again then. Any POs already created are kept.`,
+          rateLimited: { until: err.until.toISOString(), reason: err.reason },
+        },
+        { status: 429 },
+      );
+    }
+    throw err;
+  }
+
   const { client: xero, conn } = await getAuthedClient();
+  const pacer = new XeroPacer(1100, (info) =>
+    recordXeroRateLimit(supabase, info.retryAfterSeconds, info.problem),
+  );
+  const rateLimitResponse = (err: XeroRateLimitError, extra: Record<string, unknown> = {}) =>
+    NextResponse.json(
+      {
+        error: `${err.message}. Nothing was changed by this attempt; press Generate Draft POs again.`,
+        rateLimited: { retryAfterSeconds: err.info.retryAfterSeconds, problem: err.info.problem },
+        ...extra,
+      },
+      { status: 429 },
+    );
 
   // Pre-flight the purchase account. Every line is coded to it, and Xero
   // rejects the whole PO when the code doesn't exist (the 2026-09-14 failure:
   // "300" had been deleted from the chart). Fail once, in plain words, before
   // touching Items or POs.
   try {
-    const acc = await xero.accountingApi.getAccounts(
-      conn.tenant_id,
-      undefined,
-      `Code=="${DEFAULT_PURCHASE_ACCOUNT_CODE.replace(/"/g, '\\"')}"`,
+    const acc = await pacer.run(() =>
+      xero.accountingApi.getAccounts(
+        conn.tenant_id,
+        undefined,
+        `Code=="${DEFAULT_PURCHASE_ACCOUNT_CODE.replace(/"/g, '\\"')}"`,
+      ),
     );
     const a = acc.body.accounts?.[0];
     if (!a || String(a.status ?? "") !== "ACTIVE") {
@@ -188,6 +250,7 @@ export async function POST(
       );
     }
   } catch (err) {
+    if (err instanceof XeroRateLimitError) return rateLimitResponse(err);
     return NextResponse.json(
       { error: `Couldn't read the chart of accounts from Xero: ${xeroErrorMessage(err)}` },
       { status: 502 },
@@ -197,30 +260,47 @@ export async function POST(
   // Ensure every distinct product on this PO run exists as a Xero Item with its
   // CURRENT catalogue cost, so (a) the SKU can go in the Xero ItemCode column
   // rather than the description, and (b) the Item master price never lags the
-  // catalogue. Create-or-update is idempotent; failures degrade that line to a
-  // description-only PO line rather than aborting the whole generation.
+  // catalogue. Products whose row hasn't changed since the last push are
+  // skipped — that's one Xero call per product saved, and on a 65-line job it
+  // was the bulk of the burst. Create-or-update is idempotent; failures degrade
+  // that line to a description-only PO line rather than aborting the whole
+  // generation.
   const ensuredItemMap = new Map<string, string>(); // product_id → xero ItemID
   const itemSyncWarnings: string[] = [];
+  let itemsSkipped = 0;
   {
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const syncedNow: string[] = [];
     for (const pid of productIds) {
       const prod = liveProducts.get(pid);
       if (!prod || !prod.sku || prod.sku.trim() === "") continue;
+      if (xeroItemIsCurrent(prod)) {
+        ensuredItemMap.set(pid, prod.xero_item_id!);
+        itemsSkipped += 1;
+        continue;
+      }
       try {
-        const xeroItemId = await ensureXeroItem(xero, conn.tenant_id, prod);
+        const xeroItemId = await ensureXeroItem(xero, conn.tenant_id, prod, pacer.run);
         if (xeroItemId) {
           ensuredItemMap.set(pid, xeroItemId);
+          syncedNow.push(pid);
           if (xeroItemId !== prod.xero_item_id) {
-            await supabase
-              .from("quote_products")
-              .update({ xero_item_id: xeroItemId, xero_synced_at: new Date().toISOString() })
-              .eq("id", pid);
+            await supabase.from("quote_products").update({ xero_item_id: xeroItemId }).eq("id", pid);
           }
         }
       } catch (err) {
-        itemSyncWarnings.push(`${prod.name}: ${err instanceof Error ? err.message : String(err)}`);
+        // Out of Xero quota — nothing has been created yet, so stop cleanly
+        // rather than fail every remaining product one at a time.
+        if (err instanceof XeroRateLimitError) return rateLimitResponse(err);
+        itemSyncWarnings.push(`${prod.name}: ${xeroErrorMessage(err)}`);
       }
-      await sleep(75); // stay well under Xero's 60 calls/min limit
+    }
+    // One batched stamp for everything pushed this run (the trigger bumps
+    // updated_at alongside it — see SYNC_TOLERANCE_MS).
+    if (syncedNow.length > 0) {
+      await supabase
+        .from("quote_products")
+        .update({ xero_synced_at: new Date().toISOString() })
+        .in("id", syncedNow);
     }
   }
 
@@ -232,12 +312,15 @@ export async function POST(
     itemCount: number;
   }[] = [];
   const failures: { supplierId: string; supplierName?: string; message: string }[] = [];
+  let rateLimited: { retryAfterSeconds: number; problem: string } | null = null;
 
   // Surface lines we're about to push at $0 so the UI can warn — these go to
   // Xero with a zero unit amount for Mitchell to correct before authorising.
   const zeroPriced = actionable.filter((it) => resolveCost(it) <= 0);
 
-  for (const [supplierId, rows] of grouped) {
+  const pending = Array.from(grouped.entries());
+  for (let gi = 0; gi < pending.length; gi++) {
+    const [supplierId, rows] = pending[gi];
     const supplier = supplierById.get(supplierId);
     if (!supplier) {
       failures.push({ supplierId, message: "Supplier record not found" });
@@ -257,6 +340,7 @@ export async function POST(
           phone: supplier.phone,
           account_number: supplier.account_number,
         },
+        pacer.run,
       );
 
       // Use the quote-time cost_price as the PO unit amount. Prices should
@@ -322,6 +406,7 @@ export async function POST(
         reference: job.number,
         deliveryAddress,
         idempotencyKey,
+        pace: pacer.run,
       });
 
       // Mark rows ordered
@@ -346,6 +431,21 @@ export async function POST(
         itemCount: rows.length,
       });
     } catch (err) {
+      if (err instanceof XeroRateLimitError) {
+        // Xero has shut the door for now. Don't hammer the remaining suppliers;
+        // report them as not attempted so staff know one more press finishes
+        // the job once the window clears (the idempotency key keeps it safe).
+        rateLimited = { retryAfterSeconds: err.info.retryAfterSeconds, problem: err.info.problem };
+        failures.push({ supplierId, supplierName: supplier.name, message: err.message });
+        for (const [restId] of pending.slice(gi + 1)) {
+          failures.push({
+            supplierId: restId,
+            supplierName: supplierById.get(restId)?.name,
+            message: "Not attempted — Xero rate limit. Press Generate Draft POs again in a minute.",
+          });
+        }
+        break;
+      }
       failures.push({
         supplierId,
         supplierName: supplier.name,
@@ -358,9 +458,12 @@ export async function POST(
     ok: failures.length === 0,
     created,
     failures,
+    rateLimited,
     unassignedCount: orphans.length,
     unassignedItemIds: orphans.map((o) => o.id),
     zeroPricedCount: zeroPriced.length,
     itemSyncWarnings,
+    itemsSkipped,
+    xeroCalls: pacer.calls,
   });
 }

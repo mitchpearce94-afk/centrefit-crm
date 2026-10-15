@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { unpaced, type XeroPace } from "@/lib/xero/pace";
 import type { XeroClient } from "xero-node";
 
 export interface CustomerForXero {
@@ -242,6 +243,7 @@ export async function findOrCreateSupplierContact(
   xero: XeroClient,
   tenantId: string,
   supplier: SupplierForXero,
+  pace: XeroPace = unpaced,
 ): Promise<string> {
   const safeName = supplier.name.replace(/"/g, '\\"');
   let contactId: string | undefined;
@@ -254,12 +256,12 @@ export async function findOrCreateSupplierContact(
   // re-persist. One extra GET per supplier per PO run.
   if (supplier.xero_contact_id) {
     try {
-      const res = await xero.accountingApi.getContact(tenantId, supplier.xero_contact_id);
+      const res = await pace(() => xero.accountingApi.getContact(tenantId, supplier.xero_contact_id!));
       const c = res.body.contacts?.[0];
       const status = String(c?.contactStatus ?? "");
       if (c?.contactID && status === "ACTIVE") return c.contactID;
       if (c?.mergedToContactID) {
-        const merged = await xero.accountingApi.getContact(tenantId, c.mergedToContactID);
+        const merged = await pace(() => xero.accountingApi.getContact(tenantId, c.mergedToContactID!));
         const m = merged.body.contacts?.[0];
         if (m?.contactID && String(m.contactStatus ?? "") === "ACTIVE") contactId = m.contactID;
       }
@@ -272,11 +274,11 @@ export async function findOrCreateSupplierContact(
     try {
       // getContacts excludes archived contacts unless asked, so a hit here is
       // usable as-is.
-      const search = await xero.accountingApi.getContacts(
+      const search = await pace(() => xero.accountingApi.getContacts(
         tenantId,
         undefined,
         `Name=="${safeName}"`,
-      );
+      ));
       contactId = search.body.contacts?.[0]?.contactID;
     } catch {
       // Search failure shouldn't block creation — fall through.
@@ -296,9 +298,9 @@ export async function findOrCreateSupplierContact(
       contactPayload.accountNumber = supplier.account_number;
     }
 
-    const created = await xero.accountingApi.createContacts(tenantId, {
+    const created = await pace(() => xero.accountingApi.createContacts(tenantId, {
       contacts: [contactPayload],
-    });
+    }));
     contactId = created.body.contacts?.[0]?.contactID;
     if (!contactId) {
       throw new Error("Xero did not return a ContactID for the new supplier contact");

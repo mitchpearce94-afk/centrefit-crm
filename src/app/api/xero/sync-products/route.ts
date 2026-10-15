@@ -3,6 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { getAuthedClient } from "@/lib/xero/client";
 import { DEFAULT_PURCHASE_ACCOUNT_CODE } from "@/lib/xero/purchase-orders";
 import type { Item } from "xero-node";
+import { XeroPacer, XeroRateLimitError } from "@/lib/xero/pace";
+import { recordXeroRateLimit } from "@/lib/xero/rate-limit";
+import { xeroErrorMessage } from "@/lib/xero/items";
+
+// A full catalogue sync is one Xero call per product at ~1 s each.
+export const maxDuration = 300;
 
 /**
  * Push all quote_products into Xero as Items.
@@ -77,9 +83,11 @@ export async function POST(req: NextRequest) {
   let updated = 0;
   const errors: { sku: string; name: string; message: string }[] = [];
 
-  // Xero rate limit: 60 calls/min. We throttle at 20 ops/sec to stay well under.
-  const DELAY_MS = 75;
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  // Xero allows 60 calls per rolling minute. The old 75 ms sleep (20/s) blew
+  // straight through it on anything bigger than a handful of products.
+  const pacer = new XeroPacer(1100, (info) =>
+    recordXeroRateLimit(supabase, info.retryAfterSeconds, info.problem),
+  );
 
   for (const p of eligible) {
     const item: Item = {
@@ -104,16 +112,16 @@ export async function POST(req: NextRequest) {
 
       if (xeroItemId) {
         // UPDATE existing
-        await client.accountingApi.updateItem(conn.tenant_id, xeroItemId, {
+        await pacer.run(() => client.accountingApi.updateItem(conn.tenant_id, xeroItemId!, {
           items: [item],
-        });
+        }));
         updated++;
       } else {
         // CREATE — fall back to UPDATE if duplicate Code
         try {
-          const res = await client.accountingApi.createItems(conn.tenant_id, {
+          const res = await pacer.run(() => client.accountingApi.createItems(conn.tenant_id, {
             items: [item],
-          });
+          }));
           const newItem = res.body.items?.[0];
           xeroItemId = newItem?.itemID ?? null;
           created++;
@@ -126,16 +134,16 @@ export async function POST(req: NextRequest) {
             JSON.stringify(createErr).toLowerCase().includes("already");
           if (!isDuplicate) throw createErr;
 
-          const existing = await client.accountingApi.getItems(
+          const existing = await pacer.run(() => client.accountingApi.getItems(
             conn.tenant_id,
             undefined,
             `Code=="${item.code}"`
-          );
+          ));
           const found = existing.body.items?.[0];
           if (!found?.itemID) throw createErr;
-          await client.accountingApi.updateItem(conn.tenant_id, found.itemID, {
+          await pacer.run(() => client.accountingApi.updateItem(conn.tenant_id, found.itemID!, {
             items: [item],
-          });
+          }));
           xeroItemId = found.itemID;
           updated++;
         }
@@ -151,11 +159,10 @@ export async function POST(req: NextRequest) {
           .eq("id", p.id);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : JSON.stringify(err);
-      errors.push({ sku: p.sku, name: p.name, message: msg.slice(0, 300) });
+      errors.push({ sku: p.sku, name: p.name, message: xeroErrorMessage(err).slice(0, 300) });
+      // Out of Xero quota — stop here rather than fail every remaining product.
+      if (err instanceof XeroRateLimitError) break;
     }
-
-    await sleep(DELAY_MS);
   }
 
   const summary = {

@@ -1,5 +1,6 @@
 import type { XeroClient } from "xero-node";
 import { brisbaneDateISO } from "@/lib/dates";
+import { unpaced, type XeroPace } from "@/lib/xero/pace";
 
 // The Xero account every PO line is coded to. Centrefit's chart has no
 // generic "300 Purchases" any more (deleted in the September 2026 chart
@@ -32,6 +33,7 @@ export interface CreateXeroPOInput {
   deliveryInstructions?: string;
   date?: Date;              // PO issue date, defaults to today
   idempotencyKey?: string;  // dedupes retries/double-clicks at Xero (24h window)
+  pace?: XeroPace;          // serialise/throttle Xero calls (pace.ts) — PO runs make dozens
 }
 
 export interface CreatedXeroPO {
@@ -55,6 +57,7 @@ export async function createXeroPurchaseOrder({
   deliveryInstructions,
   date,
   idempotencyKey,
+  pace = unpaced,
 }: CreateXeroPOInput): Promise<CreatedXeroPO> {
   if (lineItems.length === 0) {
     throw new Error("Cannot create a Xero PO with zero line items");
@@ -86,12 +89,12 @@ export async function createXeroPurchaseOrder({
   }
 
   const create = (key?: string) =>
-    xero.accountingApi.createPurchaseOrders(
+    pace(() => xero.accountingApi.createPurchaseOrders(
       tenantId,
       { purchaseOrders: [poPayload] },
       true, // summarizeErrors
       key,
-    );
+    ));
 
   let res: Awaited<ReturnType<typeof create>>;
   try {
@@ -104,7 +107,7 @@ export async function createXeroPurchaseOrder({
     // Xero tidy). Xero remembers a key for 24h even when that first request
     // FAILED. If the earlier request did make a PO, adopt it rather than
     // duplicate; otherwise go again with a fresh key.
-    const existing = await findTodaysDraft(xero, tenantId, supplierContactId, reference, lineItems.length, issueDate);
+    const existing = await findTodaysDraft(xero, tenantId, supplierContactId, reference, lineItems.length, issueDate, pace);
     if (existing) return existing;
     res = await create(`${idempotencyKey}-${Date.now().toString(36)}`);
   }
@@ -118,15 +121,10 @@ export async function createXeroPurchaseOrder({
   // healthy-looking DRAFT status — verify live state and retry once with a
   // fresh key so the rows never get linked to a deleted PO.
   if (idempotencyKey) {
-    const live = await xero.accountingApi.getPurchaseOrder(tenantId, po.purchaseOrderID);
+    const live = await pace(() => xero.accountingApi.getPurchaseOrder(tenantId, po!.purchaseOrderID!));
     const liveStatus = String(live.body.purchaseOrders?.[0]?.status ?? "");
     if (liveStatus === "DELETED") {
-      const retry = await xero.accountingApi.createPurchaseOrders(
-        tenantId,
-        { purchaseOrders: [poPayload] },
-        true,
-        `${idempotencyKey}-${Date.now().toString(36)}`,
-      );
+      const retry = await create(`${idempotencyKey}-${Date.now().toString(36)}`);
       po = retry.body.purchaseOrders?.[0];
       if (!po?.purchaseOrderID) {
         throw new Error("Xero did not return a PurchaseOrderID on the post-delete retry");
@@ -160,16 +158,17 @@ async function findTodaysDraft(
   reference: string | undefined,
   lineCount: number,
   issueDate: string,
+  pace: XeroPace = unpaced,
 ): Promise<CreatedXeroPO | null> {
   try {
-    const res = await xero.accountingApi.getPurchaseOrders(
+    const res = await pace(() => xero.accountingApi.getPurchaseOrders(
       tenantId,
       undefined,
       "DRAFT",
       issueDate,
       issueDate,
       "UpdatedDateUTC DESC",
-    );
+    ));
     const match = (res.body.purchaseOrders ?? []).find(
       (p) =>
         p.contact?.contactID === supplierContactId &&
