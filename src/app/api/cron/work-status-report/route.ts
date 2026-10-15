@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { buildWorkStatusReport } from "@/lib/work-status/report";
-import { sendWorkStatusEmail, renderWorkStatusEmail } from "@/lib/emails/work-status-report";
+import { sendWorkStatusEmail, renderWorkStatusEmail, type WorkStatusEmailInput } from "@/lib/emails/work-status-report";
 
 /**
  * Weekday 4:00pm AEST (vercel.json `0 6 * * 1-5`) — the work status report
- * (Mark, 14 Oct 2026). Everyone — admins included — gets only their own
- * jobs (Mitchell, 15 Oct 2026: "only send the person their own job, not
- * everyone to everyone"). Nobody receives the whole report by email; the full
- * picture lives in ?dry=1 / ?preview=1 and the Cortex API. Per-staff opt-out
- * via the `job.work_status_report` notification preference
- * (email_enabled = false). Silent for a person with nothing on their list —
- * the all-clear is the absence of the email.
+ * (Mark, 14 Oct 2026). Everyone gets only their own jobs, admins included
+ * (Mitchell, 15 Oct 2026: "only send the person their own job, not everyone
+ * to everyone") — except the FULL_REPORT_TO addresses (default Mark), who get
+ * the whole report, even when it's clean. Override with
+ * WORK_STATUS_FULL_REPORT_TO (comma-separated emails). Per-staff opt-out via
+ * the `job.work_status_report` notification preference (email_enabled =
+ * false). Silent for a person with nothing on their list — the all-clear is
+ * the absence of the email.
  *
  * ?dry=1      → build + return JSON, send nothing, persist nothing
  * ?preview=1  → return the whole-report HTML (no send, no persist)
@@ -23,6 +24,9 @@ import { sendWorkStatusEmail, renderWorkStatusEmail } from "@/lib/emails/work-st
  */
 
 const TYPE_CODE = "job.work_status_report";
+const FULL_REPORT_TO = new Set(
+  (process.env.WORK_STATUS_FULL_REPORT_TO ?? "mark@centrefit.com.au").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean),
+);
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -57,13 +61,15 @@ export async function GET(req: NextRequest) {
     if (only && email !== only) continue;
     if (!only && muted.has(s.id)) continue;
     const bucket = report.by_staff.find((b) => b.staff_id === s.id);
-    if (!bucket) {
+    let scope: WorkStatusEmailInput["scope"];
+    if (FULL_REPORT_TO.has(email)) scope = { kind: "all" };
+    else if (bucket) scope = { kind: "staff", bucket };
+    else {
       if (only) return NextResponse.json({ ok: true, date: report.date, sent: [], note: `${email} has nothing on their list — the 4pm run would send them nothing` });
       continue; // nothing on their list — silence is the all-clear
     }
-    const scope = { kind: "staff" as const, bucket };
     const r = await sendWorkStatusEmail({ report, scope, to: email, greetingName: s.name.split(" ")[0], dateLabel });
-    results.push({ to: email, scope: scope.kind, items: bucket.items.length, ok: r.ok, error: r.ok ? undefined : r.error });
+    results.push({ to: email, scope: scope.kind, items: scope.kind === "all" ? report.items.length : scope.bucket.items.length, ok: r.ok, error: r.ok ? undefined : r.error });
   }
   return NextResponse.json({ ok: true, date: report.date, counts: report.counts, checked: report.checked, sent: results });
 }
