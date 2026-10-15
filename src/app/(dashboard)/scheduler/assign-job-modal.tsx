@@ -618,8 +618,12 @@ export function AssignJobModal({
     onSaved();
   }
 
+  // min-w-0 + appearance-none: iOS gives <input type="date"> an intrinsic
+  // width it won't shrink below, which made the two-column date row wider
+  // than the sheet — and a vertical scroller also scrolls sideways, so the
+  // whole form slid about under the finger (Mitchell's recording, 15 Oct).
   const inputClass =
-    "block w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
+    "block w-full min-w-0 appearance-none rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
 
   const formattedDate = new Date(selectedDate + "T00:00:00").toLocaleDateString(
     "en-AU",
@@ -645,7 +649,7 @@ export function AssignJobModal({
     // stays above the keyboard while typing.
     <ShellOverlay onBackdropClick={onClose}>
       <div
-        className="relative w-full max-w-lg rounded-t-2xl lg:rounded-2xl border border-border bg-card shadow-2xl max-h-[92%] lg:max-h-[90%] overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]"
+        className="relative w-full max-w-lg rounded-t-2xl lg:rounded-2xl border border-border bg-card shadow-2xl max-h-[92%] lg:max-h-[90%] overflow-y-auto overflow-x-hidden overscroll-contain pb-[env(safe-area-inset-bottom)]"
         style={{
           transform:
             dragOffset.x || dragOffset.y
@@ -892,7 +896,7 @@ export function AssignJobModal({
             )}
 
             {/* Start / End date */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 [&>div]:min-w-0">
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">
                   Start Date
@@ -922,7 +926,7 @@ export function AssignJobModal({
 
             {/* Time window */}
             <div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 [&>div]:min-w-0">
                 <div>
                   <label className="block text-xs font-medium text-muted-foreground mb-1">
                     Start Time
@@ -1050,7 +1054,7 @@ export function AssignJobModal({
                           value={recurrenceEndDate}
                           min={selectedDate}
                           onChange={(e) => setRecurrenceEndDate(e.target.value)}
-                          className="flex-1 rounded-md border border-border bg-input px-2 py-1 text-sm text-foreground"
+                          className="flex-1 min-w-0 appearance-none rounded-md border border-border bg-input px-2 py-1 text-sm text-foreground"
                         />
                       </label>
                     )}
