@@ -80,7 +80,7 @@ function sectionBlock(sec: Section, items: ReportItem[], checked: number, byStaf
 
 export interface WorkStatusEmailInput {
   report: WorkStatusReport;
-  /** Whole report (Mark / admins) or one person's slice. */
+  /** Whole report (?preview=1 only) or one person's slice (what the 4pm run sends). */
   scope: { kind: "all" } | { kind: "staff"; bucket: StaffBucket };
   to: string;
   greetingName: string;
