@@ -681,7 +681,11 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
             const items = [...dayUntimed, ...dayTimed];
             return (
               <div key={date} ref={isAnchor ? agendaAnchorRef : undefined}>
-                <div className={`sticky top-0 z-10 flex w-full items-stretch border-b border-l-2 border-b-border ${today ? "border-l-primary bg-primary/25" : "border-l-primary/60 bg-primary/10"}`}>
+                {/* Solid: the tint sits on an opaque card background so the
+                    cards scrolling underneath never show through (Mitchell,
+                    15 Oct 2026: "you can see the jobs under it"). */}
+                <div className="sticky top-0 z-10 bg-card">
+                <div className={`flex w-full items-stretch border-b border-l-2 border-b-border ${today ? "border-l-primary bg-primary/25" : "border-l-primary/60 bg-primary/10"}`}>
                   <button
                     type="button"
                     onClick={() => switchToDay(date)}
@@ -703,6 +707,7 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
                       +
                     </button>
                   )}
+                </div>
                 </div>
                 {items.length === 0 ? (
                   isAdmin ? (
