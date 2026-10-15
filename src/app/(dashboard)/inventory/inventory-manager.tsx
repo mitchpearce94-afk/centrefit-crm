@@ -50,11 +50,16 @@ export interface StaffOpt {
   id: string;
   display_name: string;
 }
+export interface JobOpt {
+  id: string;
+  number: string | null;
+  label: string;
+}
 
 const REASON_LABEL: Record<string, string> = {
   opening: "Opening balance",
   receive: "Stock received",
-  job_allocation: "Used on job",
+  job_allocation: "Allocated to job",
   job_release: "Released from job",
   adjustment: "Adjustment",
   count: "Stock take",
@@ -81,6 +86,7 @@ export function InventoryManager({
   movements,
   products,
   staff,
+  jobs,
   canManage,
   focusItemId,
   initialQuery,
@@ -89,6 +95,8 @@ export function InventoryManager({
   movements: MovementRow[];
   products: ProductOpt[];
   staff: StaffOpt[];
+  /** Open jobs for "Allocate to job". */
+  jobs: JobOpt[];
   canManage: boolean;
   focusItemId: string | null;
   initialQuery: string;
@@ -97,6 +105,7 @@ export function InventoryManager({
   const [filter, setFilter] = useState<"all" | "attention">("all");
   const [adding, setAdding] = useState(false);
   const [adjusting, setAdjusting] = useState<InventoryItemRow | null>(null);
+  const [allocating, setAllocating] = useState<InventoryItemRow | null>(null);
   const [editing, setEditing] = useState<InventoryItemRow | null>(null);
   // ?item=<id> (from a low-stock notification) opens that item's history.
   const [history, setHistory] = useState<InventoryItemRow | null>(() =>
@@ -263,6 +272,17 @@ export function InventoryManager({
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-1.5">
                       {canManage && (
+                        <button
+                          type="button"
+                          onClick={() => setAllocating(it)}
+                          disabled={Number(it.qty_on_hand) <= 0}
+                          className="rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
+                          title="Take stock off the shelf for a job — it goes on that job's next invoice"
+                        >
+                          Allocate
+                        </button>
+                      )}
+                      {canManage && (
                         <button type="button" onClick={() => setAdjusting(it)} className="rounded-md bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/25 transition-colors">
                           Adjust
                         </button>
@@ -286,6 +306,7 @@ export function InventoryManager({
 
       {adding && <AddItemModal products={products} tracked={new Set(items.map((i) => i.product_id))} staff={staff} onClose={() => setAdding(false)} />}
       {adjusting && <AdjustModal item={adjusting} onClose={() => setAdjusting(null)} />}
+      {allocating && <AllocateModal item={allocating} jobs={jobs} onClose={() => setAllocating(null)} />}
       {editing && <SettingsModal item={editing} staff={staff} onClose={() => setEditing(null)} />}
       {history && <HistoryDrawer item={history} movements={movements.filter((m) => m.inventory_item_id === history.id)} onClose={() => setHistory(null)} />}
     </div>
@@ -573,6 +594,138 @@ function AdjustModal({ item, onClose }: { item: InventoryItemRow; onClose: () =>
             {saving ? "Saving…" : "Save"}
           </button>
         </div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ── Allocate stock to a job (Mitchell 2026-10-15) ──
+   Sue takes parts off the shelf against a job here instead of relying on the
+   tech's work entry. The row lands on the job's procurement tab as In Stock
+   (stock decrements through the usual trigger) and the job's invoice builder
+   adds it as a line until it's been invoiced. If the job's quote already has
+   the part on order we ask: fulfil the quoted line (not billed again) or add
+   it as an extra (billed). */
+function AllocateModal({ item, jobs, onClose }: { item: InventoryItemRow; jobs: JobOpt[]; onClose: () => void }) {
+  const router = useRouter();
+  const { toast } = useToast();
+  const [search, setSearch] = useState("");
+  const [job, setJob] = useState<JobOpt | null>(null);
+  const [qty, setQty] = useState("1");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [quoted, setQuoted] = useState<{ id: string; quantity: number } | null>(null);
+  const current = Number(item.qty_on_hand);
+  const parsed = Number(qty);
+  const after = Number.isFinite(parsed) && qty.trim() !== "" ? current - parsed : null;
+
+  const matches = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return jobs.slice(0, 8);
+    return jobs.filter((j) => j.label.toLowerCase().includes(q)).slice(0, 8);
+  }, [jobs, search]);
+
+  async function send(mode?: "extra" | "fulfil") {
+    if (!job) { toast("Pick a job", "error"); return; }
+    if (!Number.isFinite(parsed) || parsed <= 0) { toast("Enter how many", "error"); return; }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/inventory/${item.id}/allocate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_id: job.id, quantity: parsed, note: note.trim() || null, ...(mode ? { mode } : {}) }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.status === 409 && json.error === "already_quoted") {
+        setQuoted({ id: json.existing.id, quantity: Number(json.existing.quantity) });
+        return;
+      }
+      if (!res.ok) throw new Error(json.error ?? "Couldn't allocate");
+      toast(
+        json.fulfilled
+          ? `${item.product?.sku ?? item.product?.name} → ${json.job_number}: quoted part taken from stock — ${json.qty_on_hand} left`
+          : `${parsed} × ${item.product?.sku ?? item.product?.name} → ${json.job_number} — on its next invoice. ${json.qty_on_hand} left on hand`,
+        "success",
+      );
+      onClose();
+      router.refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Couldn't allocate", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title="Allocate to job" subtitle="Takes it off the shelf now and bills it on the job's next invoice" onClose={onClose}>
+      <form onSubmit={(e) => { e.preventDefault(); void send(); }} className="space-y-4">
+        <ItemHeader item={item} />
+        <div>
+          <span className="text-xs font-medium text-muted-foreground">Job</span>
+          {job ? (
+            <div className="mt-1 flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
+              <span className="truncate">{job.label}</span>
+              <button type="button" onClick={() => { setJob(null); setSearch(""); setQuoted(null); }} className="ml-2 shrink-0 text-xs text-muted-foreground hover:text-foreground">Change</button>
+            </div>
+          ) : (
+            <>
+              <input
+                autoFocus
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Job number, site or customer…"
+                className={`${inputClass} mt-1`}
+              />
+              {matches.length > 0 ? (
+                <div className="mt-1 max-h-48 overflow-y-auto rounded-md border border-border divide-y divide-border">
+                  {matches.map((j) => (
+                    <button key={j.id} type="button" onClick={() => { setJob(j); setSearch(""); }} className="block w-full px-3 py-2 text-left text-sm hover:bg-accent">
+                      {j.label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">No open job matches that.</p>
+              )}
+            </>
+          )}
+        </div>
+        <label className="block">
+          <span className="text-xs font-medium text-muted-foreground">Quantity</span>
+          <input type="number" inputMode="numeric" min="1" max={current} step="1" value={qty} onChange={(e) => { setQty(e.target.value); setQuoted(null); }} className={`${inputClass} mt-1 text-lg font-mono`} />
+        </label>
+        {after != null && (
+          <p className={`text-xs ${after < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+            {current} → <span className="font-mono font-semibold text-foreground">{after}</span> on hand
+            {after < 0 ? " — not enough on the shelf" : ""}
+          </p>
+        )}
+        <label className="block">
+          <span className="text-xs font-medium text-muted-foreground">Note</span>
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="optional — e.g. for Michael, Thursday" className={`${inputClass} mt-1`} />
+        </label>
+        {quoted && (
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-2">
+            <p className="font-medium">This job&rsquo;s quote already has {quoted.quantity} × this part on order.</p>
+            <p className="text-xs text-muted-foreground">Fulfil it from stock and it won&rsquo;t be billed again (the quote covered it). Add as an extra and it goes on the next invoice.</p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button type="button" disabled={saving} onClick={() => void send("fulfil")} className="flex-1 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                Fulfil the quoted {quoted.quantity} from stock
+              </button>
+              <button type="button" disabled={saving} onClick={() => void send("extra")} className="flex-1 rounded-md border border-border px-3 py-2 text-xs font-medium hover:bg-accent disabled:opacity-50">
+                Add {parsed || 1} as an extra (billed)
+              </button>
+            </div>
+          </div>
+        )}
+        {!quoted && (
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2 border-t border-border">
+            <button type="button" onClick={onClose} className="w-full sm:w-auto rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent transition-colors">Cancel</button>
+            <button type="submit" disabled={saving || !job || after == null || after < 0} className="w-full sm:w-auto rounded-md bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
+              {saving ? "Allocating…" : "Allocate"}
+            </button>
+          </div>
+        )}
       </form>
     </Modal>
   );

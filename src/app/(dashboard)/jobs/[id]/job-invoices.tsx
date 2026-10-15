@@ -91,6 +91,27 @@ function receiptToRow(r: ReceiptForInvoice): LineItemDraft {
   };
 }
 
+/** A part Sue allocated from stock (Inventory → Allocate) that hasn't been
+ * invoiced yet. Rows carry the procurement id so we can stamp invoiced_at on
+ * submit, and start with "row_mat_" so they fold into "Parts Used". */
+export interface StockItemForInvoice {
+  id: string;
+  name: string;
+  sku: string | null;
+  quantity: number;
+  unitSell: number;
+}
+const STOCK_ROW_PREFIX = "row_mat_stock_";
+
+function stockToRow(s: StockItemForInvoice): LineItemDraft {
+  return {
+    id: `${STOCK_ROW_PREFIX}${s.id}`,
+    description: s.sku ? `${s.name} (${s.sku})` : s.name,
+    quantity: String(s.quantity),
+    unitAmount: s.unitSell.toFixed(2),
+  };
+}
+
 interface ProductPrice {
   sell_price: number;
   cost_price: number;
@@ -110,6 +131,8 @@ interface Props {
   billingSettings: BillingSettings;
   /** Linked receipts not yet pushed onto an invoice (amount inc GST). */
   receipts: ReceiptForInvoice[];
+  /** Stock allocated from Inventory, not yet invoiced. */
+  stockItems?: StockItemForInvoice[];
   /** Admins see the Variance Invoice button on already-quoted jobs. */
   isAdmin: boolean;
 }
@@ -270,7 +293,7 @@ function buildAutoLineItems(
 export function JobInvoices({
   jobId, customerId, siteId, jobDescription, jobNumber,
   invoices, linkedQuotes, checklistItems, workEntries,
-  productPrices, billingSettings, receipts, isAdmin,
+  productPrices, billingSettings, receipts, stockItems = [], isAdmin,
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -305,11 +328,14 @@ export function JobInvoices({
   // real out-of-pocket costs captured against the job. Inserted before the
   // trailing blank row.
   const receiptRows = receipts.map(receiptToRow);
+  // Stock Sue allocated from Inventory goes on the next invoice from this job
+  // (Mitchell 2026-10-15) — same treatment as receipts, marked invoiced on submit.
+  const stockRows = stockItems.map(stockToRow);
 
   function rebuildFromJob() {
     setDescription(buildNarrative(jobDescription, checklistItems, workEntries));
     const base = buildAutoLineItems(workEntries, productPrices, billingSettings);
-    setRows([...base.slice(0, -1), ...receiptRows, base[base.length - 1]]);
+    setRows([...base.slice(0, -1), ...stockRows, ...receiptRows, base[base.length - 1]]);
   }
 
   function openModal() {
@@ -426,6 +452,17 @@ export function JobInvoices({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ids: receiptIds }),
+        }).catch(() => {});
+      }
+      // Same for stock allocations that went on this invoice.
+      const stockIds = priced
+        .filter((r) => r.id.startsWith(STOCK_ROW_PREFIX))
+        .map((r) => r.id.slice(STOCK_ROW_PREFIX.length));
+      if (stockIds.length > 0) {
+        await fetch("/api/procurement-items/mark-invoiced", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: stockIds, invoiceId: data.invoice?.id ?? null }),
         }).catch(() => {});
       }
 

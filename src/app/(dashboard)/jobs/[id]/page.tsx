@@ -139,6 +139,11 @@ export default async function JobDetailPage({
       if (m?.product_id) productIds.add(m.product_id);
     }
   }
+  // Stock allocated from Inventory (Sue's "Allocate") is priced at the
+  // product's sell price on the invoice, so pull those ids too.
+  for (const p of (procurementResult.data ?? []) as Array<{ product_id?: string | null }>) {
+    if (p?.product_id) productIds.add(p.product_id);
+  }
   let productPrices: Record<string, { sell_price: number; cost_price: number }> = {};
   if (productIds.size > 0) {
     const { data: products } = await supabase
@@ -162,6 +167,21 @@ export default async function JobDetailPage({
   const receipts = ((receiptsResult.data ?? []) as { id: string; vendor: string | null; amount: number | null }[])
     .filter((r) => r.amount != null)
     .map((r) => ({ id: r.id, vendor: r.vendor, amount: Number(r.amount) }));
+
+  // Parts Sue allocated from stock that haven't been invoiced yet — the
+  // invoice builder adds these as lines (Mitchell 2026-10-15).
+  const stockItems = ((procurementResult.data ?? []) as Array<{
+    id: string; product_id: string | null; product_name: string | null; sku: string | null;
+    quantity: number | string; status: string; allocated_from_stock?: boolean | null; invoiced_at?: string | null;
+  }>)
+    .filter((p) => p.allocated_from_stock && !p.invoiced_at && (p.status === "in_stock" || p.status === "received"))
+    .map((p) => ({
+      id: p.id,
+      name: p.product_name ?? "Part",
+      sku: p.sku,
+      quantity: Number(p.quantity) || 1,
+      unitSell: p.product_id && productPrices[p.product_id] ? productPrices[p.product_id].sell_price : 0,
+    }));
 
   // Key Info tab (Michael 2026-07-30): the site's Key Information panel on the
   // job itself so a tech opening a job for the NVR creds doesn't have to
@@ -280,6 +300,7 @@ export default async function JobDetailPage({
           productPrices={productPrices}
           billingSettings={billingSettings}
           receipts={receipts}
+          stockItems={stockItems}
           planFiles={(planFiles ?? []) as any[]}
           planItems={planItems}
           keyInfo={keyInfo}

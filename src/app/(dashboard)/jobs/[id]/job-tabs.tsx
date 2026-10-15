@@ -59,6 +59,7 @@ export function JobTabs({
   productPrices,
   billingSettings,
   receipts,
+  stockItems = [],
   planFiles = [],
   planItems = [],
   keyInfo = null,
@@ -88,6 +89,8 @@ export function JobTabs({
   productPrices: Record<string, { sell_price: number; cost_price: number }>;
   billingSettings: { labour_sell_rate: number; callout_fee_sell: number; it_service_labour_rate: number };
   receipts: { id: string; vendor: string | null; amount: number }[];
+  /** Stock allocated from Inventory, not yet invoiced. */
+  stockItems?: { id: string; name: string; sku: string | null; quantity: number; unitSell: number }[];
   planFiles?: any[];
   planItems?: any[];
   keyInfo?: JobKeyInfo | null;
@@ -259,6 +262,7 @@ export function JobTabs({
             productPrices={productPrices}
             billingSettings={billingSettings}
             receipts={receipts}
+            stockItems={stockItems}
             isAdmin={isAdmin}
           />
         )}

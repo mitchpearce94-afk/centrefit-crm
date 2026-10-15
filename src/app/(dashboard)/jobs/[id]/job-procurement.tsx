@@ -83,7 +83,7 @@ function StatusBadge({ status }: { status: ProcurementItem["status"] }) {
     ordered: { label: "Ordered", color: "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" },
     ordered_online: { label: "Ordered Online", color: "bg-violet-500/10 text-violet-400 border border-violet-500/20" },
     received: { label: "Received", color: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" },
-  }[status];
+  }[status] ?? { label: status, color: "bg-muted text-muted-foreground" };
   return (
     <span className={`rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${conf.color}`}>
       {conf.label}
