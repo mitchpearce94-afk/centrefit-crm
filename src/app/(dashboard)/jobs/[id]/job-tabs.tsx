@@ -182,6 +182,7 @@ export function JobTabs({
             timeEntries={timeEntries}
             scheduleEntries={scheduleEntries ?? []}
             planItems={planItems}
+            procurementItems={procurementItems}
             viewerId={viewerId}
             viewerInitials={viewerInitials}
           />
@@ -334,6 +335,7 @@ function JobOverview({
   timeEntries,
   scheduleEntries,
   planItems = [],
+  procurementItems = [],
   viewerId,
   viewerInitials,
 }: {
@@ -343,6 +345,7 @@ function JobOverview({
   hasOpenTimer: boolean;
   openTimerId?: string;
   checklistItems: any[];
+  procurementItems?: any[];
   templates: any[];
   workEntries: any[];
   notes: any[];
@@ -439,6 +442,11 @@ function JobOverview({
         viewerInitials={viewerInitials}
       />
 
+      {/* ── Allocated parts (Mitchell 2026-10-15): what Sue has already pulled
+          from stock for this job, so the tech doesn't log it again in Work
+          Completed or grab a second one. ── */}
+      <AllocatedParts items={procurementItems} />
+
       {/* ── Work Completed ── */}
       <WrapUpDay
         jobId={jobId}
@@ -511,6 +519,49 @@ function JobOverview({
         workEntries={workEntries}
         checklistItems={checklistItems}
       />
+    </div>
+  );
+}
+
+/* Parts allocated from stock (Inventory → Allocate). Read-only here; the
+   Procurement tab has the full list and the invoice picks these up. */
+function AllocatedParts({ items }: { items: any[] }) {
+  const rows = items.filter((i) => i.allocated_from_stock);
+  const unwrap = (v: any) => (Array.isArray(v) ? v[0] ?? null : v ?? null);
+  return (
+    <div>
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+        Allocated parts
+      </h2>
+      <div className="rounded-lg border border-border bg-card">
+        {rows.length === 0 ? (
+          <p className="px-4 py-3 text-xs text-muted-foreground">
+            Nothing allocated from stock yet. Parts the office pulls from the cupboard for this job show here — don&rsquo;t log them again in Work Completed.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {rows.map((r) => {
+              const who = unwrap(r.allocated_by_staff)?.display_name ?? null;
+              const when = new Date(r.updated_at ?? r.created_at).toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+              return (
+                <li key={r.id} className="flex items-center gap-3 px-4 py-2.5">
+                  <span className="font-mono text-sm font-semibold w-10 shrink-0 text-right">{Number(r.quantity)} ×</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm">{r.product_name}</span>
+                    <span className="block truncate text-[11px] text-muted-foreground">
+                      {r.sku ? <span className="font-mono">{r.sku} · </span> : null}
+                      {who ? `${who} · ` : ""}{when}
+                    </span>
+                  </span>
+                  <span className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${r.invoiced_at ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-amber-500/10 text-amber-400 border border-amber-500/20"}`}>
+                    {r.invoiced_at ? "Invoiced" : "To bill"}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
