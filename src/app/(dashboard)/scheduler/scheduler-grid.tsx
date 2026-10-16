@@ -483,6 +483,17 @@ export function SchedulerView({ staff, entries, jobs, weekStart, currentUserId, 
   }
 
   function switchToDay(date: string) {
+    // The mobile agenda lists ±AGENDA_WINDOW_DAYS around the focused week,
+    // but the day pager only holds that week's seven days. A header tapped
+    // outside it used to set a day the pager couldn't find, and the clamp
+    // effect then dropped the user on the focused week's Monday (Mitchell,
+    // 16 Oct 2026: "takes me to a random date on the daily"). Route to the
+    // tapped day's week instead — page.tsx keys the view by week, so state
+    // re-seeds from ?day= on arrival.
+    if (getMondayOf(date) !== weekStart) {
+      router.push(`/scheduler?week=${getMondayOf(date)}&view=day${staffFilter !== "all" ? `&staff=${staffFilter}` : ""}&day=${date}`);
+      return;
+    }
     setSelectedDay(date);
     setView("day");
     updateViewParam("day");
