@@ -246,7 +246,7 @@ export function JobTabs({
                 Open in Procurement →
               </Link>
             </div>
-            <JobProcurement jobId={jobId} items={procurementItems} suppliers={suppliers} />
+            <JobProcurement jobId={jobId} items={procurementItems} suppliers={suppliers} jobNumber={job.number ?? null} siteName={job.site?.name ?? null} />
           </div>
         )}
         {activeTab === "invoicing" && (

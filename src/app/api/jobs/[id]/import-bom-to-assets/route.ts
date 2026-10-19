@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { assetUnitsForProducts } from "@/lib/assets/product-units";
 
 /**
  * Pre-fill the site asset register from a job's accepted-quote BOM (Michael,
@@ -77,7 +78,7 @@ export async function POST(
   // BOM lines + the catalogue product's asset-type mapping + device_type.
   const { data: lines } = await supabase
     .from("quote_line_items")
-    .select("product_name, sku, quantity, quote_products ( name, device_type, asset_type_id )")
+    .select("product_id, product_name, sku, quantity, quote_products ( name, device_type, asset_type_id )")
     .eq("quote_id", quote.id)
     .order("sort_order", { ascending: true });
   if (!lines || lines.length === 0) {
@@ -129,6 +130,14 @@ export async function POST(
   const unmapped: SkippedLine[] = []; // product has no asset-type tag — needs attention
   const consumables: SkippedLine[] = []; // mapped but not trackable — correctly skipped
 
+  // Explicit asset units (product_asset_units): a kit that yields several
+  // trackable things (Veyla Protect kit → AI server + camera) or a device
+  // with its own make/model. These win over the asset-type tag below.
+  const unitMap = await assetUnitsForProducts(
+    supabase,
+    lines.map((li) => li.product_id as string | null).filter((v): v is string => !!v),
+  );
+
   for (const li of lines) {
     const prod = (Array.isArray(li.quote_products) ? li.quote_products[0] : li.quote_products) as
       | { name?: string | null; device_type?: string | null; asset_type_id?: string | null }
@@ -136,6 +145,30 @@ export async function POST(
     const name = (li.product_name ?? prod?.name ?? "").trim();
     const qty = Math.max(1, Math.round(Number(li.quantity) || 1));
     if (!name) continue; // garbage line — nothing to report it as
+
+    const explicitUnits = (li.product_id ? unitMap.get(li.product_id as string) : undefined)?.filter((u) => u.explicit) ?? [];
+    if (explicitUnits.length > 0) {
+      for (const u of explicitUnits) {
+        const bucket = demandByType.get(u.assetTypeId) ?? [];
+        const d = bucket.find((x) => x.name.toLowerCase() === u.deviceName.toLowerCase());
+        if (d) {
+          d.qty += qty * u.quantity;
+        } else {
+          bucket.push({
+            name: u.deviceName,
+            qty: qty * u.quantity,
+            have: 0,
+            sku: (li.sku ?? "").trim() || null,
+            assetTypeId: u.assetTypeId,
+            deviceType: u.assetTypeName,
+            manufacturer: u.manufacturer,
+            model: u.model,
+          });
+        }
+        demandByType.set(u.assetTypeId, bucket);
+      }
+      continue;
+    }
 
     // Resolve the asset type: product tag wins, else legacy name match.
     const assetTypeId =

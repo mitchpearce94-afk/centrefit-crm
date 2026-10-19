@@ -81,14 +81,31 @@ export async function POST(
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  // Fetch job + site details for the PO delivery address / reference
-  const { data: job, error: jobErr } = await supabase
+  // Fetch job + site details for the PO reference. The site name rides on
+  // every PO (Mitchell 2026-10-19): Sue matches deliveries to a club without
+  // looking the job number up, and Veyla sees which site its kit is for.
+  const { data: jobRow, error: jobErr } = await supabase
     .from("jobs")
-    .select(`id, number`)
+    .select(`id, number, site:customer_sites(name, suburb)`)
     .eq("id", jobId)
     .maybeSingle();
   if (jobErr) return NextResponse.json({ error: jobErr.message }, { status: 500 });
-  if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+  if (!jobRow) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+  const job = jobRow as unknown as {
+    id: string;
+    number: string | null;
+    site: { name: string | null; suburb: string | null } | { name: string | null; suburb: string | null }[] | null;
+  };
+  const siteRow = Array.isArray(job.site) ? job.site[0] : job.site;
+  const siteName = (siteRow?.name ?? "").trim() || null;
+  const siteSuburb = (siteRow?.suburb ?? "").trim() || null;
+  // "CFA05291 · Planet Fitness Tuggerah" — Xero shows Reference on the PO
+  // PDF header and in the PO list, so this is what both Sue and the supplier
+  // read first.
+  const poReference = [job.number, siteName].filter(Boolean).join(" · ") || undefined;
+  const poDeliveryInstructions = siteName
+    ? `For ${siteName}${siteSuburb ? ` (${siteSuburb})` : ""}${job.number ? ` — job ${job.number}` : ""}. Deliver to Centrefit warehouse.`
+    : undefined;
 
   // PO delivery address is the Centrefit warehouse, NOT the job's site.
   // Stock arrives at HQ for staging/QA then gets dispatched to site with
@@ -389,7 +406,8 @@ export async function POST(
             JSON.stringify(lineItems),
             xeroSupplierContactId,
             DEFAULT_PURCHASE_ACCOUNT_CODE,
-            job.number ?? "",
+            poReference ?? "",
+            poDeliveryInstructions ?? "",
             deliveryAddress,
           ].join("|"),
         )
@@ -403,8 +421,9 @@ export async function POST(
         supplierContactId: xeroSupplierContactId,
         lineItems,
         // job.number is already prefixed "CFA…" — don't double it to "CFA-CFA…"
-        reference: job.number,
+        reference: poReference,
         deliveryAddress,
+        deliveryInstructions: poDeliveryInstructions,
         idempotencyKey,
         pace: pacer.run,
       });

@@ -3,6 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/service";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
 import { startRemandate } from "@/lib/recurring/remandate";
+import { getAuthedClient } from "@/lib/xero/client";
+import { findOrCreateContact, getXeroContactName, updateXeroContactDetails } from "@/lib/xero/contacts";
+import { xeroErrorMessage } from "@/lib/xero/items";
 
 /**
  * POST /api/sites/[id]/change-owner — the site was SOLD to a new owner
@@ -48,21 +51,51 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const svc = createServiceRoleClient();
   const { data: site } = await svc
     .from("customer_sites")
-    .select("id, name, customer_id, xero_contact_id, customer:customers!customer_id(name)")
+    .select("id, name, customer_id, xero_contact_id, address, suburb, state, postcode, customer:customers!customer_id(name)")
     .eq("id", siteId)
     .maybeSingle();
   if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 });
   const oldOwner = Array.isArray(site.customer) ? site.customer[0] : site.customer;
 
-  // New backing customer. xero_contact_id intentionally carries the site's
-  // existing Xero contact — the contact IS the site (D3); its entity/ABN
-  // fields may need a manual touch-up in Xero, which the notification flags.
+  // ── Xero: a new owner is a new legal entity, so it gets a NEW contact
+  // (Mitchell 2026-10-19). The old contact keeps the old owner's invoices;
+  // it is renamed "<name> (former owner: X)" so the site name is free for
+  // the new one (Xero contact names are unique). Best-effort: if Xero is
+  // down the old contact is carried over as before and the notification
+  // says so.
+  let xeroOutcome:
+    | { created: true; contactId: string }
+    | { carriedOver: true; reason: string }
+    | { created: false; reason: string };
+  let carryContactId: string | null = site.xero_contact_id ?? null;
+  const invoiceName = body.invoiceName?.trim() || null;
+  if (site.xero_contact_id) {
+    try {
+      const { client, conn } = await getAuthedClient();
+      const currentName = await getXeroContactName(client, conn.tenant_id, site.xero_contact_id);
+      if (currentName) {
+        const tag = ` (former owner: ${oldOwner?.name ?? "previous"})`;
+        if (!currentName.endsWith(tag)) {
+          await updateXeroContactDetails(client, conn.tenant_id, site.xero_contact_id, {
+            name: `${currentName}`.slice(0, 255 - tag.length) + tag,
+          });
+        }
+      }
+      carryContactId = null; // old contact stays with the old owner only
+      xeroOutcome = { created: false, reason: "pending" };
+    } catch (err) {
+      xeroOutcome = { carriedOver: true, reason: xeroErrorMessage(err) };
+    }
+  } else {
+    xeroOutcome = { created: false, reason: "no contact was linked; the first invoice creates one" };
+  }
+
   const { data: created, error: insErr } = await svc.from("customers").insert({
     name,
     abn: body.abn?.trim() || null,
     billing_email: body.billingEmail?.trim() || null,
     is_active: true,
-    xero_contact_id: site.xero_contact_id ?? null,
+    xero_contact_id: carryContactId,
   }).select("id").single();
   if (insErr) return NextResponse.json({ error: `Owner create failed: ${insErr.message}` }, { status: 500 });
   const newCustomerId = created.id;
@@ -87,11 +120,54 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       customer_id: newCustomerId,
       billing_email: body.billingEmail?.trim() || null,
       // New owner, new billing identity — set or clear the Xero entity override.
-      invoice_name: body.invoiceName?.trim() || null,
+      invoice_name: invoiceName,
+      // Dropped when the old contact was renamed above (a fresh one is made
+      // below); kept when Xero was unreachable.
+      xero_contact_id: carryContactId,
       updated_at: new Date().toISOString(),
     })
     .eq("id", siteId);
   if (siteErr) return NextResponse.json({ error: `Site re-point failed: ${siteErr.message}` }, { status: 500 });
+
+  // Fresh Xero contact for the new owner, named after the site (or the
+  // invoice name), with the new ABN / billing email / phone / address.
+  if (site.xero_contact_id && carryContactId === null) {
+    try {
+      const { client, conn } = await getAuthedClient();
+      const contactId = await findOrCreateContact(
+        svc,
+        client,
+        conn.tenant_id,
+        {
+          id: newCustomerId,
+          name,
+          abn: body.abn?.trim() || null,
+          billing_email: body.billingEmail?.trim() || null,
+          phone: body.contactPhone?.trim() || null,
+        },
+        {
+          id: siteId,
+          name: site.name,
+          xero_contact_id: null,
+          invoice_name: invoiceName,
+          billing_email: body.billingEmail?.trim() || null,
+          address: site.address,
+          suburb: site.suburb,
+          state: site.state,
+          postcode: site.postcode,
+        },
+      );
+      if (body.contactName?.trim()) {
+        await updateXeroContactDetails(client, conn.tenant_id, contactId, { contactPerson: body.contactName }).catch(() => undefined);
+      }
+      await svc.from("customers").update({ xero_contact_id: contactId }).eq("id", newCustomerId);
+      xeroOutcome = { created: true, contactId };
+    } catch (err) {
+      // Old contact already renamed → the site has no contact; the next
+      // invoice creates one by name. Nothing is mis-billed meanwhile.
+      xeroOutcome = { created: false, reason: xeroErrorMessage(err) };
+    }
+  }
 
   // DD exposure — plans keep collecting from the old owner's mandate until
   // the new owner signs their own (site-first D4). Default behaviour is to
@@ -142,7 +218,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           (pendingMandateCount > 0
             ? ` ⚠ ${pendingMandateCount} plan(s) still pending the PREVIOUS owner's signature — cancel and recreate those for the new owner.`
             : "") +
-          " Check the Xero contact's ABN/entity name too."),
+          ("created" in xeroOutcome && xeroOutcome.created
+            ? " New Xero contact created for the new owner; the previous contact was renamed and keeps the old invoices."
+            : "carriedOver" in xeroOutcome
+              ? ` ⚠ Xero unreachable (${xeroOutcome.reason}) — the OLD Xero contact is still linked; fix its ABN/entity name or link a new one from the Owner card.`
+              : ` Xero: ${xeroOutcome.reason}.`)),
     href: `/sites/${siteId}`,
   });
 
@@ -152,5 +232,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     previousOwner: oldOwner?.name ?? null,
     activePlansNeedingRemandate: planCount,
     remandate: remandateResults,
+    xero: xeroOutcome,
   });
 }

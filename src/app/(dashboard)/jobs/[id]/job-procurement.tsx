@@ -95,10 +95,15 @@ export function JobProcurement({
   jobId,
   items,
   suppliers,
+  jobNumber = null,
+  siteName = null,
 }: {
   jobId: string;
   items: ProcurementItem[];
   suppliers: Supplier[];
+  /** Printed on the pick list / supplier order sheets (Mitchell 2026-10-19). */
+  jobNumber?: string | null;
+  siteName?: string | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -106,6 +111,9 @@ export function JobProcurement({
   const [generating, setGenerating] = useState(false);
   const [tab, setTab] = useState<"to_order" | "awaiting" | "complete">("to_order");
   const [splitTarget, setSplitTarget] = useState<ProcurementItem | null>(null);
+  // Receive dialog: the asset-register units this line yields (serials asked
+  // per unit). null = closed; units [] never opens (plain receive).
+  const [receiveTarget, setReceiveTarget] = useState<{ item: ProcurementItem; units: ReceiveUnit[]; siteName: string | null } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProcurementItem | null>(null);
   // Ad-hoc parts picker (service jobs with no quote BOM).
   const [addOpen, setAddOpen] = useState(false);
@@ -284,16 +292,50 @@ export function JobProcurement({
     }
   }
 
-  async function receiveItem(id: string) {
-    setBusy(id);
+  // Receive = mark the line received AND put its trackable units on the site
+  // asset register (Mitchell 2026-10-19). Lines with nothing trackable
+  // receive straight away; otherwise a dialog asks for each unit's serial.
+  async function receiveItem(item: ProcurementItem) {
+    setBusy(item.id);
     try {
-      const res = await fetch(`/api/procurement-items/${id}/receive`, { method: "POST" });
-      const json = await res.json();
-      if (!res.ok || json.error) toast(json.error ?? "Receive failed", "error");
-      else {
-        toast("Marked as received");
-        router.refresh();
+      const probe = await fetch(`/api/procurement-items/${item.id}/receive`);
+      const info = await probe.json().catch(() => ({}));
+      const units: ReceiveUnit[] = probe.ok && Array.isArray(info.units) ? info.units : [];
+      if (units.length > 0 && (info.alreadyOnRegister ?? 0) === 0) {
+        setReceiveTarget({ item, units, siteName: info.siteName ?? null });
+        return;
       }
+      await postReceive(item.id, undefined);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function postReceive(id: string, units: { serial?: string; mac?: string; ip?: string }[] | undefined) {
+    const res = await fetch(`/api/procurement-items/${id}/receive`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(units ? { units } : {}),
+    });
+    const json = await res.json();
+    if (!res.ok || json.error) {
+      toast(json.error ?? "Receive failed", "error");
+      return false;
+    }
+    const a = json.assets as { created: number; filled: number; skipped: number; error: string | null } | undefined;
+    if (a?.error) toast(`Marked as received, but the asset register wasn't updated: ${a.error}`, "error");
+    else if (a && a.created + a.filled > 0) toast(`Received · ${a.created + a.filled} asset${a.created + a.filled === 1 ? "" : "s"} on the site register`);
+    else toast("Marked as received");
+    router.refresh();
+    return true;
+  }
+
+  async function confirmReceive(units: { serial?: string; mac?: string; ip?: string }[]) {
+    if (!receiveTarget) return;
+    setBusy(receiveTarget.item.id);
+    try {
+      const ok = await postReceive(receiveTarget.item.id, units);
+      if (ok) setReceiveTarget(null);
     } finally {
       setBusy(null);
     }
@@ -386,6 +428,10 @@ export function JobProcurement({
   // ── Warehouse Pick List — every line on the job, grouped by category, as a
   // physical checklist to pull/stage. (Not just In-Stock rows: on a fresh job
   // nothing's triaged yet, and the warehouse stages the whole job regardless.)
+  // "CFA05291 · Planet Fitness Tuggerah" on every printed sheet so the
+  // warehouse and the supplier can see which site the parts are for.
+  const printRefLine = [jobNumber, siteName].filter(Boolean).join(" · ");
+
   function openPickList() {
     const rows = items;
     if (rows.length === 0) {
@@ -415,6 +461,7 @@ export function JobProcurement({
     printWindow(
       "Warehouse Pick List",
       `<h1 style="font-size:22px;font-weight:700;margin:0">Warehouse Pick List</h1>
+       ${printRefLine ? `<p style="margin:4px 0 0;font-size:14px;font-weight:600">${printRefLine}</p>` : ""}
        <p style="color:#94a3b8;margin:2px 0 24px;font-size:12px">${rows.length} line item${rows.length === 1 ? "" : "s"}</p>
        <table style="width:100%;border-collapse:collapse;font-size:13px">
          <thead><tr style="border-bottom:2px solid #0f172a">
@@ -469,7 +516,7 @@ export function JobProcurement({
       }
       sections += `
         <div style="margin-bottom:28px;page-break-inside:avoid">
-          <h2 style="font-size:15px;font-weight:700;margin:0;border-bottom:2px solid #0f172a;padding-bottom:6px">${supplier}</h2>
+          <h2 style="font-size:15px;font-weight:700;margin:0;border-bottom:2px solid #0f172a;padding-bottom:6px">${supplier}${printRefLine ? ` <span style="font-weight:500;font-size:12px;color:#64748b">· ${printRefLine}</span>` : ""}</h2>
           <table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed">
             <colgroup><col /><col style="width:180px" /><col style="width:60px" /></colgroup>
             <thead><tr style="border-bottom:1px solid #e2e8f0">
@@ -484,6 +531,7 @@ export function JobProcurement({
     printWindow(
       "Supplier Orders",
       `<h1 style="font-size:22px;font-weight:700;margin:0">Supplier Purchase Orders</h1>
+       ${printRefLine ? `<p style="margin:4px 0 0;font-size:14px;font-weight:600">${printRefLine}</p>` : ""}
        <p style="color:#94a3b8;margin:2px 0 24px;font-size:12px">${sorted.length} supplier${sorted.length !== 1 ? "s" : ""}</p>
        ${sections}`,
     );
@@ -970,7 +1018,7 @@ export function JobProcurement({
                       {item.status === "ordered" && (
                         <>
                           <button
-                            onClick={() => receiveItem(item.id)}
+                            onClick={() => receiveItem(item)}
                             disabled={rowBusy}
                             className="text-xs text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
                           >
@@ -989,7 +1037,7 @@ export function JobProcurement({
                       {(item.status === "ordered_online" || item.status === "in_stock") && (
                         <>
                           <button
-                            onClick={() => receiveItem(item.id)}
+                            onClick={() => receiveItem(item)}
                             disabled={rowBusy}
                             className="text-xs text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
                           >
@@ -1033,6 +1081,16 @@ export function JobProcurement({
           </tbody>
         </table>
       </div>
+      )}
+      {receiveTarget && (
+        <ReceiveModal
+          item={receiveTarget.item}
+          units={receiveTarget.units}
+          siteName={receiveTarget.siteName}
+          busy={busy === receiveTarget.item.id}
+          onCancel={() => setReceiveTarget(null)}
+          onConfirm={confirmReceive}
+        />
       )}
       {splitTarget && (
         <SplitModal
@@ -1081,7 +1139,7 @@ function ConfirmDeleteModal({
         <div className="border-b border-border px-5 py-4">
           <h2 className="text-base font-semibold">Delete procurement line?</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            This can't be undone, but you can always re-init procurement from the quote.
+            This can&apos;t be undone, but you can always re-init procurement from the quote.
           </p>
         </div>
 
@@ -1208,6 +1266,137 @@ function SplitModal({
           >
             {busy ? "Splitting…" : "Split"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One physical unit the receive route will put on the asset register. */
+export interface ReceiveUnit {
+  index: number;
+  deviceName: string;
+  assetTypeId: string;
+  assetTypeName: string;
+  manufacturer: string | null;
+  model: string | null;
+  hasSerial: boolean;
+  hasMac: boolean;
+  hasIp: boolean;
+}
+
+/**
+ * Receive dialog — one row per unit (a Veyla Protect kit = AI server +
+ * camera; a controller = one row), serial / MAC typed or scanned off the
+ * box. Serials are optional: "Receive" with blanks still puts the shells on
+ * the register for the tech to fill on site.
+ */
+function ReceiveModal({
+  item,
+  units,
+  siteName,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  item: ProcurementItem;
+  units: ReceiveUnit[];
+  siteName: string | null;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: (units: { serial?: string; mac?: string; ip?: string }[]) => void;
+}) {
+  const [values, setValues] = useState<{ serial: string; mac: string }[]>(() => units.map(() => ({ serial: "", mac: "" })));
+  const filled = values.filter((v) => v.serial.trim()).length;
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !busy) onCancel();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, onCancel]);
+
+  const submit = () => onConfirm(values.map((v) => ({ serial: v.serial.trim() || undefined, mac: v.mac.trim() || undefined })));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-lg rounded-lg border border-border bg-background shadow-xl">
+        <div className="border-b border-border px-5 py-4">
+          <h2 className="text-base font-semibold">Receive &amp; add to the asset register</h2>
+          <p className="mt-1 text-xs text-muted-foreground truncate">
+            {item.quantity}× {item.product_name}
+            {item.sku && <span className="ml-1 font-mono">({item.sku})</span>}
+            {siteName && <> → <span className="text-foreground">{siteName}</span></>}
+          </p>
+        </div>
+
+        <div className="max-h-[60vh] overflow-y-auto px-5 py-4 space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Type or scan the serial off each box. Leave blank to add the unit without one; the tech fills it in on site.
+          </p>
+          {units.map((u, i) => (
+            <div key={u.index} className="rounded-md border border-border bg-muted/20 px-3 py-2">
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="font-medium">{u.deviceName}</span>
+                <span className="text-muted-foreground">{u.assetTypeName}{u.model ? ` · ${u.manufacturer ? `${u.manufacturer} ` : ""}${u.model}` : ""}</span>
+              </div>
+              <div className="mt-1.5 grid grid-cols-2 gap-2">
+                {u.hasSerial && (
+                  <input
+                    type="text"
+                    value={values[i]?.serial ?? ""}
+                    autoFocus={i === 0}
+                    onChange={(e) => setValues((prev) => prev.map((v, k) => (k === i ? { ...v, serial: e.target.value } : v)))}
+                    onKeyDown={(e) => {
+                      // Barcode scanners send Enter — hop to the next serial field.
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const inputs = Array.from(document.querySelectorAll<HTMLInputElement>("[data-receive-serial]"));
+                        const next = inputs[inputs.indexOf(e.currentTarget) + 1];
+                        if (next) next.focus();
+                        else if (!busy) submit();
+                      }
+                    }}
+                    data-receive-serial
+                    disabled={busy}
+                    placeholder="Serial number"
+                    className="w-full rounded-md border border-border bg-input px-2 py-1 font-mono text-xs text-foreground placeholder:font-sans placeholder:text-muted-foreground focus:border-primary focus:outline-none disabled:opacity-50"
+                  />
+                )}
+                {u.hasMac && (
+                  <input
+                    type="text"
+                    value={values[i]?.mac ?? ""}
+                    onChange={(e) => setValues((prev) => prev.map((v, k) => (k === i ? { ...v, mac: e.target.value } : v)))}
+                    disabled={busy}
+                    placeholder="MAC (optional)"
+                    className="w-full rounded-md border border-border bg-input px-2 py-1 font-mono text-xs text-foreground placeholder:font-sans placeholder:text-muted-foreground focus:border-primary focus:outline-none disabled:opacity-50"
+                  />
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="border-t border-border px-5 py-3 flex items-center justify-between gap-2">
+          <span className="text-[11px] text-muted-foreground">{filled} of {units.length} serial{units.length === 1 ? "" : "s"} entered</span>
+          <div className="flex gap-2">
+            <button
+              onClick={onCancel}
+              disabled={busy}
+              className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={submit}
+              disabled={busy}
+              className="rounded-md bg-emerald-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+            >
+              {busy ? "Receiving…" : filled === units.length ? "Receive" : "Receive (fill the rest later)"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -115,6 +115,8 @@ export interface SiteAsset {
   id: string;
   site_id: string;
   job_id: string | null;
+  /** Procurement line that put this unit on the register (Receive flow). */
+  procurement_item_id?: string | null;
   asset_type_id: string | null;
   device_type: string | null;
   device_name: string | null;

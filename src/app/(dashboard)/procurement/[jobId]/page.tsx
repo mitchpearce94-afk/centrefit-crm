@@ -97,8 +97,7 @@ export default async function ProcurementJobPage({
         <JobProcurement
           jobId={jobId}
           items={(procurementResult.data ?? []) as never[]}
-          suppliers={(suppliersResult.data ?? []) as never[]}
-        />
+          suppliers={(suppliersResult.data ?? []) as never[]} jobNumber={jobLabel} siteName={job.site?.name ?? null} />
       </div>
     </div>
   );

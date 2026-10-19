@@ -10,6 +10,7 @@ import { PRODUCT_CATEGORIES, DEVICE_TYPES } from "@/lib/quote-engine";
 import { RowXeroSyncButton } from "./row-xero-sync-button";
 import { KitPanel, type KitContentRow } from "./kit-panel";
 import { KitComponentsPanel, type KitComponentRow } from "./kit-components-panel";
+import { AssetUnitsPanel, type AssetUnitRow } from "./asset-units-panel";
 
 export interface ProductSubcategory {
   id: string;
@@ -103,6 +104,7 @@ export function ProductCatalog({
   kitContents = [],
   kitComponents = [],
   deviceTypes = [],
+  assetUnits = [],
 }: {
   products: Product[];
   suppliers: Supplier[];
@@ -114,6 +116,7 @@ export function ProductCatalog({
   kitContents?: KitContentRow[];
   kitComponents?: KitComponentRow[];
   deviceTypes?: { code: string; legend: string }[];
+  assetUnits?: AssetUnitRow[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -565,6 +568,7 @@ export function ProductCatalog({
             offers={offersByProduct.get(product.id) ?? []}
             kitContents={kitContents.filter((k) => k.kit_product_id === product.id)}
             kitComponents={kitComponents.filter((k) => k.kit_product_id === product.id)}
+            assetUnits={assetUnits.filter((u) => u.product_id === product.id)}
             deviceTypes={deviceTypes}
             allProducts={products}
             suppliers={sortedSuppliers}
@@ -605,6 +609,7 @@ type ProductFormModalProps =
       offers?: never;
       kitContents?: never;
       kitComponents?: never;
+      assetUnits?: never;
       deviceTypes?: never;
       allProducts?: never;
       onSave?: never;
@@ -615,6 +620,7 @@ type ProductFormModalProps =
       offers: ProductOffer[];
       kitContents: KitContentRow[];
       kitComponents: KitComponentRow[];
+      assetUnits: AssetUnitRow[];
       deviceTypes: { code: string; legend: string }[];
       allProducts: Product[];
       suppliers: Supplier[];
@@ -1210,6 +1216,13 @@ function ProductFormModal(props: ProductFormModalProps) {
           {isEditing && (
             <div className="rounded-md border border-border bg-muted/20 px-3 py-3">
               <KitPanel product={props.product} contents={props.kitContents} products={props.allProducts} />
+            </div>
+          )}
+
+          {/* Asset register units — what receiving this product puts on the site asset list */}
+          {isEditing && (
+            <div className="rounded-md border border-border bg-muted/20 px-3 py-3">
+              <AssetUnitsPanel product={props.product} units={props.assetUnits} assetTypes={props.assetTypes} />
             </div>
           )}
 

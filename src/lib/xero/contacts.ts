@@ -382,3 +382,69 @@ export async function getXeroContact(
   }
   return summariseContact(c as never);
 }
+
+/**
+ * Push edited owner details onto an existing Xero contact (Owner card
+ * "same customer" path, Mitchell 2026-10-19). Partial: only the fields given
+ * are sent; Xero merges them. `name` is the contact's display name — pass it
+ * only when the billing entity itself was renamed (invoice_name), never the
+ * owner's personal name, because the contact IS the site.
+ */
+export interface XeroContactDetailsPatch {
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  abn?: string | null;
+  /** "First Last" — split onto firstName/lastName. */
+  contactPerson?: string | null;
+}
+
+export async function updateXeroContactDetails(
+  xero: XeroClient,
+  tenantId: string,
+  contactId: string,
+  patch: XeroContactDetailsPatch,
+  pace: XeroPace = unpaced,
+): Promise<string[]> {
+  const payload: Record<string, unknown> = {};
+  const sent: string[] = [];
+  if (patch.name?.trim()) { payload.name = patch.name.trim().slice(0, 255); sent.push("name"); }
+  if (patch.email !== undefined) {
+    const first = (patch.email ?? "").split(",")[0]?.trim() ?? "";
+    payload.emailAddress = first; sent.push("email");
+  }
+  if (patch.abn !== undefined) { payload.taxNumber = (patch.abn ?? "").trim(); sent.push("ABN"); }
+  if (patch.phone !== undefined) {
+    payload.phones = [{ phoneType: "DEFAULT", phoneNumber: (patch.phone ?? "").trim() }];
+    sent.push("phone");
+  }
+  if (patch.contactPerson !== undefined) {
+    const full = (patch.contactPerson ?? "").trim();
+    const [first, ...rest] = full.split(/\s+/);
+    payload.firstName = full ? first : "";
+    payload.lastName = full ? rest.join(" ") : "";
+    sent.push("contact person");
+  }
+  if (sent.length === 0) return [];
+  await pace(() =>
+    xero.accountingApi.updateContact(tenantId, contactId, {
+      contacts: [payload as never],
+    }),
+  );
+  return sent;
+}
+
+/** Read a contact's current display name (null when it no longer exists). */
+export async function getXeroContactName(
+  xero: XeroClient,
+  tenantId: string,
+  contactId: string,
+  pace: XeroPace = unpaced,
+): Promise<string | null> {
+  try {
+    const res = await pace(() => xero.accountingApi.getContact(tenantId, contactId));
+    return res.body.contacts?.[0]?.name ?? null;
+  } catch {
+    return null;
+  }
+}

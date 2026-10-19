@@ -43,6 +43,10 @@ export function OwnerCard({
   const { toast } = useToast();
   const [mode, setMode] = useState<"view" | "edit" | "change">("view");
   const [busy, setBusy] = useState(false);
+  // "Is this still the same customer?" — asked on every Edit-details save
+  // (Mitchell 2026-10-19). Same → update in place + push to Xero. New owner →
+  // the change-owner path with what was typed carried across.
+  const [confirmSame, setConfirmSame] = useState(false);
   const [sendDdSignup, setSendDdSignup] = useState(true);
 
   // Linked Xero contact (docs/billing-contact-CONTEXT.md D3/D6). The name is
@@ -105,11 +109,42 @@ export function OwnerCard({
     setMode("change");
   }
 
-  async function submit() {
+  function editDirty(): boolean {
+    const norm = (v: string | null | undefined) => (v ?? "").trim();
+    return (
+      norm(form.name) !== norm(owner.name) ||
+      norm(form.abn) !== norm(owner.abn) ||
+      norm(form.billingEmail) !== norm(owner.billing_email) ||
+      norm(form.invoiceName) !== norm(owner.invoiceName) ||
+      norm(form.contactName) !== norm(owner.contactName) ||
+      norm(form.contactEmail) !== norm(owner.contactEmail) ||
+      norm(form.contactPhone) !== norm(owner.contactPhone)
+    );
+  }
+
+  function submit() {
     if (!form.name.trim()) {
       toast("Owner name is required", "error");
       return;
     }
+    if (mode === "edit") {
+      if (!editDirty()) { setMode("view"); return; }
+      setConfirmSame(true);
+      return;
+    }
+    void performSave();
+  }
+
+  // "New owner" from the pop-up: keep what was typed, switch to the
+  // change-owner form so the DD-signup choice is visible before it runs.
+  function switchToNewOwner() {
+    setConfirmSame(false);
+    setSendDdSignup(true);
+    setMode("change");
+  }
+
+  async function performSave() {
+    setConfirmSame(false);
     const isChange = mode === "change";
     // The DD signup email goes to billing email (falls back to contact email)
     // — catch the miss client-side rather than after the owner is created.
@@ -154,7 +189,15 @@ export function OwnerCard({
           );
         }
       } else {
-        toast("Owner details updated");
+        const x = json.xero as { updated?: string[]; skipped?: string; error?: string } | undefined;
+        if (x?.error) toast(`Owner details updated, but Xero wasn't: ${x.error}`, "error");
+        else if (x?.updated?.length) toast(`Owner details updated · Xero contact ${x.updated.join(", ")} updated`);
+        else toast("Owner details updated");
+      }
+      if (isChange) {
+        const x = json.xero as { created?: boolean; carriedOver?: boolean; reason?: string } | undefined;
+        if (x?.carriedOver) toast(`Xero unreachable (${x.reason}) — the previous Xero contact is still linked. Fix it from the Owner card.`, "error");
+        else if (x?.created) toast("New Xero contact created for the new owner");
       }
       setMode("view");
       router.refresh();
@@ -179,6 +222,31 @@ export function OwnerCard({
         )}
       </div>
 
+      {confirmSame && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => !busy && setConfirmSame(false)}>
+          <div className="w-full max-w-md rounded-lg border border-border bg-background shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="border-b border-border px-5 py-4">
+              <h2 className="text-base font-semibold">Is this still the same customer?</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {owner.name}{form.name.trim() !== owner.name.trim() ? ` → ${form.name.trim()}` : ""}
+              </p>
+            </div>
+            <div className="px-5 py-4 space-y-2 text-xs text-muted-foreground">
+              <p><span className="font-medium text-foreground">Same customer</span> — fixes the details on this owner record and updates the linked Xero contact (email, ABN, phone, contact person) to match.</p>
+              <p><span className="font-medium text-foreground">New owner</span> — the site was sold. A new customer record is created, a fresh Xero contact is made for them, and jobs, quotes and invoices stay with the previous owner.{!isAdmin && " Only an admin can do this."}</p>
+            </div>
+            <div className="border-t border-border px-5 py-3 flex flex-wrap justify-end gap-2">
+              <button type="button" onClick={() => setConfirmSame(false)} disabled={busy} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50">Cancel</button>
+              {isAdmin && (
+                <button type="button" onClick={switchToNewOwner} disabled={busy} className="rounded-md border border-amber-500/40 px-3 py-1.5 text-xs font-medium text-amber-300 hover:bg-amber-500/10 disabled:opacity-50">New owner…</button>
+              )}
+              <button type="button" onClick={() => void performSave()} disabled={busy} className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                {busy ? "Saving…" : "Same customer — update"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {pickingXero && (
         <XeroContactPicker
           title="Bill this site to…"
