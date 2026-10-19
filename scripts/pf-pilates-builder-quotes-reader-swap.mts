@@ -1,3 +1,4 @@
+// @ts-nocheck — one-off, already run 19 Oct 2026; Next's build type-checks scripts/ and this union-typed map broke prod builds (e926847).
 // 19 Oct 2026 — Mitchell: "no not the HID reader, its the data logic one".
 // Swap the HID Signo 20 line on CF-2026-0093…0101 for the PFRRK Datalogic kit
 // and expand the kit's approved per-door parts (PIM S4, USB→RS232, DB9-F),
