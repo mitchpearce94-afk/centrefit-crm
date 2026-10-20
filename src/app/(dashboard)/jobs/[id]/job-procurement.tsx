@@ -500,7 +500,7 @@ export function JobProcurement({
         body += `<tr>
           <td style="padding:8px;text-align:center;width:40px"><div style="width:18px;height:18px;border:2px solid #94a3b8;border-radius:3px;margin:0 auto"></div></td>
           <td style="padding:8px;font-weight:500">${it.product_name}</td>
-          <td style="padding:8px;font-family:monospace;color:#64748b;font-size:12px">${it.sku || "—"}</td>
+          <td style="padding:8px;font-family:monospace;color:#64748b;font-size:12px;overflow-wrap:anywhere">${it.sku || "—"}</td>
           <td style="padding:8px;text-align:center;font-weight:700;font-size:16px">${it.quantity}</td>
         </tr>`;
       }
@@ -510,12 +510,13 @@ export function JobProcurement({
       `<h1 style="font-size:22px;font-weight:700;margin:0">Warehouse Pick List</h1>
        ${printRefLine ? `<p style="margin:4px 0 0;font-size:14px;font-weight:600">${printRefLine}</p>` : ""}
        <p style="color:#94a3b8;margin:2px 0 24px;font-size:12px">${rows.length} line item${rows.length === 1 ? "" : "s"}</p>
-       <table style="width:100%;border-collapse:collapse;font-size:13px">
+       <table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed">
+         <colgroup><col style="width:40px" /><col /><col style="width:200px" /><col style="width:60px" /></colgroup>
          <thead><tr style="border-bottom:2px solid #0f172a">
-           <th style="padding:8px;width:40px"></th>
+           <th style="padding:8px"></th>
            <th style="padding:8px;text-align:left">Product</th>
            <th style="padding:8px;text-align:left">SKU</th>
-           <th style="padding:8px;text-align:center;width:60px">Qty</th>
+           <th style="padding:8px;text-align:center">Qty</th>
          </tr></thead>
          <tbody>${body}</tbody>
        </table>
@@ -557,7 +558,7 @@ export function JobProcurement({
               ? ` <span style="font-size:10px;color:#6366f1;font-family:monospace">${it.xero_po_number}</span>`
               : ""
           }</td>
-          <td style="padding:8px;font-family:monospace;color:#64748b;font-size:12px">${displaySku || "—"}</td>
+          <td style="padding:8px;font-family:monospace;color:#64748b;font-size:12px;overflow-wrap:anywhere">${displaySku || "—"}</td>
           <td style="padding:8px;text-align:right;font-weight:600">${it.quantity}</td>
         </tr>`;
       }
