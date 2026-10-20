@@ -13,6 +13,7 @@ type JobRow = {
   number: string | number | null;
   description: string | null;
   procurement_not_required: boolean | null;
+  procurement_gate_waived_at: string | null;
   customer: { id: string; name: string } | null;
   site: { id: string; name: string | null } | null;
 };
@@ -40,7 +41,7 @@ export default async function ProcurementIndexPage() {
       .select("job_id, status, xero_po_number, ordered_at"),
     supabase
       .from("jobs")
-      .select("id, number, description, procurement_not_required, customer:customers(id, name), site:customer_sites(id, name)"),
+      .select("id, number, description, procurement_not_required, procurement_gate_waived_at, customer:customers(id, name), site:customer_sites(id, name)"),
     supabase
       .from("quotes")
       .select("id, ref, job_id, accepted_at, quote_type, pricing_snapshot")
@@ -170,7 +171,10 @@ export default async function ProcurementIndexPage() {
       // never hide an under-$1000 (or unknown-total) job behind the deposit gate.
       const total = Number(q.pricing_snapshot?.totalExGST ?? 0);
       const straightThrough = total < STRAIGHT_THROUGH_UNDER;
-      if (!straightThrough && !pp1PaidQuoteIds.has(q.id)) continue; // waiting on PP1
+      // Mitchell can waive the gate per job (jobs.procurement_gate_waived_at,
+      // 2026-10-20) — a waived job is Ready even with PP1 outstanding.
+      const waived = !!jobsById.get(q.job_id)?.procurement_gate_waived_at;
+      if (!straightThrough && !waived && !pp1PaidQuoteIds.has(q.id)) continue; // waiting on PP1
     }
     readyByJobId.set(q.job_id, q);
   }

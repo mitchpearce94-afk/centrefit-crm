@@ -18,7 +18,7 @@ export default async function JobDetailPage({
       supabase
         .from("jobs")
         .select(
-          "*, customer:customers(id, name), site:customer_sites(id, name, address, suburb, state, postcode, phone, site_contact:customer_contacts!customer_sites_site_contact_id_fkey(id, name, role, phone, mobile, email)), job_contact:customer_contacts!jobs_job_contact_id_fkey(id, name, role, phone, mobile, email), status:statuses(*), category_1:categories!category_1_id(id, name), category_2:categories!category_2_id(id, name), job_staff(id, role, staff:staff(id, display_name, initials, colour, email, phone))"
+          "*, customer:customers(id, name), site:customer_sites(id, name, address, suburb, state, postcode, phone, site_contact:customer_contacts!customer_sites_site_contact_id_fkey(id, name, role, phone, mobile, email)), job_contact:customer_contacts!jobs_job_contact_id_fkey(id, name, role, phone, mobile, email), status:statuses(*), category_1:categories!category_1_id(id, name), category_2:categories!category_2_id(id, name), job_staff(id, role, staff:staff(id, display_name, initials, colour, email, phone)), gate_waiver_staff:staff!jobs_procurement_gate_waived_by_fkey(display_name)"
         )
         .eq("id", id)
         .single(),
@@ -121,6 +121,8 @@ export default async function JobDetailPage({
   const { data: { user } } = await supabase.auth.getUser();
   let isAdmin = false;
   let viewerInitials = "??";
+  // The procurement payment gate is a money guard — only Mitchell lifts it.
+  const canWaiveGate = user?.email?.toLowerCase() === "mitchell@centrefit.com.au";
   if (user) {
     const { data: viewerStaff } = await supabase
       .from("staff")
@@ -305,6 +307,7 @@ export default async function JobDetailPage({
           planItems={planItems}
           keyInfo={keyInfo}
           isAdmin={isAdmin}
+          canWaiveGate={canWaiveGate}
           viewerId={user?.id ?? null}
           viewerInitials={viewerInitials}
         />

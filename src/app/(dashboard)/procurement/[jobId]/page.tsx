@@ -10,12 +10,16 @@ export default async function ProcurementJobPage({
 }) {
   const { jobId } = await params;
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const canWaiveGate = user?.email?.toLowerCase() === "mitchell@centrefit.com.au";
 
   const [jobResult, procurementResult, suppliersResult, quoteResult] = await Promise.all([
     supabase
       .from("jobs")
       .select(
-        "id, number, description, customer:customers(id, name), site:customer_sites(id, name, address, suburb, state, postcode)",
+        "id, number, description, procurement_gate_waived_at, procurement_gate_waiver_note, gate_waiver_staff:staff!jobs_procurement_gate_waived_by_fkey(display_name), customer:customers(id, name), site:customer_sites(id, name, address, suburb, state, postcode)",
       )
       .eq("id", jobId)
       .single(),
@@ -47,6 +51,9 @@ export default async function ProcurementJobPage({
     id: string;
     number: string | number | null;
     description: string | null;
+    procurement_gate_waived_at: string | null;
+    procurement_gate_waiver_note: string | null;
+    gate_waiver_staff: { display_name: string | null } | null;
     customer: { id: string; name: string } | null;
     site: { name: string | null; address: string | null; suburb: string | null; state: string | null; postcode: string | null } | null;
   };
@@ -97,7 +104,20 @@ export default async function ProcurementJobPage({
         <JobProcurement
           jobId={jobId}
           items={(procurementResult.data ?? []) as never[]}
-          suppliers={(suppliersResult.data ?? []) as never[]} jobNumber={jobLabel} siteName={job.site?.name ?? null} />
+          suppliers={(suppliersResult.data ?? []) as never[]}
+          jobNumber={jobLabel}
+          siteName={job.site?.name ?? null}
+          gateWaiver={
+            job.procurement_gate_waived_at
+              ? {
+                  at: job.procurement_gate_waived_at,
+                  by: job.gate_waiver_staff?.display_name ?? null,
+                  note: job.procurement_gate_waiver_note ?? null,
+                }
+              : null
+          }
+          canWaiveGate={canWaiveGate}
+        />
       </div>
     </div>
   );

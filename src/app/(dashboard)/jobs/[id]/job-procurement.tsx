@@ -91,12 +91,20 @@ function StatusBadge({ status }: { status: ProcurementItem["status"] }) {
   );
 }
 
+export interface GateWaiver {
+  at: string;
+  by: string | null;
+  note: string | null;
+}
+
 export function JobProcurement({
   jobId,
   items,
   suppliers,
   jobNumber = null,
   siteName = null,
+  gateWaiver = null,
+  canWaiveGate = false,
 }: {
   jobId: string;
   items: ProcurementItem[];
@@ -104,6 +112,10 @@ export function JobProcurement({
   /** Printed on the pick list / supplier order sheets (Mitchell 2026-10-19). */
   jobNumber?: string | null;
   siteName?: string | null;
+  /** Payment gate waived on this job (who / when / why). */
+  gateWaiver?: GateWaiver | null;
+  /** Only Mitchell — the gate is a money guard (2026-10-20). */
+  canWaiveGate?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -119,6 +131,70 @@ export function JobProcurement({
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<Map<string, number>>(new Map());
   const [addBusy, setAddBusy] = useState(false);
+
+  // Payment-gate waiver (Mitchell only). Lives on the empty state because the
+  // gate only guards ENTRY into procurement.
+  const [waiveNote, setWaiveNote] = useState("");
+  const [waiveBusy, setWaiveBusy] = useState(false);
+  async function setGateWaiver(waive: boolean) {
+    setWaiveBusy(true);
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/procurement/waive-gate`, {
+        method: waive ? "POST" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: waive ? JSON.stringify({ note: waiveNote }) : undefined,
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        toast(json.error ?? "Couldn't update the waiver", "error");
+        return;
+      }
+      toast(waive ? "Payment gate waived — stock can be ordered" : "Waiver cleared");
+      setWaiveNote("");
+      router.refresh();
+    } finally {
+      setWaiveBusy(false);
+    }
+  }
+
+  const waiverPanel = (
+    <>
+      {gateWaiver && (
+        <div className="mt-3 rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-100">
+          <span className="font-medium">Payment gate waived</span>
+          {gateWaiver.by ? ` by ${gateWaiver.by}` : ""} on{" "}
+          {new Date(gateWaiver.at).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric", timeZone: "Australia/Brisbane" })}
+          {gateWaiver.note ? ` — ${gateWaiver.note}` : ""}. Stock can be ordered before the invoice is paid.
+          {canWaiveGate && (
+            <button
+              onClick={() => setGateWaiver(false)}
+              disabled={waiveBusy}
+              className="ml-2 underline underline-offset-2 hover:no-underline disabled:opacity-50"
+            >
+              {waiveBusy ? "Clearing…" : "Clear waiver"}
+            </button>
+          )}
+        </div>
+      )}
+      {!gateWaiver && canWaiveGate && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            value={waiveNote}
+            onChange={(e) => setWaiveNote(e.target.value)}
+            placeholder="Why order before payment? (e.g. paying PP1 Thursday)"
+            className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+          />
+          <button
+            onClick={() => setGateWaiver(true)}
+            disabled={waiveBusy}
+            className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+          >
+            {waiveBusy ? "Waiving…" : "Waive payment gate"}
+          </button>
+        </div>
+      )}
+    </>
+  );
 
   const supplierName = useMemo(() => {
     const m = new Map(suppliers.map((s) => [s.id, s.name]));
@@ -683,6 +759,7 @@ export function JobProcurement({
               </button>
             </div>
           </div>
+          {waiverPanel}
         </div>
       </>
     );

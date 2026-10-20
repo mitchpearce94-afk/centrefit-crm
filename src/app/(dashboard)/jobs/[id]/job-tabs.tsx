@@ -64,6 +64,7 @@ export function JobTabs({
   planItems = [],
   keyInfo = null,
   isAdmin,
+  canWaiveGate = false,
   viewerId,
   viewerInitials,
 }: {
@@ -95,6 +96,8 @@ export function JobTabs({
   planItems?: any[];
   keyInfo?: JobKeyInfo | null;
   isAdmin: boolean;
+  /** Mitchell only — may waive the procurement payment gate. */
+  canWaiveGate?: boolean;
   viewerId: string | null;
   viewerInitials: string;
 }) {
@@ -246,7 +249,19 @@ export function JobTabs({
                 Open in Procurement →
               </Link>
             </div>
-            <JobProcurement jobId={jobId} items={procurementItems} suppliers={suppliers} jobNumber={job.number ?? null} siteName={job.site?.name ?? null} />
+            <JobProcurement
+              jobId={jobId}
+              items={procurementItems}
+              suppliers={suppliers}
+              jobNumber={job.number ?? null}
+              siteName={job.site?.name ?? null}
+              gateWaiver={
+                job.procurement_gate_waived_at
+                  ? { at: job.procurement_gate_waived_at, by: job.gate_waiver_staff?.display_name ?? null, note: job.procurement_gate_waiver_note ?? null }
+                  : null
+              }
+              canWaiveGate={canWaiveGate}
+            />
           </div>
         )}
         {activeTab === "invoicing" && (

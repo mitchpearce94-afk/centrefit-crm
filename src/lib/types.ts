@@ -190,6 +190,10 @@ export interface Job {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** Procurement payment gate waived by Mitchell (2026-10-20). */
+  procurement_gate_waived_at?: string | null;
+  procurement_gate_waived_by?: string | null;
+  procurement_gate_waiver_note?: string | null;
   // Joined data
   customer?: Customer;
   site?: CustomerSite;
