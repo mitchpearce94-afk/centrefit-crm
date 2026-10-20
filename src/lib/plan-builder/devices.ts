@@ -4,8 +4,8 @@ export const DEVICE_CATALOG: DeviceDefinition[] = [
   // CAMERAS
   { id: 'cam-black', name: 'Black Digital Surveillance Camera', category: 'cameras', cableType: 'cat6', symbolType: 'camera-circle', fillColor: '#1a1a1a', strokeColor: '#666666', symbolImage: '/plan-builder/symbols/cam-black.png', symbolScale: 1.5 },
   { id: 'cam-white', name: 'White Digital Surveillance Camera', category: 'cameras', cableType: 'cat6', symbolType: 'camera-circle', fillColor: '#ffffff', strokeColor: '#333333', symbolImage: '/plan-builder/symbols/cam-white.png', symbolScale: 1.5 },
-  { id: 'cam-tg', name: 'Tail Gating Camera', category: 'cameras', cableType: 'cat6', symbolType: 'labeled-circle', fillColor: '#2d2d2d', strokeColor: '#00bfff', label: 'TG', symbolImage: '/plan-builder/symbols/tail-gating-camera.png', symbolScale: 1.5 },
-  { id: 'sensor-tg', name: 'Tail Gating Sensor', category: 'cameras', cableType: 'cat6', symbolType: 'radar-circle', fillColor: '#2d2d2d', strokeColor: '#00bfff', label: 'TS', symbolImage: '/plan-builder/symbols/tail-gating-sensor.png', symbolScale: 1.5 },
+  { id: 'cam-tg', name: 'Veyla Protect Camera', category: 'cameras', cableType: 'cat6', symbolType: 'labeled-circle', fillColor: '#2d2d2d', strokeColor: '#00bfff', label: 'TG', symbolImage: '/plan-builder/symbols/tail-gating-camera.png', symbolScale: 1.5 },
+  { id: 'sensor-tg', name: 'Veyla Protect AI Server', category: 'cameras', cableType: 'cat6', symbolType: 'radar-circle', fillColor: '#2d2d2d', strokeColor: '#00bfff', label: 'TS', symbolImage: '/plan-builder/symbols/tail-gating-sensor.png', symbolScale: 1.5 },
 
   // SECURITY
   { id: 'alarm-panel', name: 'Alarm Panel', category: 'security', cableType: 'sixcore', symbolType: 'dot-circle', fillColor: '#ff4444', strokeColor: '#ff4444', symbolImage: '/plan-builder/symbols/alarm-panel.png' },

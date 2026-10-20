@@ -54,7 +54,6 @@ export const ONGOING_COST_CATALOGUE: readonly ScopeOngoingCost[] = [
   { id: 'app',           desc: 'Mobile app subscription (security + cameras)',                                 price: '$133.50 / year ex GST',   included: true },
   { id: 'intercom_sim',  desc: '4G postpaid SIM per duress intercom',                                          price: '$22.50 / month ex GST',   included: true },
   { id: 'veyla_protect', desc: 'Veyla Protect subscription — detection, alerts and clips (billed by Veyla)',   price: 'As per Veyla agreement',  included: true },
-  { id: 'felixgate',     desc: 'FelixGate cloud subscription (billed by Gibson Global)',                       price: 'As per Gibson agreement', included: true },
 ];
 
 function ongoingCost(id: string): ScopeOngoingCost {
@@ -367,7 +366,6 @@ export function generateScopeOfWorks(
   // QR readers, the named switch and the Cloud Key read as what they are.
   const isVeyla = (p: { name: string; sku: string }) => /veyla/i.test(`${p.name} ${p.sku}`);
   const veylaAccess = r.products('access_control_system').some(isVeyla);
-  const veylaTailgate = r.products('tailgate_system').some(isVeyla);
   const qrReaders = r.products('card_reader').length > 0 && r.products('card_reader').every((p) => /barcode|scanner|GFS4950|QR/i.test(`${p.name} ${p.sku}`));
   const nightlifeUnits  = r.count('nightlife');
   const breakGlass      = r.count('emergency_door_release');
@@ -631,38 +629,23 @@ export function generateScopeOfWorks(
   })();
 
   // ── System: Tailgate ────────────────────────────────────────────────────
+  // Veyla Protect only (Mitchell 20 Oct 2026: the old Gibson Global tailgating
+  // product is retired in the catalogue; every tailgate_system count reads as
+  // Veyla Protect).
   const tailgateSystem: ScopeSystemBlock | null = (() => {
     if (tailgates === 0) return null;
-    if (veylaTailgate) {
-      return {
-        id: 'tailgate',
-        name: 'Veyla Protect Tailgating',
-        iconLabel: 'T',
-        countSummary: `${tailgates} ${plural(tailgates, 'system')}`,
-        lead: 'Veyla Protect watches every covered entry door and catches the two things a swipe can\'t: tailgating (a second person slipping in behind a member) and let-ins (a member opening the door for someone else). Each event is tied to the door and the credential that opened it, comes with a short video clip, and lands in the Veyla app for staff to act on.',
-        items: [
-          `<strong>(${tailgates}) Veyla Protect ${plural(tailgates, 'kit')}</strong> — on-site Protect server plus Veyla's own cameras covering the entry door`,
-          `Live tailgating and let-in detection at each covered door, cross-referenced against the club's member access system`,
-          `Alert with a video clip per event to the Veyla app; tailgates attributed to the credential that opened the door, let-ins flagged to the door`,
-          `Cat6 cabling and terminations to the comms rack, powered over PoE from the switch`,
-          `Installation and commissioning by Centrefit; remote calibration, monitoring and support by Veyla`,
-        ],
-        included: true,
-        isCustom: false,
-      };
-    }
     return {
       id: 'tailgate',
-      name: 'FelixGate Tailgating',
+      name: 'Veyla Protect Tailgating',
       iconLabel: 'T',
       countSummary: `${tailgates} ${plural(tailgates, 'system')}`,
-      lead: 'Tailgating detection at the front entrance. A counting sensor and profile camera count every person walking through the door and cross-reference against the gym\'s member access system to flag unauthorised entries. Each event uploads a 15-second video clip (5 seconds before, 10 seconds after) to the FelixGate cloud portal for review.',
+      lead: 'Veyla Protect watches every covered entry door and catches the two things a swipe can\'t: tailgating (a second person slipping in behind a member) and let-ins (a member opening the door for someone else). Each event is tied to the door and the credential that opened it, comes with a short video clip, and lands in the Veyla app for staff to act on.',
       items: [
-        `<strong>(${tailgates}) FelixGate counting sensor + profile camera</strong> installed at the front entrance`,
-        `Cloud-connect server with daily email alerts and a 15-second video clip per detected event`,
-        `Cross-referenced against the gym's existing member-management / access-control system`,
-        `Cat6 cabling and terminations to the comms rack`,
-        `On-site installation, plus remote calibration and commissioning by Gibson Global`,
+        `<strong>(${tailgates}) Veyla Protect ${plural(tailgates, 'kit')}</strong> — on-site Protect server plus Veyla's own cameras covering the entry door`,
+        `Live tailgating and let-in detection at each covered door, cross-referenced against the club's member access system`,
+        `Alert with a video clip per event to the Veyla app; tailgates attributed to the credential that opened the door, let-ins flagged to the door`,
+        `Cat6 cabling and terminations to the comms rack, powered over PoE from the switch`,
+        `Installation and commissioning by Centrefit; remote calibration, monitoring and support by Veyla`,
       ],
       included: true,
       isCustom: false,
@@ -743,10 +726,8 @@ export function generateScopeOfWorks(
   if (intercoms > 0) {
     baseOngoing.push(ongoingCost('intercom_sim'));
   }
-  if (tailgates > 0 && veylaTailgate) {
+  if (tailgates > 0) {
     baseOngoing.push(ongoingCost('veyla_protect'));
-  } else if (tailgates > 0) {
-    baseOngoing.push(ongoingCost('felixgate'));
   }
   const ongoingCosts = baseOngoing
     .map((o) => {
@@ -763,7 +744,7 @@ export function generateScopeOfWorks(
   // same reason.
   // Lowercase the system names for prose, but keep acronyms (CCTV, AV, TV)
   // and brand names intact, and join the list with a final "and".
-  const PROSE_PROPER = new Set(['Nightlife', 'FelixGate', 'Veyla', 'Protect']);
+  const PROSE_PROPER = new Set(['Nightlife', 'Veyla', 'Protect']);
   const proseCase = (name: string) =>
     name
       .split(' ')

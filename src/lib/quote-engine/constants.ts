@@ -49,7 +49,7 @@ export interface SiteInfo {
 
 export const DEVICE_TYPES: DeviceType[] = [
   // Security System (10) — tall card, column 1
-  { code: 'tailgate_system', legend: 'FelixGate Tailgating System', cable: 'cat6', category: 'Security System' },
+  { code: 'tailgate_system', legend: 'Veyla Protect Tailgating', cable: 'cat6', category: 'Security System' },
   { code: 'alarm_panel', legend: 'Alarm Panel', cable: '6core_security', category: 'Security System' },
   { code: 'pir_360_roof', legend: 'Movement Sensors 360 Roof', cable: '6core_security', category: 'Security System' },
   { code: 'pir_wall', legend: 'Movement Sensors PIR Wall', cable: '6core_security', category: 'Security System' },

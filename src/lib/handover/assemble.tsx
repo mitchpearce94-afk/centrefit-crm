@@ -152,7 +152,7 @@ export async function buildHandoverInput(sb: SupabaseClient, siteId: string): Pr
   // installed that matches the datasheet library gets an entry (Mitchell's
   // feedback 2026-07-05: speakers, amps, cameras, alarm — the full kit,
   // like the paper template). The library IS the key product set, so gear
-  // outside it (hard drives, monitors, Felixgate) naturally never appears.
+  // outside it (hard drives, monitors, Veyla Protect) naturally never appears.
   // Wi-Fi networks feed the Wi-Fi section, not the equipment list.
   const sweepAssets = assets.filter((a) => a.asset_type && a.asset_type.slug !== "wifi_network");
 

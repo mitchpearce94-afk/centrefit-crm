@@ -440,7 +440,7 @@ export function calculateLabour(
 
   // Veyla Protect (Mitchell 30 Sep 2026): 2 h of tailgating configuration on
   // top of the kit's fit-off. The Veyla kit carries labour_code veyla_protect,
-  // which is how we know it's Veyla and not FelixGate.
+  // which is how we know it's the Veyla kit (the Gibson product is retired).
   const hasVeylaProtect = useBomLabour && bomLabour.some((l) => l.labour_code === 'veyla_protect' && l.quantity > 0)
   if (hasVeylaProtect) commItems.push(fixedItem('Tailgating config (Veyla Protect)', 2))
   if (hasSpeakersEff) {

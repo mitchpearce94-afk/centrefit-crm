@@ -221,8 +221,8 @@ patch_rows = [
     ("Patch 1", "Port 1", "NBN"),
     ("Patch 1", "Port 2", "Alarm panel"),
     ("Patch 1", "Port 3", "NVR"),
-    ("Patch 1", "Port 4", "Felixgate camera"),
-    ("Patch 1", "Port 5", "Felixgate sensor"),
+    ("Patch 1", "Port 4", "Veyla Protect camera"),
+    ("Patch 1", "Port 5", "Veyla Protect AI server"),
     ("Patch 1", "Port 6 onwards", "WAPs (Wi-Fi access points) — one per port"),
     ("Patch 2", "Port 1 onwards", "Cameras 17+ (overflow when site has > 16 cameras)"),
 ]

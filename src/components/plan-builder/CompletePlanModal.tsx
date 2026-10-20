@@ -16,7 +16,7 @@ interface Props {
 const DEVICE_LABELS: Record<string, { name: string; category: string }> = {
   camera_black: { name: 'Black Camera', category: 'cameras' },
   camera_white: { name: 'White Camera', category: 'cameras' },
-  tailgate_system: { name: 'Tailgate System', category: 'cameras' },
+  tailgate_system: { name: 'Veyla Protect', category: 'cameras' },
   alarm_panel: { name: 'Alarm Panel', category: 'security' },
   alarm_keypad: { name: 'Alarm Keypad', category: 'security' },
   pir_wall: { name: 'PIR Wall Mount', category: 'security' },
