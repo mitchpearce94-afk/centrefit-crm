@@ -13,6 +13,11 @@ import { createClient } from "@/lib/supabase/client";
  * Real-time delivery via Supabase Realtime is staged for the next pass —
  * polling keeps the v1 simple and avoids holding a websocket on every
  * dashboard tab. 60s lag is acceptable for the events we currently fire.
+ *
+ * The list shows UNREAD rows only (Sue, suggestion BF480A96 19 Oct 2026:
+ * "when you tick the notifications as read can they disappear out of the
+ * list"). Ticking, opening or Mark-all-read removes the row; "Show read"
+ * in the header brings the recent read ones back so nothing is lost.
  */
 
 interface NotificationRow {
@@ -46,6 +51,7 @@ export function NotificationsBell() {
   const [rows, setRows] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [showRead, setShowRead] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   async function loadCount() {
@@ -57,16 +63,25 @@ export function NotificationsBell() {
     setUnread(count ?? 0);
   }
 
-  async function loadRows() {
+  async function loadRows(includeRead = showRead) {
     setLoading(true);
     const supabase = createClient();
-    const { data } = await supabase
+    let q = supabase
       .from("notifications")
       .select("id, type_code, ref_type, ref_id, title, body, href, created_at, read_at")
-      .order("created_at", { ascending: false })
-      .limit(20);
+      .order("created_at", { ascending: false });
+    // Unread view lists everything outstanding; the read view is the recent
+    // trail only (read rows are kept, just out of the way).
+    q = includeRead ? q.limit(30) : q.is("read_at", null).limit(50);
+    const { data } = await q;
     setRows((data ?? []) as NotificationRow[]);
     setLoading(false);
+  }
+
+  async function toggleShowRead() {
+    const next = !showRead;
+    setShowRead(next);
+    await loadRows(next);
   }
 
   // Initial count + poll every 60s while the panel is closed.
@@ -107,7 +122,10 @@ export function NotificationsBell() {
   async function togglePanel() {
     const next = !open;
     setOpen(next);
-    if (next) await loadRows();
+    if (next) {
+      setShowRead(false);
+      await loadRows(false);
+    }
   }
 
   async function markAllRead() {
@@ -116,7 +134,8 @@ export function NotificationsBell() {
       .from("notifications")
       .update({ read_at: new Date().toISOString() })
       .is("read_at", null);
-    setRows((rs) => rs.map((r) => r.read_at ? r : { ...r, read_at: new Date().toISOString() }));
+    const now = new Date().toISOString();
+    setRows((rs) => (showRead ? rs.map((r) => (r.read_at ? r : { ...r, read_at: now })) : []));
     setUnread(0);
   }
 
@@ -131,7 +150,12 @@ export function NotificationsBell() {
     const supabase = createClient();
     const { error } = await supabase.from("notifications").update({ read_at: next }).eq("id", row.id);
     if (error) return;
-    setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, read_at: next } : r)));
+    // In the unread view a ticked row leaves the list (Sue, BF480A96).
+    setRows((rs) =>
+      next && !showRead
+        ? rs.filter((r) => r.id !== row.id)
+        : rs.map((r) => (r.id === row.id ? { ...r, read_at: next } : r)),
+    );
     setUnread((u) => (next ? Math.max(0, u - 1) : u + 1));
   }
 
@@ -143,7 +167,9 @@ export function NotificationsBell() {
         .from("notifications")
         .update({ read_at: now })
         .eq("id", row.id);
-      setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, read_at: now } : r)));
+      setRows((rs) =>
+        showRead ? rs.map((r) => (r.id === row.id ? { ...r, read_at: now } : r)) : rs.filter((r) => r.id !== row.id),
+      );
       setUnread((u) => Math.max(0, u - 1));
     }
     if (row.href) {
@@ -176,6 +202,13 @@ export function NotificationsBell() {
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
             <span className="text-sm font-semibold">Notifications</span>
             <div className="flex items-center gap-2">
+              <button
+                onClick={toggleShowRead}
+                className="text-[11px] text-muted-foreground hover:text-foreground"
+                title={showRead ? "Back to unread only" : "Show recently read notifications"}
+              >
+                {showRead ? "Hide read" : "Show read"}
+              </button>
               {unread > 0 && (
                 <button
                   onClick={markAllRead}
@@ -200,7 +233,9 @@ export function NotificationsBell() {
               <p className="px-4 py-6 text-center text-xs text-muted-foreground">Loading…</p>
             )}
             {!loading && rows.length === 0 && (
-              <p className="px-4 py-6 text-center text-xs text-muted-foreground">You&apos;re all caught up.</p>
+              <p className="px-4 py-6 text-center text-xs text-muted-foreground">
+                {showRead ? "Nothing here yet." : "You're all caught up."}
+              </p>
             )}
             {rows.map((r) => (
               <div
