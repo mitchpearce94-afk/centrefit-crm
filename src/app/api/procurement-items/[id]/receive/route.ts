@@ -1,22 +1,19 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { assetUnitsForProducts, expandUnits, type AssetUnitTemplate } from "@/lib/assets/product-units";
 
 /**
  * Receive a procurement item.
  *
- * GET  → what this line will put on the site asset register, one entry per
- *        physical unit (product quantity × asset units), so the Receive
- *        dialog can ask for each serial. Empty `units` = nothing trackable.
- * POST → mark received (received_at + received_by) AND put the units on the
- *        register (Mitchell 2026-10-19: "when a Veyla product is ordered,
- *        populate the asset list with the server/camera and their SNs"):
+ * POST → mark received (received_at + received_by) AND put the line's
+ *        trackable units on the site asset register as blank shells —
+ *        device name / asset type / make / model, NO serial, MAC or IP.
+ *        Serials are never captured at receive (Mitchell 2026-10-20): the
+ *        tech scans them on the site asset list once the gear is on site.
  *          - blank shells the BOM→assets import left for this job (same
- *            asset type, no serial, not yet tied to a line) are filled first;
+ *            asset type, no serial, not yet tied to a line) are claimed first;
  *          - the rest are inserted new, stamped with this line.
- *        Body: { units?: [{ serial?, mac?, ip? }] } in GET order. No body =
- *        shells with blank serials. Idempotent per line: a second Receive
- *        never adds more assets.
+ *        No body. Idempotent per line: a second Receive never adds more assets.
  *
  * Only valid from an awaiting-delivery status: 'ordered' (Xero PO),
  * 'ordered_online' (bought online, no PO), 'in_stock' (pulled from stock).
@@ -54,62 +51,12 @@ async function unitsForItem(
   return expandUnits(templates, item.quantity);
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-
-  const item = await loadItem(supabase, id);
-  if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const { data: job } = await supabase
-    .from("jobs")
-    .select("site_id, site:customer_sites(name)")
-    .eq("id", item.job_id)
-    .maybeSingle();
-  const siteRaw = (job as { site?: { name: string | null } | { name: string | null }[] | null } | null)?.site;
-  const siteName = (Array.isArray(siteRaw) ? siteRaw[0]?.name : siteRaw?.name) ?? null;
-
-  const units = job?.site_id ? await unitsForItem(supabase, item) : [];
-  const { count: linked } = await supabase
-    .from("site_assets")
-    .select("id", { count: "exact", head: true })
-    .eq("procurement_item_id", item.id);
-
-  return NextResponse.json({
-    item: { id: item.id, status: item.status, quantity: item.quantity, product_name: item.product_name },
-    siteId: job?.site_id ?? null,
-    siteName,
-    alreadyOnRegister: linked ?? 0,
-    units: units.map((u, i) => ({
-      index: i,
-      deviceName: u.deviceName,
-      assetTypeId: u.assetTypeId,
-      assetTypeName: u.assetTypeName,
-      manufacturer: u.manufacturer,
-      model: u.model,
-      hasSerial: u.hasSerial,
-      hasMac: u.hasMac,
-      hasIp: u.hasIp,
-    })),
-  });
-}
-
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-
-  let body: { units?: { serial?: string | null; mac?: string | null; ip?: string | null }[] } = {};
-  try {
-    const text = await req.text();
-    if (text.trim()) body = JSON.parse(text);
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
 
   // Resolve the staff row by email (staff table has no user_id link, only email)
   const { data: staff } = await supabase
@@ -176,28 +123,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             if (i < 0) i = pool.findIndex((s) => s.asset_type_id === u.assetTypeId);
             return i < 0 ? null : pool.splice(i, 1)[0];
           };
-          const clean = (v: string | null | undefined) => (v ?? "").trim() || null;
           const ref = item.xero_po_number ?? item.order_ref;
           const note = `Received ${new Date().toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric", timeZone: "Australia/Brisbane" })}${ref ? ` on ${ref}` : ""} (${item.product_name})`;
           const inserts: Record<string, unknown>[] = [];
           for (let i = 0; i < units.length; i++) {
             const u = units[i];
-            const given = body.units?.[i] ?? {};
-            const serial = u.hasSerial ? clean(given.serial) : null;
-            const mac = u.hasMac ? clean(given.mac) : null;
-            const ip = u.hasIp ? clean(given.ip) : null;
             const shell = takeShell(u);
             if (shell) {
-              const patch: Record<string, unknown> = {
-                procurement_item_id: item.id,
-                manufacturer: u.manufacturer,
-                model: u.model,
-                device_name: u.deviceName,
-              };
-              if (serial) patch.serial = serial;
-              if (mac) patch.mac_address = mac;
-              if (ip) patch.ip_address = ip;
-              const { error: upErr } = await supabase.from("site_assets").update(patch).eq("id", shell.id);
+              const { error: upErr } = await supabase
+                .from("site_assets")
+                .update({
+                  procurement_item_id: item.id,
+                  manufacturer: u.manufacturer,
+                  model: u.model,
+                  device_name: u.deviceName,
+                })
+                .eq("id", shell.id);
               if (upErr) throw upErr;
               assets.filled += 1;
             } else {
@@ -210,9 +151,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                 device_name: u.deviceName,
                 manufacturer: u.manufacturer,
                 model: u.model,
-                serial,
-                mac_address: mac,
-                ip_address: ip,
+                serial: null,
+                mac_address: null,
+                ip_address: null,
                 notes: note,
                 is_active: true,
               });
