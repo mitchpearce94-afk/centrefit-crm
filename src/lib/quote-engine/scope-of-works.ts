@@ -108,6 +108,12 @@ export interface ScopeOverrides {
     items?: string[];
   } | undefined>;
   ongoingCosts?: Record<string, { included?: boolean } | undefined>;
+  /**
+   * Extra recurring lines not in ONGOING_COST_CATALOGUE — e.g. a Veyla
+   * subscription shown as waived for one customer (Beerwah, 26 Oct 2026).
+   * `price` is free text, same as the catalogue rows.
+   */
+  customOngoingCosts?: Array<{ id: string; desc: string; price: string }>;
   /** Override the assumptions block. `included: false` hides it; `items` replaces the list. */
   assumptions?: { included?: boolean; items?: string[] };
   /** Override the standards block. `included: false` hides it; `items` replaces the list. */
@@ -666,14 +672,16 @@ export function generateScopeOfWorks(
    .map((b) => applySystemOverride(b, overrides));
 
   for (const c of overrides?.customSystems ?? []) {
+    // The editor can still tweak/untick a custom block via systems[c.id].
+    const o = overrides?.systems?.[c.id];
     baseSystems.push({
       id: c.id,
       name: c.name,
       iconLabel: c.iconLabel ?? '+',
       countSummary: '',
-      lead: c.lead ?? '',
-      items: c.items ?? [],
-      included: true,
+      lead: o?.lead ?? c.lead ?? '',
+      items: Array.isArray(o?.items) ? o.items : (c.items ?? []),
+      included: o?.included ?? true,
       isCustom: true,
     });
   }
@@ -728,6 +736,9 @@ export function generateScopeOfWorks(
   }
   if (tailgates > 0) {
     baseOngoing.push(ongoingCost('veyla_protect'));
+  }
+  for (const c of overrides?.customOngoingCosts ?? []) {
+    baseOngoing.push({ id: c.id, desc: c.desc, price: c.price, included: true });
   }
   const ongoingCosts = baseOngoing
     .map((o) => {

@@ -373,6 +373,10 @@ export function ScopeEditor({
 
   function buildOverrides(): ScopeOverrides | null {
     const ov: ScopeOverrides = {};
+    // Script-authored extras (custom systems / custom ongoing costs) have no
+    // editor UI yet — carry them through so a re-save here doesn't drop them.
+    if (initialOverrides?.customSystems?.length) ov.customSystems = initialOverrides.customSystems;
+    if (initialOverrides?.customOngoingCosts?.length) ov.customOngoingCosts = initialOverrides.customOngoingCosts;
     const sysOverrides: NonNullable<ScopeOverrides["systems"]> = {};
 
     // Trust per-system dirty state: if the user touched a system, persist its
