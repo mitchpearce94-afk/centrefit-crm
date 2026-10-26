@@ -40,6 +40,9 @@ export interface ScopeOngoingCost {
   desc: string;
   price: string;         // e.g. '$55.00 / month ex GST'
   included: boolean;
+  /** Price is struck through in red with "Waived" beside it — the customer
+   *  sees what it would have cost and that it isn't being charged. */
+  waived?: boolean;
 }
 
 /**
@@ -113,7 +116,7 @@ export interface ScopeOverrides {
    * subscription shown as waived for one customer (Beerwah, 26 Oct 2026).
    * `price` is free text, same as the catalogue rows.
    */
-  customOngoingCosts?: Array<{ id: string; desc: string; price: string }>;
+  customOngoingCosts?: Array<{ id: string; desc: string; price: string; waived?: boolean }>;
   /** Override the assumptions block. `included: false` hides it; `items` replaces the list. */
   assumptions?: { included?: boolean; items?: string[] };
   /** Override the standards block. `included: false` hides it; `items` replaces the list. */
@@ -738,7 +741,7 @@ export function generateScopeOfWorks(
     baseOngoing.push(ongoingCost('veyla_protect'));
   }
   for (const c of overrides?.customOngoingCosts ?? []) {
-    baseOngoing.push({ id: c.id, desc: c.desc, price: c.price, included: true });
+    baseOngoing.push({ id: c.id, desc: c.desc, price: c.price, included: true, waived: !!c.waived });
   }
   const ongoingCosts = baseOngoing
     .map((o) => {
@@ -930,7 +933,7 @@ export function renderScopeAsText(scope: ScopeDocument): string {
 
   if (scope.ongoingCosts.length > 0) {
     lines.push('ONGOING COSTS');
-    for (const c of scope.ongoingCosts) lines.push(`    • ${c.desc} — ${c.price}`);
+    for (const c of scope.ongoingCosts) lines.push(`    • ${c.desc} — ${c.price}${c.waived ? ' (WAIVED)' : ''}`);
   }
 
   return lines.join('\n').trim();
@@ -1032,7 +1035,9 @@ export function renderScopeAsHtml(scope: ScopeDocument): string {
       ${scope.ongoingCosts.map((c, i) => `
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:4px 0;${i < scope.ongoingCosts.length - 1 ? 'border-bottom:1px dashed #e2e8f0;' : ''}font-size:11px">
           <span style="color:#475569">${escape(c.desc)}</span>
-          <span style="color:#0f172a;font-family:Consolas,Menlo,monospace;font-weight:600;white-space:nowrap">${escape(c.price)}</span>
+          ${c.waived
+            ? `<span style="white-space:nowrap"><span style="color:#dc2626;text-decoration:line-through;font-family:Consolas,Menlo,monospace;font-weight:600">${escape(c.price)}</span> <span style="color:#dc2626;font-weight:700;font-size:10px;letter-spacing:0.5px">WAIVED</span></span>`
+            : `<span style="color:#0f172a;font-family:Consolas,Menlo,monospace;font-weight:600;white-space:nowrap">${escape(c.price)}</span>`}
         </div>`).join('')}
     </div>` : '';
 

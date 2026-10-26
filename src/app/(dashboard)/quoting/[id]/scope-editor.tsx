@@ -797,7 +797,8 @@ export function ScopeEditor({
                       className="h-4 w-4 rounded accent-primary"
                     />
                     <span className={`flex-1 text-xs ${c.included ? "text-foreground" : "text-muted-foreground line-through"}`}>{c.desc}</span>
-                    <span className="font-mono text-[11px] text-muted-foreground">{c.price}</span>
+                    <span className={`font-mono text-[11px] ${c.waived ? "text-red-600 line-through" : "text-muted-foreground"}`}>{c.price}</span>
+                    {c.waived && <span className="text-[10px] font-semibold text-red-600">WAIVED</span>}
                   </label>
                 ))}
               </div>

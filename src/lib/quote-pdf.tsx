@@ -408,6 +408,8 @@ const styles = StyleSheet.create({
   notesItemLast: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 },
   notesDesc: { fontSize: 9, color: "#475569" },
   notesPrice: { fontSize: 9, fontFamily: "Helvetica-Bold" },
+  notesPriceWaived: { fontSize: 9, fontFamily: "Helvetica-Bold", color: "#dc2626", textDecoration: "line-through" },
+  notesWaivedTag: { fontSize: 8, fontFamily: "Helvetica-Bold", color: "#dc2626" },
 
   // Pricing
   pricingBox: {
@@ -553,7 +555,14 @@ function OngoingCosts({ items }: { items: ScopeOngoingCost[] }) {
       {items.map((c, i) => (
         <View key={c.id} style={i === items.length - 1 ? styles.notesItemLast : styles.notesItem}>
           <Text style={styles.notesDesc}>{c.desc}</Text>
-          <Text style={styles.notesPrice}>{c.price}</Text>
+          {c.waived ? (
+            <Text style={styles.notesPrice}>
+              <Text style={styles.notesPriceWaived}>{c.price}</Text>
+              <Text style={styles.notesWaivedTag}>{"  WAIVED"}</Text>
+            </Text>
+          ) : (
+            <Text style={styles.notesPrice}>{c.price}</Text>
+          )}
         </View>
       ))}
     </View>
