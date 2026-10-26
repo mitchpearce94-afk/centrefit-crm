@@ -688,7 +688,11 @@ export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDo
         )}
 
         {/* Hard exclusion */}
-        {!!scope.hardExclusion && <Text style={styles.hardExclusion}>{scope.hardExclusion}</Text>}
+        {!!scope.hardExclusion && (
+          <View wrap={false}>
+            <Text style={styles.hardExclusion}>{scope.hardExclusion}</Text>
+          </View>
+        )}
 
         {/* Ongoing costs */}
         <OngoingCosts items={scope.ongoingCosts} />
