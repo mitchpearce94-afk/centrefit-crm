@@ -56,6 +56,10 @@ export const DIFFERENTIATORS = [
     body: "Staffed and unstaffed hours, after-hours access, shutdown routines, high-traffic entries — we design around the way a facility actually runs. It's the discipline that made us the name in 24/7 fitness, and it travels to any site that has to look after itself around the clock.",
   },
   {
+    title: "Tailgating caught, every time",
+    body: "Veyla Protect watches the entry cameras from an on-site AI server and flags tailgaters and let-ins the moment they happen — a clip to your phone, and a running count of who is training without paying. Tailgating is a security gap and a revenue leak at once; we close both on the doors and gates we are already installing.",
+  },
+  {
     title: "Compliant, licensed, accountable",
     body: "Every installation is carried out under our Class 1 & 2 security licences and to the relevant Australian Standards, and we're a member of ASIAL — the peak body for the Australian security industry.",
   },
@@ -91,6 +95,8 @@ export const OFFERINGS = [
   { name: "Access control expansion", desc: "New doors, readers and integrations as your facility grows." },
   { name: "AV & entertainment", desc: "TVs, audio zones and music-system integration, tuned and commissioned." },
   { name: "Relocations & refits", desc: "Moving or renovating? We lift, redesign and recommission the lot." },
+  { name: "Veyla Protect tailgating detection", desc: "Every tailgater and let-in flagged at the door, with the clip to prove it — added to the entries we install." },
+  { name: "Speed gates & turnstiles", desc: "Glass swing and slimline lanes, supplied, fitted and integrated with your readers and fire panel." },
 ];
 
 export const TESTIMONIALS = [
