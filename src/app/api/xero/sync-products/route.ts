@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthedClient } from "@/lib/xero/client";
+import { hasPermission, loadCurrentPermissions } from "@/lib/auth/permissions";
 import { DEFAULT_PURCHASE_ACCOUNT_CODE } from "@/lib/xero/purchase-orders";
 import type { Item } from "xero-node";
 import { XeroPacer, XeroRateLimitError } from "@/lib/xero/pace";
@@ -35,6 +36,14 @@ export async function POST(req: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+  // Pushing the product list to Xero is a settings action. (Before 2026-10-29
+  // this was implicitly admin-only because non-admins couldn't read the
+  // Xero token row; getAuthedClient now loads it via the service role, so the
+  // gate has to be explicit.)
+  const perms = await loadCurrentPermissions();
+  if (!perms || !hasPermission(perms, "settings.products")) {
+    return NextResponse.json({ error: "Not permitted" }, { status: 403 });
   }
 
   let client: Awaited<ReturnType<typeof getAuthedClient>>["client"];

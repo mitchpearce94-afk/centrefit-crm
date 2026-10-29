@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { buildXeroClient } from "@/lib/xero/client";
+import { isCurrentUserAdmin } from "@/lib/auth/current-staff";
 
 /**
  * Kick off the Xero OAuth flow. Requires the user to be authenticated and an
@@ -13,6 +14,16 @@ export async function GET(_req: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.redirect(new URL("/login", process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"));
+  }
+
+  // The callback's insert into xero_connections is is_admin()-gated; refuse
+  // here with a readable message instead of an RLS error after the Xero
+  // consent screen.
+  if (!(await isCurrentUserAdmin())) {
+    return NextResponse.json(
+      { error: "Only an admin can connect Xero" },
+      { status: 403 },
+    );
   }
 
   try {

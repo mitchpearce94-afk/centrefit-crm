@@ -1,4 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/service";
+import { isCurrentUserAdmin } from "@/lib/auth/current-staff";
 import { IntegrationsPanel } from "./integrations-panel";
 
 export default async function IntegrationsPage({
@@ -8,8 +10,13 @@ export default async function IntegrationsPage({
 }) {
   const params = await searchParams;
   const supabase = await createClient();
+  const canManage = await isCurrentUserAdmin();
 
-  const { data: conn } = await supabase
+  // xero_connections is admin-only under RLS, so a non-admin would see
+  // "Not connected" (and a Connect button whose callback then fails on the
+  // insert policy). Read the status columns via the service role — no tokens
+  // are selected here — and let the panel hide the manage buttons instead.
+  const { data: conn } = await createServiceRoleClient()
     .from("xero_connections")
     .select("id, tenant_name, tenant_id, expires_at, last_sync_at, last_sync_result, created_at")
     .order("created_at", { ascending: false })
@@ -36,6 +43,7 @@ export default async function IntegrationsPage({
       <div className="mt-6">
         <IntegrationsPanel
           connection={conn}
+          canManage={canManage}
           productCount={productCount ?? 0}
           syncedCount={syncedCount ?? 0}
           initialFlash={

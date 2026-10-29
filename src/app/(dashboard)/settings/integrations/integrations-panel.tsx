@@ -10,7 +10,7 @@ interface Connection {
   tenant_id: string;
   expires_at: string;
   last_sync_at: string | null;
-  last_sync_result: any;
+  last_sync_result: unknown;
   created_at: string;
 }
 
@@ -25,11 +25,14 @@ type SyncSummary = {
 
 export function IntegrationsPanel({
   connection,
+  canManage,
   productCount,
   syncedCount,
   initialFlash,
 }: {
   connection: Connection | null;
+  /** Admins only: connect, disconnect and sync. Everyone else sees status. */
+  canManage: boolean;
   productCount: number;
   syncedCount: number;
   initialFlash: { type: "success" | "error"; message: string } | null;
@@ -141,7 +144,11 @@ export function IntegrationsPanel({
           </div>
 
           <div className="flex shrink-0 gap-2">
-            {connection ? (
+            {!canManage ? (
+              <span className="self-center text-xs text-muted-foreground">
+                Managed by an admin
+              </span>
+            ) : connection ? (
               <>
                 <button
                   onClick={handleSync}
@@ -213,7 +220,7 @@ export function IntegrationsPanel({
         )}
 
         {/* Setup hint */}
-        {!connection && (
+        {!connection && canManage && (
           <details className="mt-4 text-xs text-muted-foreground">
             <summary className="cursor-pointer">First-time setup</summary>
             <ol className="mt-2 list-decimal space-y-1 pl-4">

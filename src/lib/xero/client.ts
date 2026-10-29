@@ -1,5 +1,6 @@
 import { XeroClient } from "xero-node";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/service";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // SupabaseClient overload that also accepts the SSR-flavoured client
@@ -99,7 +100,24 @@ export async function getAuthedClient(
   client: XeroClient;
   conn: XeroConnection;
 }> {
-  const supabase = supabaseOverride ?? (await createClient());
+  // xero_connections SELECT/UPDATE is is_admin()-gated (tokens are sensitive),
+  // but Xero actions are gated by permission flags on the calling route, not
+  // by who can read the token row. Reading the connection through the
+  // caller's cookie session made every Xero call from a non-admin (e.g. the
+  // finance manager authorising an invoice) fail with "Xero is not connected"
+  // while Settings showed connected (Jig, 2026-10-29). So: confirm there IS a
+  // signed-in session, then load/refresh the connection via the service role.
+  let supabase: AnySupabaseClient;
+  if (supabaseOverride) {
+    supabase = supabaseOverride;
+  } else {
+    const session = await createClient();
+    const {
+      data: { user },
+    } = await session.auth.getUser();
+    if (!user) throw new Error("Not signed in");
+    supabase = createServiceRoleClient();
+  }
   const conn = await getConnection(supabase);
   if (!conn) throw new Error("Xero is not connected");
 
