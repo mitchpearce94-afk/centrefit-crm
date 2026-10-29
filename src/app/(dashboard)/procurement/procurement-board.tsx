@@ -67,6 +67,17 @@ export function ProcurementBoard({
   const supabase = createClient();
   const { toast } = useToast();
   const [busyJob, setBusyJob] = useState<string | null>(null);
+  // Completed tab grows forever, so it gets a search box (job number, site, customer).
+  const [completeSearch, setCompleteSearch] = useState("");
+  const completeQuery = completeSearch.trim().toLowerCase();
+  const completeFiltered = completeQuery
+    ? complete.filter((e) =>
+        [jobLabel(e.number), e.siteName ?? "", e.customerName]
+          .join(" ")
+          .toLowerCase()
+          .includes(completeQuery),
+      )
+    : complete;
 
   // Mark a job "no procurement needed" (or restore it). Used for labour-only
   // jobs that have nothing to order and would otherwise sit in Ready forever.
@@ -206,12 +217,25 @@ export function ProcurementBoard({
           />
         )}
         {tab === "complete" && (
-          <ActiveTable
-            entries={complete}
-            empty="No completed procurement yet — finished jobs land here once every line is received or in stock."
-            onRemove={(id) => setNoProcurement(id, true)}
-            busyJob={busyJob}
-          />
+          <div className="space-y-3">
+            <input
+              type="search"
+              placeholder="Search completed by job number, site or customer…"
+              value={completeSearch}
+              onChange={(e) => setCompleteSearch(e.target.value)}
+              className="w-full max-w-md rounded-md border border-border bg-background px-3 py-1.5 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <ActiveTable
+              entries={completeFiltered}
+              empty={
+                completeQuery
+                  ? `No completed jobs match "${completeSearch.trim()}".`
+                  : "No completed procurement yet — finished jobs land here once every line is received or in stock."
+              }
+              onRemove={(id) => setNoProcurement(id, true)}
+              busyJob={busyJob}
+            />
+          </div>
         )}
       </div>
     </div>
