@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 import { ProcurementBoard, type ReadyEntry, type ActiveEntry } from "./procurement-board";
 
 type ItemRow = {
@@ -35,10 +36,17 @@ const STRAIGHT_THROUGH_UNDER = 1000;
 export default async function ProcurementIndexPage() {
   const supabase = await createClient();
 
-  const [itemsRes, jobsRes, acceptedQuotesRes, paidPp1Res] = await Promise.all([
-    supabase
-      .from("job_procurement_items")
-      .select("job_id, status, xero_po_number, ordered_at"),
+  const [items, jobsRes, acceptedQuotesRes, paidPp1Res] = await Promise.all([
+    // Whole-table read — MUST page. A bare select stops at 1,000 rows without
+    // error, which hid every line added after the cut (PF Bundaberg showed as
+    // "Ready to start", PF Maroochydore as "Complete" — 2026-10-29).
+    fetchAll<ItemRow>(() =>
+      supabase
+        .from("job_procurement_items")
+        .select("job_id, status, xero_po_number, ordered_at")
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true }),
+    ),
     supabase
       .from("jobs")
       .select("id, number, description, procurement_not_required, procurement_gate_waived_at, customer:customers(id, name), site:customer_sites(id, name)"),
@@ -55,7 +63,6 @@ export default async function ProcurementIndexPage() {
       .eq("status", "paid"),
   ]);
 
-  const items = (itemsRes.data ?? []) as ItemRow[];
   const jobs = (jobsRes.data ?? []) as unknown as JobRow[];
   const acceptedQuotes = (acceptedQuotesRes.data ?? []) as QuoteRow[];
   const pp1PaidQuoteIds = new Set(
