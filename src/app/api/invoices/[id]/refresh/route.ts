@@ -68,7 +68,7 @@ export async function POST(
   const status = latest.status.toLowerCase();
   const normalisedStatus =
     status === "paid" ? "paid"
-    : status === "voided" ? "void"
+    : status === "voided" || status === "deleted" ? "void"
     : status === "draft" ? "draft"
     : "authorised";
 

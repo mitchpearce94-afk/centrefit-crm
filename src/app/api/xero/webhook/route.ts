@@ -177,7 +177,7 @@ async function processInvoiceEvent(
   const status = latest.status.toLowerCase();
   const normalisedStatus =
     status === "paid" ? "paid"
-    : status === "voided" ? "void"
+    : status === "voided" || status === "deleted" ? "void"
     : status === "draft" ? "draft"
     : "authorised";
 
@@ -313,7 +313,7 @@ async function ingestRecurringChildInvoice(
   const status = latest.status.toLowerCase();
   const normalisedStatus =
     status === "paid" ? "paid"
-    : status === "voided" ? "void"
+    : status === "voided" || status === "deleted" ? "void"
     : status === "draft" ? "draft"
     : "authorised";
 
