@@ -242,6 +242,15 @@ function matchInvoice(item: ItemRow, contactId: string, siblings: ItemRow[], ctx
     const pick = exactUnpaid[0]; // oldest unpaid of that amount (D8)
     return { invoiceIds: [pick.invoice_id], numbers: [pick.invoice_number ?? ""], status: "matched", note: exactUnpaid.length > 1 ? `oldest of ${exactUnpaid.length} unpaid invoices for this amount` : "exact amount, unpaid" };
   }
+  // Part-paid invoice: a one-off top-up collects exactly what is still owing
+  // (CorePlus Benowa INV-7278, Nov 2026: $210.50 invoiced, $139 collected by
+  // the stale subscription, $71.50 debited by hand). Match on the balance.
+  const dueCents = (i: MirrorInvoice) => Math.round(Number(i.amount_due ?? 0) * 100);
+  const balanceUnpaid = inWindow.filter((i) => UNPAID.has(i.status) && dueCents(i) > 0 && dueCents(i) < cents(i) && dueCents(i) === item.amount_cents).sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+  if (balanceUnpaid.length >= 1) {
+    const pick = balanceUnpaid[0];
+    return { invoiceIds: [pick.invoice_id], numbers: [pick.invoice_number ?? ""], status: "matched", note: `balance owing on ${pick.invoice_number} ($${Number(pick.total).toFixed(2)} invoiced, $${Number(pick.amount_due).toFixed(2)} outstanding)` };
+  }
   const exactPaid = inWindow.filter((i) => i.status === "PAID" && cents(i) === item.amount_cents);
   if (exactPaid.length) return { invoiceIds: [exactPaid[0].invoice_id], numbers: [exactPaid[0].invoice_number ?? ""], status: "already_paid", note: `invoice ${exactPaid[0].invoice_number} already PAID in Xero` };
   // one payment = several unpaid invoices (D8)
