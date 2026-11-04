@@ -104,9 +104,26 @@ export function lintQuote(input: LintInput): LintFinding[] {
   const readerLines = withProduct.filter(({ b }) => b.device_type_code === 'card_reader' && !b.customer_supplied)
   const controllerPresent = has((p) => roleOf(p) === 'access_control_system' && nameHas(p, /X1100|Aero|controller|SLAM|Inception|Paxton10 Door/i))
   if (readerLines.length && !controllerPresent) f.push({ code: 'reader_without_controller', severity: 'error', message: 'Readers are quoted with no access controller' })
-  const panelPresent = has((p, b) => roleOf(p) === 'alarm_panel' && (b.device_type_code === 'alarm_panel' || nameHas(p, /K6000|Solution 6000|panel/i)))
+  // A panel is the K6000 kit / control panel itself — not the Solution 6000
+  // connector boards, expanders, keypads or enclosures that share the
+  // alarm_panel scope role (CFSML2022 "Bosch Solution 6000 SMALL … Connector
+  // Board" used to pass as a panel, which hid Parafield's missing K6000, 4 Nov).
+  const panelPresent = has((p, b) => roleOf(p) === 'alarm_panel' && !nameHas(p, /Connector Board|Expansion|Module|Keypad|Enclosure|Modem|Dialer|Relay|Interface Cable|Fire Board|Multipath/i)
+    && (b.device_type_code === 'alarm_panel' || p?.device_type === 'alarm_panel' || nameHas(p, /K6000|Control Panel|Alarm Panel|Panel Kit|HSGW/i)))
   const commsPresent = has((p) => nameHas(p, /MY368|ETHM|4G|GSM|ethernet relay/i))
   if (panelPresent && !commsPresent) f.push({ code: 'panel_without_comms', severity: 'error', message: 'Alarm panel quoted with no comms path (4G modem or ETHM-A)' })
+  // Security devices and panel boards with no panel to land on (PF Sunshine
+  // North / Noarlunga Aug 2026: the PF template had no panel rules; Parafield
+  // 29 Oct: no panel symbol on the plan — all three went out without the K6000
+  // set while the expanders and the 8 h panel-build labour made them look
+  // complete). Override with a reason when an existing panel is being kept.
+  const securityDevices = detectors + (dc.light_siren || 0) + (dc.alarm_keypad || 0) + (dc.siren_piezo || 0)
+  const panelBoardLines = withProduct.filter(({ p, b }) => b.device_type_code === 'reed_switch' || b.device_type_code === 'duress_button' || nameHas(p, /CM704B|CM710B|Connector Board|Zone Expansion|Output Expansion/i))
+  if (!panelPresent && !customerSupplied.has('alarm_panel') && (securityDevices > 0 || panelBoardLines.length > 0)) {
+    const panel = input.products.find((p) => p.is_active !== false && p.device_type === 'alarm_panel' && nameHas(p, /K6000/i))
+    const what = securityDevices > 0 ? `${securityDevices} security device${securityDevices === 1 ? '' : 's'}` : `${panelBoardLines.length} panel board line${panelBoardLines.length === 1 ? '' : 's'}`
+    f.push({ code: 'security_without_panel', severity: 'error', message: `${what} quoted with no alarm panel — add the K6000 kit (plan: place the Alarm Panel symbol) or override if an existing panel is being kept`, product_id: panel?.id ?? null, fix: panel ? { kind: 'add_product', product_id: panel.id, qty: 1 } : undefined })
+  }
   const expanders = withProduct.filter(({ p }) => nameHas(p, /CM704B/i)).reduce((t, { b }) => t + b.quantity, 0)
   if (panelPresent && detectors > 16 && expanders === 0) f.push({ code: 'detectors_over_capacity', severity: 'warn', message: `${detectors} detectors on the panel with no zone expander` })
   if (input.isInterstate && !(Number(input.electricianCost) > 0)) f.push({ code: 'electrician_cost_missing', severity: 'error', message: 'Interstate job with no electrician cost — enter the electrician\'s quote on the Labour step' })
