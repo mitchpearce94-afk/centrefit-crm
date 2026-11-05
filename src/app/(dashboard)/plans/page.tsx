@@ -121,12 +121,15 @@ function PlanRow({ plan, countDevices, formatDate, completed }: { plan: any; cou
   const job = plan._job;
 
   return (
-    <div className={`flex items-center gap-4 px-4 py-3 border-b border-border last:border-b-0 hover:bg-accent/30 transition-colors ${completed ? 'opacity-60' : ''}`}>
+    <div className="flex items-center gap-4 px-4 py-3 border-b border-border last:border-b-0 hover:bg-accent/30 transition-colors">
       {/* Plan info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-medium text-sm text-foreground truncate">{plan.site_name || plan.client_name || plan.name}</span>
           <span className="flex-shrink-0 px-1.5 py-0.5 bg-amber-500/10 text-amber-500 rounded text-xs font-medium">Rev {plan.revision || 'A'}</span>
+          {completed && (
+            <span className="flex-shrink-0 px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 rounded text-[10px] font-medium uppercase tracking-wide">Complete</span>
+          )}
           {plan.sent_to_electrician_at && (
             <span
               title={`Sent to ${plan.sent_to_electrician_email ?? "electrician"} on ${formatDate(plan.sent_to_electrician_at)}`}
@@ -156,6 +159,16 @@ function PlanRow({ plan, countDevices, formatDate, completed }: { plan: any; cou
 
       {/* Actions */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
+        {plan.pdf_url && (
+          <a
+            href={plan.pdf_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-md border border-border px-2.5 py-1 text-xs hover:border-primary hover:text-primary transition-colors"
+          >
+            View PDF
+          </a>
+        )}
         <PlanRowActions
           planId={plan.id}
           cfpUrl={plan.cfp_url ?? null}
