@@ -39,3 +39,12 @@ Locked 2026-09-23 (Mitchell, in chat, evening). Companion: vault `18-INBOX/2026-
 ## Not in scope
 
 Bank rec of anything but GC/Stripe payouts; payroll; BAS; bills payment; any customer-facing email. Nothing here emails or charges anyone.
+
+## Invoice reminder cadence (extended 2026-11-05)
+Automatic reminders, weekday 09:00 Brisbane, each milestone once per invoice:
+due −3, due day, +3, +7 (friendly) → **+14 firm ("payment required within 7
+days")** → **+28 final notice (services may be placed on hold)**. Mitchell,
+5 Nov 2026: $62k sat past the +7 nudge with no chase. Catch-up rule means an
+invoice already past a milestone gets the latest one it has reached on the
+next run. After +28 it's manual: Home → Accountability → "Overdue — needs a
+call" lists everything 8+ days overdue with reminders sent and days overdue.
