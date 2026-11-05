@@ -8,8 +8,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * those marks live in job_progress_items. Nothing here writes anything.
  */
 
-export type StepState = "done" | "pending" | "na";
-export type StepGroup = "Design & quote" | "Money" | "Before install" | "Install" | "Handover & close";
+export type StepState = "done" | "partial" | "pending" | "na";
+export type StepGroup =
+  | "Design & quote"
+  | "Money"
+  | "Stock"
+  | "Alarm panel"
+  | "NBN"
+  | "Security"
+  | "Before install"
+  | "Install"
+  | "Handover & close";
 
 export interface ProgressStep {
   key: ProgressStepKey;
@@ -47,12 +56,26 @@ const STEP_KEYS = [
   "quote_accepted",
   "deposit_invoice",
   "deposit_paid",
-  "direct_debits",
-  "procurement",
+  "recurring_created",
+  "mandate_sent",
+  "mandate_signed",
+  "stock_ordered",
+  "alarm_b2b_sentinel",
+  "alarm_solution_link",
+  "alarm_panel_built",
+  "alarm_gx_soft",
+  "alarm_myalarm_panel",
+  "alarm_myalarm_customer",
+  "alarm_myalarm_onboarded",
+  "alarm_tested",
+  "nbn_paperwork",
+  "nbn_cabling_found",
+  "nbn_connected",
+  "security_sent",
+  "security_signed",
+  "security_onboarded",
   "dates_booked",
-  "security_paperwork",
   "swms",
-  "nbn",
   "rough_in_done",
   "fit_off_done",
   "install_checklist",
@@ -62,10 +85,16 @@ const STEP_KEYS = [
   "final_paid",
   "complete",
 ] as const;
-export type ProgressStepKey = (typeof STEP_KEYS)[number];
+/** Per-supplier stock rows are dynamic: "stock_received:<supplier slug>". */
+export const STOCK_RECEIVED_PREFIX = "stock_received:";
+export type ProgressStepKey = (typeof STEP_KEYS)[number] | `${typeof STOCK_RECEIVED_PREFIX}${string}`;
 
 export function isProgressStepKey(v: string): v is ProgressStepKey {
-  return (STEP_KEYS as readonly string[]).includes(v);
+  return (STEP_KEYS as readonly string[]).includes(v) || (v.startsWith(STOCK_RECEIVED_PREFIX) && v.length > STOCK_RECEIVED_PREFIX.length && v.length < 80);
+}
+
+function supplierSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 }
 
 type Def = { key: ProgressStepKey; group: StepGroup; label: string; hint: string; source: "auto" | "manual" };
@@ -79,12 +108,26 @@ const DEFS: Def[] = [
   { key: "quote_accepted", group: "Design & quote", label: "Quote accepted", hint: "Customer accepted a quote on this job", source: "auto" },
   { key: "deposit_invoice", group: "Money", label: "Invoice sent (owner or builder)", hint: "PP1 or full invoice authorised and emailed", source: "auto" },
   { key: "deposit_paid", group: "Money", label: "Invoice paid", hint: "PP1 / full invoice paid in Xero", source: "auto" },
-  { key: "direct_debits", group: "Money", label: "Direct debits set up", hint: "Recurring plan for the site active — mandate signed by the owner", source: "auto" },
-  { key: "procurement", group: "Before install", label: "Procurement complete", hint: "Every procurement line received or allocated from stock", source: "auto" },
+  { key: "recurring_created", group: "Money", label: "Recurring invoices created", hint: "A recurring plan exists for the site (Invoices → Recurring)", source: "auto" },
+  { key: "mandate_sent", group: "Money", label: "Mandate sent", hint: "Direct-debit signup email sent to the owner", source: "auto" },
+  { key: "mandate_signed", group: "Money", label: "Mandate signed", hint: "Owner signed the mandate — plan active, Xero repeating invoice live", source: "auto" },
+  { key: "stock_ordered", group: "Stock", label: "All stock ordered", hint: "Every procurement line ordered or allocated from Centrefit stock", source: "auto" },
+  { key: "alarm_b2b_sentinel", group: "Alarm panel", label: "Customer created in B2B Sentinel", hint: "Tick once the customer exists in Sentinel", source: "manual" },
+  { key: "alarm_solution_link", group: "Alarm panel", label: "Panel created in Solution Link", hint: "Tick once the panel is set up in Solution Link", source: "manual" },
+  { key: "alarm_panel_built", group: "Alarm panel", label: "Panel built", hint: "Tick when the alarm panel is built and ready to ship", source: "manual" },
+  { key: "alarm_gx_soft", group: "Alarm panel", label: "Mark and Sue onboarded in GX Soft", hint: "Tick once both have access in GX Soft", source: "manual" },
+  { key: "alarm_myalarm_panel", group: "Alarm panel", label: "MyAlarm created by panel", hint: "Tick once the panel is registered in MyAlarm", source: "manual" },
+  { key: "alarm_myalarm_customer", group: "Alarm panel", label: "MyAlarm customer created", hint: "Tick once the customer exists in MyAlarm", source: "manual" },
+  { key: "alarm_myalarm_onboarded", group: "Alarm panel", label: "Mark and Sue onboarded in MyAlarm", hint: "Tick once both have access in MyAlarm", source: "manual" },
+  { key: "alarm_tested", group: "Alarm panel", label: "Alarm panel tested", hint: "Tick after the panel testing checklist is done", source: "manual" },
+  { key: "nbn_paperwork", group: "NBN", label: "Customer has completed NBN paperwork", hint: "Tick when the signed NBN paperwork is back", source: "manual" },
+  { key: "nbn_cabling_found", group: "NBN", label: "Rough-in crew found cabling / NTD", hint: "Tick when the crew confirms the lead-in and NTD location", source: "manual" },
+  { key: "nbn_connected", group: "NBN", label: "NBN connected", hint: "All NBN steps on the job complete, or ticked by hand", source: "auto" },
+  { key: "security_sent", group: "Security", label: "Security paperwork sent", hint: "Monitoring form emailed from the site's Documentation tab", source: "auto" },
+  { key: "security_signed", group: "Security", label: "Security paperwork signed", hint: "Monitoring form signed, or security paperwork on the site file", source: "auto" },
+  { key: "security_onboarded", group: "Security", label: "Customer onboarding complete", hint: "Tick once the customer is onboarded with monitoring", source: "manual" },
   { key: "dates_booked", group: "Before install", label: "Dates booked", hint: "Rough-in and fit-off dates set (or the job scheduled)", source: "auto" },
-  { key: "security_paperwork", group: "Before install", label: "Security paperwork signed", hint: "Monitoring form signed, or security paperwork on the site file", source: "auto" },
   { key: "swms", group: "Before install", label: "SWMS on file", hint: "A SWMS generated or uploaded for the site", source: "auto" },
-  { key: "nbn", group: "Before install", label: "NBN ordered and active", hint: "All NBN steps on the job complete", source: "auto" },
   { key: "rough_in_done", group: "Install", label: "Rough-in complete", hint: "Tick when the rough-in is finished", source: "manual" },
   { key: "fit_off_done", group: "Install", label: "Fit-off complete", hint: "Tick when the fit-off is finished", source: "manual" },
   { key: "install_checklist", group: "Install", label: "Install checklist complete", hint: "Every task on the job's checklist ticked", source: "auto" },
@@ -137,7 +180,7 @@ export async function loadJobProgress(supabase: SupabaseClient, jobId: string): 
     siteId
       ? supabase.from("document_sign_requests").select("document_type, status, signer_name, sent_at, signed_at").eq("site_id", siteId).order("created_at", { ascending: false })
       : Promise.resolve({ data: [] as { document_type: string; status: string; signer_name: string | null; sent_at: string | null; signed_at: string | null }[] }),
-    supabase.from("job_procurement_items").select("status, received_at, allocated_from_stock").eq("job_id", jobId),
+    supabase.from("job_procurement_items").select("status, received_at, ordered_at, allocated_from_stock, actual_supplier_id, default_supplier_id").eq("job_id", jobId),
     supabase.from("job_checklist_items").select("is_completed").eq("job_id", jobId),
     supabase.from("job_work_entries").select("work_date").eq("job_id", jobId).order("work_date", { ascending: false }),
     supabase.from("nbn_steps").select("status").eq("job_id", jobId),
@@ -151,7 +194,23 @@ export async function loadJobProgress(supabase: SupabaseClient, jobId: string): 
   const invoices = (invoicesRes.data ?? []) as { id: string; invoice_type: string; status: string; sent_at: string | null; paid_at: string | null; bill_to_party: string | null; bill_to_name: string | null; xero_invoice_number: string | null; created_at: string }[];
   const plansRp = (rpRes.data ?? []) as { id: string; status: string; signup_emailed_at: string | null; signup_reminder_count: number | null; created_at: string; updated_at: string }[];
   const signs = (signRes.data ?? []) as { document_type: string; status: string; signer_name: string | null; sent_at: string | null; signed_at: string | null }[];
-  const proc = (procRes.data ?? []) as { status: string | null; received_at: string | null; allocated_from_stock: boolean | null }[];
+  const proc = (procRes.data ?? []) as { status: string | null; received_at: string | null; ordered_at: string | null; allocated_from_stock: boolean | null; actual_supplier_id: string | null; default_supplier_id: string | null }[];
+  // Supplier names for the per-supplier "received" rows (Sue, 5 Nov 2026).
+  const supplierIds = Array.from(new Set(proc.map((p) => p.actual_supplier_id ?? p.default_supplier_id).filter((x): x is string => !!x)));
+  const supplierNames = new Map<string, string>();
+  if (supplierIds.length) {
+    const { data: sup } = await supabase.from("suppliers").select("id, name").in("id", supplierIds);
+    for (const r of (sup ?? []) as { id: string; name: string }[]) supplierNames.set(r.id, r.name);
+  }
+  const isReceived = (p: typeof proc[number]) => !!p.received_at || !!p.allocated_from_stock || p.status === "received" || p.status === "in_stock";
+  const isOrdered = (p: typeof proc[number]) => isReceived(p) || !!p.ordered_at || p.status === "ordered";
+  const supplierOf = (p: typeof proc[number]) =>
+    p.allocated_from_stock ? "Centrefit stock" : supplierNames.get(p.actual_supplier_id ?? p.default_supplier_id ?? "") ?? "Unassigned";
+  const bySupplier = new Map<string, typeof proc>();
+  for (const p of proc) {
+    const name = supplierOf(p);
+    bySupplier.set(name, [...(bySupplier.get(name) ?? []), p]);
+  }
   const checklist = (checklistRes.data ?? []) as { is_completed: boolean }[];
   const work = (workRes.data ?? []) as { work_date: string }[];
   const nbn = (nbnRes.data ?? []) as { status: string }[];
@@ -191,7 +250,7 @@ export async function loadJobProgress(supabase: SupabaseClient, jobId: string): 
     (set === "service" ? invoices.find((i) => i.invoice_type === "adhoc") ?? null : null);
   const pp2Inv = invoices.find((i) => i.invoice_type === "progress_pp2") ?? null;
 
-  const compute: Record<ProgressStepKey, () => Computed> = {
+  const compute: Record<(typeof STEP_KEYS)[number], () => Computed> = {
     builder_plans: () => {
       const d = docs.filter((x) => x.category === "plans");
       return d.length > 0
@@ -226,27 +285,38 @@ export async function loadJobProgress(supabase: SupabaseClient, jobId: string): 
         : { state: "pending", detail: sentQuote ? `Waiting on the customer for ${sentQuote.ref}` : "Quote not sent yet", href: sentQuote ? `/quoting/${sentQuote.id}` : "tab:quoting" },
     deposit_invoice: () => invoiceState(depositInv, acceptedQuote ? `Generate the ${hasProgressQuote ? "PP1" : "full"} invoice on ${acceptedQuote.ref}` : "No invoice on this job yet"),
     deposit_paid: () => paidState(depositInv, !!acceptedQuote?.pp1_paid, hasProgressQuote ? "PP1" : ""),
-    direct_debits: () => {
+    recurring_created: () => {
+      const p = plansRp[0];
+      return p
+        ? { state: "done", detail: `Plan ${p.status === "active" ? "active" : p.status.replace("_", " ")}, created ${dmy(p.created_at)}`, href: `/invoices/recurring/${p.id}` }
+        : { state: "pending", detail: "No recurring plan for this site", href: "/invoices/recurring/new" };
+    },
+    mandate_sent: () => {
       const active = plansRp.find((p) => p.status === "active");
-      if (active) return { state: "done", detail: `Recurring plan active since ${dmy(active.updated_at)}`, href: `/invoices/recurring/${active.id}` };
+      if (active) return { state: "done", detail: "Signed", href: `/invoices/recurring/${active.id}` };
+      const sent = plansRp.find((p) => p.status === "pending_mandate" && p.signup_emailed_at);
+      if (sent) return { state: "done", detail: `Sent ${dmy(sent.signup_emailed_at)} (${sent.signup_reminder_count ?? 0} reminders)`, href: `/invoices/recurring/${sent.id}` };
+      const draft = plansRp.find((p) => p.status === "draft" || p.status === "pending_mandate");
+      if (draft) return { state: "pending", detail: "Plan exists — signup email not sent", href: `/invoices/recurring/${draft.id}` };
+      return { state: "pending", detail: "Needs the recurring plan first", href: "/invoices/recurring/new" };
+    },
+    mandate_signed: () => {
+      const active = plansRp.find((p) => p.status === "active");
+      if (active) return { state: "done", detail: `Active since ${dmy(active.updated_at)}`, href: `/invoices/recurring/${active.id}` };
       const pending = plansRp.find((p) => p.status === "pending_mandate");
       if (pending) {
         const days = Math.floor((Date.now() - new Date(pending.signup_emailed_at ?? pending.created_at).getTime()) / 86_400_000);
-        return { state: "pending", detail: `Mandate sent ${dmy(pending.signup_emailed_at ?? pending.created_at)}, unsigned for ${days}d (${pending.signup_reminder_count ?? 0} reminders)`, href: `/invoices/recurring/${pending.id}` };
+        return { state: "pending", detail: `Unsigned for ${days}d`, href: `/invoices/recurring/${pending.id}` };
       }
-      const draft = plansRp.find((p) => p.status === "draft");
-      if (draft) return { state: "pending", detail: "Plan drafted — signup email not sent yet", href: `/invoices/recurring/${draft.id}` };
-      const other = plansRp[0];
-      if (other) return { state: "pending", detail: `Recurring plan is ${other.status}`, href: `/invoices/recurring/${other.id}` };
-      return { state: "pending", detail: "No recurring plan for this site", href: "/invoices/recurring/new" };
+      return { state: "pending", detail: plansRp[0] ? `Plan is ${plansRp[0].status}` : "No recurring plan yet", href: plansRp[0] ? `/invoices/recurring/${plansRp[0].id}` : "/invoices/recurring/new" };
     },
-    procurement: () => {
-      if (job.procurement_not_required) return { state: "na", detail: "Marked not required", href: "tab:procurement" };
+    stock_ordered: () => {
+      if (job.procurement_not_required) return { state: "na", detail: "Procurement marked not required", href: "tab:procurement" };
       if (proc.length === 0) return { state: "pending", detail: "No procurement lines on the job", href: "tab:procurement" };
-      const got = proc.filter((p) => p.received_at || p.allocated_from_stock || p.status === "received").length;
-      return got === proc.length
-        ? { state: "done", detail: `${proc.length} line${proc.length === 1 ? "" : "s"} received`, href: "tab:procurement" }
-        : { state: "pending", detail: `${got} of ${proc.length} lines received`, href: "tab:procurement" };
+      const ordered = proc.filter(isOrdered).length;
+      return ordered === proc.length
+        ? { state: "done", detail: `${proc.length} line${proc.length === 1 ? "" : "s"} ordered`, href: "tab:procurement" }
+        : { state: "pending", detail: `${ordered} of ${proc.length} lines ordered`, href: "tab:procurement" };
     },
     dates_booked: () => {
       if (job.is_new_build) {
@@ -258,27 +328,45 @@ export async function loadJobProgress(supabase: SupabaseClient, jobId: string): 
         ? { state: "done", detail: `Scheduled ${dmy(sched[0].schedule_date)}`, href: "/scheduler" }
         : { state: "pending", detail: "Not on the scheduler", href: "/scheduler" };
     },
-    security_paperwork: () => {
+    security_sent: () => {
+      const signed = signs.find((s) => s.document_type === "monitoring_form" && s.status === "signed");
+      if (signed) return { state: "done", detail: `Signed ${dmy(signed.signed_at)}`, href: siteHref };
+      const sent = signs.find((s) => s.document_type === "monitoring_form" && (s.status === "sent" || s.status === "viewed"));
+      if (sent) return { state: "done", detail: `Sent ${dmy(sent.sent_at)}${sent.status === "viewed" ? ", opened" : ""}`, href: siteHref };
+      if (docs.some((d) => d.category === "security")) return { state: "done", detail: "Security paperwork on the site file", href: siteHref };
+      return { state: "pending", detail: "Monitoring form not sent", href: siteHref };
+    },
+    security_signed: () => {
       const signed = signs.find((s) => s.document_type === "monitoring_form" && s.status === "signed");
       if (signed) return { state: "done", detail: `Monitoring form signed${signed.signer_name ? ` by ${signed.signer_name}` : ""} ${dmy(signed.signed_at)}`, href: siteHref };
       const onFile = docs.filter((d) => d.category === "security");
       if (onFile.length) return { state: "done", detail: `${onFile.length} file${onFile.length === 1 ? "" : "s"} under Security Paperwork`, href: siteHref };
       const sent = signs.find((s) => s.document_type === "monitoring_form" && (s.status === "sent" || s.status === "viewed"));
-      if (sent) return { state: "pending", detail: `Monitoring form sent ${dmy(sent.sent_at)}, not signed`, href: siteHref };
+      if (sent) return { state: "pending", detail: `Sent ${dmy(sent.sent_at)}, not signed`, href: siteHref };
       return { state: "pending", detail: "Monitoring form not sent", href: siteHref };
     },
+    security_onboarded: () => ({ state: "pending", detail: null, href: siteHref }),
     swms: () => {
       const s = docs.filter((d) => d.category === "swms");
       return s.length
         ? { state: "done", detail: `${s[0].name}`, href: siteHref }
         : { state: "pending", detail: "No SWMS on the site file", href: siteHref };
     },
-    nbn: () => {
-      if (!isNbnJob && nbn.length === 0) return { state: "na", detail: "Not an NBN job", href: null };
+    alarm_b2b_sentinel: () => ({ state: "pending", detail: null, href: null }),
+    alarm_solution_link: () => ({ state: "pending", detail: null, href: null }),
+    alarm_panel_built: () => ({ state: "pending", detail: null, href: null }),
+    alarm_gx_soft: () => ({ state: "pending", detail: null, href: null }),
+    alarm_myalarm_panel: () => ({ state: "pending", detail: null, href: null }),
+    alarm_myalarm_customer: () => ({ state: "pending", detail: null, href: null }),
+    alarm_myalarm_onboarded: () => ({ state: "pending", detail: null, href: null }),
+    alarm_tested: () => ({ state: "pending", detail: null, href: null }),
+    nbn_paperwork: () => ({ state: "pending", detail: null, href: "tab:nbn" }),
+    nbn_cabling_found: () => ({ state: "pending", detail: null, href: null }),
+    nbn_connected: () => {
+      if (statusName === "NBN Active") return { state: "done", detail: "Status NBN Active", href: "tab:nbn" };
       const done = nbn.filter((s) => s.status === "complete" || s.status === "completed" || s.status === "done").length;
-      return nbn.length > 0 && done === nbn.length
-        ? { state: "done", detail: `${nbn.length} NBN steps complete`, href: "tab:nbn" }
-        : { state: "pending", detail: nbn.length ? `${done} of ${nbn.length} NBN steps complete` : "No NBN steps yet", href: "tab:nbn" };
+      if (nbn.length > 0 && done === nbn.length) return { state: "done", detail: `${nbn.length} NBN steps complete`, href: "tab:nbn" };
+      return { state: "pending", detail: nbn.length ? `${done} of ${nbn.length} NBN steps complete` : isNbnJob ? "No NBN steps yet" : "No NBN on this job — tick or mark N/A", href: "tab:nbn" };
     },
     rough_in_done: () => ({ state: "pending", detail: null, href: null }),
     fit_off_done: () => ({ state: "pending", detail: null, href: null }),
@@ -318,12 +406,37 @@ export async function loadJobProgress(supabase: SupabaseClient, jobId: string): 
           : { state: "pending", detail: statusName ? `Status ${statusName}` : null, href: null },
   };
 
-  const keys = set === "fitout" ? DEFS.map((d) => d.key) : SERVICE_KEYS;
+  // Per-supplier "received" rows, straight after "All stock ordered"
+  // (Sue, 5 Nov 2026: complete / partial per supplier without opening the site).
+  const supplierDefs: Def[] = Array.from(bySupplier.keys()).sort().map((name) => ({
+    key: `${STOCK_RECEIVED_PREFIX}${supplierSlug(name)}` as ProgressStepKey,
+    group: "Stock",
+    label: `${name} received`,
+    hint: "Every line from this supplier received on the Procurement tab",
+    source: "auto",
+  }));
+  const supplierCompute = (name: string): Computed => {
+    const lines = bySupplier.get(name) ?? [];
+    const got = lines.filter(isReceived).length;
+    if (got === lines.length) return { state: "done", detail: `Complete — ${lines.length} line${lines.length === 1 ? "" : "s"}`, href: "tab:procurement" };
+    if (got > 0) return { state: "partial", detail: `Partial — ${got} of ${lines.length} lines received`, href: "tab:procurement" };
+    const ordered = lines.filter(isOrdered).length;
+    return { state: "pending", detail: ordered ? `Nothing received yet — ${ordered} of ${lines.length} ordered` : "Not ordered", href: "tab:procurement" };
+  };
+  const supplierByKey = new Map(Array.from(bySupplier.keys()).map((name) => [`${STOCK_RECEIVED_PREFIX}${supplierSlug(name)}`, name]));
+
+  const allDefs: Def[] = [];
+  for (const d of DEFS) {
+    allDefs.push(d);
+    if (d.key === "stock_ordered") allDefs.push(...supplierDefs);
+  }
+  const keys = set === "fitout" ? allDefs.map((d) => d.key) : SERVICE_KEYS;
   const steps: ProgressStep[] = [];
   for (const key of keys) {
-    const def = DEFS.find((d) => d.key === key)!;
+    const def = allDefs.find((d) => d.key === key)!;
     if (set === "service" && key === "install_checklist" && checklist.length === 0) continue;
-    const auto = compute[key]();
+    const supplierName = supplierByKey.get(key);
+    const auto: Computed = supplierName ? supplierCompute(supplierName) : compute[key as keyof typeof compute]();
     const m = manual.get(key) ?? null;
     let state = auto.state;
     let by: string | null = null;

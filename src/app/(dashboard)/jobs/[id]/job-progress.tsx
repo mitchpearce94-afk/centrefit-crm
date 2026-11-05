@@ -13,7 +13,7 @@ import type { JobProgress, ProgressStep, StepGroup } from "@/lib/jobs/progress";
  * anyone can tick a step by hand or mark it N/A.
  */
 
-const GROUP_ORDER: StepGroup[] = ["Design & quote", "Money", "Before install", "Install", "Handover & close"];
+const GROUP_ORDER: StepGroup[] = ["Design & quote", "Money", "Stock", "Alarm panel", "NBN", "Security", "Before install", "Install", "Handover & close"];
 
 export function JobProgressPanel({
   jobId,
@@ -126,7 +126,7 @@ function StepRow({
   const isTab = step.href?.startsWith("tab:");
   const openLabel = isTab ? `${tabLabel(step.href!.slice(4))} tab` : "Open";
   return (
-    <div className={`border-b border-border last:border-0 px-4 py-2.5 ${step.state === "done" ? "bg-success/5" : step.state === "na" ? "opacity-60" : "bg-card"}`}>
+    <div className={`border-b border-border last:border-0 px-4 py-2.5 ${step.state === "done" ? "bg-success/5" : step.state === "partial" ? "bg-amber-500/5" : step.state === "na" ? "opacity-60" : "bg-card"}`}>
       <div className="flex gap-3">
         <StateIcon state={step.state} />
         <div className="flex-1 min-w-0">
@@ -137,6 +137,7 @@ function StepRow({
             <span className="text-[10px] text-muted-foreground" title={step.source === "auto" ? "Read from the CRM data" : "Ticked by a person"}>
               {step.source === "auto" ? "●" : "○"}
             </span>
+            {step.state === "partial" && <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-500">Partial</span>}
             {step.by && <span className="text-[11px] font-semibold text-success">{step.state === "na" ? "N/A by" : "Ticked by"} {step.by}</span>}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -175,7 +176,7 @@ function StepRow({
             <button onClick={onUndo} disabled={busy} className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 transition-colors">
               Undo
             </button>
-          ) : step.state === "pending" && !noteOpen ? (
+          ) : (step.state === "pending" || step.state === "partial") && !noteOpen ? (
             <>
               <button onClick={onTick} disabled={busy} className="rounded-md border border-success/40 px-2 py-1 text-[11px] text-success hover:bg-success/10 disabled:opacity-50 transition-colors">
                 Tick
@@ -205,6 +206,11 @@ function StateIcon({ state }: { state: ProgressStep["state"] }) {
   }
   if (state === "na") {
     return <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-muted-foreground/40 text-[10px] text-muted-foreground">–</span>;
+  }
+  if (state === "partial") {
+    return (
+      <span className="mt-0.5 h-5 w-5 shrink-0 rounded-full border-2 border-amber-500" style={{ background: "linear-gradient(90deg, rgb(245 158 11) 50%, transparent 50%)" }} title="Partial" />
+    );
   }
   return <span className="mt-0.5 h-5 w-5 shrink-0 rounded-full border-2 border-muted-foreground/40" />;
 }
