@@ -13,17 +13,20 @@ import { enqueueNotification } from "@/lib/notifications/enqueue";
  * as well"), which is the explicit confirmation the manual send-reminder
  * route's no-bulk-sends rule requires.
  *
- * Four fixed milestones relative to the due date, each sent once and audited
- * separately in invoice_reminders.trigger (Mitchell's 2026-06-30 cadence):
- *   - auto_due_3:     3 days before due
- *   - auto_due:       on the due day
- *   - auto_overdue_3: 3 days after due
- *   - auto_overdue_7: 7 days after due
+ * Six fixed milestones relative to the due date, each sent once and audited
+ * separately in invoice_reminders.trigger (Mitchell's 2026-06-30 cadence,
+ * extended 2026-11-05 because invoices went quiet after +7):
+ *   - auto_due_3:      3 days before due        (friendly)
+ *   - auto_due:        on the due day           (friendly)
+ *   - auto_overdue_3:  3 days after due         (friendly)
+ *   - auto_overdue_7:  7 days after due         (friendly)
+ *   - auto_overdue_14: 14 days after due        (firm — "payment required")
+ *   - auto_overdue_28: 28 days after due        (final notice)
  * The cron only runs weekday mornings, so each run sends the LATEST milestone
  * an invoice has reached but not yet been sent — a milestone whose exact day
  * landed on a weekend/holiday is caught up on the next run, never skipped.
- * After the +7 milestone there are no further auto reminders (manual chase
- * only), so the old "every 7 days, max 3" repeat is retired.
+ * After the +28 milestone there are no further auto reminders; the Home
+ * Accountability board lists anything 8+ days overdue for a phone call.
  *
  * Hard safety rails (the 2026-05-11 incident class):
  *   - Only invoices we actually emailed to the customer (sent_at set), and
@@ -39,6 +42,8 @@ import { enqueueNotification } from "@/lib/notifications/enqueue";
 // Fixed milestones (calendar days relative to the due date), newest-reached
 // first. Each fires at most once, tracked by its distinct trigger value.
 const MILESTONES = [
+  { offset: 28, trigger: "auto_overdue_28" },
+  { offset: 14, trigger: "auto_overdue_14" },
   { offset: 7, trigger: "auto_overdue_7" },
   { offset: 3, trigger: "auto_overdue_3" },
   { offset: 0, trigger: "auto_due" },
@@ -63,8 +68,14 @@ function reminderLabel(kind: ReminderTrigger): string {
     case "auto_due_3": return "Due-soon reminder";
     case "auto_due": return "Due-today reminder";
     case "auto_overdue_3": return "Overdue reminder";
-    case "auto_overdue_7": return "Final overdue reminder";
+    case "auto_overdue_7": return "Second overdue reminder";
+    case "auto_overdue_14": return "Firm overdue reminder";
+    case "auto_overdue_28": return "Final notice";
   }
+}
+
+function reminderTone(kind: ReminderTrigger): "friendly" | "firm" | "final" {
+  return kind === "auto_overdue_28" ? "final" : kind === "auto_overdue_14" ? "firm" : "friendly";
 }
 
 interface CandidateInvoice {
@@ -269,6 +280,7 @@ export async function GET(req: NextRequest) {
       payUrl,
       invoiceId: invoice.id,
       reminderNumber,
+      tone: reminderTone(kind),
     });
 
     const { error: auditErr } = await svc.from("invoice_reminders").insert({

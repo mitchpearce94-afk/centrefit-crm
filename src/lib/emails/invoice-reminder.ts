@@ -19,6 +19,12 @@ export interface SendInvoiceReminderInput {
   payUrl: string | null;
   invoiceId: string;
   reminderNumber: number;
+  /**
+   * friendly = the first four nudges; firm = 14 days overdue ("payment
+   * required within 7 days"); final = 28 days overdue (final notice).
+   * Polite, short, sharp — Mitchell's voice, never threatening.
+   */
+  tone?: "friendly" | "firm" | "final";
 }
 
 function fmt(n: number): string {
@@ -45,12 +51,30 @@ export async function sendInvoiceReminderEmail(
   // Same template serves the pre-due "due soon" nudge and the overdue chase —
   // tense and headline switch on where the due date sits relative to now.
   const dueInFuture = input.dueDate ? new Date(input.dueDate).getTime() > Date.now() : false;
+  const tone = input.tone ?? "friendly";
+  const overdueStr = `${input.daysOverdue} day${input.daysOverdue === 1 ? "" : "s"} overdue`;
   const headline =
-    input.daysOverdue > 0
-      ? `Invoice ${input.invoiceRef} is ${input.daysOverdue} day${input.daysOverdue === 1 ? "" : "s"} overdue`
-      : dueInFuture
-        ? `Invoice ${input.invoiceRef} is due soon`
-        : `Invoice ${input.invoiceRef} — payment reminder`;
+    tone === "final"
+      ? `Final notice — invoice ${input.invoiceRef} is ${overdueStr}`
+      : tone === "firm"
+        ? `Invoice ${input.invoiceRef} is ${overdueStr} — payment required`
+        : input.daysOverdue > 0
+          ? `Invoice ${input.invoiceRef} is ${overdueStr}`
+          : dueInFuture
+            ? `Invoice ${input.invoiceRef} is due soon`
+            : `Invoice ${input.invoiceRef} — payment reminder`;
+  const body =
+    tone === "final"
+      ? `Invoice <strong>${input.invoiceRef}</strong> for <strong>${amountStr}</strong>${input.dueDate ? ` was due on <strong>${dueStr}</strong> and` : ""} is now ${overdueStr}, despite our earlier reminders. Please arrange payment within 7 days, or reply to this email so we can agree a date. Accounts still unpaid after that may have services placed on hold until the balance is cleared.`
+      : tone === "firm"
+        ? `Invoice <strong>${input.invoiceRef}</strong> for <strong>${amountStr}</strong>${input.dueDate ? ` was due on <strong>${dueStr}</strong> and` : ""} is now ${overdueStr}. Please arrange payment within 7 days, or reply to let us know when we can expect it.`
+        : `This is a friendly reminder that <strong>${amountStr}</strong> remains outstanding on invoice <strong>${input.invoiceRef}</strong>${input.dueDate ? `, which ${dueInFuture ? "is due" : "was due"} <strong>${dueStr}</strong>` : ""}.`;
+  const subject =
+    tone === "final"
+      ? `Final notice: ${input.invoiceRef} — ${input.customerName}`
+      : tone === "firm"
+        ? `Overdue: ${input.invoiceRef} — ${input.customerName}`
+        : `Reminder: ${input.invoiceRef} — ${input.customerName}`;
 
   const payButton = input.payUrl
     ? `
@@ -65,13 +89,13 @@ export async function sendInvoiceReminderEmail(
     : "";
 
   const html = emailLayout(`
-    ${emailHeader({ rightLabel: "Reminder", rightValue: input.invoiceRef })}
+    ${emailHeader({ rightLabel: tone === "final" ? "Final notice" : tone === "firm" ? "Overdue" : "Reminder", rightValue: input.invoiceRef })}
 
     <tr><td style="padding:32px 32px 12px">
       <h1 style="font-size:20px;font-weight:600;color:#0f172a;margin:0 0 4px;letter-spacing:-0.3px">${headline}</h1>
       <p style="font-size:13px;color:#475569;margin:14px 0 0;line-height:1.6">${greeting}</p>
       <p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">
-        This is a friendly reminder that <strong>${amountStr}</strong> remains outstanding on invoice <strong>${input.invoiceRef}</strong>${input.dueDate ? `, which ${dueInFuture ? "is due" : "was due"} <strong>${dueStr}</strong>` : ""}.
+        ${body}
       </p>
       <p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">
         <em>If you&rsquo;ve already paid this invoice in the last few business days, please disregard this reminder — our records may not have caught up yet.</em>
@@ -91,7 +115,7 @@ export async function sendInvoiceReminderEmail(
       to: (Array.isArray(input.to) ? input.to : input.to.split(","))
         .map((e) => e.trim())
         .filter((e) => e.length > 0),
-      subject: `Reminder: ${input.invoiceRef} — ${input.customerName}`,
+      subject,
       html,
       headers: {
         "X-Cf-Doc-Type": "invoice-reminder",

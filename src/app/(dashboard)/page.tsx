@@ -120,7 +120,12 @@ export default async function DashboardPage({
     mandatesAwaiting: number;
     mandatesOldestDays: number;
     draftsUnsent: number;
+    /** 8+ days overdue — past the friendly nudges, needs a phone call. */
+    callList: OverdueCallRow[];
+    callCount: number;
+    callTotal: number;
   } | null = null;
+  type OverdueCallRow = { id: string; number: string; who: string; amount: number; days: number; reminders: number; lastReminder: string | null; finalSent: boolean };
 
   if (canSeeAllJobs) {
     const sevenDaysAgoISO = isoDate(addDays(todayDate, -7));
@@ -129,7 +134,8 @@ export default async function DashboardPage({
       .from("statuses").select("id").eq("name", "Ready to Invoice").maybeSingle();
     const riId = riStatusRow?.id ?? null;
 
-    const [overdueInvRes, awaitingSendRes, readyJobsRes, quotesChaseRes, mandatesRes] = await Promise.all([
+    const callCutoffISO = isoDate(addDays(todayDate, -8));
+    const [overdueInvRes, awaitingSendRes, readyJobsRes, quotesChaseRes, mandatesRes, callRes] = await Promise.all([
       supabase
         .from("invoices")
         .select("amount_due, due_date")
@@ -160,7 +166,35 @@ export default async function DashboardPage({
         .select("status, created_at, signup_emailed_at")
         .in("status", ["pending_mandate", "draft"])
         .is("gc_mandate_id", null),
+      // Overdue 8+ days: the automatic reminders have done their job (or will
+      // keep firing at 14 and 28 days) — these need a person on the phone
+      // (Mitchell 2026-11-05: "we're building up a lot of unpaid invoices").
+      supabase
+        .from("invoices")
+        .select("id, xero_invoice_number, amount_due, due_date, reminder_count, last_reminder_sent_at, customer:customers(name), site:customer_sites!invoices_site_id_fkey(name)")
+        .eq("status", "authorised")
+        .gt("amount_due", 0)
+        .lte("due_date", callCutoffISO)
+        .order("amount_due", { ascending: false })
+        .limit(200),
     ]);
+    const callRows = (callRes.data ?? []) as any[];
+    const callList: OverdueCallRow[] = callRows.map((r) => {
+      const days = Math.max(0, Math.floor((startOfToday - new Date(r.due_date + "T00:00:00").getTime()) / 86_400_000));
+      const site = Array.isArray(r.site) ? r.site[0]?.name : r.site?.name;
+      const cust = Array.isArray(r.customer) ? r.customer[0]?.name : r.customer?.name;
+      return {
+        id: r.id,
+        number: r.xero_invoice_number ?? "—",
+        who: site ?? cust ?? "—",
+        amount: Number(r.amount_due) || 0,
+        days,
+        reminders: r.reminder_count ?? 0,
+        lastReminder: r.last_reminder_sent_at ?? null,
+        finalSent: days >= 28 && (r.reminder_count ?? 0) >= 6,
+      };
+    });
+    const callTotal = callList.reduce((s, r) => s + r.amount, 0);
     const mandateRows = (mandatesRes.data ?? []) as { status: string; created_at: string; signup_emailed_at: string | null }[];
     const mandatesPending = mandateRows.filter((r) => r.status === "pending_mandate");
     const mandatesOldestDays = mandatesPending.reduce((max, r) => {
@@ -197,6 +231,9 @@ export default async function DashboardPage({
       mandatesAwaiting: mandatesPending.length,
       mandatesOldestDays,
       draftsUnsent: mandateRows.length - mandatesPending.length,
+      callList: callList.slice(0, 10),
+      callCount: callList.length,
+      callTotal,
     };
   }
 
@@ -373,6 +410,43 @@ export default async function DashboardPage({
                 href="/invoices/recurring?tab=pending"
               />
             </div>
+
+            {acct.callList.length > 0 && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold tracking-tight">
+                    Overdue — needs a call
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      {acct.callCount} invoice{acct.callCount === 1 ? "" : "s"} · ${acct.callTotal.toLocaleString("en-AU", { maximumFractionDigits: 0 })}
+                    </span>
+                  </h3>
+                  <span className="text-[11px] text-muted-foreground">8+ days overdue — emails have gone, ring them</span>
+                </div>
+                <div className="surface-card overflow-hidden">
+                  {acct.callList.map((r) => (
+                    <Link
+                      key={r.id}
+                      href={`/invoices/${r.id}`}
+                      className="group flex items-center justify-between gap-3 border-b border-border last:border-0 px-4 py-3 transition-colors hover:bg-accent/40"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-mono text-sm font-semibold text-foreground">{r.number}</span>
+                        <span className="ml-2 text-sm text-muted-foreground truncate">{r.who}</span>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {r.reminders} reminder{r.reminders === 1 ? "" : "s"} sent
+                          {r.lastReminder ? `, last ${new Date(r.lastReminder).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}` : ""}
+                          {r.finalSent ? " · final notice sent" : ""}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <span className="block font-mono text-sm font-semibold text-foreground">${r.amount.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className={`text-xs font-medium ${r.days >= 28 ? "text-destructive" : "text-amber-400"}`}>{r.days} days overdue</span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {acct.readyList.length > 0 && (
               <div className="mt-4">
