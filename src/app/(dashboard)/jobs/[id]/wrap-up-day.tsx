@@ -50,7 +50,24 @@ export function WrapUpDay({
     }).replace(/\s/g, "").toLowerCase();
   }
 
-  function buildDraft(): string {
+  // The plan ticks arrive as server props from page load, but a tech ticks
+  // 20 devices on the Plan tab and then taps Wrap up without reloading —
+  // so read plan_items fresh at tap time (Mitchell 2026-11-05, PF
+  // Maroochydore) and only fall back to the props if the fetch fails.
+  type PlanTick = { id: string; label: string; installed_at: string | null; roughed_in_at: string | null; orphaned?: boolean };
+  async function freshPlanItems(): Promise<PlanTick[]> {
+    const { data: plans } = await supabase.from("plan_files").select("id").eq("job_id", jobId);
+    const ids = (plans ?? []).map((p) => p.id);
+    if (ids.length === 0) return planItems;
+    const { data, error } = await supabase
+      .from("plan_items")
+      .select("id, label, status, installed_at, installed_by, roughed_in_at, roughed_in_by, orphaned")
+      .in("plan_file_id", ids);
+    if (error || !data) return planItems;
+    return data.filter((i) => !i.orphaned);
+  }
+
+  function buildDraft(planItems: PlanTick[]): string {
     const lines: string[] = [];
 
     // Time on site — the viewer's entries today, or anyone's if none.
@@ -98,11 +115,12 @@ export function WrapUpDay({
 
   async function wrapUp() {
     setBusy(true);
+    const items = await freshPlanItems();
     const { error } = await supabase.from("job_work_entries").insert({
       job_id: jobId,
       staff_id: viewerId,
       work_date: today,
-      content: buildDraft(),
+      content: buildDraft(items),
     });
     if (error) {
       toast(error.message, "error");

@@ -247,6 +247,7 @@ export function JobTabs({
             viewerId={viewerId}
             viewerInitials={viewerInitials}
             isNewBuild={job.is_new_build ?? false}
+            fitOffDate={job.fit_off_date ?? null}
           />
         )}
         {activeTab === "nbn" && (

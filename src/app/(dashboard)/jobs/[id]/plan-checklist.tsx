@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { brisbaneDateISO } from "@/lib/dates";
 import { useToast } from "@/components/ui/toast";
 import { PlanVisual } from "./plan-visual";
 import { DEVICE_CATALOG } from "@/lib/plan-builder/devices";
@@ -50,20 +52,55 @@ export function PlanChecklist({
   viewerId,
   viewerInitials,
   isNewBuild = false,
+  fitOffDate = null,
 }: {
   planFiles: PlanFileRow[];
   items: PlanItemRow[];
   viewerId: string | null;
   viewerInitials: string;
   isNewBuild?: boolean;
+  /** jobs.fit_off_date — once the fit-off window has started the tab opens on Fit Off. */
+  fitOffDate?: string | null;
 }) {
   const [localItems, setLocalItems] = useState<PlanItemRow[]>(items);
   const [openPlanId, setOpenPlanId] = useState<string | null>(null);
   // New builds tick twice: Rough In (cable run) then Fit Off (device on the
   // wall). Other jobs only have the single fit/installed tick.
-  const [phase, setPhase] = useState<"rough" | "fit">(isNewBuild ? "rough" : "fit");
+  //
+  // Default phase (Mitchell 2026-11-05, PF Maroochydore): opening on Rough In
+  // once the rough-in is 100% done made the tab look "all ticked again" every
+  // time someone came back to it — the amber RI ticks read as fit-off ticks.
+  // So: open on Fit Off once every cable run is roughed in, or once the job's
+  // fit-off window has started; otherwise Rough In.
+  const [phase, setPhase] = useState<"rough" | "fit">(() => {
+    if (!isNewBuild) return "fit";
+    const live = items.filter((i) => !i.orphaned);
+    const riEligible = live.filter((i) => !NO_CABLE_DEVICES.has(i.device_id));
+    const roughInDone = riEligible.length > 0 && riEligible.every((i) => !!i.roughed_in_at);
+    const fitOffStarted = !!fitOffDate && fitOffDate <= brisbaneDateISO(new Date());
+    return roughInDone || fitOffStarted ? "fit" : "rough";
+  });
   const { toast } = useToast();
   const supabase = createClient();
+  const router = useRouter();
+
+  // After a burst of ticks, re-render the server page once so the Plan tab
+  // badge and the "Wrap up my day" draft see the new state without a reload.
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function scheduleRefresh() {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => router.refresh(), 1500);
+  }
+
+  // RLS turns a forbidden update into "0 rows affected" with no error, which
+  // used to leave the optimistic tick on screen and silently revert on the
+  // next load. Ask for the row back and treat an empty result as a failure.
+  async function saveTick(itemId: string, patch: Record<string, unknown>): Promise<string | null> {
+    const { data, error } = await supabase.from("plan_items").update(patch).eq("id", itemId).select("id");
+    if (error) return error.message;
+    if (!data || data.length === 0) return "Tick didn't save — you don't have access to this plan's checklist.";
+    return null;
+  }
 
   async function toggleItem(item: PlanItemRow) {
     if (item.orphaned) return;
@@ -83,10 +120,12 @@ export function PlanChecklist({
             : i,
         ),
       );
-      const { error } = await supabase.from("plan_items").update(patch).eq("id", item.id);
-      if (error) {
+      const err = await saveTick(item.id, patch);
+      if (err) {
         setLocalItems((prev) => prev.map((i) => (i.id === item.id ? item : i)));
-        toast(error.message, "error");
+        toast(err, "error");
+      } else {
+        scheduleRefresh();
       }
       return;
     }
@@ -112,11 +151,13 @@ export function PlanChecklist({
       ),
     );
 
-    const { error } = await supabase.from("plan_items").update(patch).eq("id", item.id);
-    if (error) {
+    const err = await saveTick(item.id, patch);
+    if (err) {
       // Roll the tick back so the UI never shows a state the DB rejected.
       setLocalItems((prev) => prev.map((i) => (i.id === item.id ? item : i)));
-      toast(error.message, "error");
+      toast(err, "error");
+    } else {
+      scheduleRefresh();
     }
   }
 
@@ -176,7 +217,8 @@ export function PlanChecklist({
             </div>
 
             {isNewBuild && (
-              <div className="mt-3 flex gap-1.5">
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-xs text-muted-foreground">Ticking:</span>
                 <button
                   type="button"
                   onClick={() => setPhase("rough")}
@@ -199,6 +241,11 @@ export function PlanChecklist({
                 >
                   Fit Off
                 </button>
+                <span className={`ml-1 text-xs ${phase === "rough" ? "text-amber-500" : "text-primary"}`}>
+                  {phase === "rough"
+                    ? "amber ticks = cable run in, device not fitted yet"
+                    : "green ticks = device on the wall and working"}
+                </span>
               </div>
             )}
 
