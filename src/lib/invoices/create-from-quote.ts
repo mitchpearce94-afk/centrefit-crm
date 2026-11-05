@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAuthedClient } from "@/lib/xero/client";
 import { findOrCreateContact } from "@/lib/xero/contacts";
+import { parseBillTo, resolveBuilderContact } from "@/lib/invoices/bill-to";
 import {
   buildQuoteReferenceLine,
   createXeroInvoice,
@@ -134,7 +135,12 @@ export async function createInvoiceFromAcceptedQuote(
   // cookie client and made every customer-link acceptance fail with "Xero is
   // not connected" while Settings showed connected (Beecroft, 2026-08-04).
   const { client: xero, conn } = await getAuthedClient(supabase);
-  const xeroContactId = await findOrCreateContact(
+  // Who pays comes from the quote (docs/job-lifecycle-CONTEXT.md D2): the
+  // builder's own Xero contact when the quote says builder, else the owner.
+  const billTo = parseBillTo(quote.bill_to_party);
+  const xeroContactId = billTo === "builder"
+    ? (await resolveBuilderContact(supabase, xero, conn.tenant_id, site?.id ?? quote.site_id ?? null)).contactId
+    : await findOrCreateContact(
     supabase,
     xero,
     conn.tenant_id,
@@ -182,6 +188,7 @@ export async function createInvoiceFromAcceptedQuote(
       site_id: site?.id ?? null,
       xero_contact_id: xeroContactId,
       bill_to_name: xeroResult.contactName,
+      bill_to_party: billTo,
       description: headerDescription,
       line_items: lineItems,
       subtotal: xeroResult.subTotal,

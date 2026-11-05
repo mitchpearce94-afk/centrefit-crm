@@ -117,6 +117,9 @@ export default async function DashboardPage({
     readyAged: number;
     readyList: ReadyToInvoiceRow[];
     quotesToChase: number;
+    mandatesAwaiting: number;
+    mandatesOldestDays: number;
+    draftsUnsent: number;
   } | null = null;
 
   if (canSeeAllJobs) {
@@ -126,7 +129,7 @@ export default async function DashboardPage({
       .from("statuses").select("id").eq("name", "Ready to Invoice").maybeSingle();
     const riId = riStatusRow?.id ?? null;
 
-    const [overdueInvRes, awaitingSendRes, readyJobsRes, quotesChaseRes] = await Promise.all([
+    const [overdueInvRes, awaitingSendRes, readyJobsRes, quotesChaseRes, mandatesRes] = await Promise.all([
       supabase
         .from("invoices")
         .select("amount_due, due_date")
@@ -150,7 +153,20 @@ export default async function DashboardPage({
         .select("id", { count: "exact", head: true })
         .eq("status", "sent")
         .lt("sent_at", sevenDaysAgoISO),
+      // Mandates awaiting signature + drafts never sent (docs/job-lifecycle-
+      // CONTEXT.md D4) — the money side of a fitout nobody can see otherwise.
+      supabase
+        .from("recurring_plans")
+        .select("status, created_at, signup_emailed_at")
+        .in("status", ["pending_mandate", "draft"])
+        .is("gc_mandate_id", null),
     ]);
+    const mandateRows = (mandatesRes.data ?? []) as { status: string; created_at: string; signup_emailed_at: string | null }[];
+    const mandatesPending = mandateRows.filter((r) => r.status === "pending_mandate");
+    const mandatesOldestDays = mandatesPending.reduce((max, r) => {
+      const d = Math.floor((startOfToday - new Date(r.signup_emailed_at ?? r.created_at).getTime()) / 86_400_000);
+      return d > max ? d : max;
+    }, 0);
 
     const ov = (overdueInvRes.data ?? []) as { amount_due: number | null; due_date: string | null }[];
     const overdueInvTotal = ov.reduce((s, r) => s + (Number(r.amount_due) || 0), 0);
@@ -178,6 +194,9 @@ export default async function DashboardPage({
       readyAged: readyList.filter((r) => r.days >= 1).length,
       readyList: readyList.slice(0, 8),
       quotesToChase: quotesChaseRes.count ?? 0,
+      mandatesAwaiting: mandatesPending.length,
+      mandatesOldestDays,
+      draftsUnsent: mandateRows.length - mandatesPending.length,
     };
   }
 
@@ -343,6 +362,15 @@ export default async function DashboardPage({
                 warning={acct.quotesToChase > 0}
                 sublabel=">7 days, no response"
                 href="/quoting"
+              />
+              <StatCard
+                label="Mandates awaiting signature"
+                value={String(acct.mandatesAwaiting)}
+                warning={acct.mandatesAwaiting > 0}
+                sublabel={acct.mandatesAwaiting > 0
+                  ? `oldest ${acct.mandatesOldestDays}d${acct.draftsUnsent > 0 ? ` · ${acct.draftsUnsent} draft${acct.draftsUnsent === 1 ? "" : "s"} not sent` : ""}`
+                  : acct.draftsUnsent > 0 ? `${acct.draftsUnsent} draft${acct.draftsUnsent === 1 ? "" : "s"} not sent` : "all signed"}
+                href="/invoices/recurring?tab=pending"
               />
             </div>
 

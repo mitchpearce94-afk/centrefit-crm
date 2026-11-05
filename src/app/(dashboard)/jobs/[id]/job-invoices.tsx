@@ -135,6 +135,10 @@ interface Props {
   stockItems?: StockItemForInvoice[];
   /** Admins see the Variance Invoice button on already-quoted jobs. */
   isAdmin: boolean;
+  /** Builder on the job's site (null = none on file) — enables "Bill the builder". */
+  siteBuilderName?: string | null;
+  /** Default for the tick box: the linked quote's bill_to_party. */
+  defaultBillTo?: "owner" | "builder";
 }
 
 const STATUS_COLOURS: Record<Invoice["status"], string> = {
@@ -294,6 +298,7 @@ export function JobInvoices({
   jobId, customerId, siteId, jobDescription, jobNumber,
   invoices, linkedQuotes, checklistItems, workEntries,
   productPrices, billingSettings, receipts, stockItems = [], isAdmin,
+  siteBuilderName = null, defaultBillTo = "owner",
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -304,6 +309,9 @@ export function JobInvoices({
   // When on, collapse the individual material rows into one "Parts Used" line
   // so the customer doesn't see every SKU (Sue, 2026-06-02).
   const [combineParts, setCombineParts] = useState(false);
+  // Who pays this invoice (docs/job-lifecycle-CONTEXT.md D2). Only offered
+  // when the site has a builder; the owner stays on the recurring plans.
+  const [billBuilder, setBillBuilder] = useState(defaultBillTo === "builder" && !!siteBuilderName);
   const [showPartSearch, setShowPartSearch] = useState(false);
 
   const hasLinkedQuote = linkedQuotes.length > 0;
@@ -437,6 +445,7 @@ export function JobInvoices({
           siteId: siteId ?? undefined,
           description: description.trim() || undefined,
           lineItems,
+          billTo: billBuilder ? "builder" : "owner",
         }),
       });
       const data = await res.json();
@@ -732,6 +741,20 @@ export function JobInvoices({
                     className="rounded border-border"
                   />
                   Combine materials into a single &quot;Parts Used&quot; line on the invoice (labour &amp; call-out stay separate)
+                </label>
+
+                <label
+                  className={`mb-2 flex items-center gap-2 text-[11px] ${siteBuilderName ? "text-muted-foreground cursor-pointer" : "text-muted-foreground/60 cursor-not-allowed"}`}
+                  title={siteBuilderName ? undefined : "Add a builder on the site's Builder tab to bill them"}
+                >
+                  <input
+                    type="checkbox"
+                    checked={billBuilder}
+                    disabled={!siteBuilderName}
+                    onChange={(e) => setBillBuilder(e.target.checked)}
+                    className="rounded border-border"
+                  />
+                  Builder invoice{siteBuilderName ? ` — bill ${siteBuilderName} instead of the owner` : " — no builder on this site"}
                 </label>
 
                 <div className="space-y-1.5">

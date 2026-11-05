@@ -17,6 +17,8 @@ import { ScopeEditor } from "./scope-editor";
 import { UpdatesPanel } from "./updates-panel";
 import { PlanChecklist } from "./plan-checklist";
 import { WrapUpDay } from "./wrap-up-day";
+import { JobProgressPanel, JobProgressStrip } from "./job-progress";
+import type { JobProgress } from "@/lib/jobs/progress";
 import { KeyInfoPanel, type KeyInfoPhoto, type IfobUser } from "@/app/(dashboard)/sites/[id]/key-info-panel";
 import type { AssetType, SiteAsset } from "@/lib/types";
 
@@ -67,6 +69,7 @@ export function JobTabs({
   canWaiveGate = false,
   viewerId,
   viewerInitials,
+  progress,
 }: {
   jobId: string;
   job: any;
@@ -100,6 +103,8 @@ export function JobTabs({
   canWaiveGate?: boolean;
   viewerId: string | null;
   viewerInitials: string;
+  /** Go-to-whoa lifecycle (docs/job-lifecycle-CONTEXT.md D5). */
+  progress?: JobProgress | null;
 }) {
   const [activeTab, setActiveTab] = useState("job");
   const showNbn = isNbnJob || nbnSteps.length > 0;
@@ -109,6 +114,9 @@ export function JobTabs({
 
   const tabs = [
     { id: "job", label: "Job" },
+    ...(progress && progress.total > 0
+      ? [{ id: "progress", label: "Progress", count: progress.total - progress.done }]
+      : []),
     { id: "notes", label: "Notes", count: userNotes.length },
     { id: "time", label: "Time", count: timeEntries.length },
     { id: "staff", label: "Staff", count: job.job_staff?.length ?? 0 },
@@ -170,6 +178,12 @@ export function JobTabs({
 
       {/* Tab content */}
       <div className="pt-5">
+        {activeTab === "job" && progress && (
+          <JobProgressStrip progress={progress} onOpen={() => setActiveTab("progress")} />
+        )}
+        {activeTab === "progress" && progress && (
+          <JobProgressPanel jobId={jobId} progress={progress} onOpenTab={setActiveTab} />
+        )}
         {activeTab === "job" && (
           <JobOverview
             jobId={jobId}
@@ -280,6 +294,8 @@ export function JobTabs({
             receipts={receipts}
             stockItems={stockItems}
             isAdmin={isAdmin}
+            siteBuilderName={job.site?.builder_name ?? null}
+            defaultBillTo={linkedQuotes.some((q: any) => q.bill_to_party === "builder") ? "builder" : "owner"}
           />
         )}
       </div>

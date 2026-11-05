@@ -214,6 +214,90 @@ export async function findOrCreateContact(
   return contactId;
 }
 
+export interface BuilderSiteForXero {
+  id: string;
+  name: string;
+  builder_name: string;
+  builder_abn?: string | null;
+  builder_contact_name?: string | null;
+  builder_email?: string | null;
+  builder_phone?: string | null;
+  builder_address?: string | null;
+  builder_xero_contact_id?: string | null;
+}
+
+/**
+ * Builder invoices (docs/job-lifecycle-CONTEXT.md D3). The builder is its own
+ * Xero contact, found or created by the builder's name, and cached on
+ * `customer_sites.builder_xero_contact_id`. The site's OWNER mapping
+ * (customer_sites.xero_contact_id) is never read or written here, so a
+ * builder invoice can't bleed into the recurring / owner billing path.
+ */
+export async function findOrCreateBuilderContact(
+  supabase: SupabaseClient,
+  xero: XeroClient,
+  tenantId: string,
+  site: BuilderSiteForXero,
+): Promise<string> {
+  if (site.builder_xero_contact_id) return site.builder_xero_contact_id;
+
+  const displayName = site.builder_name.trim().slice(0, 255);
+  if (!displayName) throw new Error("The site has no builder name on file");
+  const safeName = displayName.replace(/"/g, '\\"');
+  let contactId: string | undefined;
+
+  try {
+    const search = await xero.accountingApi.getContacts(tenantId, undefined, `Name=="${safeName}"`);
+    contactId = search.body.contacts?.[0]?.contactID;
+  } catch {
+    // Search failure shouldn't block creation.
+  }
+
+  if (!contactId) {
+    const target = normaliseContactName(displayName);
+    try {
+      const search = await xero.accountingApi.getContacts(
+        tenantId,
+        undefined,
+        `Name.Contains("${safeName.slice(0, 60)}")`,
+        undefined,
+        undefined,
+        1,
+      );
+      contactId = (search.body.contacts ?? []).find(
+        (c) => c.name && normaliseContactName(c.name) === target,
+      )?.contactID;
+    } catch {
+      // best-effort
+    }
+  }
+
+  if (!contactId) {
+    const payload: Record<string, unknown> = { name: displayName };
+    const email = site.builder_email?.split(",")[0]?.trim();
+    if (email) payload.emailAddress = email;
+    if (site.builder_phone) payload.phones = [{ phoneType: "DEFAULT", phoneNumber: site.builder_phone }];
+    if (site.builder_abn) payload.taxNumber = site.builder_abn;
+    if (site.builder_contact_name) {
+      const [first, ...rest] = site.builder_contact_name.trim().split(/\s+/);
+      payload.contactPersons = [{ firstName: first, lastName: rest.join(" ") || undefined, emailAddress: email || undefined, includeInEmails: true }];
+    }
+    if (site.builder_address) {
+      payload.addresses = [{ addressType: "POBOX", addressLine1: site.builder_address.slice(0, 500), country: "Australia" }];
+    }
+    const created = await xero.accountingApi.createContacts(tenantId, { contacts: [payload] });
+    contactId = created.body.contacts?.[0]?.contactID;
+    if (!contactId) throw new Error("Xero did not return a ContactID for the builder contact");
+  }
+
+  await supabase
+    .from("customer_sites")
+    .update({ builder_xero_contact_id: contactId })
+    .eq("id", site.id);
+
+  return contactId;
+}
+
 function normaliseContactName(name: string): string {
   return name
     .toLowerCase()

@@ -113,7 +113,7 @@ export default async function InvoiceDetailPage({
           })()}
           {/* Who the invoice is billed to in Xero — visible before anything
               is authorised or emailed (docs/billing-contact-CONTEXT.md D1). */}
-          <BillTo billToName={inv.bill_to_name ?? null} hasXero={!!inv.xero_invoice_id} />
+          <BillTo billToName={inv.bill_to_name ?? null} hasXero={!!inv.xero_invoice_id} party={inv.bill_to_party ?? "owner"} />
         </div>
         <InvoiceActions
           invoiceId={inv.id}

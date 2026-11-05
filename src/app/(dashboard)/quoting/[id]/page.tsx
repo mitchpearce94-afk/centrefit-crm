@@ -59,6 +59,13 @@ export default async function QuoteDetailPage({
   const extras = (extrasResult.data ?? []) as any[];
   const invoices = (invoicesResult.data ?? []) as any[];
   const pricing = quote.pricing_snapshot;
+  // Builder on the quote's site, for the "Builder invoice" tick box
+  // (docs/job-lifecycle-CONTEXT.md D2).
+  let quoteSiteBuilder: string | null = null;
+  if (quote.site_id) {
+    const { data: qSite } = await supabase.from("customer_sites").select("builder_name").eq("id", quote.site_id).maybeSingle();
+    quoteSiteBuilder = qSite?.builder_name ?? null;
+  }
   const statusColour = STATUS_COLOURS[quote.status] ?? "#6b7280";
   const isProgress = quote.quote_type === "progress";
 
@@ -428,6 +435,9 @@ export default async function QuoteDetailPage({
         quoteType={(quote.quote_type as "full" | "progress") || "full"}
         pricing={pricing}
         invoices={invoices}
+        siteId={quote.site_id ?? null}
+        siteBuilderName={quoteSiteBuilder}
+        billTo={quote.bill_to_party === "builder" ? "builder" : "owner"}
       />
 
       <div className="mt-6">

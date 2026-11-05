@@ -32,6 +32,11 @@ interface Props {
     pp2?: { total: number };
   } | null;
   invoices: Invoice[];
+  /** Site id + the builder on the site (null = none on file). */
+  siteId: string | null;
+  siteBuilderName: string | null;
+  /** quotes.bill_to_party — who the PP1/full/PP2 invoices go to. */
+  billTo: "owner" | "builder";
 }
 
 const STATUS_COLOURS: Record<Invoice["status"], string> = {
@@ -52,10 +57,35 @@ function fmt(n: number): string {
   return n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export function QuoteInvoices({ quoteId, quoteStatus, quoteType, pricing, invoices }: Props) {
+export function QuoteInvoices({ quoteId, quoteStatus, quoteType, pricing, invoices, siteId, siteBuilderName, billTo }: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
+  const [party, setParty] = useState<"owner" | "builder">(billTo);
+  const [savingParty, setSavingParty] = useState(false);
+
+  // Who pays (docs/job-lifecycle-CONTEXT.md D2). Saved on the quote so the
+  // automatic PP1 on acceptance and PP2 on Ready to Invoice follow it.
+  async function changeParty(next: "owner" | "builder") {
+    if (next === party) return;
+    setSavingParty(true);
+    try {
+      const res = await fetch(`/api/quotes/${quoteId}/bill-to`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ billTo: next }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "Couldn't change who's billed");
+      setParty(next);
+      toast(next === "builder" ? `Invoices for this quote will bill the builder${siteBuilderName ? ` (${siteBuilderName})` : ""}` : "Invoices for this quote will bill the owner");
+      router.refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Couldn't change who's billed", "error");
+    } finally {
+      setSavingParty(false);
+    }
+  }
 
   const isAccepted = quoteStatus === "accepted";
   const pp1Existing = invoices.find((i) => i.invoice_type === "progress_pp1" && i.status !== "void");
@@ -68,7 +98,7 @@ export function QuoteInvoices({ quoteId, quoteStatus, quoteType, pricing, invoic
       const res = await fetch("/api/invoices/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quoteId, type }),
+        body: JSON.stringify({ quoteId, type, billTo: party }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create invoice");
@@ -253,6 +283,35 @@ export function QuoteInvoices({ quoteId, quoteStatus, quoteType, pricing, invoic
       <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">
         Invoices
       </h2>
+      <div className="mb-3 rounded-lg border border-border bg-card px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Bill to</p>
+            <p className="text-[11px] text-muted-foreground">
+              {party === "builder"
+                ? `Invoices for this quote go to the builder${siteBuilderName ? ` — ${siteBuilderName}` : ""}. The owner stays on the recurring plans.`
+                : "Invoices for this quote go to the site owner."}
+            </p>
+          </div>
+          <label className={`flex items-center gap-2 text-xs ${siteBuilderName ? "cursor-pointer" : "opacity-60 cursor-not-allowed"}`} title={siteBuilderName ? undefined : "Add a builder on the site's Builder tab first"}>
+            <input
+              type="checkbox"
+              checked={party === "builder"}
+              disabled={!siteBuilderName || savingParty}
+              onChange={(e) => changeParty(e.target.checked ? "builder" : "owner")}
+              className="rounded border-border"
+            />
+            Builder invoice
+          </label>
+        </div>
+        {!siteBuilderName && (
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            No builder on this site.{" "}
+            {siteId ? <Link href={`/sites/${siteId}`} className="text-primary hover:underline">Add one on the site</Link> : "Link a site to the quote first"}{" "}
+            if the builder is paying.
+          </p>
+        )}
+      </div>
       <div className="space-y-2">
         {slots}
         {extra.map((inv) => renderInvoiceCard(inv))}

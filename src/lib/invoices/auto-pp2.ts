@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAuthedClient } from "@/lib/xero/client";
 import { findOrCreateContact } from "@/lib/xero/contacts";
+import { parseBillTo, resolveBuilderContact } from "@/lib/invoices/bill-to";
 import { buildQuoteReferenceLine, createXeroInvoice, type XeroLineItemInput } from "@/lib/xero/invoices";
 
 export interface AutoPP2Result {
@@ -119,7 +120,12 @@ export async function tryCreatePP2ForJob(
       });
 
       const { client: xero, conn } = await getAuthedClient();
-      const xeroContactId = await findOrCreateContact(
+      // PP2 follows the quote's bill-to party, same as PP1 did
+      // (docs/job-lifecycle-CONTEXT.md D2).
+      const billTo = parseBillTo(quote.bill_to_party);
+      const xeroContactId = billTo === "builder"
+        ? (await resolveBuilderContact(supabase, xero, conn.tenant_id, siteRow?.id ?? quote.site_id ?? null)).contactId
+        : await findOrCreateContact(
         supabase,
         xero,
         conn.tenant_id,
@@ -164,6 +170,7 @@ export async function tryCreatePP2ForJob(
           site_id: siteRow?.id ?? null,
           xero_contact_id: xeroContactId,
           bill_to_name: xeroResult.contactName,
+          bill_to_party: billTo,
           description: header,
           line_items: lineItems,
           subtotal: xeroResult.subTotal,

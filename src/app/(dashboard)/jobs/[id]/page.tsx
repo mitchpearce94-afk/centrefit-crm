@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { StatusTransition } from "./status-transition";
 import { StatusBoardControls } from "./status-board-controls";
+import { loadJobProgress } from "@/lib/jobs/progress";
 import { JobTabs, type JobKeyInfo } from "./job-tabs";
 
 export default async function JobDetailPage({
@@ -18,7 +19,7 @@ export default async function JobDetailPage({
       supabase
         .from("jobs")
         .select(
-          "*, customer:customers(id, name), site:customer_sites(id, name, address, suburb, state, postcode, phone, site_contact:customer_contacts!customer_sites_site_contact_id_fkey(id, name, role, phone, mobile, email)), job_contact:customer_contacts!jobs_job_contact_id_fkey(id, name, role, phone, mobile, email), status:statuses(*), category_1:categories!category_1_id(id, name), category_2:categories!category_2_id(id, name), job_staff(id, role, staff:staff(id, display_name, initials, colour, email, phone)), gate_waiver_staff:staff!jobs_procurement_gate_waived_by_fkey(display_name)"
+          "*, customer:customers(id, name), site:customer_sites(id, name, address, suburb, state, postcode, phone, builder_name, site_contact:customer_contacts!customer_sites_site_contact_id_fkey(id, name, role, phone, mobile, email)), job_contact:customer_contacts!jobs_job_contact_id_fkey(id, name, role, phone, mobile, email), status:statuses(*), category_1:categories!category_1_id(id, name), category_2:categories!category_2_id(id, name), job_staff(id, role, staff:staff(id, display_name, initials, colour, email, phone)), gate_waiver_staff:staff!jobs_procurement_gate_waived_by_fkey(display_name)"
         )
         .eq("id", id)
         .single(),
@@ -73,7 +74,7 @@ export default async function JobDetailPage({
         .order("created_at", { ascending: true }),
       supabase
         .from("quotes")
-        .select("id, ref, status, quote_type, pricing_snapshot")
+        .select("id, ref, status, quote_type, pricing_snapshot, bill_to_party")
         .eq("job_id", id),
       supabase
         .from("billing_settings")
@@ -228,6 +229,10 @@ export default async function JobDetailPage({
     planItems = planItemsData ?? [];
   }
 
+  // Go-to-whoa lifecycle (docs/job-lifecycle-CONTEXT.md D5) — read from the
+  // data every render so the Progress tab is never stale.
+  const progress = await loadJobProgress(supabase, id);
+
   return (
     <div>
       {/* ── Compact header ── */}
@@ -310,6 +315,7 @@ export default async function JobDetailPage({
           canWaiveGate={canWaiveGate}
           viewerId={user?.id ?? null}
           viewerInitials={viewerInitials}
+          progress={progress}
         />
       </div>
     </div>

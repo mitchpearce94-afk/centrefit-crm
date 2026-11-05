@@ -19,6 +19,11 @@ import { brisbaneDateISO } from "@/lib/dates";
  * monthly value, flagging any whose chosen first-invoice date has already
  * passed.
  *
+ * 2026-11-05 (docs/job-lifecycle-CONTEXT.md D4): fires its own type,
+ * `recurring_plan.awaiting_signature`, instead of the generic billing.gap,
+ * and ALSO lists DRAFT plans older than the grace window — a draft nobody
+ * sent is just as unsigned as a mandate nobody signed (Sue's drafts).
+ *
  * ALSO auto-chases the customer (Mitchell's call, 2026-07-09): plans whose
  * last signup email is REMINDER_GAP_DAYS old get the mandate email re-sent
  * with a fresh GoCardless link, at most MAX_AUTO_REMINDERS times per plan.
@@ -33,6 +38,7 @@ const MAX_AUTO_REMINDERS = 3;
 
 interface PendingPlan {
   id: string;
+  status: string;
   created_at: string;
   first_invoice_date: string | null;
   gc_billing_request_id: string | null;
@@ -70,47 +76,80 @@ export async function GET(req: NextRequest) {
   const supabase = createServiceRoleClient();
   const cutoff = new Date(Date.now() - GRACE_DAYS * 86_400_000).toISOString();
 
-  const { data, error } = await supabase
-    .from("recurring_plans")
-    .select(`
-      id, created_at, first_invoice_date, gc_billing_request_id,
+  const select = `
+      id, status, created_at, first_invoice_date, gc_billing_request_id,
       signup_emailed_at, last_signup_reminder_at, signup_reminder_count,
       customers(name), customer_sites(name),
       recurring_plan_items(price_inc_gst, frequency, quantity)
-    `)
-    .eq("status", "pending_mandate")
-    .is("gc_mandate_id", null)
-    .lt("created_at", cutoff)
-    .order("created_at", { ascending: true });
+    `;
+  const [{ data, error }, draftsRes] = await Promise.all([
+    supabase
+      .from("recurring_plans")
+      .select(select)
+      .eq("status", "pending_mandate")
+      .is("gc_mandate_id", null)
+      .lt("created_at", cutoff)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("recurring_plans")
+      .select(select)
+      .eq("status", "draft")
+      .lt("created_at", cutoff)
+      .order("created_at", { ascending: true }),
+  ]);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const plans = (data ?? []) as unknown as PendingPlan[];
-  if (plans.length === 0) {
-    return NextResponse.json({ ok: true, pending: 0 });
+  const drafts = (draftsRes.data ?? []) as unknown as PendingPlan[];
+  if (plans.length === 0 && drafts.length === 0) {
+    return NextResponse.json({ ok: true, pending: 0, drafts: 0 });
   }
 
   const todayStr = brisbaneDateISO(new Date());
-  const lines = plans.map((p) => {
+  const whoOf = (p: PendingPlan) => {
     const customer = Array.isArray(p.customers) ? p.customers[0] : p.customers;
     const site = Array.isArray(p.customer_sites) ? p.customer_sites[0] : p.customer_sites;
-    const who = site?.name ?? customer?.name ?? "Unknown";
-    const days = Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86_400_000);
+    return site?.name ?? customer?.name ?? "Unknown";
+  };
+  const lines = plans.map((p) => {
+    const sentAt = p.signup_emailed_at ?? p.created_at;
+    const days = Math.floor((Date.now() - new Date(sentAt).getTime()) / 86_400_000);
     const overdueStart = p.first_invoice_date && p.first_invoice_date < todayStr;
-    return `${who}: $${monthlyValue(p).toFixed(2)}/mo unsigned for ${days}d${
-      overdueStart ? " ⚠ start date passed" : ""
-    }`;
+    const reminders = p.signup_reminder_count ?? 0;
+    return `${whoOf(p)}: $${monthlyValue(p).toFixed(2)}/mo, sent ${days}d ago, ${reminders} reminder${reminders === 1 ? "" : "s"}${
+      reminders >= MAX_AUTO_REMINDERS ? " (auto-chase exhausted — call them)" : ""
+    }${overdueStart ? " ⚠ start date passed" : ""}`;
   });
-  const totalMonthly = plans.reduce((s, p) => s + monthlyValue(p), 0);
+  const draftLines = drafts.map((p) => {
+    const days = Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86_400_000);
+    return `${whoOf(p)}: $${monthlyValue(p).toFixed(2)}/mo, drafted ${days}d ago, signup email never sent`;
+  });
+  const totalMonthly = [...plans, ...drafts].reduce((s, p) => s + monthlyValue(p), 0);
+
+  const titleParts = [
+    plans.length > 0 ? `${plans.length} mandate${plans.length === 1 ? "" : "s"} awaiting signature` : null,
+    drafts.length > 0 ? `${drafts.length} draft${drafts.length === 1 ? "" : "s"} not sent` : null,
+  ].filter(Boolean);
+  const bodyParts = [
+    plans.length > 0 ? `Awaiting signature — ${lines.join(" · ")}.` : null,
+    drafts.length > 0 ? `Drafts never sent — ${draftLines.join(" · ")}.` : null,
+    "Chase the signup, send the draft, or cancel the plan.",
+  ].filter(Boolean);
 
   await enqueueNotification({
     supabase,
-    typeCode: "billing.gap",
+    typeCode: "recurring_plan.awaiting_signature",
     refType: "recurring_plan",
-    refId: plans[0].id,
+    refId: (plans[0] ?? drafts[0]).id,
     audience: { allActive: true },
-    title: `${plans.length} unsigned mandate${plans.length === 1 ? "" : "s"} — $${totalMonthly.toFixed(2)}/mo not being collected`,
-    body: `We're paying for these services with no invoice behind them. ${lines.join(" · ")}. Chase the signup or cancel the plan.`,
-    href: "/invoices/recurring?tab=pending",
+    title: `${titleParts.join(", ")} — $${totalMonthly.toFixed(2)}/mo not being collected`,
+    body: bodyParts.join(" "),
+    href: plans.length > 0 ? "/invoices/recurring?tab=pending" : "/invoices/recurring?tab=draft",
+    emailDetails: [
+      ...plans.map((p) => ({ label: "Awaiting signature", value: lines[plans.indexOf(p)] })),
+      ...drafts.map((p) => ({ label: "Draft not sent", value: draftLines[drafts.indexOf(p)] })),
+    ],
+    ctaLabel: "Open recurring plans",
   });
 
   // ── Auto-chase the customer ──
@@ -140,6 +179,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     pending: plans.length,
+    drafts: drafts.length,
     monthlyAtStake: Math.round(totalMonthly * 100) / 100,
     remindersSent: reminders.filter((r) => r.ok).length,
     reminders,

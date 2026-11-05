@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthedClient } from "@/lib/xero/client";
 import { findOrCreateContact } from "@/lib/xero/contacts";
+import { parseBillTo, resolveBuilderContact, type BillToParty } from "@/lib/invoices/bill-to";
 import {
   buildQuoteReferenceLine,
   createXeroInvoice,
@@ -20,6 +21,12 @@ interface CreateBody {
   description?: string;
   lineItems?: XeroLineItemInput[];
   dueDate?: string; // ISO
+  /**
+   * Who pays (docs/job-lifecycle-CONTEXT.md D2). Defaults to the quote's
+   * bill_to_party for quote-linked invoices, owner otherwise. "builder"
+   * needs a builder on the site's Builder tab.
+   */
+  billTo?: BillToParty;
 }
 
 export async function POST(req: NextRequest) {
@@ -49,6 +56,7 @@ export async function POST(req: NextRequest) {
   // the quote so the description can lead with "Site: ..." even when the
   // quote pre-dates the customer_sites split (legacy text fields).
   let siteHeader: string | undefined;
+  let billTo: BillToParty = parseBillTo(body.billTo);
 
   if (body.type === "adhoc") {
     if (!body.customerId) {
@@ -116,6 +124,8 @@ export async function POST(req: NextRequest) {
     siteId = quote.site_id ?? null;
     jobId = jobId ?? quote.job_id ?? null;
     reference = quote.ref;
+    // The quote decides who pays unless the caller said otherwise.
+    billTo = parseBillTo(body.billTo, parseBillTo(quote.bill_to_party));
     if (quote.site_name || quote.site_address) {
       siteHeader = `Site: ${[quote.site_name, quote.site_address].filter(Boolean).join(" — ")}`;
     } else if (quote.site_id) {
@@ -246,21 +256,26 @@ export async function POST(req: NextRequest) {
   let xeroContactId: string | null = null;
   try {
     const { client: xero, conn } = await getAuthedClient();
-    xeroContactId = await findOrCreateContact(
-      supabase,
-      xero,
-      conn.tenant_id,
-      {
-        id: customer.id,
-        name: customer.name,
-        xero_contact_id: customer.xero_contact_id,
-        email: primary?.email ?? null,
-        billing_email: customer.billing_email ?? null,
-        phone: primary?.phone ?? null,
-        abn: customer.abn ?? null,
-      },
-      siteRow,
-    );
+    if (billTo === "builder") {
+      // Builder pays: the builder's own Xero contact, never the owner's.
+      xeroContactId = (await resolveBuilderContact(supabase, xero, conn.tenant_id, siteRow?.id ?? siteId)).contactId;
+    } else {
+      xeroContactId = await findOrCreateContact(
+        supabase,
+        xero,
+        conn.tenant_id,
+        {
+          id: customer.id,
+          name: customer.name,
+          xero_contact_id: customer.xero_contact_id,
+          email: primary?.email ?? null,
+          billing_email: customer.billing_email ?? null,
+          phone: primary?.phone ?? null,
+          abn: customer.abn ?? null,
+        },
+        siteRow,
+      );
+    }
 
     xeroResult = await createXeroInvoice({
       xero,
@@ -291,6 +306,7 @@ export async function POST(req: NextRequest) {
       site_id: siteRow?.id ?? null,
       xero_contact_id: xeroContactId,
       bill_to_name: xeroResult.contactName,
+      bill_to_party: billTo,
       description: headerDescription,
       line_items: lineItems,
       subtotal: xeroResult.subTotal,

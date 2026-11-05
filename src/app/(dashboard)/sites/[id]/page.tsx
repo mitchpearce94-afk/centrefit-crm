@@ -244,6 +244,16 @@ export default async function SiteDetailPage({
                 }
               : null
           }
+          builder={{
+            name: site.builder_name ?? null,
+            abn: site.builder_abn ?? null,
+            contactName: site.builder_contact_name ?? null,
+            email: site.builder_email ?? null,
+            phone: site.builder_phone ?? null,
+            address: site.builder_address ?? null,
+            notes: site.builder_notes ?? null,
+            xeroContactId: site.builder_xero_contact_id ?? null,
+          }}
           activePlanCount={activePlanCount}
           contacts={contacts}
           jobs={jobs as any}
