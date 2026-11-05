@@ -103,3 +103,17 @@ accepted builder, else the site's only builder, else a picker.
 
 **Not in scope:** different prices per builder (that is two quotes), and the
 owner receiving a link alongside builders on the same send.
+
+## Addendum — Sue's checklist (5 Nov 2026, 13:26 email "Checklists")
+
+**D12 — The Progress tab carries Sue's process list.** Groups now: Design &
+quote · Money (invoice sent/paid, recurring invoices created, mandate sent,
+mandate signed) · Stock (all stock ordered, then one row per supplier on the
+job's procurement — Complete / Partial / not received — read from the
+Procurement tab so nobody opens the site) · Alarm panel (B2B Sentinel,
+Solution Link, panel built, GX Soft onboarding, MyAlarm panel + customer +
+onboarding, panel tested — hand ticks) · NBN (paperwork back, crew found
+cabling/NTD — hand ticks; NBN connected from the NBN steps) · Security
+(paperwork sent, signed — from the sign requests; onboarding complete — hand
+tick) · Before install · Install · Handover & close. "Partial" is a third
+state for supplier rows (Sue's double checkbox).
