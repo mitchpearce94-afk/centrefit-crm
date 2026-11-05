@@ -7,6 +7,7 @@ import { NotificationsBell } from "@/components/notifications-bell";
 import { SuggestionButton } from "@/components/suggestion-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { IdleLogout } from "@/components/idle-logout";
+import { DeployWatcher } from "@/components/deploy-watcher";
 import { ViewportHeightFix } from "@/components/viewport-height-fix";
 import { ToastProvider } from "@/components/ui/toast";
 import { loadPermissionsFor, hasPermission, PERMISSION_FLAGS } from "@/lib/auth/permissions";
@@ -61,6 +62,7 @@ export default async function DashboardLayout({
   return (
     <ToastProvider>
       <IdleLogout />
+      <DeployWatcher />
       <ViewportHeightFix />
       {/* App-shell scroll lock: the document must NEVER scroll inside the
           dashboard — all scrolling happens in <main> (and inner panels).

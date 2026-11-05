@@ -86,10 +86,13 @@ export function WrapUpDay({
       (i) => i.installed_at && new Date(i.installed_at).getTime() >= dayStartMs,
     );
     const tagOf = (label: string) => label.split(" · ")[0];
-    const summarise = (items: any[]) => {
-      const tags = items.map((i) => tagOf(i.label));
-      return tags.length <= 12 ? tags.join(", ") : `${tags.slice(0, 12).join(", ")} +${tags.length - 12} more`;
-    };
+    // Every device, no "+N more" cap (Mitchell 2026-11-05): the write-up has to
+    // say exactly what was done. Sorted so CAM1…CAM26 read in order.
+    const summarise = (items: PlanTick[]) =>
+      items
+        .map((i) => tagOf(i.label))
+        .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
+        .join(", ");
     if (roughedToday.length > 0) {
       lines.push(`Roughed in ${roughedToday.length} cable run${roughedToday.length === 1 ? "" : "s"}: ${summarise(roughedToday)}`);
     }

@@ -93,6 +93,9 @@ const PUBLIC_PATH_PREFIXES = [
   // Mark's Cortex CRM API — bearer-token auth (CORTEX_API_TOKEN) inside the
   // routes, no session path. docs/cortex-api.md.
   "/api/cortex/",
+  // Build id for the DeployWatcher (components/deploy-watcher.tsx) — a login
+  // redirect here would hand the client HTML instead of JSON.
+  "/api/version",
   "/quote-response",
   "/proposal/",
   "/recurring-thanks",
