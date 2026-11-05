@@ -123,8 +123,13 @@ export async function tryCreatePP2ForJob(
       // PP2 follows the quote's bill-to party, same as PP1 did
       // (docs/job-lifecycle-CONTEXT.md D2).
       const billTo = parseBillTo(quote.bill_to_party);
+      let builderId: string | null = null;
       const xeroContactId = billTo === "builder"
-        ? (await resolveBuilderContact(supabase, xero, conn.tenant_id, siteRow?.id ?? quote.site_id ?? null)).contactId
+        ? await (async () => {
+            const r = await resolveBuilderContact(supabase, xero, conn.tenant_id, { siteId: siteRow?.id ?? quote.site_id ?? null, builderId: quote.accepted_builder_id ?? null });
+            builderId = r.builder.id;
+            return r.contactId;
+          })()
         : await findOrCreateContact(
         supabase,
         xero,
@@ -171,6 +176,7 @@ export async function tryCreatePP2ForJob(
           xero_contact_id: xeroContactId,
           bill_to_name: xeroResult.contactName,
           bill_to_party: billTo,
+          site_builder_id: builderId,
           description: header,
           line_items: lineItems,
           subtotal: xeroResult.subTotal,

@@ -9,6 +9,7 @@ import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.serv
 import { emailHeader, emailFooter, emailLayout } from "@/lib/emails/brand";
 import { FROM_QUOTES, REPLY_TO_SALES } from "@/lib/emails/from-addresses";
 import { logDocumentActivity } from "@/lib/activity/log";
+import { newResponseToken } from "@/lib/quotes/tender";
 import crypto from "crypto";
 
 function formatAud(n: number): string {
@@ -37,9 +38,13 @@ function getResend() {
 
 
 export async function POST(req: NextRequest) {
-  const { quoteId, email, proposal } = await req.json();
-  if (!quoteId || !email) {
-    return NextResponse.json({ error: "Missing quoteId or email" }, { status: 400 });
+  const { quoteId, email, proposal, builderIds } = await req.json();
+  // Two shapes (docs/job-lifecycle-CONTEXT.md D10): `email` sends the
+  // owner/customer link; `builderIds` (site_builders ids) sends one link per
+  // builder tendering, each addressed to that builder.
+  const toBuilders: string[] = Array.isArray(builderIds) ? builderIds.map(String).filter(Boolean) : [];
+  if (!quoteId || (!email && toBuilders.length === 0)) {
+    return NextResponse.json({ error: "Missing quoteId or recipients" }, { status: 400 });
   }
   const asProposal = proposal === true;
 
@@ -84,31 +89,93 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Quote check failed — fix or override in the wizard: ${blocking.map((b) => b.message).join(" · ")}` }, { status: 409 });
   }
 
-  // Reuse the existing response_token if the quote has one — re-sends keep
-  // the same link so any email already in a recipient's inbox still works.
-  // Only mint a fresh token on the very first send.
-  const responseToken: string =
-    (quote.response_token as string | null) ?? crypto.randomBytes(32).toString("hex");
+  // ── Who gets a link ──
+  // Each recipient has its own token: the quote's response_token for the
+  // owner/customer; a quote_builders row per builder. Re-sends reuse tokens
+  // so any email already in an inbox still works.
+  type Recipient = { kind: "owner" | "builder"; name: string; email: string; token: string; greetingName: string | null; quoteBuilderId?: string };
+  const recipients: Recipient[] = [];
+  const svcForTender = (await import("@/lib/supabase/service")).createServiceRoleClient();
+
+  if (toBuilders.length > 0) {
+    if (!quote.site_id) {
+      return NextResponse.json({ error: "Link a site to the quote before sending to builders" }, { status: 400 });
+    }
+    const { data: builderRows } = await svcForTender
+      .from("site_builders")
+      .select("id, name, email, contact_name")
+      .eq("site_id", quote.site_id)
+      .in("id", toBuilders);
+    const missingEmail = (builderRows ?? []).filter((b) => !b.email?.trim());
+    if (missingEmail.length) {
+      return NextResponse.json({ error: `No email on file for ${missingEmail.map((b) => b.name).join(", ")} — add it on the site's Builder tab` }, { status: 400 });
+    }
+    if ((builderRows ?? []).length !== toBuilders.length) {
+      return NextResponse.json({ error: "One of those builders isn't on this quote's site" }, { status: 400 });
+    }
+    for (const b of builderRows ?? []) {
+      const { data: existing } = await svcForTender
+        .from("quote_builders")
+        .select("id, response_token, status")
+        .eq("quote_id", quoteId)
+        .eq("site_builder_id", b.id)
+        .maybeSingle();
+      if (existing?.status === "accepted" || existing?.status === "declined" || existing?.status === "lost") continue;
+      const token = existing?.response_token ?? newResponseToken();
+      const { data: row } = await svcForTender
+        .from("quote_builders")
+        .upsert(
+          { quote_id: quoteId, site_builder_id: b.id, response_token: token, status: "sent", sent_at: new Date().toISOString(), sent_to_email: b.email },
+          { onConflict: "quote_id,site_builder_id" },
+        )
+        .select("id")
+        .single();
+      recipients.push({ kind: "builder", name: b.name, email: b.email as string, token, greetingName: b.contact_name?.trim().split(/\s+/)[0] ?? null, quoteBuilderId: row?.id });
+    }
+    if (recipients.length === 0) {
+      return NextResponse.json({ error: "Every builder on this tender has already responded" }, { status: 409 });
+    }
+  }
+
+  const ownerToken: string | null = email
+    ? ((quote.response_token as string | null) ?? crypto.randomBytes(32).toString("hex"))
+    : (quote.response_token as string | null);
+  if (email) {
+    const contacts = quote.customer?.customer_contacts ?? [];
+    const matchedContact =
+      contacts.find((c: { email?: string | null; is_primary?: boolean }) => c.email && email && c.email.toLowerCase() === email.toLowerCase()) ??
+      contacts.find((c: { is_primary?: boolean }) => c.is_primary) ??
+      contacts[0] ??
+      null;
+    recipients.push({
+      kind: "owner",
+      name: quote.customer?.name || quote.client_name,
+      email,
+      token: ownerToken as string,
+      greetingName: matchedContact?.name?.trim().split(/\s+/)[0] ?? null,
+    });
+  }
+
   await supabase.from("quotes").update({
     status: "sent",
     site_name: quote.site_name,
     site_address: quote.site_address,
     sent_at: new Date().toISOString(),
-    sent_to_email: email,
-    response_token: responseToken,
+    sent_to_email: recipients.map((r) => r.email).join(", "),
+    response_token: ownerToken,
     // Remembered so the by-token PDF endpoint serves the same document the
     // customer received in the email.
     sent_as_proposal: asProposal,
+    ...(toBuilders.length > 0 ? { bill_to_party: "builder" } : {}),
   }).eq("id", quoteId);
 
-  const clientName = quote.customer?.name || quote.client_name;
   const isProgress = quote.quote_type === "progress";
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${req.nextUrl.origin}`;
   // Proposals lead with the interactive web proposal (PDF attached as the
   // printable fallback); plain quotes keep the classic response page.
-  const respondUrl = asProposal
-    ? `${baseUrl}/proposal/${responseToken}`
-    : `${baseUrl}/quote-response/${responseToken}`;
+  const respondUrlFor = (token: string) => asProposal
+    ? `${baseUrl}/proposal/${token}`
+    : `${baseUrl}/quote-response/${token}`;
 
   // Build the full scope so we can attach a PDF mirroring what the customer
   // would see in the in-CRM preview.
@@ -159,41 +226,27 @@ export async function POST(req: NextRequest) {
     await autoTransitionJobStatusServer(quote.job_id, "quote_sent", supabase);
   }
 
-  // Generate PDF attachment
-  let pdfBuffer: Buffer;
-  try {
+  // Generate the PDF per recipient — a builder's copy is addressed to the
+  // builder, the owner's to the customer.
+  async function pdfFor(name: string): Promise<Buffer> {
     const quoteForPdf: QuoteForPdf = {
       ref: quote.ref,
       createdAt: quote.created_at,
-      clientName,
+      clientName: name,
       siteName: quote.site_name,
       siteAddress: quote.site_address,
       isProgress,
-      pricing,
+      pricing: pricing as NonNullable<typeof pricing>,
     };
-    pdfBuffer = asProposal
+    return asProposal
       ? await generateProposalPdfBuffer(quoteForPdf, scope)
       : await generateQuotePdfBuffer(quoteForPdf, scope);
-  } catch (err) {
-    return NextResponse.json(
-      { error: `Failed to generate PDF: ${err instanceof Error ? err.message : String(err)}` },
-      { status: 500 },
-    );
   }
 
   // ── Build summary email body ─────────────────────────────────────────────
   // The body is intentionally short. The full quote — totals, scope of works,
   // by-others, standards, etc — lives in the attached PDF AND on the
   // quote-response page they click through to.
-
-  const contacts = quote.customer?.customer_contacts ?? [];
-  const matchedContact =
-    contacts.find((c: { email?: string | null; is_primary?: boolean }) => c.email && email && c.email.toLowerCase() === email.toLowerCase()) ??
-    contacts.find((c: { is_primary?: boolean }) => c.is_primary) ??
-    contacts[0] ??
-    null;
-  const contactFirstName = matchedContact?.name?.trim().split(/\s+/)[0] ?? null;
-  const greeting = contactFirstName ? `Hi ${contactFirstName},` : "Hi,";
 
   const subtitleParts = [quote.site_name, quote.site_address].filter(Boolean);
 
@@ -206,7 +259,7 @@ export async function POST(req: NextRequest) {
     : "Please review the attached PDF, then click below to view it online and accept or decline.";
   const buttonLabel = asProposal ? "View Your Proposal" : "View Quote &amp; Respond Online";
 
-  const emailHtml = emailLayout(`
+  const emailHtmlFor = (greeting: string, respondUrl: string) => emailLayout(`
   ${emailHeader({ rightLabel: docLabel, rightValue: quote.ref })}
 
   <!-- Body -->
@@ -240,50 +293,57 @@ export async function POST(req: NextRequest) {
 `);
 
   try {
-    // Accept comma-separated email lists from the UI — Sue asked for multi-
-    // recipient billing for sites that have a separate AP / GM email split.
-    const recipients = email
-      .split(",")
-      .map((s: string) => s.trim())
-      .filter((s: string) => s.length > 0);
-    if (recipients.length === 0) {
-      return NextResponse.json({ error: "No valid recipient email address" }, { status: 400 });
-    }
     const filename = asProposal ? `Centrefit-Proposal-${quote.ref}.pdf` : `Centrefit-Quote-${quote.ref}.pdf`;
-    const { error: sendError } = await getResend().emails.send({
-      from: FROM_QUOTES,
-      replyTo: REPLY_TO_SALES,
-      to: recipients,
-      subject: `${docLabel} ${quote.ref} — ${clientName}${quote.site_name ? ` — ${quote.site_name}` : ''}`,
-      html: emailHtml,
-      // Custom headers — picked up by /api/resend/webhook to link
-      // delivered / opened / bounced events to this quote on the activity
-      // timeline (workstream E).
-      headers: {
-        "X-Cf-Doc-Type": "quote",
-        "X-Cf-Doc-Id": quote.id,
-      },
-      attachments: [
-        {
-          filename,
-          content: pdfBuffer.toString("base64"),
+    const sentTo: string[] = [];
+    for (const r of recipients) {
+      // Accept comma-separated email lists from the UI — Sue asked for multi-
+      // recipient billing for sites that have a separate AP / GM email split.
+      const toList = r.email.split(",").map((x) => x.trim()).filter((x) => x.length > 0);
+      if (toList.length === 0) continue;
+      let pdfBuffer: Buffer;
+      try {
+        pdfBuffer = await pdfFor(r.name);
+      } catch (err) {
+        return NextResponse.json(
+          { error: `Failed to generate PDF: ${err instanceof Error ? err.message : String(err)}` },
+          { status: 500 },
+        );
+      }
+      const greeting = r.greetingName ? `Hi ${r.greetingName},` : "Hi,";
+      const { error: sendError } = await getResend().emails.send({
+        from: FROM_QUOTES,
+        replyTo: REPLY_TO_SALES,
+        to: toList,
+        subject: `${docLabel} ${quote.ref} — ${r.name}${quote.site_name ? ` — ${quote.site_name}` : ''}`,
+        html: emailHtmlFor(greeting, respondUrlFor(r.token)),
+        // Custom headers — picked up by /api/resend/webhook to link
+        // delivered / opened / bounced events to this quote on the activity
+        // timeline (workstream E).
+        headers: {
+          "X-Cf-Doc-Type": "quote",
+          "X-Cf-Doc-Id": quote.id,
         },
-      ],
-    });
-
-    if (sendError) {
-      return NextResponse.json({ error: sendError.message }, { status: 500 });
+        attachments: [
+          {
+            filename,
+            content: pdfBuffer.toString("base64"),
+          },
+        ],
+      });
+      if (sendError) {
+        return NextResponse.json({ error: `${r.name}: ${sendError.message}` }, { status: 500 });
+      }
+      sentTo.push(r.email);
+      await logDocumentActivity({
+        supabase,
+        documentType: "quote",
+        documentId: quote.id,
+        eventType: "quote.sent",
+        metadata: { to: r.email, ref: quote.ref, ...(r.kind === "builder" ? { builder: r.name } : {}) },
+      });
     }
 
-    await logDocumentActivity({
-      supabase,
-      documentType: "quote",
-      documentId: quote.id,
-      eventType: "quote.sent",
-      metadata: { to: email, ref: quote.ref },
-    });
-
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, sentTo });
   } catch (err: unknown) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : String(err) },

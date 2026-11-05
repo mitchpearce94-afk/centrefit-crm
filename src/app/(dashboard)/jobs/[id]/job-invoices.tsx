@@ -135,10 +135,12 @@ interface Props {
   stockItems?: StockItemForInvoice[];
   /** Admins see the Variance Invoice button on already-quoted jobs. */
   isAdmin: boolean;
-  /** Builder on the job's site (null = none on file) — enables "Bill the builder". */
-  siteBuilderName?: string | null;
+  /** Builders on the job's site — enables "Builder invoice" (D9). */
+  siteBuilders?: { id: string; name: string }[];
   /** Default for the tick box: the linked quote's bill_to_party. */
   defaultBillTo?: "owner" | "builder";
+  /** The builder who accepted the linked quote, if any (D11). */
+  defaultBuilderId?: string | null;
 }
 
 const STATUS_COLOURS: Record<Invoice["status"], string> = {
@@ -298,7 +300,7 @@ export function JobInvoices({
   jobId, customerId, siteId, jobDescription, jobNumber,
   invoices, linkedQuotes, checklistItems, workEntries,
   productPrices, billingSettings, receipts, stockItems = [], isAdmin,
-  siteBuilderName = null, defaultBillTo = "owner",
+  siteBuilders = [], defaultBillTo = "owner", defaultBuilderId = null,
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -311,7 +313,9 @@ export function JobInvoices({
   const [combineParts, setCombineParts] = useState(false);
   // Who pays this invoice (docs/job-lifecycle-CONTEXT.md D2). Only offered
   // when the site has a builder; the owner stays on the recurring plans.
-  const [billBuilder, setBillBuilder] = useState(defaultBillTo === "builder" && !!siteBuilderName);
+  const hasBuilders = siteBuilders.length > 0;
+  const [billBuilder, setBillBuilder] = useState(defaultBillTo === "builder" && hasBuilders);
+  const [builderId, setBuilderId] = useState<string>(defaultBuilderId ?? siteBuilders[0]?.id ?? "");
   const [showPartSearch, setShowPartSearch] = useState(false);
 
   const hasLinkedQuote = linkedQuotes.length > 0;
@@ -446,6 +450,7 @@ export function JobInvoices({
           description: description.trim() || undefined,
           lineItems,
           billTo: billBuilder ? "builder" : "owner",
+          builderId: billBuilder ? builderId || undefined : undefined,
         }),
       });
       const data = await res.json();
@@ -743,19 +748,33 @@ export function JobInvoices({
                   Combine materials into a single &quot;Parts Used&quot; line on the invoice (labour &amp; call-out stay separate)
                 </label>
 
-                <label
-                  className={`mb-2 flex items-center gap-2 text-[11px] ${siteBuilderName ? "text-muted-foreground cursor-pointer" : "text-muted-foreground/60 cursor-not-allowed"}`}
-                  title={siteBuilderName ? undefined : "Add a builder on the site's Builder tab to bill them"}
-                >
-                  <input
-                    type="checkbox"
-                    checked={billBuilder}
-                    disabled={!siteBuilderName}
-                    onChange={(e) => setBillBuilder(e.target.checked)}
-                    className="rounded border-border"
-                  />
-                  Builder invoice{siteBuilderName ? ` — bill ${siteBuilderName} instead of the owner` : " — no builder on this site"}
-                </label>
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <label
+                    className={`flex items-center gap-2 text-[11px] ${hasBuilders ? "text-muted-foreground cursor-pointer" : "text-muted-foreground/60 cursor-not-allowed"}`}
+                    title={hasBuilders ? undefined : "Add a builder on the site's Builder tab to bill them"}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={billBuilder}
+                      disabled={!hasBuilders}
+                      onChange={(e) => setBillBuilder(e.target.checked)}
+                      className="rounded border-border"
+                    />
+                    Builder invoice{hasBuilders ? " — bill the builder instead of the owner" : " — no builder on this site"}
+                  </label>
+                  {billBuilder && siteBuilders.length > 1 && (
+                    <select
+                      value={builderId}
+                      onChange={(e) => setBuilderId(e.target.value)}
+                      className="rounded-md border border-border bg-input px-2 py-1 text-[11px] text-foreground focus:border-primary focus:outline-none"
+                    >
+                      {siteBuilders.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </select>
+                  )}
+                  {billBuilder && siteBuilders.length === 1 && (
+                    <span className="text-[11px] text-muted-foreground">→ {siteBuilders[0].name}</span>
+                  )}
+                </div>
 
                 <div className="space-y-1.5">
                   {rows.map((r) => (

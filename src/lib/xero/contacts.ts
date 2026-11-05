@@ -214,35 +214,34 @@ export async function findOrCreateContact(
   return contactId;
 }
 
-export interface BuilderSiteForXero {
+export interface SiteBuilderForXero {
   id: string;
   name: string;
-  builder_name: string;
-  builder_abn?: string | null;
-  builder_contact_name?: string | null;
-  builder_email?: string | null;
-  builder_phone?: string | null;
-  builder_address?: string | null;
-  builder_xero_contact_id?: string | null;
+  abn?: string | null;
+  contact_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  xero_contact_id?: string | null;
 }
 
 /**
- * Builder invoices (docs/job-lifecycle-CONTEXT.md D3). The builder is its own
- * Xero contact, found or created by the builder's name, and cached on
- * `customer_sites.builder_xero_contact_id`. The site's OWNER mapping
- * (customer_sites.xero_contact_id) is never read or written here, so a
- * builder invoice can't bleed into the recurring / owner billing path.
+ * Builder invoices (docs/job-lifecycle-CONTEXT.md D3/D9). Each builder on a
+ * site (`site_builders` row) is its own Xero contact, found or created by
+ * the builder's name and cached on `site_builders.xero_contact_id`. The
+ * site's OWNER mapping (customer_sites.xero_contact_id) is never read or
+ * written here, so a builder invoice can't bleed into recurring billing.
  */
 export async function findOrCreateBuilderContact(
   supabase: SupabaseClient,
   xero: XeroClient,
   tenantId: string,
-  site: BuilderSiteForXero,
+  builder: SiteBuilderForXero,
 ): Promise<string> {
-  if (site.builder_xero_contact_id) return site.builder_xero_contact_id;
+  if (builder.xero_contact_id) return builder.xero_contact_id;
 
-  const displayName = site.builder_name.trim().slice(0, 255);
-  if (!displayName) throw new Error("The site has no builder name on file");
+  const displayName = builder.name.trim().slice(0, 255);
+  if (!displayName) throw new Error("The builder has no name on file");
   const safeName = displayName.replace(/"/g, '\\"');
   let contactId: string | undefined;
 
@@ -274,16 +273,16 @@ export async function findOrCreateBuilderContact(
 
   if (!contactId) {
     const payload: Record<string, unknown> = { name: displayName };
-    const email = site.builder_email?.split(",")[0]?.trim();
+    const email = builder.email?.split(",")[0]?.trim();
     if (email) payload.emailAddress = email;
-    if (site.builder_phone) payload.phones = [{ phoneType: "DEFAULT", phoneNumber: site.builder_phone }];
-    if (site.builder_abn) payload.taxNumber = site.builder_abn;
-    if (site.builder_contact_name) {
-      const [first, ...rest] = site.builder_contact_name.trim().split(/\s+/);
+    if (builder.phone) payload.phones = [{ phoneType: "DEFAULT", phoneNumber: builder.phone }];
+    if (builder.abn) payload.taxNumber = builder.abn;
+    if (builder.contact_name) {
+      const [first, ...rest] = builder.contact_name.trim().split(/\s+/);
       payload.contactPersons = [{ firstName: first, lastName: rest.join(" ") || undefined, emailAddress: email || undefined, includeInEmails: true }];
     }
-    if (site.builder_address) {
-      payload.addresses = [{ addressType: "POBOX", addressLine1: site.builder_address.slice(0, 500), country: "Australia" }];
+    if (builder.address) {
+      payload.addresses = [{ addressType: "POBOX", addressLine1: builder.address.slice(0, 500), country: "Australia" }];
     }
     const created = await xero.accountingApi.createContacts(tenantId, { contacts: [payload] });
     contactId = created.body.contacts?.[0]?.contactID;
@@ -291,9 +290,9 @@ export async function findOrCreateBuilderContact(
   }
 
   await supabase
-    .from("customer_sites")
-    .update({ builder_xero_contact_id: contactId })
-    .eq("id", site.id);
+    .from("site_builders")
+    .update({ xero_contact_id: contactId })
+    .eq("id", builder.id);
 
   return contactId;
 }

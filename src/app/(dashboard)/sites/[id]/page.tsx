@@ -166,6 +166,13 @@ export default async function SiteDetailPage({
   ]);
 
   const contacts = (contactsResult.data ?? []) as CustomerContact[];
+  // Builders tendering / paying for this site (docs/job-lifecycle-CONTEXT.md D9).
+  const { data: siteBuildersData } = await supabase
+    .from("site_builders")
+    .select("id, name, abn, contact_name, email, phone, address, notes, xero_contact_id")
+    .eq("site_id", id)
+    .order("created_at");
+  const siteBuilders = siteBuildersData ?? [];
   const ownerContact = ownerContactResult.data as
     | { id: string; name: string | null; email: string | null; phone: string | null }
     | null;
@@ -244,16 +251,17 @@ export default async function SiteDetailPage({
                 }
               : null
           }
-          builder={{
-            name: site.builder_name ?? null,
-            abn: site.builder_abn ?? null,
-            contactName: site.builder_contact_name ?? null,
-            email: site.builder_email ?? null,
-            phone: site.builder_phone ?? null,
-            address: site.builder_address ?? null,
-            notes: site.builder_notes ?? null,
-            xeroContactId: site.builder_xero_contact_id ?? null,
-          }}
+          builders={siteBuilders.map((b) => ({
+            id: b.id,
+            name: b.name,
+            abn: b.abn ?? null,
+            contactName: b.contact_name ?? null,
+            email: b.email ?? null,
+            phone: b.phone ?? null,
+            address: b.address ?? null,
+            notes: b.notes ?? null,
+            xeroContactId: b.xero_contact_id ?? null,
+          }))}
           activePlanCount={activePlanCount}
           contacts={contacts}
           jobs={jobs as any}

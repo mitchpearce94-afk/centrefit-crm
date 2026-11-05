@@ -125,6 +125,60 @@ export async function GET(req: NextRequest) {
     results.push({ id: quote.id, ref: quote.ref, ok: true, to: recipientEmail });
   }
 
+  // ── Builders on a tender (docs/job-lifecycle-CONTEXT.md D10) ──
+  // Same 7-day rule, per builder link, so each builder is chased on their
+  // own clock and the quote row's followup stamp isn't shared between them.
+  const { data: dueBuilders } = await supabase
+    .from("quote_builders")
+    .select("id, response_token, sent_at, sent_to_email, followup_count, quote:quotes(id, ref, status, site_name), builder:site_builders(name, contact_name)")
+    .eq("status", "sent")
+    .lte("sent_at", cutoff)
+    .is("followup_sent_at", null)
+    .limit(50);
+  for (const row of dueBuilders ?? []) {
+    const quote = (Array.isArray(row.quote) ? row.quote[0] : row.quote) as { id: string; ref: string; status: string; site_name: string | null } | null;
+    const builder = (Array.isArray(row.builder) ? row.builder[0] : row.builder) as { name: string; contact_name: string | null } | null;
+    if (!quote || quote.status !== "sent" || !row.response_token || !row.sent_to_email) continue;
+    const sentAtMs = row.sent_at ? new Date(row.sent_at).getTime() : Date.now();
+    const daysSinceSent = Math.max(1, Math.floor((Date.now() - sentAtMs) / 86_400_000));
+    const sendResult = await sendQuoteFollowupEmail({
+      to: row.sent_to_email,
+      quoteRef: quote.ref,
+      quoteId: quote.id,
+      customerName: builder?.name ?? "—",
+      contactFirstName: builder?.contact_name?.trim().split(/\s+/)[0] ?? null,
+      siteName: quote.site_name ?? null,
+      respondUrl: `${baseUrl}/quote-response/${row.response_token}`,
+      daysSinceSent,
+    });
+    if (!sendResult.ok) {
+      results.push({ id: quote.id, ref: quote.ref, ok: false, error: sendResult.error, to: row.sent_to_email });
+      continue;
+    }
+    await supabase
+      .from("quote_builders")
+      .update({ followup_sent_at: new Date().toISOString(), followup_count: (row.followup_count ?? 0) + 1 })
+      .eq("id", row.id);
+    await logDocumentActivity({
+      supabase,
+      documentType: "quote",
+      documentId: quote.id,
+      eventType: "quote.followup_sent",
+      metadata: { to: row.sent_to_email, days_since_sent: daysSinceSent, builder: builder?.name ?? null },
+    });
+    await enqueueNotification({
+      supabase,
+      typeCode: "quote.followup_sent",
+      refType: "quote",
+      refId: quote.id,
+      audience: { allActive: true },
+      title: `Auto follow-up sent to ${builder?.name ?? "builder"} for ${quote.ref}`,
+      body: `${daysSinceSent} days after the tender went out`,
+      href: `/quoting/${quote.id}`,
+    });
+    results.push({ id: quote.id, ref: quote.ref, ok: true, to: row.sent_to_email });
+  }
+
   const okCount = results.filter((r) => r.ok).length;
   const failCount = results.length - okCount;
   return NextResponse.json({

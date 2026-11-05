@@ -70,6 +70,7 @@ export function JobTabs({
   viewerId,
   viewerInitials,
   progress,
+  siteBuilders = [],
 }: {
   jobId: string;
   job: any;
@@ -105,6 +106,8 @@ export function JobTabs({
   viewerInitials: string;
   /** Go-to-whoa lifecycle (docs/job-lifecycle-CONTEXT.md D5). */
   progress?: JobProgress | null;
+  /** Builders on the job's site (docs/job-lifecycle-CONTEXT.md D9). */
+  siteBuilders?: { id: string; name: string }[];
 }) {
   const [activeTab, setActiveTab] = useState("job");
   const showNbn = isNbnJob || nbnSteps.length > 0;
@@ -294,8 +297,9 @@ export function JobTabs({
             receipts={receipts}
             stockItems={stockItems}
             isAdmin={isAdmin}
-            siteBuilderName={job.site?.builder_name ?? null}
+            siteBuilders={siteBuilders}
             defaultBillTo={linkedQuotes.some((q: any) => q.bill_to_party === "builder") ? "builder" : "owner"}
+            defaultBuilderId={linkedQuotes.find((q: any) => q.accepted_builder_id)?.accepted_builder_id ?? null}
           />
         )}
       </div>

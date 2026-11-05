@@ -28,17 +28,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const svc = createServiceRoleClient();
   const { data: quote } = await svc
     .from("quotes")
-    .select("id, site_id, site:customer_sites(builder_name)")
+    .select("id, site_id")
     .eq("id", quoteId)
     .maybeSingle();
   if (!quote) return NextResponse.json({ error: "Quote not found" }, { status: 404 });
 
   if (billTo === "builder") {
-    const site = Array.isArray(quote.site) ? quote.site[0] : quote.site;
     if (!quote.site_id) {
       return NextResponse.json({ error: "This quote has no site — link a site before billing a builder" }, { status: 400 });
     }
-    if (!site?.builder_name) {
+    const { count } = await svc.from("site_builders").select("id", { count: "exact", head: true }).eq("site_id", quote.site_id);
+    if ((count ?? 0) === 0) {
       return NextResponse.json({ error: "The site has no builder on file — add one on the site's Builder tab first" }, { status: 400 });
     }
   }

@@ -27,6 +27,8 @@ interface CreateBody {
    * needs a builder on the site's Builder tab.
    */
   billTo?: BillToParty;
+  /** site_builders id when billing a builder on a site with more than one. */
+  builderId?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -57,6 +59,7 @@ export async function POST(req: NextRequest) {
   // quote pre-dates the customer_sites split (legacy text fields).
   let siteHeader: string | undefined;
   let billTo: BillToParty = parseBillTo(body.billTo);
+  let builderId: string | null = body.builderId ?? null;
 
   if (body.type === "adhoc") {
     if (!body.customerId) {
@@ -126,6 +129,8 @@ export async function POST(req: NextRequest) {
     reference = quote.ref;
     // The quote decides who pays unless the caller said otherwise.
     billTo = parseBillTo(body.billTo, parseBillTo(quote.bill_to_party));
+    // A tendered quote is billed to the builder who accepted it (D11).
+    builderId = builderId ?? quote.accepted_builder_id ?? null;
     if (quote.site_name || quote.site_address) {
       siteHeader = `Site: ${[quote.site_name, quote.site_address].filter(Boolean).join(" — ")}`;
     } else if (quote.site_id) {
@@ -258,7 +263,9 @@ export async function POST(req: NextRequest) {
     const { client: xero, conn } = await getAuthedClient();
     if (billTo === "builder") {
       // Builder pays: the builder's own Xero contact, never the owner's.
-      xeroContactId = (await resolveBuilderContact(supabase, xero, conn.tenant_id, siteRow?.id ?? siteId)).contactId;
+      const r = await resolveBuilderContact(supabase, xero, conn.tenant_id, { siteId: siteRow?.id ?? siteId, builderId });
+      xeroContactId = r.contactId;
+      builderId = r.builder.id;
     } else {
       xeroContactId = await findOrCreateContact(
         supabase,
@@ -307,6 +314,7 @@ export async function POST(req: NextRequest) {
       xero_contact_id: xeroContactId,
       bill_to_name: xeroResult.contactName,
       bill_to_party: billTo,
+      site_builder_id: billTo === "builder" ? builderId : null,
       description: headerDescription,
       line_items: lineItems,
       subtotal: xeroResult.subTotal,

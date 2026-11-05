@@ -107,16 +107,6 @@ export interface CustomerSite {
   // Xero billing-entity override: when set, invoices bill to this contact name
   // instead of the site name (Bravofit accounts-team requirement, 2026-07-04).
   invoice_name: string | null;
-  // Builder beside the owner (docs/job-lifecycle-CONTEXT.md D1): a separate
-  // billing party for "Builder invoice" ticks. Never read by recurring billing.
-  builder_name?: string | null;
-  builder_abn?: string | null;
-  builder_contact_name?: string | null;
-  builder_email?: string | null;
-  builder_phone?: string | null;
-  builder_address?: string | null;
-  builder_xero_contact_id?: string | null;
-  builder_notes?: string | null;
   created_at: string;
   updated_at: string;
 }

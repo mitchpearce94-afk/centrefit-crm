@@ -19,7 +19,7 @@ export default async function JobDetailPage({
       supabase
         .from("jobs")
         .select(
-          "*, customer:customers(id, name), site:customer_sites(id, name, address, suburb, state, postcode, phone, builder_name, site_contact:customer_contacts!customer_sites_site_contact_id_fkey(id, name, role, phone, mobile, email)), job_contact:customer_contacts!jobs_job_contact_id_fkey(id, name, role, phone, mobile, email), status:statuses(*), category_1:categories!category_1_id(id, name), category_2:categories!category_2_id(id, name), job_staff(id, role, staff:staff(id, display_name, initials, colour, email, phone)), gate_waiver_staff:staff!jobs_procurement_gate_waived_by_fkey(display_name)"
+          "*, customer:customers(id, name), site:customer_sites(id, name, address, suburb, state, postcode, phone, site_contact:customer_contacts!customer_sites_site_contact_id_fkey(id, name, role, phone, mobile, email)), job_contact:customer_contacts!jobs_job_contact_id_fkey(id, name, role, phone, mobile, email), status:statuses(*), category_1:categories!category_1_id(id, name), category_2:categories!category_2_id(id, name), job_staff(id, role, staff:staff(id, display_name, initials, colour, email, phone)), gate_waiver_staff:staff!jobs_procurement_gate_waived_by_fkey(display_name)"
         )
         .eq("id", id)
         .single(),
@@ -74,7 +74,7 @@ export default async function JobDetailPage({
         .order("created_at", { ascending: true }),
       supabase
         .from("quotes")
-        .select("id, ref, status, quote_type, pricing_snapshot, bill_to_party")
+        .select("id, ref, status, quote_type, pricing_snapshot, bill_to_party, accepted_builder_id")
         .eq("job_id", id),
       supabase
         .from("billing_settings")
@@ -232,6 +232,12 @@ export default async function JobDetailPage({
   // Go-to-whoa lifecycle (docs/job-lifecycle-CONTEXT.md D5) — read from the
   // data every render so the Progress tab is never stale.
   const progress = await loadJobProgress(supabase, id);
+  // Builders on the job's site, for the ad-hoc invoice "Builder" tick
+  // (docs/job-lifecycle-CONTEXT.md D9/D11).
+  const { data: siteBuildersData } = job.site_id
+    ? await supabase.from("site_builders").select("id, name").eq("site_id", job.site_id).order("created_at")
+    : { data: [] as { id: string; name: string }[] };
+  const siteBuilders = (siteBuildersData ?? []) as { id: string; name: string }[];
 
   return (
     <div>
@@ -316,6 +322,7 @@ export default async function JobDetailPage({
           viewerId={user?.id ?? null}
           viewerInitials={viewerInitials}
           progress={progress}
+          siteBuilders={siteBuilders}
         />
       </div>
     </div>

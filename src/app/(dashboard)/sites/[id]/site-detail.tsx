@@ -5,7 +5,7 @@ import type { CustomerSite, CustomerContact, SiteAsset, AssetType } from "@/lib/
 import { Tabs } from "@/components/tabs";
 import { SiteEditForm } from "./site-edit-form";
 import { OwnerCard, type OwnerInfo } from "./owner-card";
-import { BuilderCard, type BuilderInfo } from "./builder-card";
+import { BuildersPanel, type BuilderInfo } from "./builders-panel";
 import { SiteContactsList } from "./site-contacts-list";
 import { SiteAssetsList } from "./site-assets-list";
 import { KeyInfoPanel, type KeyInfoPhoto } from "./key-info-panel";
@@ -80,7 +80,7 @@ function StatusPill({ label, colour }: { label: string; colour: string }) {
 export function SiteDetail({
   site,
   owner,
-  builder,
+  builders,
   activePlanCount,
   contacts,
   jobs,
@@ -101,8 +101,8 @@ export function SiteDetail({
 }: {
   site: CustomerSite & { customer: { id: string; name: string } | null };
   owner: OwnerInfo | null;
-  /** Builder beside the owner (docs/job-lifecycle-CONTEXT.md D1). */
-  builder: BuilderInfo;
+  /** Builders beside the owner (docs/job-lifecycle-CONTEXT.md D9). */
+  builders: BuilderInfo[];
   activePlanCount: number;
   contacts: CustomerContact[];
   jobs: Job[];
@@ -126,7 +126,7 @@ export function SiteDetail({
   const tabs = [
     { id: "details", label: "Details" },
     ...(owner ? [{ id: "owner", label: "Owner" }] : []),
-    { id: "builder", label: "Builder", count: builder.name ? 1 : 0 },
+    { id: "builder", label: "Builders", count: builders.length },
     { id: "contacts", label: "Contacts", count: contacts.length },
     { id: "jobs", label: "Jobs", count: jobs.length },
     { id: "quotes", label: "Quotes", count: quotes.length },
@@ -159,8 +159,8 @@ export function SiteDetail({
           )}
 
           {activeTab === "builder" && (
-            <div className="max-w-xl">
-              <BuilderCard siteId={site.id} builder={builder} />
+            <div className="max-w-2xl">
+              <BuildersPanel siteId={site.id} builders={builders} />
             </div>
           )}
 

@@ -73,6 +73,29 @@ export function QuoteResponseView(props: Props) {
     setShowConfirm(null);
   }
 
+  // ── Tender closed — another builder was awarded the job ──────────────────
+  if (quoteStatus === "lost") {
+    return (
+      <div style={pageStyle}>
+        <div style={panelStyle}>
+          <div style={{ ...iconWrap, background: "#f1f5f9" }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+          </div>
+          <h1 style={{ fontSize: "22px", fontWeight: 700, color: "#0f172a", margin: "0 0 8px", textAlign: "center" }}>
+            Quote {quoteRef} has closed
+          </h1>
+          <p style={{ fontSize: "14px", color: "#64748b", lineHeight: 1.6, textAlign: "center", margin: 0 }}>
+            This quotation has been awarded and is no longer open for acceptance. Thank you for considering Centrefit — we would be glad to quote your next project.
+          </p>
+          <div style={{ marginTop: "24px", padding: "16px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0", textAlign: "center" }}>
+            <p style={{ fontSize: "12px", color: "#94a3b8", margin: 0 }}>Centrefit Group Pty Ltd</p>
+            <p style={{ fontSize: "12px", color: "#94a3b8", margin: "2px 0 0" }}>(07) 3188 5115 · admin@centrefit.com.au</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Done state (already accepted/declined) ───────────────────────────────
   if (done) {
     return (

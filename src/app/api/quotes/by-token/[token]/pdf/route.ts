@@ -3,6 +3,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { generateScopeOfWorks, manualScopeDocument } from "@/lib/quote-engine";
 import { generateQuotePdfBuffer, type QuoteForPdf } from "@/lib/quote-pdf";
 import { generateProposalPdfBuffer } from "@/lib/proposal-pdf";
+import { resolveQuoteToken } from "@/lib/quotes/tender";
 
 /**
  * Public PDF endpoint for the customer-facing quote-response page. The
@@ -28,11 +29,9 @@ export async function GET(
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data: quote } = await sb
-    .from("quotes")
-    .select("*, customer:customers(id, name)")
-    .eq("response_token", token)
-    .maybeSingle();
+  const resolved = await resolveQuoteToken<any>(sb, token, "*, customer:customers(id, name)");
+  const quote = resolved?.quote;
+  const tenderBuilder = resolved?.builder ?? null;
 
   if (!quote) {
     return NextResponse.json({ error: "Quote not found" }, { status: 404 });
@@ -101,7 +100,7 @@ export async function GET(
   const quoteForPdf: QuoteForPdf = {
     ref: quote.ref,
     createdAt: quote.created_at,
-    clientName: quote.customer?.name ?? quote.client_name,
+    clientName: tenderBuilder?.name ?? (quote.customer?.name || quote.client_name),
     siteName: quote.site_name,
     siteAddress: quote.site_address,
     isProgress: quote.quote_type === "progress",

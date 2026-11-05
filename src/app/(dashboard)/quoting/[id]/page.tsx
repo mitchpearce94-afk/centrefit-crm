@@ -5,6 +5,7 @@ import Link from "next/link";
 import { DEVICE_TYPES } from "@/lib/quote-engine";
 import { QuoteActions } from "./quote-actions";
 import { QuoteInvoices } from "./quote-invoices";
+import { QuoteBuilders } from "./quote-builders";
 import { SupplierPricing } from "./supplier-pricing";
 import { DocumentActivityTimeline } from "@/components/document-activity-timeline";
 
@@ -59,13 +60,27 @@ export default async function QuoteDetailPage({
   const extras = (extrasResult.data ?? []) as any[];
   const invoices = (invoicesResult.data ?? []) as any[];
   const pricing = quote.pricing_snapshot;
-  // Builder on the quote's site, for the "Builder invoice" tick box
-  // (docs/job-lifecycle-CONTEXT.md D2).
-  let quoteSiteBuilder: string | null = null;
-  if (quote.site_id) {
-    const { data: qSite } = await supabase.from("customer_sites").select("builder_name").eq("id", quote.site_id).maybeSingle();
-    quoteSiteBuilder = qSite?.builder_name ?? null;
-  }
+  // Builders on the quote's site + who this quote was tendered to
+  // (docs/job-lifecycle-CONTEXT.md D9–D11).
+  const [{ data: siteBuildersData }, { data: tenderData }] = await Promise.all([
+    quote.site_id
+      ? supabase.from("site_builders").select("id, name, email").eq("site_id", quote.site_id).order("created_at")
+      : Promise.resolve({ data: [] as { id: string; name: string; email: string | null }[] }),
+    supabase.from("quote_builders").select("site_builder_id, status, sent_at, viewed_at, responded_at, response_token").eq("quote_id", id),
+  ]);
+  const siteBuilders = (siteBuildersData ?? []) as { id: string; name: string; email: string | null }[];
+  const tender = ((tenderData ?? []) as any[]).map((t) => ({
+    siteBuilderId: t.site_builder_id as string,
+    status: t.status as "pending" | "sent" | "accepted" | "declined" | "lost",
+    sentAt: t.sent_at as string | null,
+    viewedAt: t.viewed_at as string | null,
+    respondedAt: t.responded_at as string | null,
+    responseToken: t.response_token as string | null,
+  }));
+  const tenderBuilders = tender
+    .filter((t) => t.status === "pending" || t.status === "sent")
+    .map((t) => siteBuilders.find((b) => b.id === t.siteBuilderId))
+    .filter((b): b is { id: string; name: string; email: string | null } => !!b);
   const statusColour = STATUS_COLOURS[quote.status] ?? "#6b7280";
   const isProgress = quote.quote_type === "progress";
 
@@ -137,6 +152,7 @@ export default async function QuoteDetailPage({
           contactEmail={quote.customer?.customer_contacts?.find((c: any) => c.is_primary)?.email ?? null}
           jobId={quote.job_id ?? null}
           jobs={jobs}
+          tenderBuilders={tenderBuilders}
         />
       </div>
 
@@ -428,6 +444,18 @@ export default async function QuoteDetailPage({
         />
       </div>
 
+      {/* Builders tendering + who pays */}
+      <QuoteBuilders
+        quoteId={quote.id}
+        quoteStatus={quote.status}
+        siteId={quote.site_id ?? null}
+        siteBuilders={siteBuilders}
+        tender={tender}
+        billTo={quote.bill_to_party === "builder" ? "builder" : "owner"}
+        acceptedBuilderId={quote.accepted_builder_id ?? null}
+        appUrl={process.env.NEXT_PUBLIC_APP_URL || "https://crm.centrefit.com.au"}
+      />
+
       {/* Invoices */}
       <QuoteInvoices
         quoteId={quote.id}
@@ -435,8 +463,6 @@ export default async function QuoteDetailPage({
         quoteType={(quote.quote_type as "full" | "progress") || "full"}
         pricing={pricing}
         invoices={invoices}
-        siteId={quote.site_id ?? null}
-        siteBuilderName={quoteSiteBuilder}
         billTo={quote.bill_to_party === "builder" ? "builder" : "owner"}
       />
 

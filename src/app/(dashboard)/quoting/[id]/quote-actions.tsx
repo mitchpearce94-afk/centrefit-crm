@@ -37,6 +37,8 @@ interface Props {
   contactEmail: string | null;
   jobId: string | null;
   jobs?: { id: string; number: string; customer_name: string | null }[];
+  /** Builders ticked on the quote's tender who haven't responded yet (D10). */
+  tenderBuilders?: { id: string; name: string; email: string | null }[];
 }
 
 export function QuoteActions({
@@ -44,7 +46,7 @@ export function QuoteActions({
   quoteType, pricing, deviceCounts, lineItems, createdAt,
   siteInfo, scopeOverrides, productScopeRoles, roleDescriptions,
   quoteMode = "plan", manualScopeText = "", manualOngoingCosts = [],
-  contactEmail, jobId, jobs = [],
+  contactEmail, jobId, jobs = [], tenderBuilders = [],
 }: Props) {
   const router = useRouter();
   const supabase = createClient();
@@ -56,6 +58,8 @@ export function QuoteActions({
   const [sending, setSending] = useState(false);
   const [sendEmail, setSendEmail] = useState(contactEmail ?? "");
   const [sendAsProposal, setSendAsProposal] = useState(false);
+  // Tender: send one addressed copy + link per builder instead of the owner.
+  const [sendTarget, setSendTarget] = useState<"builders" | "customer">(tenderBuilders.length > 0 ? "builders" : "customer");
 
   async function updateStatus(newStatus: string, extra?: Record<string, unknown>) {
     setUpdating(true);
@@ -75,8 +79,13 @@ export function QuoteActions({
   }
 
   async function handleSendToCustomer() {
-    if (!sendEmail.trim()) {
+    const toBuilders = sendTarget === "builders" && tenderBuilders.length > 0;
+    if (!toBuilders && !sendEmail.trim()) {
       toast("Enter a recipient email", "error");
+      return;
+    }
+    if (toBuilders && tenderBuilders.some((b) => !b.email)) {
+      toast(`No email on file for ${tenderBuilders.filter((b) => !b.email).map((b) => b.name).join(", ")} — add it on the site's Builder tab`, "error");
       return;
     }
     setSending(true);
@@ -84,11 +93,15 @@ export function QuoteActions({
       const res = await fetch("/api/quotes/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quoteId, email: sendEmail.trim(), proposal: sendAsProposal }),
+        body: JSON.stringify(
+          toBuilders
+            ? { quoteId, builderIds: tenderBuilders.map((b) => b.id), proposal: sendAsProposal }
+            : { quoteId, email: sendEmail.trim(), proposal: sendAsProposal },
+        ),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send");
-      toast("Quote sent to customer");
+      toast(toBuilders ? `Quote sent to ${tenderBuilders.length} builder${tenderBuilders.length === 1 ? "" : "s"}` : "Quote sent to customer");
       router.refresh();
     } catch (err: any) {
       toast(err.message, "error");
@@ -213,17 +226,44 @@ export function QuoteActions({
         <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !sending && setShowSendModal(false)} />
           <div className="relative w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-2xl">
-            <h3 className="text-base font-semibold">Send Quote to Customer</h3>
+            <h3 className="text-base font-semibold">Send Quote</h3>
             <p className="mt-1 text-xs text-muted-foreground">{quoteRef} — {clientName}</p>
-            <label className="mt-4 block text-xs font-medium text-muted-foreground">Recipient email</label>
-            <input
-              type="email"
-              value={sendEmail}
-              onChange={(e) => setSendEmail(e.target.value)}
-              placeholder="customer@email.com"
-              autoFocus
-              className="mt-1 h-9 w-full rounded-md border border-border bg-input px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
-            />
+            {tenderBuilders.length > 0 && (
+              <>
+                <label className="mt-4 block text-xs font-medium text-muted-foreground">Send to</label>
+                <div className="mt-1 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSendTarget("builders")}
+                    className={`rounded-md border px-3 py-2 text-left transition-colors ${sendTarget === "builders" ? "border-primary bg-primary/10" : "border-border hover:bg-accent"}`}
+                  >
+                    <span className="block text-xs font-medium text-foreground">Builders tendering ({tenderBuilders.length})</span>
+                    <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{tenderBuilders.map((b) => b.name).join(", ")}. Each gets their own copy and link.</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSendTarget("customer")}
+                    className={`rounded-md border px-3 py-2 text-left transition-colors ${sendTarget === "customer" ? "border-primary bg-primary/10" : "border-border hover:bg-accent"}`}
+                  >
+                    <span className="block text-xs font-medium text-foreground">Customer email</span>
+                    <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">The site owner or whoever you type below.</span>
+                  </button>
+                </div>
+              </>
+            )}
+            {sendTarget === "customer" || tenderBuilders.length === 0 ? (
+              <>
+                <label className="mt-4 block text-xs font-medium text-muted-foreground">Recipient email</label>
+                <input
+                  type="email"
+                  value={sendEmail}
+                  onChange={(e) => setSendEmail(e.target.value)}
+                  placeholder="customer@email.com"
+                  autoFocus
+                  className="mt-1 h-9 w-full rounded-md border border-border bg-input px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+                />
+              </>
+            ) : null}
             <label className="mt-4 block text-xs font-medium text-muted-foreground">Attachment</label>
             <div className="mt-1 grid grid-cols-2 gap-2">
               <button

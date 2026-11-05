@@ -138,8 +138,13 @@ export async function createInvoiceFromAcceptedQuote(
   // Who pays comes from the quote (docs/job-lifecycle-CONTEXT.md D2): the
   // builder's own Xero contact when the quote says builder, else the owner.
   const billTo = parseBillTo(quote.bill_to_party);
+  let builderId: string | null = null;
   const xeroContactId = billTo === "builder"
-    ? (await resolveBuilderContact(supabase, xero, conn.tenant_id, site?.id ?? quote.site_id ?? null)).contactId
+    ? await (async () => {
+        const r = await resolveBuilderContact(supabase, xero, conn.tenant_id, { siteId: site?.id ?? quote.site_id ?? null, builderId: quote.accepted_builder_id ?? null });
+        builderId = r.builder.id;
+        return r.contactId;
+      })()
     : await findOrCreateContact(
     supabase,
     xero,
@@ -189,6 +194,7 @@ export async function createInvoiceFromAcceptedQuote(
       xero_contact_id: xeroContactId,
       bill_to_name: xeroResult.contactName,
       bill_to_party: billTo,
+      site_builder_id: builderId,
       description: headerDescription,
       line_items: lineItems,
       subtotal: xeroResult.subTotal,

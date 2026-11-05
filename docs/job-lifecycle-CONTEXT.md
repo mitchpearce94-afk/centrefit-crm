@@ -77,3 +77,29 @@ See migration `20261105090000_builder_billing_mandate_notify_job_progress.sql`,
 `src/app/(dashboard)/sites/[id]/builder-card.tsx`,
 `src/app/api/sites/[id]/builder/route.ts`, `src/app/api/invoices/create`,
 `src/app/api/cron/pending-mandate-watchdog`.
+
+## Addendum — tendering to several builders (locked 2026-11-05, afternoon)
+
+Mitchell: "more than one builder for the quote, for the same site — so we
+don't have to raise multiple quotes." Replaces D1's single builder.
+
+**D9 — A site has a list of builders.** `site_builders` rows (name, ABN,
+contact, email, phone, address, notes, Xero contact). Builder tab on the site
+lists them; add as many as tender. The owner is still never a builder.
+
+**D10 — One quote, several builders, one link each.** `quote_builders` joins a
+quote to the site builders it was tendered to. Sending to builders mints a
+response token per builder; each gets their own email and a PDF addressed to
+them, pointing at their own link. The quote itself goes to `sent` once.
+Viewed / accepted / declined are tracked per builder on the quote page.
+
+**D11 — First to accept wins and is the billed party.** Accepting through a
+builder link sets `quotes.accepted_builder_id` and `bill_to_party = builder`
+atomically; the other builders' rows become `lost` and their links say the
+tender has closed. PP1 (automatic) and PP2 go to the accepted builder's Xero
+contact. A builder declining only closes their own row; the quote is declined
+when every builder has declined. Ad-hoc job invoices ticked "Builder" use the
+accepted builder, else the site's only builder, else a picker.
+
+**Not in scope:** different prices per builder (that is two quotes), and the
+owner receiving a link alongside builders on the same send.

@@ -5,6 +5,7 @@ import { formatAuAddress } from "@/lib/format-address";
 import { logDocumentActivity, shouldLogView } from "@/lib/activity/log";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
 import { ProposalView } from "./proposal-view";
+import { resolveQuoteToken } from "@/lib/quotes/tender";
 
 export const dynamic = "force-dynamic";
 
@@ -37,11 +38,9 @@ export default async function ProposalPage({
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data: quote } = await sb
-    .from("quotes")
-    .select("*, customer:customers(id, name)")
-    .eq("response_token", token)
-    .maybeSingle();
+  const resolved = await resolveQuoteToken<any>(sb, token, "*, customer:customers(id, name)");
+  const quote = resolved?.quote;
+  const tenderBuilder = resolved?.builder ?? null;
 
   if (!quote) {
     return (
@@ -93,7 +92,10 @@ export default async function ProposalPage({
     ? manualScopeDocument(manualScopeText, quote.labour_data?.ongoing_costs)
     : generateScopeOfWorks(bom, products, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions, (quote.device_counts as Record<string, number> | null) ?? undefined);
 
-  const clientName = quote.customer?.name || quote.client_name;
+  const clientName = tenderBuilder?.name ?? (quote.customer?.name || quote.client_name);
+  if (tenderBuilder && !tenderBuilder.status.match(/accepted|declined|lost/)) {
+    await sb.from("quote_builders").update({ viewed_at: new Date().toISOString() }).eq("id", tenderBuilder.id).is("viewed_at", null);
+  }
   const distinctSite =
     quote.site_name && quote.site_name.trim().toLowerCase() !== clientName.trim().toLowerCase()
       ? quote.site_name
@@ -111,7 +113,7 @@ export default async function ProposalPage({
       documentId: quote.id,
       eventType: "quote.viewed",
       actor: "recipient",
-      metadata: { ip, user_agent: hdrs.get("user-agent") ?? null, surface: "proposal" },
+      metadata: { ip, user_agent: hdrs.get("user-agent") ?? null, surface: "proposal", ...(tenderBuilder ? { builder: tenderBuilder.name } : {}) },
     });
     await enqueueNotification({
       supabase: sb,
@@ -130,7 +132,7 @@ export default async function ProposalPage({
       token={token}
       quoteId={quote.id}
       quoteRef={quote.ref}
-      quoteStatus={quote.status}
+      quoteStatus={resolved!.effectiveStatus}
       isProgress={quote.quote_type === "progress"}
       clientName={clientName}
       siteName={distinctSite}
