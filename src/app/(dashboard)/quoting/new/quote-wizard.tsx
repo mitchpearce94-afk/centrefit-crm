@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from "react";
+import { JobPicker } from "@/components/job-picker";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
@@ -1983,14 +1984,7 @@ export function QuoteWizard({
             <label className="block text-xs font-medium text-muted-foreground mb-1">
               Link to Job <span className="text-destructive">*</span>
             </label>
-            <select value={linkedJobId} onChange={(e) => setLinkedJobId(e.target.value)} className={inputClass}>
-              <option value="">Select a job...</option>
-              {jobs.map((j) => (
-                <option key={j.id} value={j.id}>
-                  {j.number}{j.site_name ? ` — ${j.site_name}` : ''}{j.customer_name ? ` (${j.customer_name})` : ''}
-                </option>
-              ))}
-            </select>
+            <JobPicker jobs={jobs} value={linkedJobId} onChange={setLinkedJobId} inputClassName={inputClass} />
             {!linkedJobId && (
               <p className="text-[11px] text-muted-foreground mt-1">
                 Quotes must be attached to a job. Customer and site details come from the job — to change them, edit the job's customer or site directly.

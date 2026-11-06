@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 import { QuoteWizard } from "./quote-wizard";
 
 export default async function NewQuotePage() {
@@ -12,7 +13,8 @@ export default async function NewQuotePage() {
     supabase.from("quote_products").select("*").eq("is_active", true).order("category, name"),
     supabase.from("plan_files").select("*").is("quote_id", null).order("created_at", { ascending: false }),
     supabase.from("billing_settings").select("*").single(),
-    supabase.from("jobs").select("id, number, customer:customers(name), site:customer_sites!site_id(name)").order("number", { ascending: false }).limit(200),
+    // Every job, not the 200 newest — older jobs (e.g. CFA05052 Snap Albion Park) fell off the list and could not be re-quoted.
+    fetchAll(() => supabase.from("jobs").select("id, number, customer:customers(name), site:customer_sites!site_id(name)").order("number", { ascending: false })).then((data) => ({ data })),
     supabase.from("labour_timings").select("code, name, minutes_per").order("sort_order"),
     supabase.from("quote_rule_templates").select("*").eq("is_active", true).order("sort_order"),
     supabase.from("quote_dependency_rules").select("*").eq("is_active", true).order("sort_order"),
