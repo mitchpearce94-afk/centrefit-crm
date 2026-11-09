@@ -41,6 +41,8 @@ import {
   fmtAud,
   type MonitoringFormData,
   type MonitoringPrefill,
+  monitoringTemplate,
+  templateHidesSim,
 } from "@/lib/monitoring-form/spec";
 
 const LOGO_BLUE_PATH = path.join(process.cwd(), "public", "centrefit-logo-blue.png");
@@ -380,7 +382,7 @@ export async function generateMonitoringFormPdfBuffer(input: MonitoringPdfInput)
               {group.warning && !notApplicable ? <Text style={s.warning}>{group.warning}</Text> : null}
 
               {/* SIM supply block sits after Hold Up, matching the paper form order */}
-              {group.key === "holdup" ? (
+              {group.key === "holdup" && !templateHidesSim(monitoringTemplate(prefill.template)) ? (
                 <View style={{ marginTop: 14 }}>
                   <Text style={[s.sectionTitle, { fontSize: 9.5 }]}>Duress Intercom SIM Card</Text>
                   <Text style={s.sectionIntro}>{SIM_SUPPLY_INTRO}</Text>

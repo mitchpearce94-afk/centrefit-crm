@@ -252,7 +252,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     },
     // Template wins over the stored profile — the template IS the standard
     // (Sue, 9 Nov 2026); a re-issue of a PF form re-asserts it.
-    selections: template ? { ...(profile?.selections ?? {}), ...template.selections } : (profile?.selections ?? {}),
+    selections: template
+      ? (({ sim_supply, ...rest }) => (template.hideSections?.includes("sim") ? rest : { sim_supply, ...rest }))({ ...(profile?.selections ?? {}), ...template.selections })
+      : (profile?.selections ?? {}),
     callList: profile?.call_list ?? [],
     ifobUsers: profile?.ifob_users ?? [],
     openingHours: profile?.opening_hours ?? {},

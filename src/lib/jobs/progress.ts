@@ -390,12 +390,17 @@ export async function loadJobProgress(supabase: SupabaseClient, jobId: string): 
       if (sent) return { state: "pending", detail: `Handover sent ${dmy(sent.sent_at)}, not accepted`, href: siteHref };
       return { state: "pending", detail: "Handover not sent", href: siteHref };
     },
+    // PP2 rows: N/A only once a quote exists and it is single-invoice. With no
+    // quote yet they stay pending — the job hasn't decided (Mitchell, 9 Nov 2026,
+    // Brookside showed them crossed out before anyone had quoted).
     final_invoice: () => {
-      if (!hasProgressQuote) return { state: "na", detail: quotes.length ? "Single-invoice quote" : "No progress quote", href: null };
+      if (!quotes.length) return { state: "pending", detail: "No quote yet — applies if the quote is progress-billed", href: "tab:quotes" };
+      if (!hasProgressQuote) return { state: "na", detail: "Single-invoice quote", href: null };
       return invoiceState(pp2Inv, "PP2 generates when the job moves to Ready to Invoice");
     },
     final_paid: () => {
-      if (!hasProgressQuote) return { state: "na", detail: quotes.length ? "Single-invoice quote" : "No progress quote", href: null };
+      if (!quotes.length) return { state: "pending", detail: "No quote yet — applies if the quote is progress-billed", href: "tab:quotes" };
+      if (!hasProgressQuote) return { state: "na", detail: "Single-invoice quote", href: null };
       return paidState(pp2Inv, !!acceptedQuote?.pp2_paid, "PP2");
     },
     complete: () =>

@@ -157,7 +157,13 @@ export interface MonitoringTemplate {
   /** Shown to staff in the send dialog and to the customer at the top of the form. */
   blurb: string;
   /** Pre-set response selections — rendered read-only on the form. */
-  selections: Required<Pick<MonitoringSelections, "late_to_close" | "out_of_hours" | "holdup" | "sim_supply" | "burglar" | "apply_scope" | "vav" | "power_fail" | "battery_fail">>;
+  selections: Required<Pick<MonitoringSelections, "late_to_close" | "out_of_hours" | "holdup" | "burglar" | "apply_scope" | "vav" | "power_fail" | "battery_fail">> & Pick<MonitoringSelections, "sim_supply">;
+  /** Sections the template drops entirely (form, validation, fees and PDF). */
+  hideSections?: ReadonlyArray<"sim">;
+}
+
+export function templateHidesSim(template: MonitoringTemplate | null | undefined): boolean {
+  return Boolean(template?.hideSections?.includes("sim"));
 }
 
 /**
@@ -170,12 +176,13 @@ export const MONITORING_TEMPLATES: Record<MonitoringTemplateKey, MonitoringTempl
     key: "planet_fitness",
     label: "Planet Fitness club",
     blurb:
-      "Alarm responses are pre-set to the Planet Fitness standard (patrol on burglar and hold-up, camera check first, call on power and battery faults, Centrefit SIM). The club only completes the Alarm Response Call List and signs.",
+      "Alarm responses are pre-set to the Planet Fitness standard (patrol on burglar and hold-up, camera check first, call on power and battery faults). The club only completes the Alarm Response Call List and signs.",
+    // No duress-intercom SIM section on PF paperwork (Mitchell, 9 Nov 2026).
+    hideSections: ["sim"],
     selections: {
       late_to_close: "L1",
       out_of_hours: "H2",
       holdup: "P2",
-      sim_supply: "centrefit",
       burglar: "B2",
       apply_scope: "A",
       vav: "C1",

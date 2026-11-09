@@ -27,6 +27,7 @@ import {
   fmtAud,
   isMaskedPin,
   monitoringTemplate,
+  templateHidesSim,
   padCallList,
   padIfobUsers,
   type MonitoringDetails,
@@ -71,6 +72,7 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
   // pre-set pages with one tick instead of scrolling every section.
   const template = monitoringTemplate(prefill.template);
   const locked = Boolean(template);
+  const hideSim = templateHidesSim(template);
   const [ackPreset, setAckPreset] = useState(false);
   const jumpTo = useCallback((key: string) => {
     document.querySelector(`[data-section="${key}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -152,6 +154,7 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
     ];
     for (const g of requiredGroups) {
       if (g.skip247 && details.facility247) continue;
+      if (g.key === "sim_supply" && hideSim) continue;
       if (!selections[g.key]) issues.push(`Please choose an option under “${g.title}”.`);
     }
     if (locked) {
@@ -496,6 +499,7 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
           registerSection={registerSection}
           sectionsViewed={sectionsViewed}
           lockedLabel={template ? `Pre-set · ${template.label}` : null}
+          hideSim={hideSim}
         />
       ))}
 
@@ -618,6 +622,7 @@ function FragmentWithSim({
   registerSection,
   sectionsViewed,
   lockedLabel,
+  hideSim,
 }: {
   group: OptionGroup;
   selections: MonitoringSelections;
@@ -629,6 +634,8 @@ function FragmentWithSim({
   sectionsViewed: Record<string, string>;
   /** Set when a franchise template pre-set this group: only the chosen option shows, read-only. */
   lockedLabel?: string | null;
+  /** Template drops the Duress Intercom SIM section (Planet Fitness). */
+  hideSim?: boolean;
 }) {
   const locked = Boolean(lockedLabel);
   const notApplicable = Boolean(group.optional247 && details.facility247);
@@ -686,7 +693,7 @@ function FragmentWithSim({
   );
 
   // The paper form places the SIM supply block between Hold Up and Burglar.
-  if (group.key !== "holdup") return groupSection;
+  if (group.key !== "holdup" || hideSim) return groupSection;
 
   const simFee = prefill.fees.sim;
   return (
