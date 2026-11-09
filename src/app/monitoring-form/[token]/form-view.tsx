@@ -277,7 +277,7 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
             {template.label} · pre-set form
           </p>
           <h2 style={{ fontSize: 17, fontWeight: 800, color: "#0f172a", margin: "6px 0 6px", letterSpacing: "-0.3px" }}>
-            {requiredSteps.length} things to do, then you&apos;re done.
+            {`${requiredSteps.length} things to do, then you\u2019re done.`}
           </h2>
           <p className="mf-body">{template.blurb} Everything else is already filled in for you to read.</p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 14 }}>
