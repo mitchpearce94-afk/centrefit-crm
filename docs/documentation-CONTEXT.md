@@ -60,6 +60,15 @@ respecting invoice_name, ABN, facility name/address/phone, billing address, emai
   (PINs stored masked — Mitchell approved storage). Re-issue = pre-filled form showing
   current values; the diff is recorded (the paper form's "only complete what changes").
 - CF-use-only zone/area schedule pre-fills from the site's alarm assets where possible.
+- **Franchise templates (Sue, 9 Nov 2026).** Planet Fitness clubs all answer the response
+  pages the same way, so the send dialog has a Form picker (PF sites default to it):
+  `MONITORING_TEMPLATES.planet_fitness` in `lib/monitoring-form/spec.ts` pre-sets L1 / H2 /
+  P2 / Centrefit SIM / B2 / A / C1 / AC2 / BF2. The public form renders those read-only
+  ("Pre-set" badge, only the chosen option shown), opens on the Alarm Response Call List,
+  marks call list + signature "Needed from you", makes iFob users and hours optional, and
+  swaps the scroll-every-section rule for one acknowledgement tick. Template wins over the
+  stored profile on re-issue. PDF badges PRE-SET instead of SELECTED. Change the template
+  values in spec.ts, nowhere else.
 
 ## Generated document 2 — SWMS (Phase C)
 
