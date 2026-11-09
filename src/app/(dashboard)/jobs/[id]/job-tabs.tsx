@@ -185,7 +185,7 @@ export function JobTabs({
           <JobProgressStrip progress={progress} onOpen={() => setActiveTab("progress")} />
         )}
         {activeTab === "progress" && progress && (
-          <JobProgressPanel jobId={jobId} progress={progress} onOpenTab={setActiveTab} />
+          <JobProgressPanel jobId={jobId} progress={progress} onOpenTab={setActiveTab} staffNames={allStaff.map((st) => st.display_name)} />
         )}
         {activeTab === "job" && (
           <JobOverview

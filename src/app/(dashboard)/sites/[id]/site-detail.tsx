@@ -93,6 +93,7 @@ export function SiteDetail({
   documents,
   planFiles,
   signRequests,
+  checklists,
   monitoringProfile,
   staffList,
   viewerId,
@@ -115,6 +116,7 @@ export function SiteDetail({
   documents: SiteDocumentRow[];
   planFiles: SitePlanFileRow[];
   signRequests: SignRequestRow[];
+  checklists?: import("./site-documents-panel").SiteChecklistRow[];
   monitoringProfile: MonitoringProfileSummary | null;
   staffList: import("./swms-generate-modal").SwmsStaffOption[];
   viewerId: string;
@@ -415,6 +417,7 @@ export function SiteDetail({
               documents={documents}
               planFiles={planFiles}
               signRequests={signRequests}
+              checklists={checklists ?? []}
               monitoringProfile={monitoringProfile}
               defaultRecipientName={owner?.contactName ?? null}
               defaultRecipientEmail={owner?.billing_email ?? owner?.contactEmail ?? null}

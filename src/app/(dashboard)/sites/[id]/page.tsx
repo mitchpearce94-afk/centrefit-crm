@@ -68,6 +68,7 @@ export default async function SiteDetailPage({
     monitoringProfileResult,
     staffListResult,
     importJobResult,
+    checklistsResult,
   ] = await Promise.all([
     supabase
       .from("customer_contacts")
@@ -163,6 +164,8 @@ export default async function SiteDetailPage({
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // Site checklists (alarm panel testing) for the Documentation tab card.
+    supabase.from("site_checklists").select("kind, ticks, completed_at, updated_at").eq("site_id", id),
   ]);
 
   const contacts = (contactsResult.data ?? []) as CustomerContact[];
@@ -211,6 +214,7 @@ export default async function SiteDetailPage({
     has_signature: Boolean(s.signature_updated_at),
   }));
   const importJobId = (importJobResult.data as { job_id: string | null } | null)?.job_id ?? null;
+  const checklists = (checklistsResult.data ?? []) as import("./site-documents-panel").SiteChecklistRow[];
 
   const activePlanCount = (plans as { status: string }[]).filter((p) =>
     ["active", "pending_mandate", "paused"].includes(p.status),
@@ -275,6 +279,7 @@ export default async function SiteDetailPage({
           planFiles={planFiles}
           signRequests={signRequests}
           monitoringProfile={monitoringProfile}
+          checklists={checklists}
           staffList={staffList}
           viewerId={user?.id ?? ""}
           isAdmin={isAdmin}

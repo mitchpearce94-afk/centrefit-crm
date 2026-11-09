@@ -1,11 +1,21 @@
 "use client";
 
+import Link from "next/link";
+
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
 import { SwmsGenerateModal, type SwmsJobOption, type SwmsStaffOption, type SwmsPcbuDefaults } from "./swms-generate-modal";
 import { MONITORING_TEMPLATES, suggestMonitoringTemplate, type MonitoringTemplateKey } from "@/lib/monitoring-form/spec";
+import { SITE_CHECKLISTS, siteChecklistHref, siteChecklistProgress, type SiteChecklistKind, type SiteChecklistTicks } from "@/lib/site-checklists";
+
+export interface SiteChecklistRow {
+  kind: string;
+  ticks: SiteChecklistTicks | null;
+  completed_at: string | null;
+  updated_at: string;
+}
 import { HandoverControls, type HandoverData } from "./handover-controls";
 
 /**
@@ -106,6 +116,7 @@ function canUseAsBasePlan(doc: SiteDocumentRow): boolean {
 export function SiteDocumentsPanel({
   siteId,
   siteName,
+  checklists = [],
   documents,
   planFiles,
   signRequests,
@@ -127,6 +138,7 @@ export function SiteDocumentsPanel({
   defaultRecipientName: string | null;
   defaultRecipientEmail: string | null;
   siteName?: string | null;
+  checklists?: SiteChecklistRow[];
   swmsJobs: SwmsJobOption[];
   staffList: SwmsStaffOption[];
   viewerId: string;
@@ -136,6 +148,41 @@ export function SiteDocumentsPanel({
 }) {
   return (
     <div className="space-y-6">
+      {/* Checklists you can work through on the site (Mitchell, 9 Nov 2026) — the
+          job's Progress tab reads these, e.g. "Alarm panel tested". */}
+      <section>
+        <div className="mb-2">
+          <h2 className="text-sm font-semibold">Checklists</h2>
+          <p className="text-[11px] text-muted-foreground">Tick lists for this site. The job&apos;s Progress tab reads them.</p>
+        </div>
+        <div className="overflow-hidden rounded-lg border border-border">
+          {(Object.keys(SITE_CHECKLISTS) as SiteChecklistKind[]).map((kind) => {
+            const t = SITE_CHECKLISTS[kind];
+            const row = checklists.find((c) => c.kind === kind) ?? null;
+            const { done, total } = siteChecklistProgress(kind, row?.ticks ?? null);
+            const complete = done === total;
+            return (
+              <Link
+                key={kind}
+                href={siteChecklistHref(siteId, kind)}
+                className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 last:border-0 hover:bg-accent/40 transition-colors"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{t.title}</p>
+                  <p className="truncate text-[11px] text-muted-foreground">{t.blurb}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <span className={`text-xs font-medium tabular-nums ${complete ? "text-success" : done > 0 ? "text-amber-500" : "text-muted-foreground"}`}>
+                    {complete ? "Complete" : `${done}/${total}`}
+                  </span>
+                  <span className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground">Open</span>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+
       {CATEGORIES.map((cat) => (
         <CategorySection
           key={cat.key}

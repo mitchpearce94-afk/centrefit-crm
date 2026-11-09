@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
-import type { JobProgress, ProgressStep, StepGroup } from "@/lib/jobs/progress";
+import { GROUP_ORDER, type JobProgress, type ProgressStep } from "@/lib/jobs/progress";
 
 /**
  * Go-to-whoa checklist for a job (docs/job-lifecycle-CONTEXT.md D5–D7).
@@ -13,22 +13,44 @@ import type { JobProgress, ProgressStep, StepGroup } from "@/lib/jobs/progress";
  * anyone can tick a step by hand or mark it N/A.
  */
 
-const GROUP_ORDER: StepGroup[] = ["Design & quote", "Money", "Stock", "Alarm panel", "NBN", "Security", "Before install", "Install", "Handover & close"];
-
 export function JobProgressPanel({
   jobId,
   progress,
   onOpenTab,
+  staffNames = [],
 }: {
   jobId: string;
   progress: JobProgress;
   onOpenTab: (tabId: string) => void;
+  /** Staff display names for the responsible-person picker. */
+  staffNames?: string[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const [noteFor, setNoteFor] = useState<{ key: string; state: "done" | "na" } | null>(null);
   const [note, setNote] = useState("");
+  const [ownerFor, setOwnerFor] = useState<string | null>(null);
+
+  async function setOwner(key: string, owner: string, scope: "job" | "default") {
+    setBusy(key);
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/progress`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "owner", stepKey: key, owner, scope }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "Couldn't change the owner");
+      setOwnerFor(null);
+      toast(owner ? (scope === "default" ? `${owner} now owns this step on every job` : `${owner} owns this step on this job`) : "Owner reset", "success");
+      router.refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Couldn't change the owner", "error");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function mark(key: string, state: "done" | "na" | "clear", noteText?: string) {
     setBusy(key);
@@ -61,7 +83,7 @@ export function JobProgressPanel({
             Job progress — {progress.set === "fitout" ? "fitout" : "service job"}
           </h2>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Steps marked ● are read straight from the CRM (documents, quotes, invoices, plans). Tick the rest by hand, or mark anything N/A.
+            In the order a job runs. Steps marked ● are read straight from the CRM (documents, quotes, invoices, plans); tick the rest by hand, or mark anything N/A. Click a name to change who&apos;s responsible.
           </p>
         </div>
         <span className="text-xs font-medium text-muted-foreground shrink-0 tabular-nums">
@@ -97,6 +119,10 @@ export function JobProgressPanel({
                     setNote={setNote}
                     onNoteSave={() => noteFor && mark(noteFor.key, noteFor.state, note)}
                     onNoteCancel={() => { setNoteFor(null); setNote(""); }}
+                    ownerOpen={ownerFor === s.key}
+                    onOwnerOpen={() => setOwnerFor(ownerFor === s.key ? null : s.key)}
+                    onOwnerSave={(owner, scope) => setOwner(s.key, owner, scope)}
+                    staffNames={staffNames}
                   />
                 ))}
               </div>
@@ -109,7 +135,7 @@ export function JobProgressPanel({
 }
 
 function StepRow({
-  step, busy, onOpenTab, onTick, onNa, onUndo, noteOpen, note, setNote, onNoteSave, onNoteCancel,
+  step, busy, onOpenTab, onTick, onNa, onUndo, noteOpen, note, setNote, onNoteSave, onNoteCancel, ownerOpen, onOwnerOpen, onOwnerSave, staffNames,
 }: {
   step: ProgressStep;
   busy: boolean;
@@ -122,9 +148,13 @@ function StepRow({
   setNote: (v: string) => void;
   onNoteSave: () => void;
   onNoteCancel: () => void;
+  ownerOpen: boolean;
+  onOwnerOpen: () => void;
+  onOwnerSave: (owner: string, scope: "job" | "default") => void;
+  staffNames: string[];
 }) {
   const isTab = step.href?.startsWith("tab:");
-  const openLabel = isTab ? `${tabLabel(step.href!.slice(4))} tab` : "Open";
+  const openLabel = isTab ? `${tabLabel(step.href!.slice(4))} tab` : step.key === "alarm_tested" ? "Open checklist" : "Open";
   return (
     <div className={`border-b border-border last:border-0 px-4 py-2.5 ${step.state === "done" ? "bg-success/5" : step.state === "partial" ? "bg-amber-500/5" : step.state === "na" ? "opacity-60" : "bg-card"}`}>
       <div className="flex gap-3">
@@ -139,7 +169,16 @@ function StepRow({
             </span>
             {step.state === "partial" && <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-500">Partial</span>}
             {step.by && <span className="text-[11px] font-semibold text-success">{step.state === "na" ? "N/A by" : "Ticked by"} {step.by}</span>}
+            <button
+              type="button"
+              onClick={onOwnerOpen}
+              title={step.ownerSource === "job" ? "Set for this job — click to change" : step.ownerSource === "global" ? "Default for every job — click to change" : "Usual owner — click to change"}
+              className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${step.ownerSource === "job" ? "border-primary/50 bg-primary/10 text-primary" : "border-border bg-muted/40 text-muted-foreground hover:text-foreground hover:border-primary/40"}`}
+            >
+              {step.owner ?? "Who?"}{step.ownerSource === "job" ? " · this job" : ""}
+            </button>
           </div>
+          {ownerOpen && <OwnerEditor current={step.owner} staffNames={staffNames} busy={busy} onSave={onOwnerSave} onCancel={onOwnerOpen} />}
           <p className="text-xs text-muted-foreground mt-0.5">
             {step.detail ?? (step.state === "pending" ? step.hint : "")}
           </p>
@@ -188,6 +227,32 @@ function StepRow({
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Pick who's responsible: a staff name or anything typed; for this job or as the new default. */
+function OwnerEditor({ current, staffNames, busy, onSave, onCancel }: { current: string | null; staffNames: string[]; busy: boolean; onSave: (owner: string, scope: "job" | "default") => void; onCancel: () => void }) {
+  const [value, setValue] = useState(current ?? "");
+  const [scope, setScope] = useState<"job" | "default">("job");
+  const options = Array.from(new Set([...(current ? [current] : []), ...staffNames, "Mark", "Sue", "Mitch", "Fit-off tech", "CRM"]));
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 p-2">
+      <input
+        list="progress-owner-names"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        autoFocus
+        placeholder="Who does this step?"
+        className="min-w-0 flex-1 rounded border border-border bg-input px-2 py-1 text-xs focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        onKeyDown={(e) => { if (e.key === "Enter") onSave(value.trim(), scope); if (e.key === "Escape") onCancel(); }}
+      />
+      <datalist id="progress-owner-names">{options.map((n) => <option key={n} value={n} />)}</datalist>
+      <label className="flex items-center gap-1 text-[11px] text-muted-foreground"><input type="radio" checked={scope === "job"} onChange={() => setScope("job")} /> this job</label>
+      <label className="flex items-center gap-1 text-[11px] text-muted-foreground"><input type="radio" checked={scope === "default"} onChange={() => setScope("default")} /> every job from now on</label>
+      <button onClick={() => onSave(value.trim(), scope)} disabled={busy} className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">Save</button>
+      {current && <button onClick={() => onSave("", scope)} disabled={busy} className="text-xs text-muted-foreground hover:text-foreground">Reset</button>}
+      <button onClick={onCancel} className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
     </div>
   );
 }

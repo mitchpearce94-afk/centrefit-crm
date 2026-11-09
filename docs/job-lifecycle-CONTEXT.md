@@ -117,3 +117,28 @@ cabling/NTD — hand ticks; NBN connected from the NBN steps) · Security
 (paperwork sent, signed — from the sign requests; onboarding complete — hand
 tick) · Before install · Install · Handover & close. "Partial" is a third
 state for supplier rows (Sue's double checkbox).
+
+## Addendum — chronological order, owners, alarm panel checklist (9 Nov 2026)
+
+Mitchell, after the team's meetings on the Progress checklist (spreadsheet
+`fitout-progress-order-2026-11-09`):
+
+- **Steps run in the order a job actually runs**, grouped into phases in that
+  order: Lead & setup → Design & quote → Deposit → Paperwork & rough-in →
+  Billing setup → Stock & NBN → Alarm panel → Fit-off & handover → Close.
+  New steps from the sheet: sales receives email / forwards to Sue / site
+  requirements discussed (manual, Mark); site + job created, dates entered
+  (TBC fine), Design Phase tagged (auto); plans checked (manual); NBN link
+  sent (manual); rough-in and fit-off dates confirmed (auto: date set and not
+  TBC — replaces "Dates booked" on fitouts); server cabinet built, pallet sent
+  (manual). Existing keys kept so hand ticks survive.
+- **Responsible staff on every row, changeable.** Spreadsheet default per step
+  (`DEFS[].owner`), overridden globally in `progress_step_owners` ("every job
+  from now on") or per job in `job_progress_owners` ("this job"). Chip on the
+  row; click to change; free text or a staff name. Nothing is hard-wired to a
+  person because the person will change.
+- **Alarm panel testing is a site checklist** (`site_checklists`, kind
+  `alarm-panel-test`, template in `src/lib/site-checklists.ts`, 16 items from
+  the sheet), opened from the site's Documentation tab → Checklists, or from
+  the job's "Alarm panel tested" row. That row is now auto: complete / partial
+  (n of 16) / pending, linking to the checklist. Ticks carry initials + date.
