@@ -26,6 +26,7 @@ import {
   emptyDayHours,
   fmtAud,
   isMaskedPin,
+  monitoringTemplate,
   padCallList,
   padIfobUsers,
   type MonitoringDetails,
@@ -65,6 +66,22 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
   const [submitting, setSubmitting] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
   const [done, setDone] = useState(status === "signed");
+  // Franchise template (Planet Fitness): responses are pre-set and read-only;
+  // the club only completes the call list and signs, and acknowledges the
+  // pre-set pages with one tick instead of scrolling every section.
+  const template = monitoringTemplate(prefill.template);
+  const locked = Boolean(template);
+  const [ackPreset, setAckPreset] = useState(false);
+  const jumpTo = useCallback((key: string) => {
+    document.querySelector(`[data-section="${key}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+  useEffect(() => {
+    if (!locked || status === "signed") return;
+    const t = window.setTimeout(() => jumpTo("call_list"), 700);
+    return () => window.clearTimeout(t);
+  }, [locked, status, jumpTo]);
+  const callListDone = callList.some((r) => r.name.trim() && r.phone.trim());
+  const signDone = Boolean(signature && signName.trim() && signPosition.trim());
 
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const viewedRef = useRef<Record<string, string>>({});
@@ -137,11 +154,15 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
       if (g.skip247 && details.facility247) continue;
       if (!selections[g.key]) issues.push(`Please choose an option under “${g.title}”.`);
     }
-    const unviewed = FORM_SECTIONS.filter((s) => !sectionsViewed[s.key]);
-    if (unviewed.length > 0) {
-      issues.push(
-        `Please review every section before signing — still to view: ${unviewed.map((s) => s.title).join(", ")}.`,
-      );
+    if (locked) {
+      if (!ackPreset) issues.push("Please tick that you have read the pre-set responses, fees and liability schedule.");
+    } else {
+      const unviewed = FORM_SECTIONS.filter((s) => !sectionsViewed[s.key]);
+      if (unviewed.length > 0) {
+        issues.push(
+          `Please review every section before signing — still to view: ${unviewed.map((s) => s.title).join(", ")}.`,
+        );
+      }
     }
     if (!signName.trim()) issues.push("Please print your name in the authorisation section.");
     if (!signPosition.trim()) issues.push("Please enter your position in the authorisation section.");
@@ -233,8 +254,30 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
         </div>
       </div>
 
+      {template && (
+        <div className="mf-card" style={{ borderLeft: "5px solid #16a34a" }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", letterSpacing: 1, textTransform: "uppercase", margin: 0 }}>
+            {template.label} · pre-set form
+          </p>
+          <h2 style={{ fontSize: 17, fontWeight: 800, color: "#0f172a", margin: "6px 0 6px", letterSpacing: "-0.3px" }}>
+            Two things to do, then you&apos;re done.
+          </h2>
+          <p className="mf-body">{template.blurb} Everything else is already filled in for you to read.</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 14 }}>
+            <button type="button" className="mf-jump" onClick={() => jumpTo("call_list")}>
+              <span className={callListDone ? "mf-step mf-step-done" : "mf-step"}>{callListDone ? "✓" : "1"}</span>
+              Alarm Response Call List
+            </button>
+            <button type="button" className="mf-jump" onClick={() => jumpTo("sign")}>
+              <span className={signDone ? "mf-step mf-step-done" : "mf-step"}>{signDone ? "✓" : "2"}</span>
+              Sign
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Client details */}
-      <Section sectionKey="details" title="Client Details" registerSection={registerSection} viewed={!!sectionsViewed.details}>
+      <Section sectionKey="details" title="Client Details" registerSection={registerSection} viewed={!!sectionsViewed.details} badge={locked ? "Pre-filled" : undefined}>
         <div className="mf-grid2">
           <Field label="Client / Entity Name" value={details.clientName} onChange={(v) => setDetails({ ...details, clientName: v })} />
           <Field label="Billing Contact Name" value={details.billingContactName} onChange={(v) => setDetails({ ...details, billingContactName: v })} />
@@ -268,9 +311,11 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
       <Section
         sectionKey="call_list"
         title="Alarm Response Call List"
-        subtitle="Call list recipients MUST be prepared to answer their mobiles after hours."
+        subtitle={locked ? "Who our Control Room calls, in order, when an alarm comes in. Call list recipients MUST be prepared to answer their mobiles after hours." : "Call list recipients MUST be prepared to answer their mobiles after hours."}
         registerSection={registerSection}
         viewed={!!sectionsViewed.call_list}
+        badge={locked ? "Needed from you" : undefined}
+        highlight={locked && !callListDone}
       >
         <div className="mf-grid2">
           {callList.map((row, i) => (
@@ -306,7 +351,7 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
       <Section
         sectionKey="ifob"
         title="iFob App Access"
-        subtitle="Identify each user with a unique 4-digit PIN and choose whether they get iFob mobile app access (iOS and Android)."
+        subtitle={`${locked ? "Optional — add now or send to us later. " : ""}Identify each user with a unique 4-digit PIN and choose whether they get iFob mobile app access (iOS and Android).`}
         registerSection={registerSection}
         viewed={!!sectionsViewed.ifob}
       >
@@ -365,7 +410,7 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
       <Section
         sectionKey="hours"
         title="Hours of Earliest Opening & Latest Closing"
-        subtitle="The earliest time you will arrive on site and the latest time you will leave site. For 24/7 facilities, tick 24-hour instead."
+        subtitle={`${locked ? "Optional — add now or send to us later. " : ""}The earliest time you will arrive on site and the latest time you will leave site. For 24/7 facilities, tick 24-hour instead.`}
         registerSection={registerSection}
         viewed={!!sectionsViewed.hours}
       >
@@ -450,6 +495,7 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
           prefill={prefill}
           registerSection={registerSection}
           sectionsViewed={sectionsViewed}
+          lockedLabel={template ? `Pre-set · ${template.label}` : null}
         />
       ))}
 
@@ -510,8 +556,14 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
       </Section>
 
       {/* Signature */}
-      <Section sectionKey="sign" title="Authorisation & Signature" registerSection={registerSection} viewed={!!sectionsViewed.sign}>
+      <Section sectionKey="sign" title="Authorisation & Signature" registerSection={registerSection} viewed={!!sectionsViewed.sign} badge={locked ? "Needed from you" : undefined} highlight={locked && !signDone}>
         <p className="mf-body" style={{ fontWeight: 600, color: "#334155" }}>{AUTHORISATION_TEXT}</p>
+        {locked && (
+          <label className="mf-check" style={{ marginTop: 14, alignItems: "flex-start", fontWeight: 500 }}>
+            <input type="checkbox" checked={ackPreset} onChange={(e) => setAckPreset(e.target.checked)} style={{ marginTop: 3 }} />
+            <span>I have read the pre-set alarm responses, the fees and the liability exclusion schedule above, and they apply to this club.</span>
+          </label>
+        )}
         <div className="mf-grid2" style={{ marginTop: 16 }}>
           <Field label="Print Name" value={signName} onChange={setSignName} />
           <Field label="Position" value={signPosition} onChange={setSignPosition} />
@@ -542,7 +594,9 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
       {/* Sticky progress footer */}
       <div className="mf-footer">
         <span style={{ fontSize: 12, color: "#64748b" }}>
-          {viewedCount}/{FORM_SECTIONS.length} sections reviewed
+          {locked
+            ? `${[callListDone, signDone].filter(Boolean).length}/2 to do · call list ${callListDone ? "✓" : "–"} · signature ${signDone ? "✓" : "–"}`
+            : `${viewedCount}/${FORM_SECTIONS.length} sections reviewed`}
         </span>
         <span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>
           Monthly: ${fmtAud(totals.monthlyExGst)} ex GST
@@ -563,6 +617,7 @@ function FragmentWithSim({
   prefill,
   registerSection,
   sectionsViewed,
+  lockedLabel,
 }: {
   group: OptionGroup;
   selections: MonitoringSelections;
@@ -572,7 +627,10 @@ function FragmentWithSim({
   prefill: MonitoringPrefill;
   registerSection: (key: string) => (el: HTMLElement | null) => void;
   sectionsViewed: Record<string, string>;
+  /** Set when a franchise template pre-set this group: only the chosen option shows, read-only. */
+  lockedLabel?: string | null;
 }) {
+  const locked = Boolean(lockedLabel);
   const notApplicable = Boolean(group.optional247 && details.facility247);
   const groupFee: MonitoringFee | undefined = group.feeKey ? prefill.fees[group.feeKey] : undefined;
 
@@ -580,17 +638,18 @@ function FragmentWithSim({
     <Section
       sectionKey={group.key}
       title={group.title}
-      subtitle={group.intro}
+      subtitle={locked ? undefined : group.intro}
       registerSection={registerSection}
       viewed={!!sectionsViewed[group.key]}
+      badge={lockedLabel ?? undefined}
     >
       {notApplicable && (
         <div className="mf-note" style={{ marginBottom: 12 }}>
           Not required — this facility operates 24/7.
         </div>
       )}
-      <div style={{ display: "grid", gap: 10, opacity: notApplicable ? 0.45 : 1, pointerEvents: notApplicable ? "none" : undefined }}>
-        {group.options.map((opt) => {
+      <div style={{ display: "grid", gap: 10, opacity: notApplicable ? 0.45 : 1, pointerEvents: notApplicable || locked ? "none" : undefined }}>
+        {group.options.filter((opt) => !locked || selections[group.key] === opt.value).map((opt) => {
           const checked = selections[group.key] === opt.value;
           return (
             <label key={opt.value} className={checked ? "mf-option mf-option-on" : "mf-option"}>
@@ -636,12 +695,13 @@ function FragmentWithSim({
       <Section
         sectionKey="sim"
         title="Duress Intercom SIM Card"
-        subtitle={SIM_SUPPLY_INTRO}
+        subtitle={locked ? undefined : SIM_SUPPLY_INTRO}
         registerSection={registerSection}
         viewed={!!sectionsViewed.sim}
+        badge={lockedLabel ?? undefined}
       >
-        <div style={{ display: "grid", gap: 10 }}>
-          <label className={selections.sim_supply === "centrefit" ? "mf-option mf-option-on" : "mf-option"}>
+        <div style={{ display: "grid", gap: 10, pointerEvents: locked ? "none" : undefined }}>
+          <label className={selections.sim_supply === "centrefit" ? "mf-option mf-option-on" : "mf-option"} style={{ display: locked && selections.sim_supply !== "centrefit" ? "none" : undefined }}>
             <input
               type="radio"
               name="mf-sim"
@@ -658,7 +718,7 @@ function FragmentWithSim({
               )}
             </span>
           </label>
-          <label className={selections.sim_supply === "client" ? "mf-option mf-option-on" : "mf-option"}>
+          <label className={selections.sim_supply === "client" ? "mf-option mf-option-on" : "mf-option"} style={{ display: locked && selections.sim_supply !== "client" ? "none" : undefined }}>
             <input
               type="radio"
               name="mf-sim"
@@ -722,6 +782,8 @@ function Section({
   children,
   registerSection,
   viewed,
+  badge,
+  highlight,
 }: {
   sectionKey: string;
   title: string;
@@ -729,12 +791,20 @@ function Section({
   children: React.ReactNode;
   registerSection: (key: string) => (el: HTMLElement | null) => void;
   viewed: boolean;
+  /** Small label beside the title — "Needed from you" / "Pre-set · Planet Fitness club" / "Pre-filled". */
+  badge?: string;
+  /** Green left rule on the sections the customer still has to complete (template forms). */
+  highlight?: boolean;
 }) {
+  const needed = badge === "Needed from you";
   return (
-    <section className="mf-card" data-section={sectionKey} ref={registerSection(sectionKey)}>
+    <section className="mf-card" data-section={sectionKey} ref={registerSection(sectionKey)} style={{ borderLeft: highlight ? "5px solid #16a34a" : badge && !needed ? "5px solid #cbd5e1" : undefined, scrollMarginTop: 16 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: subtitle ? 4 : 14 }}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", margin: 0, letterSpacing: "-0.2px" }}>{title}</h2>
-        {viewed && (
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", margin: 0, letterSpacing: "-0.2px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {title}
+          {badge && <span className={needed ? "mf-badge mf-badge-needed" : "mf-badge"}>{badge}</span>}
+        </h2>
+        {viewed && !badge && (
           <span style={{ fontSize: 10, fontWeight: 700, color: "#16a34a", letterSpacing: 0.5, textTransform: "uppercase", whiteSpace: "nowrap" }}>
             ✓ Reviewed
           </span>
@@ -790,5 +860,11 @@ const MF_CSS = `
 .mf-submit { display:block; width:100%; margin-top:20px; background:#3b82f6; color:#ffffff; border:none; border-radius:12px; padding:16px; font-size:15px; font-weight:700; cursor:pointer; font-family:inherit; letter-spacing:0.2px; }
 .mf-submit:hover { background:#2563eb; }
 .mf-submit:disabled { opacity:0.6; cursor:default; }
+.mf-badge { font-size:10px; font-weight:700; letter-spacing:0.6px; text-transform:uppercase; color:#64748b; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:999px; padding:3px 9px; white-space:nowrap; }
+.mf-badge-needed { color:#15803d; background:#f0fdf4; border-color:#86efac; }
+.mf-jump { display:inline-flex; align-items:center; gap:10px; border:1.5px solid #16a34a; background:#f0fdf4; color:#14532d; border-radius:12px; padding:10px 16px 10px 10px; font-size:13.5px; font-weight:700; cursor:pointer; font-family:inherit; }
+.mf-jump:hover { background:#dcfce7; }
+.mf-step { display:inline-flex; width:26px; height:26px; align-items:center; justify-content:center; border-radius:999px; background:#16a34a; color:#fff; font-size:13px; font-weight:800; }
+.mf-step-done { background:#15803d; }
 .mf-footer { position:fixed; left:0; right:0; bottom:0; background:rgba(255,255,255,0.96); backdrop-filter:blur(8px); border-top:1px solid #e2e8f0; padding:12px 20px; display:flex; align-items:center; justify-content:space-between; gap:12px; max-width:100%; }
 `;

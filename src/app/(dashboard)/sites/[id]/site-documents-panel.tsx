@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
 import { SwmsGenerateModal, type SwmsJobOption, type SwmsStaffOption, type SwmsPcbuDefaults } from "./swms-generate-modal";
+import { MONITORING_TEMPLATES, suggestMonitoringTemplate, type MonitoringTemplateKey } from "@/lib/monitoring-form/spec";
 import { HandoverControls, type HandoverData } from "./handover-controls";
 
 /**
@@ -104,6 +105,7 @@ function canUseAsBasePlan(doc: SiteDocumentRow): boolean {
 
 export function SiteDocumentsPanel({
   siteId,
+  siteName,
   documents,
   planFiles,
   signRequests,
@@ -124,6 +126,7 @@ export function SiteDocumentsPanel({
   monitoringProfile: MonitoringProfileSummary | null;
   defaultRecipientName: string | null;
   defaultRecipientEmail: string | null;
+  siteName?: string | null;
   swmsJobs: SwmsJobOption[];
   staffList: SwmsStaffOption[];
   viewerId: string;
@@ -147,6 +150,7 @@ export function SiteDocumentsPanel({
                   profile: monitoringProfile,
                   defaultRecipientName,
                   defaultRecipientEmail,
+                  siteName: siteName ?? null,
                 }
               : null
           }
@@ -173,6 +177,7 @@ interface MonitoringSectionData {
   profile: MonitoringProfileSummary | null;
   defaultRecipientName: string | null;
   defaultRecipientEmail: string | null;
+  siteName: string | null;
 }
 
 interface SwmsSectionData {
@@ -460,10 +465,14 @@ function MonitoringSendButton({ siteId, monitoring }: { siteId: string; monitori
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(monitoring.defaultRecipientName ?? "");
   const [email, setEmail] = useState(monitoring.defaultRecipientEmail ?? "");
+  // Franchise template — Planet Fitness sites default to the PF template
+  // (Sue, 9 Nov 2026: pre-set the response pages, club fills call list + signs).
+  const [template, setTemplate] = useState<MonitoringTemplateKey | "">(suggestMonitoringTemplate(monitoring.siteName) ?? "");
   const [sending, setSending] = useState(false);
 
   const live = monitoring.requests.find((r) => r.status === "sent" || r.status === "viewed");
   const isReissue = Boolean(monitoring.profile);
+  const templateDef = template ? MONITORING_TEMPLATES[template] : null;
 
   async function send() {
     if (!email.trim()) {
@@ -475,7 +484,7 @@ function MonitoringSendButton({ siteId, monitoring }: { siteId: string; monitori
       const res = await fetch(`/api/sites/${siteId}/monitoring-form/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipientName: name.trim() || null, recipientEmail: email.trim() }),
+        body: JSON.stringify({ recipientName: name.trim() || null, recipientEmail: email.trim(), template: template || null }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error ?? "Send failed");
@@ -518,6 +527,22 @@ function MonitoringSendButton({ siteId, monitoring }: { siteId: string; monitori
               </p>
             )}
             <div className="mt-4 space-y-3">
+              <label className="block">
+                <span className="text-[11px] font-medium text-muted-foreground">Form</span>
+                <select
+                  className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  value={template}
+                  onChange={(e) => setTemplate(e.target.value as MonitoringTemplateKey | "")}
+                >
+                  <option value="">Standard — customer chooses every response</option>
+                  {Object.values(MONITORING_TEMPLATES).map((t) => (
+                    <option key={t.key} value={t.key}>{t.label} — pre-set responses, call list + signature only</option>
+                  ))}
+                </select>
+                {templateDef && (
+                  <span className="mt-1 block text-[10px] leading-relaxed text-muted-foreground">{templateDef.blurb}</span>
+                )}
+              </label>
               <label className="block">
                 <span className="text-[11px] font-medium text-muted-foreground">Recipient name</span>
                 <input

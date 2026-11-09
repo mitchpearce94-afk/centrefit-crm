@@ -359,7 +359,7 @@ export async function generateMonitoringFormPdfBuffer(input: MonitoringPdfInput)
               ) : opt ? (
                 <View style={s.optionCard} wrap={false}>
                   <View style={s.optionBadgeRow}>
-                    <Text style={s.optionBadge}>SELECTED</Text>
+                    <Text style={s.optionBadge}>{prefill.template ? "PRE-SET" : "SELECTED"}</Text>
                     <Text style={s.optionLabel}>{opt.label}</Text>
                   </View>
                   {opt.lines.map((line, i) => (
@@ -386,7 +386,7 @@ export async function generateMonitoringFormPdfBuffer(input: MonitoringPdfInput)
                   <Text style={s.sectionIntro}>{SIM_SUPPLY_INTRO}</Text>
                   <View style={s.optionCard} wrap={false}>
                     <View style={s.optionBadgeRow}>
-                      <Text style={s.optionBadge}>SELECTED</Text>
+                      <Text style={s.optionBadge}>{prefill.template ? "PRE-SET" : "SELECTED"}</Text>
                       <Text style={s.optionLabel}>
                         {selections.sim_supply === "centrefit"
                           ? "Centrefit to supply SIM card"

@@ -137,6 +137,62 @@ export interface MonitoringPrefill {
   isReissue: boolean;
   docVersion: number;
   generatedAt: string;
+  /**
+   * Franchise template applied at generation (Sue, 9 Nov 2026: Planet Fitness
+   * clubs all answer the response pages the same way, so pre-set them and ask
+   * the club only for the Alarm Response Call List and a signature). Null =
+   * the standard blank form. The template's selections are rendered read-only
+   * on the public form and badged "Pre-set" in the PDF.
+   */
+  template?: MonitoringTemplateKey | null;
+}
+
+// ── Franchise templates ─────────────────────────────────────────────────────
+
+export type MonitoringTemplateKey = "planet_fitness";
+
+export interface MonitoringTemplate {
+  key: MonitoringTemplateKey;
+  label: string;
+  /** Shown to staff in the send dialog and to the customer at the top of the form. */
+  blurb: string;
+  /** Pre-set response selections — rendered read-only on the form. */
+  selections: Required<Pick<MonitoringSelections, "late_to_close" | "out_of_hours" | "holdup" | "sim_supply" | "burglar" | "apply_scope" | "vav" | "power_fail" | "battery_fail">>;
+}
+
+/**
+ * Planet Fitness: the standard club responses, taken from the first signed PF
+ * form (Fountain Gate, 13 Oct 2026) and confirmed by Sue as the same for every
+ * club. Change here = every PF form sent from then on.
+ */
+export const MONITORING_TEMPLATES: Record<MonitoringTemplateKey, MonitoringTemplate> = {
+  planet_fitness: {
+    key: "planet_fitness",
+    label: "Planet Fitness club",
+    blurb:
+      "Alarm responses are pre-set to the Planet Fitness standard (patrol on burglar and hold-up, camera check first, call on power and battery faults, Centrefit SIM). The club only completes the Alarm Response Call List and signs.",
+    selections: {
+      late_to_close: "L1",
+      out_of_hours: "H2",
+      holdup: "P2",
+      sim_supply: "centrefit",
+      burglar: "B2",
+      apply_scope: "A",
+      vav: "C1",
+      power_fail: "AC2",
+      battery_fail: "BF2",
+    },
+  },
+};
+
+export function monitoringTemplate(key: string | null | undefined): MonitoringTemplate | null {
+  return key && key in MONITORING_TEMPLATES ? MONITORING_TEMPLATES[key as MonitoringTemplateKey] : null;
+}
+
+/** Sites named like a franchise default to its template in the send dialog. */
+export function suggestMonitoringTemplate(siteName: string | null | undefined): MonitoringTemplateKey | null {
+  if (/planet\s*fitness/i.test(siteName ?? "")) return "planet_fitness";
+  return null;
 }
 
 /** What the public form submits. */

@@ -23,6 +23,8 @@ export async function sendMonitoringFormRequestEmail(opts: {
   formUrl: string;
   version: number;
   isReissue: boolean;
+  /** Franchise template key (planet_fitness) — changes the "what to do" copy. */
+  template?: string | null;
   requestId: string;
 }): Promise<{ ok: boolean; error?: string }> {
   const firstName = opts.recipientName?.trim().split(/\s+/)[0] ?? null;
@@ -37,12 +39,14 @@ export async function sendMonitoringFormRequestEmail(opts: {
     </h1>
     <p style="font-size:13px;color:#475569;margin:14px 0 0;line-height:1.6">${greeting}</p>
     <p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">
-      ${opts.isReissue
-        ? `Please review and confirm the Security Monitoring Response Instructions for <strong>${opts.siteName}</strong>. The form is pre-filled with your current instructions — only change what needs updating, then sign at the end.`
-        : `Please complete the Security Monitoring Response Instructions for <strong>${opts.siteName}</strong>. This tells our 24/7 Control Room exactly how to respond to each type of alarm at your facility.`}
+      ${opts.template === "planet_fitness"
+        ? `The Security Monitoring Response Instructions for <strong>${opts.siteName}</strong> are ready to sign. The alarm responses are already set to the Planet Fitness standard — you only need to fill in the <strong>Alarm Response Call List</strong> (who we call, in order, after hours) and sign at the end.`
+        : opts.isReissue
+          ? `Please review and confirm the Security Monitoring Response Instructions for <strong>${opts.siteName}</strong>. The form is pre-filled with your current instructions — only change what needs updating, then sign at the end.`
+          : `Please complete the Security Monitoring Response Instructions for <strong>${opts.siteName}</strong>. This tells our 24/7 Control Room exactly how to respond to each type of alarm at your facility.`}
     </p>
     <p style="font-size:13px;color:#475569;margin:10px 0 0;line-height:1.6">
-      The form takes about 10 minutes on any phone, tablet or computer, and is signed electronically —
+      The form takes about ${opts.template === "planet_fitness" ? "2" : "10"} minutes on any phone, tablet or computer, and is signed electronically —
       no printing or scanning required. A signed PDF copy will be emailed to you for your records.
     </p>
   </td></tr>

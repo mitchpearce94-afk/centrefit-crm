@@ -411,6 +411,7 @@ export function SiteDetail({
           {activeTab === "documentation" && (
             <SiteDocumentsPanel
               siteId={site.id}
+              siteName={site.name}
               documents={documents}
               planFiles={planFiles}
               signRequests={signRequests}

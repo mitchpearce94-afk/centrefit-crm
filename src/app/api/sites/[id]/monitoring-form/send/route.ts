@@ -7,6 +7,7 @@ import { sendMonitoringFormRequestEmail } from "@/lib/emails/monitoring-form";
 import {
   FEE_CODES,
   feeFromIncGst,
+  monitoringTemplate,
   type MonitoringPrefill,
   type MonitoringSelections,
 } from "@/lib/monitoring-form/spec";
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  let body: { recipientName?: string; recipientEmail?: string; recipientEmails?: string[]; resendRequestId?: string };
+  let body: { recipientName?: string; recipientEmail?: string; recipientEmails?: string[]; resendRequestId?: string; template?: string | null };
   try {
     body = await req.json();
   } catch {
@@ -93,6 +94,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       formUrl: `${baseUrl}/monitoring-form/${existing.token}`,
       version: existing.version,
       isReissue: prefill.isReissue,
+      template: prefill.template ?? null,
       requestId: existing.id,
     });
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 500 });
@@ -125,6 +127,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   // get the same link as cc recipients.
   const recipientEmail = recipients[0];
   const ccEmails = recipients.slice(1);
+  // Franchise template (Planet Fitness): its selections are pre-set and shown
+  // read-only, so the club only fills the call list and signs.
+  if (body.template && !monitoringTemplate(body.template)) {
+    return NextResponse.json({ error: `Unknown template "${body.template}"` }, { status: 400 });
+  }
+  const template = monitoringTemplate(body.template);
 
   const [siteResult, feesResult, profileResult, assetsResult, priorResult] = await Promise.all([
     sb
@@ -242,7 +250,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       simPhone: (profileDetails.sim_phone as string) || "",
       facility247: Boolean(profileDetails.facility247),
     },
-    selections: profile?.selections ?? {},
+    // Template wins over the stored profile — the template IS the standard
+    // (Sue, 9 Nov 2026); a re-issue of a PF form re-asserts it.
+    selections: template ? { ...(profile?.selections ?? {}), ...template.selections } : (profile?.selections ?? {}),
     callList: profile?.call_list ?? [],
     ifobUsers: profile?.ifob_users ?? [],
     openingHours: profile?.opening_hours ?? {},
@@ -251,6 +261,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     isReissue: Boolean(profile),
     docVersion: version,
     generatedAt: now,
+    template: template?.key ?? null,
   };
 
   // One live link at a time: void older un-signed requests and remove their
@@ -316,6 +327,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     formUrl,
     version,
     isReissue: prefill.isReissue,
+    template: template?.key ?? null,
     requestId: requestRow.id,
   });
   if (!result.ok) {
@@ -331,7 +343,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     documentId: requestRow.id,
     eventType: "monitoring_form.sent",
     actor: user.id,
-    metadata: { to: recipients, site_id: siteId, version },
+    metadata: { to: recipients, site_id: siteId, version, template: template?.key ?? null },
   });
 
   return NextResponse.json({ success: true, url: formUrl, version, sentTo: recipients });
