@@ -463,7 +463,6 @@ function JobOverview({
       <ScopeEditor
         jobId={jobId}
         description={job.description ?? null}
-        reference={job.reference ?? null}
       />
 
       {/* ── Updates (internal-only, not on invoices) ── */}

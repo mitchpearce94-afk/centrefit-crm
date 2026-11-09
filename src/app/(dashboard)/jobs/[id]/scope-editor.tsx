@@ -5,14 +5,13 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 
+// Description only. The job reference is edited in the page header (job-reference-editor.tsx).
 export function ScopeEditor({
   jobId,
   description,
-  reference,
 }: {
   jobId: string;
   description: string | null;
-  reference: string | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -20,11 +19,9 @@ export function ScopeEditor({
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draftDesc, setDraftDesc] = useState(description ?? "");
-  const [draftRef, setDraftRef] = useState(reference ?? "");
 
   function startEdit() {
     setDraftDesc(description ?? "");
-    setDraftRef(reference ?? "");
     setEditing(true);
   }
 
@@ -32,10 +29,7 @@ export function ScopeEditor({
     setSaving(true);
     const { error } = await supabase
       .from("jobs")
-      .update({
-        description: draftDesc.trim() || null,
-        reference: draftRef.trim() || null,
-      })
+      .update({ description: draftDesc.trim() || null })
       .eq("id", jobId);
     setSaving(false);
     if (error) {
@@ -47,7 +41,7 @@ export function ScopeEditor({
     router.refresh();
   }
 
-  const isEmpty = !description && !reference;
+  const isEmpty = !description;
 
   return (
     <div>
@@ -74,14 +68,6 @@ export function ScopeEditor({
             rows={8}
             className="w-full bg-transparent p-4 text-sm focus:outline-none resize-y"
           />
-          <div className="border-t border-border px-4 py-2">
-            <input
-              value={draftRef}
-              onChange={(e) => setDraftRef(e.target.value)}
-              placeholder="Reference (PO #, ticket, etc)"
-              className="w-full bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
-            />
-          </div>
           <div className="flex items-center justify-end gap-2 border-t border-border bg-muted/30 px-3 py-2">
             <button
               onClick={() => setEditing(false)}
@@ -111,11 +97,6 @@ export function ScopeEditor({
           <div className="max-h-[160px] overflow-y-auto p-4 text-sm whitespace-pre-wrap">
             {description}
           </div>
-          {reference && (
-            <div className="border-t border-border px-4 py-2">
-              <span className="text-xs text-muted-foreground">Ref: {reference}</span>
-            </div>
-          )}
         </div>
       )}
     </div>

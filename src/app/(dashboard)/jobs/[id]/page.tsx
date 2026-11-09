@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { StatusTransition } from "./status-transition";
+import { JobReferenceEditor } from "./job-reference-editor";
 import { StatusBoardControls } from "./status-board-controls";
 import { loadJobProgress } from "@/lib/jobs/progress";
 import { JobTabs, type JobKeyInfo } from "./job-tabs";
@@ -263,6 +264,8 @@ export default async function JobDetailPage({
           hasWorkEntries={(workResult.data ?? []).length > 0}
         />
       </div>
+
+      <JobReferenceEditor jobId={id} reference={job.reference ?? null} />
 
       <div className="mt-2">
         <StatusBoardControls
