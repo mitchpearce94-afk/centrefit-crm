@@ -69,6 +69,12 @@ respecting invoice_name, ABN, facility name/address/phone, billing address, emai
   swaps the scroll-every-section rule for one acknowledgement tick. Template wins over the
   stored profile on re-issue. PDF badges PRE-SET instead of SELECTED. Change the template
   values in spec.ts, nowhere else.
+  Mitchell 9 Nov (later): PF template `requiredSections` = Client details → Alarm Response
+  Call List → iFob app access → Sign (at least one iFob user with a PIN; billing contact +
+  facility phone required); `facility247: true` pre-ticks 24-hour (Late to Close / Out of
+  Hours not applicable, so those two are not pre-set); `hideSections: ["sim"]` drops the
+  Duress Intercom SIM section, its fee line and its PDF block — signing never created a
+  recurring SIM charge, so nothing else to remove.
 
 ## Generated document 2 — SWMS (Phase C)
 

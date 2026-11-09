@@ -8,6 +8,8 @@ import {
   FEE_CODES,
   feeFromIncGst,
   monitoringTemplate,
+  buildEmptyOpeningHours,
+  WEEK_DAYS,
   type MonitoringPrefill,
   type MonitoringSelections,
 } from "@/lib/monitoring-form/spec";
@@ -248,7 +250,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       newClient: !profile,
       commencementDate: (profileDetails.commencement_date as string) || "",
       simPhone: (profileDetails.sim_phone as string) || "",
-      facility247: Boolean(profileDetails.facility247),
+      facility247: Boolean(template?.facility247) || Boolean(profileDetails.facility247),
     },
     // Template wins over the stored profile — the template IS the standard
     // (Sue, 9 Nov 2026); a re-issue of a PF form re-asserts it.
@@ -257,7 +259,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       : (profile?.selections ?? {}),
     callList: profile?.call_list ?? [],
     ifobUsers: profile?.ifob_users ?? [],
-    openingHours: profile?.opening_hours ?? {},
+    openingHours: template?.facility247
+      ? Object.fromEntries(WEEK_DAYS.map((d) => [d, { ...(buildEmptyOpeningHours()[d] ?? { open: "", close: "", cleaner: "", h24: false }), ...((profile?.opening_hours ?? {})[d] ?? {}), h24: true }]))
+      : (profile?.opening_hours ?? {}),
     zoneSchedule,
     fees,
     isReissue: Boolean(profile),

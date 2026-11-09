@@ -157,10 +157,22 @@ export interface MonitoringTemplate {
   /** Shown to staff in the send dialog and to the customer at the top of the form. */
   blurb: string;
   /** Pre-set response selections — rendered read-only on the form. */
-  selections: Required<Pick<MonitoringSelections, "late_to_close" | "out_of_hours" | "holdup" | "burglar" | "apply_scope" | "vav" | "power_fail" | "battery_fail">> & Pick<MonitoringSelections, "sim_supply">;
+  selections: Required<Pick<MonitoringSelections, "holdup" | "burglar" | "apply_scope" | "vav" | "power_fail" | "battery_fail">> & Pick<MonitoringSelections, "late_to_close" | "out_of_hours" | "sim_supply">;
   /** Sections the template drops entirely (form, validation, fees and PDF). */
   hideSections?: ReadonlyArray<"sim">;
+  /** Pre-tick "This facility operates 24/7" (every day 24-hour; Late to Close / Out of Hours become not applicable). */
+  facility247?: boolean;
+  /** What the customer must complete, in order — drives the to-do card, badges and validation. */
+  requiredSections: ReadonlyArray<TemplateRequiredSection>;
 }
+
+export type TemplateRequiredSection = "details" | "call_list" | "ifob" | "sign";
+export const TEMPLATE_SECTION_LABELS: Record<TemplateRequiredSection, string> = {
+  details: "Client details",
+  call_list: "Alarm Response Call List",
+  ifob: "iFob app access",
+  sign: "Sign",
+};
 
 export function templateHidesSim(template: MonitoringTemplate | null | undefined): boolean {
   return Boolean(template?.hideSections?.includes("sim"));
@@ -176,12 +188,12 @@ export const MONITORING_TEMPLATES: Record<MonitoringTemplateKey, MonitoringTempl
     key: "planet_fitness",
     label: "Planet Fitness club",
     blurb:
-      "Alarm responses are pre-set to the Planet Fitness standard (patrol on burglar and hold-up, camera check first, call on power and battery faults). The club only completes the Alarm Response Call List and signs.",
-    // No duress-intercom SIM section on PF paperwork (Mitchell, 9 Nov 2026).
+      "Alarm responses are pre-set to the Planet Fitness standard (patrol on burglar and hold-up, camera check first, call on power and battery faults) and the club is marked 24-hour. The club completes its details, the Alarm Response Call List and the iFob app users, then signs.",
+    // No duress-intercom SIM section on PF paperwork; clubs run 24/7 (Mitchell, 9 Nov 2026).
     hideSections: ["sim"],
+    facility247: true,
+    requiredSections: ["details", "call_list", "ifob", "sign"],
     selections: {
-      late_to_close: "L1",
-      out_of_hours: "H2",
       holdup: "P2",
       burglar: "B2",
       apply_scope: "A",

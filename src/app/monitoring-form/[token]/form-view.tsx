@@ -28,6 +28,7 @@ import {
   isMaskedPin,
   monitoringTemplate,
   templateHidesSim,
+  TEMPLATE_SECTION_LABELS,
   padCallList,
   padIfobUsers,
   type MonitoringDetails,
@@ -77,13 +78,21 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
   const jumpTo = useCallback((key: string) => {
     document.querySelector(`[data-section="${key}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
+  const detailsDone = Boolean(details.clientName.trim() && details.billingContactName.trim() && details.email.trim() && details.facilityPhone.trim());
+  const callListDone = callList.some((r) => r.name.trim() && r.phone.trim());
+  const ifobDone = ifobUsers.some((u) => u.name.trim() && (isMaskedPin(u.pin) || /^\d{4}$/.test(u.pin.trim())));
+  const signDone = Boolean(signature && signName.trim() && signPosition.trim());
+  const stepDone: Record<string, boolean> = { details: detailsDone, call_list: callListDone, ifob: ifobDone, sign: signDone };
+  const requiredSteps = template?.requiredSections ?? [];
+  const needs = (key: string) => locked && requiredSteps.includes(key as (typeof requiredSteps)[number]);
   useEffect(() => {
     if (!locked || status === "signed") return;
-    const t = window.setTimeout(() => jumpTo("call_list"), 700);
+    const first = requiredSteps.find((k) => !stepDone[k]) ?? requiredSteps[0];
+    const t = window.setTimeout(() => first && jumpTo(first), 700);
     return () => window.clearTimeout(t);
-  }, [locked, status, jumpTo]);
-  const callListDone = callList.some((r) => r.name.trim() && r.phone.trim());
-  const signDone = Boolean(signature && signName.trim() && signPosition.trim());
+    // only on first paint
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked, status]);
 
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const viewedRef = useRef<Record<string, string>>({});
@@ -158,6 +167,11 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
       if (!selections[g.key]) issues.push(`Please choose an option under “${g.title}”.`);
     }
     if (locked) {
+      if (needs("details")) {
+        if (!details.billingContactName.trim()) issues.push("Billing contact name is required.");
+        if (!details.facilityPhone.trim()) issues.push("Facility phone number is required.");
+      }
+      if (needs("ifob") && !ifobDone) issues.push("Add at least one iFob app user with a name and a 4-digit PIN.");
       if (!ackPreset) issues.push("Please tick that you have read the pre-set responses, fees and liability schedule.");
     } else {
       const unviewed = FORM_SECTIONS.filter((s) => !sectionsViewed[s.key]);
@@ -263,24 +277,22 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
             {template.label} · pre-set form
           </p>
           <h2 style={{ fontSize: 17, fontWeight: 800, color: "#0f172a", margin: "6px 0 6px", letterSpacing: "-0.3px" }}>
-            Two things to do, then you&apos;re done.
+            {requiredSteps.length} things to do, then you&apos;re done.
           </h2>
           <p className="mf-body">{template.blurb} Everything else is already filled in for you to read.</p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 14 }}>
-            <button type="button" className="mf-jump" onClick={() => jumpTo("call_list")}>
-              <span className={callListDone ? "mf-step mf-step-done" : "mf-step"}>{callListDone ? "✓" : "1"}</span>
-              Alarm Response Call List
-            </button>
-            <button type="button" className="mf-jump" onClick={() => jumpTo("sign")}>
-              <span className={signDone ? "mf-step mf-step-done" : "mf-step"}>{signDone ? "✓" : "2"}</span>
-              Sign
-            </button>
+            {requiredSteps.map((k, i) => (
+              <button key={k} type="button" className="mf-jump" onClick={() => jumpTo(k)}>
+                <span className={stepDone[k] ? "mf-step mf-step-done" : "mf-step"}>{stepDone[k] ? "✓" : i + 1}</span>
+                {TEMPLATE_SECTION_LABELS[k]}
+              </button>
+            ))}
           </div>
         </div>
       )}
 
       {/* Client details */}
-      <Section sectionKey="details" title="Client Details" registerSection={registerSection} viewed={!!sectionsViewed.details} badge={locked ? "Pre-filled" : undefined}>
+      <Section sectionKey="details" title="Client Details" registerSection={registerSection} viewed={!!sectionsViewed.details} badge={needs("details") ? "Needed from you" : locked ? "Pre-filled" : undefined} highlight={needs("details") && !detailsDone} subtitle={needs("details") ? "Check what we have pre-filled and complete the rest — client/entity name, billing contact, email and the facility phone number are required." : undefined}>
         <div className="mf-grid2">
           <Field label="Client / Entity Name" value={details.clientName} onChange={(v) => setDetails({ ...details, clientName: v })} />
           <Field label="Billing Contact Name" value={details.billingContactName} onChange={(v) => setDetails({ ...details, billingContactName: v })} />
@@ -317,8 +329,8 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
         subtitle={locked ? "Who our Control Room calls, in order, when an alarm comes in. Call list recipients MUST be prepared to answer their mobiles after hours." : "Call list recipients MUST be prepared to answer their mobiles after hours."}
         registerSection={registerSection}
         viewed={!!sectionsViewed.call_list}
-        badge={locked ? "Needed from you" : undefined}
-        highlight={locked && !callListDone}
+        badge={needs("call_list") ? "Needed from you" : undefined}
+        highlight={needs("call_list") && !callListDone}
       >
         <div className="mf-grid2">
           {callList.map((row, i) => (
@@ -354,9 +366,11 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
       <Section
         sectionKey="ifob"
         title="iFob App Access"
-        subtitle={`${locked ? "Optional — add now or send to us later. " : ""}Identify each user with a unique 4-digit PIN and choose whether they get iFob mobile app access (iOS and Android).`}
+        subtitle={`${locked && !needs("ifob") ? "Optional — add now or send to us later. " : ""}Identify each user with a unique 4-digit PIN and choose whether they get iFob mobile app access (iOS and Android).${needs("ifob") ? " At least one user is required." : ""}`}
         registerSection={registerSection}
         viewed={!!sectionsViewed.ifob}
+        badge={needs("ifob") ? "Needed from you" : undefined}
+        highlight={needs("ifob") && !ifobDone}
       >
         {prefill.isReissue && (
           <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 12px" }}>
@@ -413,9 +427,12 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
       <Section
         sectionKey="hours"
         title="Hours of Earliest Opening & Latest Closing"
-        subtitle={`${locked ? "Optional — add now or send to us later. " : ""}The earliest time you will arrive on site and the latest time you will leave site. For 24/7 facilities, tick 24-hour instead.`}
+        subtitle={locked && template?.facility247
+          ? "Pre-ticked as a 24-hour facility, so Late to Close and Out of Hours monitoring do not apply. Untick only if this club closes overnight."
+          : `${locked ? "Optional — add now or send to us later. " : ""}The earliest time you will arrive on site and the latest time you will leave site. For 24/7 facilities, tick 24-hour instead.`}
         registerSection={registerSection}
         viewed={!!sectionsViewed.hours}
+        badge={locked && template?.facility247 ? "Pre-set · 24-hour facility" : undefined}
       >
         <label className="mf-check" style={{ marginBottom: 14 }}>
           <input
@@ -560,7 +577,7 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
       </Section>
 
       {/* Signature */}
-      <Section sectionKey="sign" title="Authorisation & Signature" registerSection={registerSection} viewed={!!sectionsViewed.sign} badge={locked ? "Needed from you" : undefined} highlight={locked && !signDone}>
+      <Section sectionKey="sign" title="Authorisation & Signature" registerSection={registerSection} viewed={!!sectionsViewed.sign} badge={needs("sign") ? "Needed from you" : undefined} highlight={needs("sign") && !signDone}>
         <p className="mf-body" style={{ fontWeight: 600, color: "#334155" }}>{AUTHORISATION_TEXT}</p>
         {locked && (
           <label className="mf-check" style={{ marginTop: 14, alignItems: "flex-start", fontWeight: 500 }}>
@@ -599,7 +616,7 @@ export function MonitoringFormView({ token, status, prefill, signedAt, signerNam
       <div className="mf-footer">
         <span style={{ fontSize: 12, color: "#64748b" }}>
           {locked
-            ? `${[callListDone, signDone].filter(Boolean).length}/2 to do · call list ${callListDone ? "✓" : "–"} · signature ${signDone ? "✓" : "–"}`
+            ? `${requiredSteps.filter((k) => stepDone[k]).length}/${requiredSteps.length} done · ${requiredSteps.map((k) => `${TEMPLATE_SECTION_LABELS[k].toLowerCase()} ${stepDone[k] ? "✓" : "–"}`).join(" · ")}`
             : `${viewedCount}/${FORM_SECTIONS.length} sections reviewed`}
         </span>
         <span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>
