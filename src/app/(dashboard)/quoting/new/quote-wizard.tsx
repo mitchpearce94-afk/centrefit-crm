@@ -558,6 +558,10 @@ export function QuoteWizard({
       supplier: p.supplier ?? "", cost_price: p.cost_price, markup: p.markup,
       sell_price: p.sell_price, device_type: p.device_type,
       is_default: p.is_default, is_active: p.is_active,
+      // Lint reads scope_role (panel / reader / NVR / lock presence) — without
+      // it every role check was blind and security_without_panel fired on
+      // quotes that carried the K6000 (CF-2026-0117 Raymond Terrace, 10 Nov).
+      scope_role: p.scope_role ?? null, labour_code: p.labour_code ?? null,
     })), [rawProducts]);
 
   const selectedCustomer = customers.find((c) => c.id === customerId);
