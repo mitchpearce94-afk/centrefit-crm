@@ -193,13 +193,14 @@ export async function POST(req: NextRequest) {
     separate_studio_zone: quote.separate_studio_zone ?? false,
   };
   const [{ data: scopeBomRows }, { data: scopeProductRows }, { data: scopeRoleRows }] = await Promise.all([
-    supabase.from("quote_line_items").select("product_id, quantity").eq("quote_id", quoteId),
+    supabase.from("quote_line_items").select("product_id, quantity, customer_supplied").eq("quote_id", quoteId),
     supabase.from("quote_products").select("id, scope_role, name, sku"),
     supabase.from("quote_scope_roles").select("slug, description"),
   ]);
-  const scopeBom = (scopeBomRows ?? []).map((r: { product_id: string | null; quantity: number }) => ({
+  const scopeBom = (scopeBomRows ?? []).map((r: { product_id: string | null; quantity: number; customer_supplied?: boolean | null }) => ({
     product_id: r.product_id ?? null,
     quantity: Number(r.quantity) || 0,
+    customer_supplied: !!r.customer_supplied,
   }));
   const scopeProducts = (scopeProductRows ?? []) as Array<{ id: string; scope_role: string }>;
   const roleDescriptions: Record<string, string> = {};

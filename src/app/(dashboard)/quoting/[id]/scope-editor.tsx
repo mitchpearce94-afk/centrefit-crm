@@ -71,7 +71,7 @@ function htmlToItems(html: string): string[] {
 interface Props {
   quoteId: string;
   status: string;
-  bom: { product_id: string | null; quantity: number; sell_price?: number }[];
+  bom: { product_id: string | null; quantity: number; sell_price?: number; customer_supplied?: boolean }[];
   productScopeRoles: { id: string; scope_role: string }[];
   siteInfo: SiteInfo;
   /** existing detectors etc. — things with no BOM line that belong in the scope */

@@ -26,7 +26,7 @@ export async function GET(
       .select("*, customer:customers(id, name)")
       .eq("id", id)
       .single(),
-    supabase.from("quote_line_items").select("product_id, quantity").eq("quote_id", id),
+    supabase.from("quote_line_items").select("product_id, quantity, customer_supplied").eq("quote_id", id),
     supabase.from("quote_products").select("id, scope_role, name, sku"),
     supabase.from("quote_scope_roles").select("slug, description"),
   ]);
@@ -81,6 +81,7 @@ export async function GET(
   const scopeBom = (lineItemsResult.data ?? []).map((r) => ({
     product_id: r.product_id ?? null,
     quantity: Number(r.quantity) || 0,
+    customer_supplied: !!r.customer_supplied,
   }));
   const scopeProducts = (productsResult.data ?? []) as Array<{ id: string; scope_role: string }>;
 

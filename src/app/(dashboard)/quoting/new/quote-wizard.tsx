@@ -2856,6 +2856,7 @@ export function QuoteWizard({
                 const scopeBom = (quoteMode === "manual" ? manualBomItems : bomItems).map((it: any) => ({
                   product_id: it.product_id ?? null,
                   quantity: Number(it.quantity) || 0,
+                  customer_supplied: !!it.customer_supplied,
                 }));
                 const scopeProducts = rawProducts.map((p) => ({ id: p.id, scope_role: p.scope_role ?? null, name: p.name, sku: p.sku }));
                 const scope = generateScopeOfWorks(scopeBom, scopeProducts, siteInfo, undefined, undefined, deviceCounts);

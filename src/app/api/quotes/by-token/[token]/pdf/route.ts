@@ -65,13 +65,14 @@ export async function GET(
   };
 
   const [{ data: bomRows }, { data: productRows }, { data: scopeRoleRows }] = await Promise.all([
-    sb.from("quote_line_items").select("product_id, quantity").eq("quote_id", quote.id),
+    sb.from("quote_line_items").select("product_id, quantity, customer_supplied").eq("quote_id", quote.id),
     sb.from("quote_products").select("id, scope_role, name, sku"),
     sb.from("quote_scope_roles").select("slug, description"),
   ]);
   const scopeBom = (bomRows ?? []).map((r) => ({
     product_id: r.product_id ?? null,
     quantity: Number(r.quantity) || 0,
+    customer_supplied: !!r.customer_supplied,
   }));
   const scopeProducts = (productRows ?? []) as Array<{ id: string; scope_role: string }>;
   const roleDescriptions: Record<string, string> = {};

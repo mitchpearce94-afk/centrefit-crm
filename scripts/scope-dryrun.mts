@@ -16,14 +16,14 @@ const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_
 const { data: quote } = await sb.from('quotes').select('*').eq('ref', ref).maybeSingle() as { data: Record<string, any> | null }
 if (!quote) { console.error('no quote', ref); process.exit(1) }
 const [{ data: lines }, { data: products }, { data: roles }] = await Promise.all([
-  sb.from('quote_line_items').select('product_id, quantity').eq('quote_id', quote.id),
+  sb.from('quote_line_items').select('product_id, quantity, customer_supplied').eq('quote_id', quote.id),
   sb.from('quote_products').select('id, scope_role, name, sku'),
   sb.from('quote_scope_roles').select('slug, description'),
 ])
 const roleDescriptions: Record<string, string> = {}
 for (const r of roles ?? []) if (r.description) roleDescriptions[r.slug] = r.description
 const siteInfo = { site_sqm: quote.site_sqm ?? 0, door_count: quote.door_count ?? 0, cardio_count: quote.cardio_count ?? 0, tv_count: quote.tv_count ?? 0, ceiling_tv_count: quote.ceiling_tv_count ?? 0, mag_lock_glass: quote.mag_lock_glass ?? 0 }
-const bom = (lines ?? []) as { product_id: string | null; quantity: number }[]
+const bom = (lines ?? []) as { product_id: string | null; quantity: number; customer_supplied?: boolean | null }[]
 const prods = (products ?? []) as { id: string; scope_role: string | null; name: string; sku: string }[]
 const scope = generateScopeOfWorks(bom, prods, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions, quote.device_counts ?? undefined)
 const strip = (h: string) => h.replace(/<[^>]+>/g, '')

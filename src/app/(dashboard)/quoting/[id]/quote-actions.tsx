@@ -169,6 +169,7 @@ export function QuoteActions({
   const scopeBom = lineItems.map((li: any) => ({
     product_id: li.product_id ?? null,
     quantity: Number(li.quantity) || 0,
+    customer_supplied: !!li.customer_supplied,
     sell_price: Number(li.sell_price) || 0,
   }));
   // Manual quotes render the operator-authored scope text verbatim in the

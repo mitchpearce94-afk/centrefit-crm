@@ -170,6 +170,9 @@ export const SCOPE_ROLE_SYSTEM: Record<string, string> = {
 export interface BOMLineForScope {
   product_id: string | null;
   quantity: number;
+  /** Template supply says the customer brings this (Snap readers): cabled and
+   *  terminated by Centrefit, never counted as something we supply. */
+  customer_supplied?: boolean | null;
 }
 
 export interface ProductForScope {
@@ -229,6 +232,8 @@ export class BOMRollup {
   private prodsByRole = new Map<string, Map<string, { name: string; sku: string; qty: number }>>();
   /** Line items whose scope_role is null/empty or not in HANDLED_ROLES. */
   public readonly unhandled: UnhandledLineForScope[] = [];
+  /** Customer-supplied quantities per role — we cable/terminate, we don't supply. */
+  private customerByRole = new Map<string, number>();
 
   constructor(bom: BOMLineForScope[], products: ProductForScope[]) {
     const productsById = new Map(products.map((p) => [p.id, p]));
@@ -238,6 +243,10 @@ export class BOMRollup {
       if (!product) continue;
       const qty = Number(item.quantity) || 0;
       const role = product.scope_role && product.scope_role.length > 0 ? product.scope_role : null;
+      if (item.customer_supplied) {
+        if (role) this.customerByRole.set(role, (this.customerByRole.get(role) ?? 0) + qty);
+        continue;
+      }
       if (role) {
         this.byRole.set(role, (this.byRole.get(role) ?? 0) + qty);
         if (!this.prodsByRole.has(role)) this.prodsByRole.set(role, new Map());
@@ -259,6 +268,11 @@ export class BOMRollup {
 
   count(...roles: string[]): number {
     return roles.reduce((sum, r) => sum + (this.byRole.get(r) ?? 0), 0);
+  }
+
+  /** Units the customer supplies under a role (Snap's own readers). */
+  customerCount(...roles: string[]): number {
+    return roles.reduce((sum, r) => sum + (this.customerByRole.get(r) ?? 0), 0);
   }
 
   /** Products quoted under a role, in BOM order. */
@@ -358,6 +372,7 @@ export function generateScopeOfWorks(
   const rexButtons      = r.count('rex_button');
   const accessControllers = r.count('access_control_system');
   const cardReaders     = r.count('card_reader');
+  const customerReaders = r.customerCount('card_reader');
   const keypads         = r.count('standalone_keypad');
   // Wall speakers are quoted as PAIRS (one BOM line = 2 speakers), so the
   // role count under-reads. Use the plan's placed speakers when we have them
@@ -434,12 +449,12 @@ export function generateScopeOfWorks(
   // ── System: Access Control ──────────────────────────────────────────────
   const accessSystem: ScopeSystemBlock | null = (() => {
     const totalDoors = doorStrikes + magLocks;
-    const has = totalDoors + rexButtons + accessControllers + cardReaders + keypads + breakGlass > 0;
+    const has = totalDoors + rexButtons + accessControllers + cardReaders + customerReaders + keypads + breakGlass > 0;
     if (!has) return null;
     const counts: string[] = [];
     if (totalDoors > 0)        counts.push(`${totalDoors} ${plural(totalDoors, 'door')}`);
     if (accessControllers > 0) counts.push(`${accessControllers} ${plural(accessControllers, 'controller')}`);
-    if (cardReaders > 0)       counts.push(`${cardReaders} ${plural(cardReaders, 'reader')}`);
+    if (cardReaders + customerReaders > 0) counts.push(`${cardReaders + customerReaders} ${plural(cardReaders + customerReaders, 'reader')}`);
     if (keypads > 0)           counts.push(`${keypads} ${plural(keypads, 'keypad')}`);
     if (rexButtons > 0)        counts.push(`${rexButtons} REX`);
 
@@ -451,6 +466,9 @@ export function generateScopeOfWorks(
     if (cardReaders > 0)       items.push(qrReaders
       ? `<strong>(${cardReaders}) QR code ${plural(cardReaders, 'reader')}</strong> — members scan the club app at the door; ${veylaAccess ? 'feeds Veyla Access' : 'integrated with the access controller'}`
       : roleBullet(roleDescriptions, 'card_reader', cardReaders, `<strong>(${cardReaders}) card ${plural(cardReaders, 'reader')}</strong> — proximity / NFC, integrated with the access controller`));
+    // Snap supplies its own readers (template supply, 23 Sep): we cable and
+    // terminate the door position; never describe it as something we supply.
+    if (customerReaders > 0) items.push(`<strong>(${customerReaders}) door ${plural(customerReaders, 'reader')} — supplied by the customer</strong>; Centrefit cables and terminates each reader position`);
     if (keypads > 0)           items.push(roleBullet(roleDescriptions, 'standalone_keypad', keypads, `<strong>(${keypads}) standalone PIN ${plural(keypads, 'keypad')}</strong> — code-based door entry`));
     if (doorStrikes > 0)       items.push(roleBullet(roleDescriptions, 'door_strike', doorStrikes, `<strong>(${doorStrikes}) FES20 electric ${plural(doorStrikes, 'striker')}</strong> and door ${plural(doorStrikes, 'loop')}`));
     if (magLocks > 0)          items.push(roleBullet(roleDescriptions, 'mag_lock', magLocks, `<strong>(${magLocks}) magnetic ${plural(magLocks, 'lock')}</strong> with mounting hardware`));
