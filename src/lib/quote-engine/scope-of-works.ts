@@ -205,7 +205,7 @@ const HANDLED_ROLES = new Set([
   // Surveillance
   'camera', 'nvr', 'monitor', 'camera_mount',
   // Audio
-  'speaker', 'amplifier',
+  'speaker', 'amplifier', 'volume_control',
   // AV / Cardio
   'modulator', 'tv_mount_wall', 'tv_mount_ceiling',
   // Data & Network
@@ -381,6 +381,7 @@ export function generateScopeOfWorks(
     + (deviceCounts?.speaker_wall_black || 0) + (deviceCounts?.speaker_wall_white || 0);
   const speakers        = plannedSpeakers > 0 ? plannedSpeakers : r.count('speaker');
   const amplifiers      = r.count('amplifier');
+  const volumeControls  = r.count('volume_control');
   const modulators      = r.count('modulator');
   const wallTvMounts    = r.count('tv_mount_wall');
   const ceilingTvMounts = r.count('tv_mount_ceiling');
@@ -529,14 +530,18 @@ export function generateScopeOfWorks(
       ? `${amplifiers} ${plural(amplifiers, 'amplifier')}`
       : siteInfo.separate_studio_zone ? '2 amplifiers' : '1 amplifier';
     const counts: string[] = [`${speakers} ${plural(speakers, 'speaker')}`, ampLabel];
+    if (volumeControls > 0) counts.push(`${volumeControls} volume ${plural(volumeControls, 'control')}`);
 
     const items: string[] = [
       `<strong>(${speakers}) ceiling/wall-mounted ${plural(speakers, 'speaker')}</strong> covering main gym, free-weights and reception`,
       amplifiers > 0
         ? `<strong>(${amplifiers}) ${plural(amplifiers, 'rack-mounted mixer-amplifier')}</strong> on 100V line audio`
         : `Rack-mounted mixer-amplifier on 100V line audio`,
-      `All speaker cabling, terminations and faceplates`,
     ];
+    // Volume control is its own plan symbol and BOM line (PRO1075), never a
+    // speaker (Mitchell, 10 Nov 2026: "need to create a line for the volume control").
+    if (volumeControls > 0) items.push(roleBullet(roleDescriptions, 'volume_control', volumeControls, `<strong>(${volumeControls}) wall-mounted volume ${plural(volumeControls, 'control')}</strong> — 100V line attenuator for the studio / zone`));
+    items.push(`All speaker cabling, terminations and faceplates`);
 
     return {
       id: 'audio',
