@@ -359,7 +359,12 @@ export function generateScopeOfWorks(
   const accessControllers = r.count('access_control_system');
   const cardReaders     = r.count('card_reader');
   const keypads         = r.count('standalone_keypad');
-  const speakers        = r.count('speaker');
+  // Wall speakers are quoted as PAIRS (one BOM line = 2 speakers), so the
+  // role count under-reads. Use the plan's placed speakers when we have them
+  // (CF-2026-0117: 12 on the plan, scope said 7 — Mitchell 10 Nov 2026).
+  const plannedSpeakers = (deviceCounts?.speaker_roof_black || 0) + (deviceCounts?.speaker_roof_white || 0)
+    + (deviceCounts?.speaker_wall_black || 0) + (deviceCounts?.speaker_wall_white || 0);
+  const speakers        = plannedSpeakers > 0 ? plannedSpeakers : r.count('speaker');
   const amplifiers      = r.count('amplifier');
   const modulators      = r.count('modulator');
   const wallTvMounts    = r.count('tv_mount_wall');
