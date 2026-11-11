@@ -129,17 +129,36 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ token: str
       .upload(storagePath, pdfBuffer, { contentType: "application/pdf" });
     if (uploadError) throw new Error(`storage upload: ${uploadError.message}`);
 
-    if (request.site_document_id) {
-      await sb
+    // The placeholder row the send created can be gone by now (an admin
+    // deleting the "no file yet" row nulls site_document_id via the FK), so
+    // the signed PDF must always end up as a Security Paperwork row —
+    // update the placeholder if it still exists, otherwise create the row
+    // and re-link the request (11 Nov 2026: two signed forms were in
+    // storage with no row and could not be opened in the CRM).
+    const docPatch = {
+      storage_path: storagePath,
+      mime_type: "application/pdf",
+      size_bytes: pdfBuffer.length,
+      status: "signed",
+      updated_at: signedAt,
+    };
+    const { data: updatedDoc } = request.site_document_id
+      ? await sb.from("site_documents").update(docPatch).eq("id", request.site_document_id).select("id")
+      : { data: null };
+    if (!updatedDoc || updatedDoc.length === 0) {
+      const { data: newDoc, error: docError } = await sb
         .from("site_documents")
-        .update({
-          storage_path: storagePath,
-          mime_type: "application/pdf",
-          size_bytes: pdfBuffer.length,
-          status: "signed",
-          updated_at: signedAt,
+        .insert({
+          site_id: request.site_id,
+          category: "security",
+          name: `Security Monitoring Response Instructions v${request.version}`,
+          version: request.version,
+          ...docPatch,
         })
-        .eq("id", request.site_document_id);
+        .select("id")
+        .single();
+      if (docError || !newDoc) throw new Error(`document row: ${docError?.message ?? "insert failed"}`);
+      await sb.from("document_sign_requests").update({ site_document_id: newDoc.id }).eq("id", request.id);
     }
   } catch (err) {
     // The signature itself is safely recorded on the request row — a failed
