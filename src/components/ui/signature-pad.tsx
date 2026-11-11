@@ -22,27 +22,49 @@ export function SignaturePad({
   const lastPoint = useRef<{ x: number; y: number } | null>(null);
   const [hasInk, setHasInk] = useState(false);
 
-  // Size the backing store to the element's rendered size × DPR. Re-run on
-  // resize; the drawing is cleared when that happens (acceptable — resize
-  // mid-signature is rare and a stretched signature looks worse).
+  // Size the backing store to the element's rendered size × DPR. Re-runs on
+  // resize. Ink is PRESERVED across a resize: the previous bitmap is redrawn
+  // scaled into the new box. (Before 11 Nov 2026 a resize wiped the canvas
+  // and reported null — the monitoring form's Sign section drops its green
+  // left rule the moment name + position + signature are all in, that 5 px
+  // shift resized the canvas, and the signature vanished right before
+  // submit. Nobody ever managed to sign.)
+  const sizeRef = useRef<{ w: number; h: number } | null>(null);
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
       const rect = canvas.getBoundingClientRect();
-      canvas.width = Math.round(rect.width * dpr);
-      canvas.height = Math.round(rect.height * dpr);
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.scale(dpr, dpr);
-        ctx.lineWidth = 2.25;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.strokeStyle = strokeColor;
+      const w = Math.round(rect.width * dpr);
+      const h = Math.round(rect.height * dpr);
+      if (w === 0 || h === 0) return;
+      if (sizeRef.current && sizeRef.current.w === w && sizeRef.current.h === h) return;
+      // Keep whatever is drawn: snapshot before the resize clears the bitmap.
+      let snapshot: HTMLCanvasElement | null = null;
+      if (sizeRef.current && canvas.width > 0 && canvas.height > 0) {
+        snapshot = document.createElement("canvas");
+        snapshot.width = canvas.width;
+        snapshot.height = canvas.height;
+        snapshot.getContext("2d")?.drawImage(canvas, 0, 0);
       }
-      setHasInk(false);
-      onChange(null);
+      canvas.width = w;
+      canvas.height = h;
+      sizeRef.current = { w, h };
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      if (snapshot) {
+        ctx.drawImage(snapshot, 0, 0, snapshot.width, snapshot.height, 0, 0, w, h);
+      }
+      ctx.scale(dpr, dpr);
+      ctx.lineWidth = 2.25;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = strokeColor;
+      if (snapshot) {
+        // Report the re-rendered ink so the form never loses the signature.
+        onChange(canvas.toDataURL("image/png"));
+      }
     };
     resize();
     const observer = new ResizeObserver(resize);

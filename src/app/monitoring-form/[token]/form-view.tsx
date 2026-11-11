@@ -822,7 +822,7 @@ function Section({
 }) {
   const needed = badge === "Needed from you";
   return (
-    <section className="mf-card" data-section={sectionKey} ref={registerSection(sectionKey)} style={{ borderLeft: highlight ? "5px solid #16a34a" : badge && !needed ? "5px solid #cbd5e1" : undefined, scrollMarginTop: 16 }}>
+    <section className="mf-card" data-section={sectionKey} ref={registerSection(sectionKey)} style={{ borderLeft: highlight ? "5px solid #16a34a" : badge && !needed ? "5px solid #cbd5e1" : "5px solid transparent", scrollMarginTop: 16 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: subtitle ? 4 : 14 }}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", margin: 0, letterSpacing: "-0.2px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           {title}
