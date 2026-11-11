@@ -280,6 +280,7 @@ export default async function JobDetailPage({
           fitOffStaffIds={job.fit_off_staff_ids ?? []}
           openingDate={job.opening_date ?? null}
           handoverDate={job.handover_date ?? null}
+          palletLeaveDate={job.pallet_leave_date ?? null}
           datesTbc={job.dates_tbc ?? false}
           contact={
             (job as any).job_contact ??

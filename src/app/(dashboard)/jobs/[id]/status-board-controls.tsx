@@ -31,6 +31,7 @@ interface Props {
   fitOffStaffIds: string[];
   openingDate: string | null;
   handoverDate: string | null;
+  palletLeaveDate: string | null;
   datesTbc: boolean;
   contact?: Contact | null;
 }
@@ -55,6 +56,7 @@ export function StatusBoardControls({
   fitOffStaffIds: initFoStaff,
   openingDate: initOpening,
   handoverDate: initHandover,
+  palletLeaveDate: initPallet,
   datesTbc: initTbc,
   contact,
 }: Props) {
@@ -70,6 +72,7 @@ export function StatusBoardControls({
   const [foStaff, setFoStaff] = useState<string[]>(initFoStaff ?? []);
   const [opening, setOpening] = useState(initOpening ?? "");
   const [handover, setHandover] = useState(initHandover ?? "");
+  const [pallet, setPallet] = useState(initPallet ?? "");
   const [tbc, setTbc] = useState(initTbc);
   const [busy, setBusy] = useState(false);
   // Collapsed by default on phones (Mitchell 2026-08-18): the build-dates
@@ -85,6 +88,7 @@ export function StatusBoardControls({
     foStart: string; foEnd: string; foStaff: string[];
     opening: string;
     handover: string;
+    pallet: string;
     tbc: boolean;
   }> = {}) {
     const payload = {
@@ -97,6 +101,7 @@ export function StatusBoardControls({
       fitOffStaffIds: over.foStaff ?? foStaff,
       openingDate: (over.opening ?? opening) || null,
       handoverDate: (over.handover ?? handover) || null,
+      palletLeaveDate: (over.pallet ?? pallet) || null,
       datesTbc: over.tbc ?? tbc,
     };
     setBusy(true);
@@ -183,6 +188,7 @@ export function StatusBoardControls({
             Build dates
             {riStart && ` · RI ${riStart.slice(8, 10)}/${riStart.slice(5, 7)}`}
             {foStart && ` · FO ${foStart.slice(8, 10)}/${foStart.slice(5, 7)}`}
+            {pallet && ` · Pallet ${pallet.slice(8, 10)}/${pallet.slice(5, 7)}`}
             {handover && ` · HO ${handover.slice(8, 10)}/${handover.slice(5, 7)}`}
             {opening && ` · Opens ${opening.slice(8, 10)}/${opening.slice(5, 7)}`}
             {tbc && " · TBC"}
@@ -226,6 +232,23 @@ export function StatusBoardControls({
               onEndCommit={(v) => sync({ foEnd: v })}
               onStaff={(v) => { setFoStaff(v); sync({ foStaff: v }); }}
             />
+            {/* Pallet to leave — Mitchell 2026-11-11: date the pallet leaves the warehouse for site. Single date, no crew booking */}
+            <div className="rounded-md border border-border/60 bg-background/40 p-3 sm:col-span-2">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-amber-400" />
+                <span className="text-xs font-semibold">Pallet to Leave</span>
+              </div>
+              <label className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                Leaves warehouse
+                <input
+                  type="date"
+                  value={pallet}
+                  onChange={(e) => setPallet(e.target.value)}
+                  onBlur={(e) => sync({ pallet: e.target.value })}
+                  className={dateInput}
+                />
+              </label>
+            </div>
             {/* Base Builder Handover — Sue 2026-10 (FB6EE0B8): single date, no crew booking */}
             <div className="rounded-md border border-border/60 bg-background/40 p-3 sm:col-span-2">
               <div className="mb-2 flex items-center gap-2">

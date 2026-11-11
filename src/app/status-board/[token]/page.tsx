@@ -24,6 +24,7 @@ interface BoardJob {
   fit_off_end_date: string | null;
   opening_date: string | null;
   handover_date: string | null;
+  pallet_leave_date: string | null;
   dates_tbc: boolean | null;
   rough_in_staff_ids: string[] | null;
   fit_off_staff_ids: string[] | null;
@@ -179,7 +180,7 @@ export default async function StatusBoardPage({
   const { data } = await supabase
     .from("jobs")
     .select(
-      "id, number, reference, rough_in_date, rough_in_end_date, fit_off_date, fit_off_end_date, opening_date, handover_date, dates_tbc, rough_in_staff_ids, fit_off_staff_ids, customer:customers(name), site:customer_sites(name), status:statuses(name, colour, sort_order)",
+      "id, number, reference, rough_in_date, rough_in_end_date, fit_off_date, fit_off_end_date, opening_date, handover_date, pallet_leave_date, dates_tbc, rough_in_staff_ids, fit_off_staff_ids, customer:customers(name), site:customer_sites(name), status:statuses(name, colour, sort_order)",
     )
     .eq("is_new_build", true);
 
@@ -290,6 +291,11 @@ export default async function StatusBoardPage({
                         {subtitle && <div className="truncate text-white/45 text-[clamp(0.75rem,0.9vw,0.95rem)]">{subtitle}</div>}
                         {/* Base builder handover — Sue 2026-10 (FB6EE0B8). Sits under the
                             site name so the column grid stays unchanged. */}
+                        {j.pallet_leave_date && (
+                          <div className="truncate text-amber-300/80 text-[clamp(0.7rem,0.85vw,0.9rem)]">
+                            Pallet leaves {fmtShort(j.pallet_leave_date)}
+                          </div>
+                        )}
                         {j.handover_date && (
                           <div className="truncate text-sky-300/80 text-[clamp(0.7rem,0.85vw,0.9rem)]">
                             Handover {fmtShort(j.handover_date)}

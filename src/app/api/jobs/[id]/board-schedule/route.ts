@@ -20,6 +20,7 @@ interface Body {
   fitOffStaffIds?: string[];
   openingDate?: string | null;
   handoverDate?: string | null;
+  palletLeaveDate?: string | null;
   datesTbc?: boolean;
 }
 
@@ -61,6 +62,7 @@ export async function POST(
       fit_off_staff_ids: fitStaff,
       opening_date: body.openingDate || null,
       handover_date: body.handoverDate || null,
+      pallet_leave_date: body.palletLeaveDate || null,
       dates_tbc: !!body.datesTbc,
     })
     .eq("id", id);
