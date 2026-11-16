@@ -19,7 +19,9 @@ const GROUP_PREFIX: Record<string, string> = {
   pir: "PIR",
   speakers: "SPK",
   data: "D",
+  coax: "C",
   access_points: "AP",
+  power: "P",
 };
 
 const PREFIX_BY_DEVICE: Record<string, string> = {};

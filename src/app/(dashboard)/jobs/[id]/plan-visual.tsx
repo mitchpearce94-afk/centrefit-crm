@@ -58,7 +58,9 @@ const NUM_GROUPS: Record<string, string[]> = {
   cameras: ["cam-black", "cam-white"],
   pir: ["pir-wall", "pir-ceiling"],
   aps: ["wifi-ap"],
-  data: ["cat6-data", "rg6-coax"],
+  data: ["cat6-data"],
+  coax: ["rg6-coax"],
+  power: ["gpo-double", "gpo-single"],
   speakers: ["speaker-roof-white", "speaker-roof-black", "speaker-wall-white", "speaker-wall-black"],
 };
 const GROUP_BY_DEVICE: Record<string, string> = {};
@@ -158,7 +160,7 @@ export function PlanVisual({
       for (const d of floors[i].devices ?? []) {
         const g = GROUP_BY_DEVICE[d.deviceId];
         if (!g) continue;
-        const inc = g === "data" ? Math.max(1, d.dataCount ?? 1) : 1;
+        const inc = g === "data" || g === "coax" ? Math.max(1, d.dataCount ?? 1) : 1;
         offsets[g] = (offsets[g] ?? 0) + inc;
       }
     }
@@ -358,13 +360,14 @@ export function PlanVisual({
                 : SZ * deviceScale * 2;
               const hitPx = Math.max(symbolPx, minHit);
               const group = GROUP_BY_DEVICE[d.deviceId];
+              const pfx = d.deviceId === "rg6-coax" ? "C" : group === "power" ? "P" : "D";
               const showLabel = typeof d.labelNum === "number" && d.labelNum !== 0 && d.instanceId !== floor.commsRackId;
               const effNum = showLabel ? (d.labelNum as number) + (group ? offsets[group] ?? 0 : 0) : 0;
               const labelText = showLabel
                 ? isDataOutlet && (d.dataCount ?? 1) > 1
-                  ? `D${effNum}-D${effNum + (d.dataCount ?? 1) - 1}`
-                  : isDataOutlet
-                    ? `D${effNum}`
+                  ? `${pfx}${effNum}-${pfx}${effNum + (d.dataCount ?? 1) - 1}`
+                  : isDataOutlet || group === "power"
+                    ? `${pfx}${effNum}`
                     : `${effNum}`
                 : null;
               // True plan scale, slightly larger than the editor's s*0.9 for

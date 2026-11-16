@@ -499,8 +499,8 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
           const zone = d.speakerZone || 1;
           runningZoneCounts.set(zone, (runningZoneCounts.get(zone) || 0) + 1);
         }
-      } else if (groupName === 'data') {
-        // Data outlets: a ×N marker consumes N labels, so advance by
+      } else if (groupName === 'data' || groupName === 'coax') {
+        // Data / coax outlets: a ×N marker consumes N labels, so advance by
         // sum of dataCounts not by marker count.
         const count = floor.devices
           .filter(d => groupIds.includes(d.deviceId))
@@ -673,7 +673,7 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
             const count = Math.max(1, device.dataCount ?? 1);
             const start = globalNum;
             const end = globalNum + count - 1;
-            const pfx = isPower ? 'P' : 'D';
+            const pfx = isPower ? 'P' : device.deviceId === 'rg6-coax' ? 'C' : 'D';
             const labelText = count > 1 ? `${pfx}${start}-${pfx}${end}` : `${pfx}${start}`;
             const labelSize = mapper.toSize(26 * dScale);
             const labelW = fontBold.widthOfTextAtSize(labelText, labelSize);

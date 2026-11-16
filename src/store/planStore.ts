@@ -197,7 +197,7 @@ function renumberDevices(devices: PlacedDevice[], commsRackId?: string | null): 
         const chain = [...vcChain, ...spkChain];
         chain.forEach((d, i) => labelMap.set(d.instanceId, i + 1));
       }
-    } else if (groupName === 'data' || groupName === 'access_points' || groupName === 'power') {
+    } else if (groupName === 'data' || groupName === 'coax' || groupName === 'access_points' || groupName === 'power') {
       // Cable-labelled groups: number in PLACEMENT order (array insertion
       // order) not by X position so cable labels match the installation
       // sequence the electrician physically wires them in. The counter
@@ -206,7 +206,7 @@ function renumberDevices(devices: PlacedDevice[], commsRackId?: string | null): 
       for (const d of devices) {
         if (groupIds.includes(d.deviceId)) {
           labelMap.set(d.instanceId, n);
-          n += groupName === 'data' ? Math.max(1, d.dataCount ?? 1) : 1;
+          n += groupName === 'data' || groupName === 'coax' ? Math.max(1, d.dataCount ?? 1) : 1;
         }
       }
     } else {

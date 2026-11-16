@@ -54,7 +54,7 @@ export default function PlanCanvas() {
             const zone = d.speakerZone || 1;
             speakerZoneOffsets.set(zone, (speakerZoneOffsets.get(zone) || 0) + 1);
           }
-        } else if (groupName === 'data') {
+        } else if (groupName === 'data' || groupName === 'coax') {
           for (const d of f.devices) {
             if (!groupIds.includes(d.deviceId)) continue;
             groupOffsets[groupName] += Math.max(1, d.dataCount ?? 1);
@@ -462,6 +462,7 @@ export default function PlanCanvas() {
             if (!def) return null;
             const isCommsRack = device.instanceId === commsRackId;
             const isDataOutlet = device.deviceId === 'cat6-data' || device.deviceId === 'rg6-coax';
+            const isCoax = device.deviceId === 'rg6-coax';
             // GPOs carry a "P" label the same way — the power plan is the
             // master view, and the notes reference P-numbers for amps/purpose.
             const isPower = isPowerDevice(device.deviceId);
@@ -480,7 +481,7 @@ export default function PlanCanvas() {
               <DeviceSymbol key={device.instanceId} def={def} x={device.x} y={device.y} rotation={device.rotation}
                 selected={device.instanceId === selectedDeviceId}
                 labelNum={labelHidden ? undefined : effectiveLabelNum}
-                labelPrefix={isDataOutlet ? 'D' : isPower ? 'P' : undefined}
+                labelPrefix={isCoax ? 'C' : isDataOutlet ? 'D' : isPower ? 'P' : undefined}
                 concreteMounted={device.concreteMounted}
                 provisional={device.provisional}
                 dataCount={device.dataCount}

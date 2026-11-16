@@ -122,7 +122,7 @@ export interface PdfElement {
   children?: PdfElement[];
 }
 
-export type NumberedDeviceGroup = 'cameras' | 'pir' | 'speakers' | 'data' | 'access_points' | 'power';
+export type NumberedDeviceGroup = 'cameras' | 'pir' | 'speakers' | 'data' | 'coax' | 'access_points' | 'power';
 
 export const NUMBERED_GROUPS: Record<NumberedDeviceGroup, string[]> = {
   cameras: ['cam-black', 'cam-white'],
@@ -131,7 +131,11 @@ export const NUMBERED_GROUPS: Record<NumberedDeviceGroup, string[]> = {
   // Data outlets are numbered in PLACEMENT order (not left-to-right) so
   // cable labels match the installation sequence the electrician
   // physically runs them in.
-  data: ['cat6-data', 'rg6-coax'],
+  data: ['cat6-data'],
+  // Coax has its own sequence (C1, C2…) — Mitchell 16 Nov 2026: coax was
+  // tabbing up in the D-sequence with the data points; they're separate
+  // cable runs and need separate labels. Stacks via dataCount like data.
+  coax: ['rg6-coax'],
   // WiFi APs get their own number space (AP1, AP2…) — also chronological,
   // same rationale as data: they're Cat6 drops the electrician needs to
   // label as they run them.
