@@ -1,7 +1,7 @@
 import React from 'react';
 import { create } from 'zustand';
 import { buildSpeakerChain } from '@/lib/plan-builder/speaker-chain';
-import { PlacedDevice, CableRun, TitleBlockInfo, LayerVisibility, ActiveTool, WhitewashRect, Callout, NUMBERED_GROUPS, FloorData, RevisionEntry, PdfElement, CustomDevice } from '@/types/plan-builder';
+import { PlanView, PlacedDevice, CableRun, TitleBlockInfo, LayerVisibility, ActiveTool, WhitewashRect, Callout, NUMBERED_GROUPS, FloorData, RevisionEntry, PdfElement, CustomDevice } from '@/types/plan-builder';
 import { getDeviceById, setCustomDeviceDefs } from '@/lib/plan-builder/devices';
 import { renderPdfPageFiltered } from '@/lib/plan-builder/pdfUtils';
 
@@ -43,7 +43,7 @@ interface PlanState {
   deviceToPlace: string | null;
   deviceScale: number;
   layers: LayerVisibility;
-  activePlan: 'master' | 'cat6' | 'sixcore' | 'speaker';
+  activePlan: PlanView;
   titleBlock: TitleBlockInfo;
   clientLogo: string | null;
   floors: FloorData[];
@@ -98,7 +98,7 @@ interface PlanState {
   selectDevice: (instanceId: string | null) => void;
   setCommsRack: (instanceId: string | null) => void;
   toggleLayer: (layer: keyof LayerVisibility) => void;
-  setActivePlan: (plan: 'master' | 'cat6' | 'sixcore' | 'speaker') => void;
+  setActivePlan: (plan: PlanView) => void;
   updateTitleBlock: (info: Partial<TitleBlockInfo>) => void;
   setClientLogo: (logo: string | null) => void;
   setSpeakerZone: (instanceId: string, zone: number) => void;

@@ -345,6 +345,7 @@ export default function PlanCanvas() {
     if (activePlan === 'cat6') return def.cableType === 'cat6';
     if (activePlan === 'sixcore') return def.cableType === 'sixcore';
     if (activePlan === 'speaker') return def.cableType === 'speaker';
+    if (activePlan === 'power') return def.category === 'power';
     return true;
   });
 
@@ -451,7 +452,7 @@ export default function PlanCanvas() {
         <PdfElementOverlay />
 
         <Layer>
-          {activePlan !== 'master' && filteredDevices.map(device => {
+          {activePlan !== 'master' && activePlan !== 'power' && filteredDevices.map(device => {
             if (device.instanceId === commsRackId) return null;
             return <Circle key={`coverage-${device.instanceId}`} x={device.x} y={device.y} radius={80 * deviceScale}
               fill="rgba(255, 150, 150, 0.12)" stroke="rgba(255, 150, 150, 0.25)" strokeWidth={1} listening={false} />;
@@ -505,14 +506,14 @@ export default function PlanCanvas() {
           })}
         </Layer>
 
-        {activePlan === 'master' && <CalloutLayer stageScale={stageScale} />}
+        {(activePlan === 'master' || activePlan === 'power') && <CalloutLayer stageScale={stageScale} />}
 
         <Layer listening={false}>
           {activePlan !== 'master' && (
             <Text x={10 / stageScale} y={10 / stageScale}
-              text={activePlan.toUpperCase() + ' CABLE PLAN'}
+              text={activePlan === 'power' ? 'POWER PLAN' : activePlan.toUpperCase() + ' CABLE PLAN'}
               fontSize={16 / stageScale}
-              fill={activePlan === 'cat6' ? '#3399ff' : activePlan === 'sixcore' ? '#ff4444' : '#44cc44'}
+              fill={activePlan === 'cat6' ? '#3399ff' : activePlan === 'sixcore' ? '#ff4444' : activePlan === 'power' ? '#f5a623' : '#44cc44'}
               fontStyle="bold" />
           )}
         </Layer>

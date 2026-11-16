@@ -9,7 +9,7 @@ export default function TitleBlock() {
 
   const planName = activePlan === 'master' ? 'MASTER PLAN' :
     activePlan === 'cat6' ? 'CAT6 CABLE PLAN' :
-    activePlan === 'sixcore' ? '6-CORE CABLE PLAN' : 'SPEAKER CABLE PLAN';
+    activePlan === 'sixcore' ? '6-CORE CABLE PLAN' : activePlan === 'power' ? 'POWER PLAN' : 'SPEAKER CABLE PLAN';
 
   return (
     <div className="flex items-stretch border-t border-gray-600 bg-gray-900" style={{ height: '64px', minHeight: '64px' }}>
@@ -33,7 +33,7 @@ export default function TitleBlock() {
         <div className="text-center">
           <div className="text-xs text-gray-500 mb-0.5">Plan Type</div>
           <div className="font-bold text-sm" style={{
-            color: activePlan === 'cat6' ? '#3399ff' : activePlan === 'sixcore' ? '#ff4444' : activePlan === 'speaker' ? '#44cc44' : '#aaaaaa'
+            color: activePlan === 'cat6' ? '#3399ff' : activePlan === 'sixcore' ? '#ff4444' : activePlan === 'speaker' ? '#44cc44' : activePlan === 'power' ? '#f5a623' : '#aaaaaa'
           }}>{planName}</div>
         </div>
       </div>

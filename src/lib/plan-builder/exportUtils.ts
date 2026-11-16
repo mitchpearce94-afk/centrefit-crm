@@ -3,17 +3,17 @@ import { usePlanStore } from '@/store/planStore';
 import { getDeviceById, isPowerDevice } from '@/lib/plan-builder/devices';
 import { calloutBox, calloutArrow, calloutTarget, CALLOUT_LINE } from '@/lib/plan-builder/callouts';
 import { buildSpeakerChain } from '@/lib/plan-builder/speaker-chain';
-import { PlacedDevice, TitleBlockInfo, FloorData, RevisionEntry, DeviceCategory } from '@/types/plan-builder';
+import { PlacedDevice, TitleBlockInfo, FloorData, RevisionEntry, DeviceCategory, PlanView } from '@/types/plan-builder';
 
-type PlanView = 'master' | 'cat6' | 'sixcore' | 'speaker';
-
-interface PageDef { view: PlanView; svgPage: number; }
+interface PageDef { view: PlanView; svgPage: number; /** Overdraws the template's DRAWING TITLE cell (page-1 says "All Inclusive"). */ titleOverride?: string; }
 
 const DEVICE_PAGES: PageDef[] = [
   { view: 'master', svgPage: 1 },
   { view: 'cat6', svgPage: 2 },
   { view: 'sixcore', svgPage: 3 },
   { view: 'speaker', svgPage: 4 },
+  // Power plan for the electrician: GPOs with tags + note boxes, on the master template with the title swapped.
+  { view: 'power', svgPage: 1, titleOverride: 'Power Plan' },
 ];
 
 const TOTAL_TEMPLATE_PAGES = 6;
@@ -72,12 +72,13 @@ function getVisibleDevices(devices: PlacedDevice[], view: PlanView, commsRackId:
     if (view === 'cat6') return def.cableType === 'cat6';
     if (view === 'sixcore') return def.cableType === 'sixcore';
     if (view === 'speaker') return def.cableType === 'speaker';
+    if (view === 'power') return def.category === 'power';
     return true;
   });
 }
 
 
-async function loadAndInjectSvg(pageNum: number, titleBlock: TitleBlockInfo, clientLogo?: string | null, revisions?: RevisionEntry[], notes?: string): Promise<string> {
+async function loadAndInjectSvg(pageNum: number, titleBlock: TitleBlockInfo, clientLogo?: string | null, revisions?: RevisionEntry[], notes?: string, titleOverride?: string): Promise<string> {
   const response = await fetch(`/plan-builder/templates/page-${pageNum}.svg`);
   let svgText = await response.text();
 
@@ -234,6 +235,11 @@ async function loadAndInjectSvg(pageNum: number, titleBlock: TitleBlockInfo, cli
     }
   }
 
+  // Drawing-title override: white out the template's title glyphs and write ours (cell measured off page-1.svg).
+  if (titleOverride) {
+    injection += `<rect x="18520" y="12925" width="2560" height="160" fill="white"/>\n`;
+    injection += `<text x="19792" y="13048" font-family="Arial, sans-serif" font-size="115" font-weight="bold" text-anchor="middle" fill="black">${escapeXml(titleOverride)}</text>\n`;
+  }
   svgText = svgText.replace('</svg>', injection + '</svg>');
   return svgText;
 }
@@ -511,7 +517,7 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
         if (!hasCableDevices) continue;
       }
 
-      const svgText = await loadAndInjectSvg(pageDef.svgPage, titleBlock, clientLogo, revisions, titleBlock.notes);
+      const svgText = await loadAndInjectSvg(pageDef.svgPage, titleBlock, clientLogo, revisions, titleBlock.notes, pageDef.titleOverride);
       const templatePng = await renderSvgToPng(svgText);
       const templateBytes = await dataUrlToBytes(templatePng);
       const templateImage = await outputDoc.embedPng(templateBytes);
@@ -528,7 +534,7 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
       const visibleDevices = getVisibleDevices(devices, pageDef.view, commsRackId);
       const dScale = usePlanStore.getState().deviceScale;
 
-      if (pageDef.view !== 'master') {
+      if (pageDef.view !== 'master' && pageDef.view !== 'power') {
         for (const device of visibleDevices) {
           if (device.instanceId === commsRackId) continue;
           page.drawCircle({ x: mapper.toX(device.x), y: mapper.toY(device.y), size: mapper.toSize(COVERAGE_RADIUS * dScale), color: rgb(1, 0.59, 0.59), opacity: 0.22, borderColor: rgb(1, 0.59, 0.59), borderWidth: 1, borderOpacity: 0.45 });
@@ -761,8 +767,8 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
       // (legend is consistent across pages), but the ×N data-count key is
       // scoped to THIS floor so it only shows badges actually visible
       // on the page in front of the reader.
-      // Note boxes + leader arrows — master page only (the power & data plan).
-      if (pageDef.view === 'master') {
+      // Note boxes + leader arrows — master page and the power plan.
+      if (pageDef.view === 'master' || pageDef.view === 'power') {
         for (const c of floor.callouts ?? []) {
           const fontPt = mapper.toSize(22 * dScale);
           const box = calloutBox(c, dScale, s => fontRegular.widthOfTextAtSize(s, fontPt) / mapper.toSize(1));

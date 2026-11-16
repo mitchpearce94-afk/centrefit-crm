@@ -1,5 +1,7 @@
 export type DeviceCategory = 'cameras' | 'security' | 'audio' | 'data' | 'av' | 'power';
 export type CableType = 'cat6' | 'sixcore' | 'speaker' | 'none';
+/** Editor view / export page. 'power' = GPOs + on-plan notes only (the sparky's sheet). */
+export type PlanView = 'master' | 'cat6' | 'sixcore' | 'speaker' | 'power';
 
 export type SymbolType =
   | 'labeled-circle'

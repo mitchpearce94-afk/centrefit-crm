@@ -455,11 +455,12 @@ export default function Toolbar({ jobs = [], baseDocId = null }: { jobs?: JobOpt
     setStageTransform(newScale, cx - mousePointTo.x * newScale, cy - mousePointTo.y * newScale);
   };
 
-  const planButtons: Array<{ id: 'master' | 'cat6' | 'sixcore' | 'speaker'; label: string; color: string }> = [
+  const planButtons: Array<{ id: 'master' | 'cat6' | 'sixcore' | 'speaker' | 'power'; label: string; color: string }> = [
     { id: 'master', label: 'Master', color: '#aaaaaa' },
     { id: 'cat6', label: 'CAT6', color: '#3399ff' },
     { id: 'sixcore', label: '6-Core', color: '#ff4444' },
     { id: 'speaker', label: 'Speaker', color: '#44cc44' },
+    { id: 'power', label: 'Power', color: '#f5a623' },
   ];
 
   void layers;
