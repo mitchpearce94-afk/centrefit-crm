@@ -677,9 +677,15 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
             const labelText = count > 1 ? `${pfx}${start}-${pfx}${end}` : `${pfx}${start}`;
             const labelSize = mapper.toSize(26 * dScale);
             const labelW = fontBold.widthOfTextAtSize(labelText, labelSize);
-            // Place just below the symbol so it sits clear of the triangle.
-            const labelX = px - labelW / 2;
-            const labelY = py - sz / 2 - labelSize - mapper.toSize(2 * dScale);
+            // Base side of the symbol in ITS frame (matches the editor):
+            // local +y rotated by the device rotation → canvas (-sin r, cos r).
+            // Canvas y is down, PDF y is up — mapper.toY handles the flip.
+            const rotR = ((device.rotation || 0) * Math.PI) / 180;
+            const off = 36 * dScale;
+            const lx = mapper.toX(device.x - Math.sin(rotR) * off);
+            const ly = mapper.toY(device.y + Math.cos(rotR) * off);
+            const labelX = lx - labelW / 2;
+            const labelY = ly - labelSize * 0.35;
             // White halo underneath via four offset draws — pdf-lib has
             // no text-shadow, so simulate it with a 1px outline.
             const haloOff = mapper.toSize(1.2 * dScale);

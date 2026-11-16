@@ -465,10 +465,16 @@ export function PlanVisual({
                     <span
                       style={{
                         position: "absolute",
-                        left: "50%",
-                        top: isDataOutlet ? `calc(50% + ${symbolPx * 0.55}px)` : undefined,
-                        bottom: isDataOutlet ? undefined : `calc(50% + ${symbolPx * 0.5}px)`,
-                        transform: "translateX(-50%)",
+                        // Prefixed labels (D/C/P) sit on the base side of the
+                        // symbol in its own frame; pill-style numbers stay above.
+                        left: isDataOutlet || group === "power"
+                          ? `calc(50% + ${(-Math.sin((rotation * Math.PI) / 180) * symbolPx * 0.75).toFixed(1)}px)`
+                          : "50%",
+                        top: isDataOutlet || group === "power"
+                          ? `calc(50% + ${(Math.cos((rotation * Math.PI) / 180) * symbolPx * 0.75).toFixed(1)}px)`
+                          : undefined,
+                        bottom: isDataOutlet || group === "power" ? undefined : `calc(50% + ${symbolPx * 0.5}px)`,
+                        transform: isDataOutlet || group === "power" ? "translate(-50%, -50%)" : "translateX(-50%)",
                         color: ticked ? tickColor : "#dc2626",
                         fontWeight: 800,
                         fontSize: labelFont,

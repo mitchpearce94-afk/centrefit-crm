@@ -103,19 +103,23 @@ export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelN
           const text = isRange
             ? `${labelPrefix}${start}-${labelPrefix}${end}`
             : `${labelPrefix}${start}`;
-          // Position just below the symbol; counter-rotated so the text
-          // stays upright when the symbol is rotated.
+          // Sits on the BASE side of the symbol in the symbol's own frame
+          // (under the GPO baseline / triangle base), so when a marker is
+          // rotated onto a wall the label follows round to the wall side
+          // instead of landing on the neighbouring outlet (Mitchell, 16 Nov
+          // 2026 — cardio row). Text itself is counter-rotated to stay
+          // upright. Group is in the rotated frame; local +y = base side.
           return (
-            <Group x={0} y={0} rotation={-rotation} listening={false}>
+            <Group x={0} y={s * 2.5} rotation={-rotation} listening={false}>
               <Text
                 text={text}
                 fontSize={s * 0.9}
                 fontStyle="bold"
                 fill="#dc2626"
                 align="center"
-                verticalAlign="top"
+                verticalAlign="middle"
                 x={-s * 4}
-                y={s * 1.9}
+                y={-s * 0.6}
                 width={s * 8}
                 height={s * 1.2}
                 shadowColor="#ffffff"
