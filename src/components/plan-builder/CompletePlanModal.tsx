@@ -68,9 +68,9 @@ export default function CompletePlanModal({ onClose }: Props) {
     grouped[cat].push({ name: info.name, count });
   }
 
-  const categoryOrder = ['cameras', 'security', 'audio', 'data', 'av', 'other'];
+  const categoryOrder = ['cameras', 'security', 'audio', 'data', 'av', 'power', 'other'];
   const categoryColors: Record<string, string> = {
-    cameras: '#3399ff', security: '#ff4444', audio: '#44cc44', data: '#3399ff', av: '#3399ff', other: '#888888',
+    cameras: '#3399ff', security: '#ff4444', audio: '#44cc44', data: '#3399ff', av: '#3399ff', power: '#f5a623', other: '#888888',
   };
 
   async function handleSendToQuote() {

@@ -10,7 +10,7 @@ interface Props {
   onClose: () => void;
 }
 
-const CATEGORY_OPTIONS: DeviceCategory[] = ['cameras', 'security', 'audio', 'data', 'av'];
+const CATEGORY_OPTIONS: DeviceCategory[] = ['cameras', 'security', 'audio', 'data', 'av', 'power'];
 
 const CATEGORY_CABLE_MAP: Record<DeviceCategory, CableType> = {
   cameras: 'cat6',
@@ -18,6 +18,7 @@ const CATEGORY_CABLE_MAP: Record<DeviceCategory, CableType> = {
   audio: 'speaker',
   data: 'cat6',
   av: 'cat6',
+  power: 'none',
 };
 
 interface ProductResult {

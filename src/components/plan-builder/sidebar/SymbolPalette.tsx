@@ -2,11 +2,11 @@
 
 import React, { useState } from 'react';
 import { usePlanStore } from '@/store/planStore';
-import { DEVICE_CATALOG, CATEGORY_LABELS, CABLE_COLORS, customDeviceToDefinition } from '@/lib/plan-builder/devices';
+import { DEVICE_CATALOG, CATEGORY_LABELS, CABLE_COLORS, POWER_COLOR, customDeviceToDefinition } from '@/lib/plan-builder/devices';
 import { DeviceCategory, DeviceDefinition } from '@/types/plan-builder';
 import AddCustomDeviceModal from '@/components/plan-builder/AddCustomDeviceModal';
 
-const CATEGORY_ORDER: DeviceCategory[] = ['cameras', 'security', 'audio', 'data', 'av'];
+const CATEGORY_ORDER: DeviceCategory[] = ['cameras', 'security', 'audio', 'data', 'av', 'power'];
 
 export default function SymbolPalette() {
   const { deviceToPlace, setDeviceToPlace, customDevices, removeCustomDevice } = usePlanStore();
@@ -40,7 +40,7 @@ export default function SymbolPalette() {
       </div>
       <div className="flex-1 overflow-y-auto">
         {CATEGORY_ORDER.map(cat => {
-          const catColor = cat === 'cameras' || cat === 'data' || cat === 'av' ? CABLE_COLORS.cat6 : cat === 'security' ? CABLE_COLORS.sixcore : CABLE_COLORS.speaker;
+          const catColor = cat === 'power' ? POWER_COLOR : cat === 'cameras' || cat === 'data' || cat === 'av' ? CABLE_COLORS.cat6 : cat === 'security' ? CABLE_COLORS.sixcore : CABLE_COLORS.speaker;
           return (
             <div key={cat}>
               <button className="w-full flex items-center justify-between px-3 py-2 bg-gray-800 hover:bg-gray-700 text-left transition-colors border-b border-gray-700"

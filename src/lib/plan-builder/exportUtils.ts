@@ -1,6 +1,6 @@
 import { PDFDocument, PDFPage, PDFImage, PDFFont, StandardFonts, rgb, degrees } from 'pdf-lib';
 import { usePlanStore } from '@/store/planStore';
-import { getDeviceById } from '@/lib/plan-builder/devices';
+import { getDeviceById, isPowerDevice } from '@/lib/plan-builder/devices';
 import { PlacedDevice, TitleBlockInfo, FloorData, RevisionEntry, DeviceCategory } from '@/types/plan-builder';
 
 type PlanView = 'master' | 'cat6' | 'sixcore' | 'speaker';
@@ -295,13 +295,13 @@ function drawRunBadge(page: PDFPage, x: number, y: number, label: string, color:
   page.drawText(label, { x: x - textW / 2, y: y - fontSize / 3, size: fontSize, font, color });
 }
 
-const LEGEND_CATEGORY_ORDER: DeviceCategory[] = ['cameras', 'security', 'audio', 'data', 'av'];
+const LEGEND_CATEGORY_ORDER: DeviceCategory[] = ['cameras', 'security', 'audio', 'data', 'av', 'power'];
 const LEGEND_CATEGORY_COLORS: Record<string, ReturnType<typeof rgb>> = {
   cameras: rgb(0.2, 0.6, 1), security: rgb(1, 0.27, 0.27), audio: rgb(0.27, 0.8, 0.27),
-  data: rgb(0.2, 0.6, 1), av: rgb(0.2, 0.6, 1),
+  data: rgb(0.2, 0.6, 1), av: rgb(0.2, 0.6, 1), power: rgb(0.96, 0.65, 0.14),
 };
 const LEGEND_CATEGORY_NAMES: Record<string, string> = {
-  cameras: 'CAMERAS', security: 'SECURITY', audio: 'AUDIO', data: 'DATA / COMMS', av: 'AV / INTERCOM',
+  cameras: 'CAMERAS', security: 'SECURITY', audio: 'AUDIO', data: 'DATA / COMMS', av: 'AV / INTERCOM', power: 'POWER',
 };
 
 function drawDynamicLegend(
@@ -335,7 +335,8 @@ function drawDynamicLegend(
   for (const d of allDevices) {
     if (seen.has(d.deviceId)) continue;
     const def = getDeviceById(d.deviceId);
-    if (def && def.cableType === 'none' && !def.isCommsRack) {
+    // GPOs are master-page only (power plan) — keep them off the cable-plan legends.
+    if (def && def.cableType === 'none' && !def.isCommsRack && def.category !== 'power') {
       seen.add(d.deviceId);
       deviceIds.push(d.deviceId);
     }
@@ -645,7 +646,10 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
         // which cable-plan tab they're looking at. Other devices keep
         // the old "hide labels on master" behaviour.
         const isDataOutlet = device.deviceId === 'cat6-data' || device.deviceId === 'rg6-coax';
-        const showLabel = (pageDef.view !== 'master' || isDataOutlet)
+        // GPOs: "P1" text label on the master page (the power plan) so the
+        // NOTES panel can call out amps/purpose per outlet.
+        const isPower = isPowerDevice(device.deviceId);
+        const showLabel = (pageDef.view !== 'master' || isDataOutlet || isPower)
           && device.labelNum && device.labelNum > 0
           && device.instanceId !== commsRackId;
 
@@ -662,14 +666,15 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
             }
           }
 
-          if (isDataOutlet) {
-            // "D1" or "D5-D6" — bold red text directly below the
+          if (isDataOutlet || isPower) {
+            // "D1" or "D5-D6" (or "P3" for GPOs) — bold red text directly below the
             // triangle, no pill/circle. Width sized to fit the text so
             // we can centre it under the symbol.
             const count = Math.max(1, device.dataCount ?? 1);
             const start = globalNum;
             const end = globalNum + count - 1;
-            const labelText = count > 1 ? `D${start}-D${end}` : `D${start}`;
+            const pfx = isPower ? 'P' : 'D';
+            const labelText = count > 1 ? `${pfx}${start}-${pfx}${end}` : `${pfx}${start}`;
             const labelSize = mapper.toSize(26 * dScale);
             const labelW = fontBold.widthOfTextAtSize(labelText, labelSize);
             // Place just below the symbol so it sits clear of the triangle.

@@ -1,4 +1,4 @@
-export type DeviceCategory = 'cameras' | 'security' | 'audio' | 'data' | 'av';
+export type DeviceCategory = 'cameras' | 'security' | 'audio' | 'data' | 'av' | 'power';
 export type CableType = 'cat6' | 'sixcore' | 'speaker' | 'none';
 
 export type SymbolType =
@@ -122,7 +122,7 @@ export interface PdfElement {
   children?: PdfElement[];
 }
 
-export type NumberedDeviceGroup = 'cameras' | 'pir' | 'speakers' | 'data' | 'access_points';
+export type NumberedDeviceGroup = 'cameras' | 'pir' | 'speakers' | 'data' | 'access_points' | 'power';
 
 export const NUMBERED_GROUPS: Record<NumberedDeviceGroup, string[]> = {
   cameras: ['cam-black', 'cam-white'],
@@ -136,6 +136,11 @@ export const NUMBERED_GROUPS: Record<NumberedDeviceGroup, string[]> = {
   // same rationale as data: they're Cat6 drops the electrician needs to
   // label as they run them.
   access_points: ['wifi-ap'],
+  // GPOs (power plan). Numbered P1, P2… in placement order so the plan
+  // notes can say "P3 — 15 A dedicated, comms rack" and the sparky can
+  // match note to marker. Power is by the electrical contractor, not
+  // Centrefit — no cable run, no quote line, no install checklist row.
+  power: ['gpo-double', 'gpo-single'],
 };
 
 export interface WhitewashRect {

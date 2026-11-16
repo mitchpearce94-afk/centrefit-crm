@@ -3,7 +3,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Text, Circle, Line, Group } from 'react-konva';
 import { usePlanStore } from '@/store/planStore';
-import { getDeviceById } from '@/lib/plan-builder/devices';
+import { getDeviceById, isPowerDevice } from '@/lib/plan-builder/devices';
 import { NUMBERED_GROUPS } from '@/types/plan-builder';
 import DeviceSymbol from './DeviceSymbol';
 import CableLines from './CableLines';
@@ -462,13 +462,16 @@ export default function PlanCanvas() {
             if (!def) return null;
             const isCommsRack = device.instanceId === commsRackId;
             const isDataOutlet = device.deviceId === 'cat6-data' || device.deviceId === 'rg6-coax';
+            // GPOs carry a "P" label the same way — the power plan is the
+            // master view, and the notes reference P-numbers for amps/purpose.
+            const isPower = isPowerDevice(device.deviceId);
             // Data outlets get a "D" prefix label that shows on EVERY page
             // (including the all-inclusive/master view) — the electrician
             // needs the cable labels regardless of which cable-plan tab
             // is open. Other devices keep the existing rule of "labels
             // hidden on master".
             const labelHidden = isCommsRack || device.labelNum === 0
-              || (activePlan === 'master' && !isDataOutlet);
+              || (activePlan === 'master' && !isDataOutlet && !isPower);
             // Cross-floor numbering for every group, matching the PDF.
             // Speakers offset per zone; data by sum of dataCounts;
             // cameras / PIRs / APs by marker count.
@@ -477,7 +480,7 @@ export default function PlanCanvas() {
               <DeviceSymbol key={device.instanceId} def={def} x={device.x} y={device.y} rotation={device.rotation}
                 selected={device.instanceId === selectedDeviceId}
                 labelNum={labelHidden ? undefined : effectiveLabelNum}
-                labelPrefix={isDataOutlet ? 'D' : undefined}
+                labelPrefix={isDataOutlet ? 'D' : isPower ? 'P' : undefined}
                 concreteMounted={device.concreteMounted}
                 provisional={device.provisional}
                 dataCount={device.dataCount}

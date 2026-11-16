@@ -69,6 +69,8 @@ export async function POST(
     (floor.devices ?? []).forEach((device: any, di: number) => {
       if (!device?.instanceId || !device?.deviceId) return;
       const def = catalogById.get(device.deviceId);
+      // GPOs are the electrician's work — on the plan for the sparky, not an install row for our techs.
+      if (def?.category === "power") return;
       const name = def?.name ?? customNames.get(device.deviceId) ?? device.deviceId;
       const isData = device.deviceId === "cat6-data" || device.deviceId === "rg6-coax";
       const qty = isData ? Math.max(1, device.dataCount ?? 1) : 1;

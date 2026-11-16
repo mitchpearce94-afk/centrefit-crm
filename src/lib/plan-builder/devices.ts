@@ -57,6 +57,13 @@ export const DEVICE_CATALOG: DeviceDefinition[] = [
   { id: 'intercom-master', name: 'Video Intercom Master', category: 'av', cableType: 'cat6', symbolType: 'intercom-grid', fillColor: '#cc1166', strokeColor: '#ff66aa', label: 'M', symbolImage: '/plan-builder/symbols/intercom-master.png' },
   { id: 'intercom-slave', name: 'Video Intercom Slave', category: 'av', cableType: 'cat6', symbolType: 'intercom-grid', fillColor: '#1155cc', strokeColor: '#4499ff', label: 'S', symbolImage: '/plan-builder/symbols/intercom-slave.png' },
 
+  // POWER — GPOs for the power plan (AS 1102-style symbols matching the
+  // Athree/Skeco architect legends: dome on a baseline, one stem = single,
+  // two stems = double). Amps and purpose go in the plan NOTES against the
+  // P-number. By others: no cable, no quote code, not on the checklist.
+  { id: 'gpo-double', name: 'Double GPO dedicated (amps as noted)', category: 'power', cableType: 'none', symbolType: 'labeled-circle', fillColor: '#ffffff', strokeColor: '#111111', label: 'P', symbolImage: '/plan-builder/symbols/gpo-double.png', symbolScale: 1.3 },
+  { id: 'gpo-single', name: 'Single GPO dedicated (amps as noted)', category: 'power', cableType: 'none', symbolType: 'labeled-circle', fillColor: '#ffffff', strokeColor: '#111111', label: 'P', symbolImage: '/plan-builder/symbols/gpo-single.png', symbolScale: 1.3 },
+
   // COMMS RACK
   { id: 'comms-rack', name: 'Comms Rack', category: 'data', cableType: 'none', symbolType: 'comms-rack', fillColor: '#334455', strokeColor: '#66aaff', isCommsRack: true },
 ];
@@ -67,6 +74,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   audio: 'Audio',
   data: 'Data / Comms',
   av: 'AV / Intercom',
+  power: 'Power',
 };
 
 export const CABLE_COLORS: Record<string, string> = {
@@ -74,6 +82,14 @@ export const CABLE_COLORS: Record<string, string> = {
   sixcore: '#ff4444',
   speaker: '#44cc44',
 };
+
+/** Palette / legend swatch for the power category (no cable colour of its own). */
+export const POWER_COLOR = '#f5a623';
+
+/** True for devices that are the electrician's work (GPOs) — drawn on the plan, never cabled, quoted or ticked by Centrefit. */
+export function isPowerDevice(deviceId: string): boolean {
+  return getDeviceById(deviceId)?.category === 'power';
+}
 
 // Runtime custom device definitions (synced from store)
 let _customDeviceDefs: DeviceDefinition[] = [];
