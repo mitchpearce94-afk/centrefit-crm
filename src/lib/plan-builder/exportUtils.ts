@@ -238,7 +238,7 @@ async function loadAndInjectSvg(pageNum: number, titleBlock: TitleBlockInfo, cli
   // Drawing-title override: white out the template's title glyphs and write ours (cell measured off page-1.svg).
   if (titleOverride) {
     injection += `<rect x="18520" y="12925" width="2560" height="160" fill="white"/>\n`;
-    injection += `<text x="19792" y="13048" font-family="Arial, sans-serif" font-size="115" font-weight="bold" text-anchor="middle" fill="black">${escapeXml(titleOverride)}</text>\n`;
+    injection += `<text x="19792" y="13048" font-family="Arial, sans-serif" font-size="100" font-weight="bold" text-anchor="middle" fill="black">${escapeXml(titleOverride)}</text>\n`;
   }
   svgText = svgText.replace('</svg>', injection + '</svg>');
   return svgText;
