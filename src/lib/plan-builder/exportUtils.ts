@@ -1,6 +1,7 @@
 import { PDFDocument, PDFPage, PDFImage, PDFFont, StandardFonts, rgb, degrees } from 'pdf-lib';
 import { usePlanStore } from '@/store/planStore';
 import { getDeviceById, isPowerDevice } from '@/lib/plan-builder/devices';
+import { calloutBox, calloutArrow, calloutTarget, CALLOUT_LINE } from '@/lib/plan-builder/callouts';
 import { PlacedDevice, TitleBlockInfo, FloorData, RevisionEntry, DeviceCategory } from '@/types/plan-builder';
 
 type PlanView = 'master' | 'cat6' | 'sixcore' | 'speaker';
@@ -430,7 +431,7 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
 
   const syncedFloors: FloorData[] = store.floors.map(f =>
     f.id === store.activeFloorId
-      ? { ...f, backgroundImage: store.backgroundImage, backgroundWidth: store.backgroundWidth, backgroundHeight: store.backgroundHeight, backgroundOffsetX: store.backgroundOffsetX, backgroundOffsetY: store.backgroundOffsetY, backgroundScale: store.backgroundScale, backgroundLocked: store.backgroundLocked, pdfFileName: store.pdfFileName, devices: store.devices, commsRackId: store.commsRackId, whitewashRects: store.whitewashRects }
+      ? { ...f, backgroundImage: store.backgroundImage, backgroundWidth: store.backgroundWidth, backgroundHeight: store.backgroundHeight, backgroundOffsetX: store.backgroundOffsetX, backgroundOffsetY: store.backgroundOffsetY, backgroundScale: store.backgroundScale, backgroundLocked: store.backgroundLocked, pdfFileName: store.pdfFileName, devices: store.devices, commsRackId: store.commsRackId, whitewashRects: store.whitewashRects, callouts: store.callouts }
       : f
   );
 
@@ -711,6 +712,22 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
           }
         }
 
+        // On-plan tag ("ub", "cl", "tv") on the FACING side of the symbol —
+        // opposite the D/C/P number — kept upright. Mirrors DeviceSymbol.
+        if (device.tag && device.instanceId !== commsRackId) {
+          const rotR = ((device.rotation || 0) * Math.PI) / 180;
+          const off = 34 * dScale;
+          const tx = mapper.toX(device.x + Math.sin(rotR) * off);
+          const ty = mapper.toY(device.y - Math.cos(rotR) * off);
+          const tagSize = mapper.toSize(24 * dScale);
+          const tagW = fontBold.widthOfTextAtSize(device.tag, tagSize);
+          const haloOff = mapper.toSize(1.2 * dScale);
+          for (const [hx, hy] of [[-haloOff, 0], [haloOff, 0], [0, -haloOff], [0, haloOff]]) {
+            page.drawText(device.tag, { x: tx - tagW / 2 + hx, y: ty - tagSize * 0.35 + hy, size: tagSize, font: fontBold, color: rgb(1, 1, 1) });
+          }
+          page.drawText(device.tag, { x: tx - tagW / 2, y: ty - tagSize * 0.35, size: tagSize, font: fontBold, color: rgb(0.07, 0.07, 0.07) });
+        }
+
         // ×N count badge for stacked data outlets — small blue pill in
         // the top-right of the symbol. Matches the editor render so the
         // installer can see at a glance "this marker = 2 drops" without
@@ -773,6 +790,34 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
       // (legend is consistent across pages), but the ×N data-count key is
       // scoped to THIS floor so it only shows badges actually visible
       // on the page in front of the reader.
+      // Note boxes + leader arrows — master page only (the power & data plan).
+      if (pageDef.view === 'master') {
+        for (const c of floor.callouts ?? []) {
+          const fontPt = mapper.toSize(9 * dScale);
+          const box = calloutBox(c, dScale, s => fontRegular.widthOfTextAtSize(s, fontPt) / mapper.toSize(1));
+          const target = calloutTarget(c, devices);
+          if (target) {
+            const { start, end } = calloutArrow(c, box, target, 16 * dScale);
+            const sx = mapper.toX(start.x), sy = mapper.toY(start.y), ex = mapper.toX(end.x), ey = mapper.toY(end.y);
+            const lw = mapper.toSize(0.9 * dScale);
+            page.drawLine({ start: { x: sx, y: sy }, end: { x: ex, y: ey }, thickness: lw, color: rgb(0.07, 0.07, 0.07) });
+            // Arrowhead: two short strokes back from the tip.
+            const ang = Math.atan2(ey - sy, ex - sx);
+            const headLen = mapper.toSize(5 * dScale), headAng = Math.PI / 7;
+            for (const sgn of [1, -1]) {
+              page.drawLine({ start: { x: ex, y: ey }, end: { x: ex - headLen * Math.cos(ang - sgn * headAng), y: ey - headLen * Math.sin(ang - sgn * headAng) }, thickness: lw, color: rgb(0.07, 0.07, 0.07) });
+            }
+          }
+          const bx = mapper.toX(c.x), by = mapper.toY(c.y + box.height);
+          page.drawRectangle({ x: bx, y: by, width: mapper.toSize(box.width), height: mapper.toSize(box.height), color: rgb(1, 1, 1), borderColor: rgb(0.07, 0.07, 0.07), borderWidth: mapper.toSize(0.6 * dScale) });
+          const lineH = fontPt * CALLOUT_LINE;
+          const padPt = mapper.toSize(box.pad);
+          box.lines.forEach((line, i) => {
+            page.drawText(line, { x: bx + padPt, y: mapper.toY(c.y) - padPt - lineH * (i + 1) + fontPt * 0.3, size: fontPt, font: fontRegular, color: rgb(0.07, 0.07, 0.07) });
+          });
+        }
+      }
+
       drawDynamicLegend(page, allDevicesForLegend, pageDef.view, commsRackId, symbolCache, fontBold, fontRegular, floor.devices);
     }
   }

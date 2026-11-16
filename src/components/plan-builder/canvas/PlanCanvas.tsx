@@ -8,6 +8,7 @@ import { NUMBERED_GROUPS } from '@/types/plan-builder';
 import DeviceSymbol from './DeviceSymbol';
 import CableLines from './CableLines';
 import PdfElementOverlay from './PdfElementOverlay';
+import CalloutLayer from './CalloutLayer';
 import { hitTest } from '@/lib/plan-builder/pdfHitTest';
 
 
@@ -31,6 +32,7 @@ export default function PlanCanvas() {
     stageScale, stageX, stageY,
     layers, activePlan, pdfFileName,
     whitewashRects, addWhitewashRect, removeWhitewashRect,
+    selectCallout, removeCallout,
     setStageTransform, selectDevice, placeDevice, moveDevice, deleteDevice,
     setStageRef, cropBackground, setBackgroundOffset,
     floors, activeFloorId,
@@ -152,6 +154,7 @@ export default function PlanCanvas() {
         const state = usePlanStore.getState();
         if (state.selectedElementIds.length > 0) { state.deleteSelectedElements(); }
         else if (selectedWhitewashRef.current) { removeWhitewashRect(selectedWhitewashRef.current); setSelectedWhitewashId(null); }
+        else if (state.selectedCalloutId) removeCallout(state.selectedCalloutId);
         else if (state.selectedDeviceId) deleteDevice(state.selectedDeviceId);
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') usePlanStore.getState().undo();
@@ -287,7 +290,7 @@ export default function PlanCanvas() {
       }
       return;
     }
-    if (e.target === e.target.getStage() || e.target.getClassName() === 'Image') { selectDevice(null); setSelectedWhitewashId(null); }
+    if (e.target === e.target.getStage() || e.target.getClassName() === 'Image') { selectDevice(null); selectCallout(null); setSelectedWhitewashId(null); }
   };
 
   // Update Konva stage directly during scroll for flicker-free panning,
@@ -485,6 +488,7 @@ export default function PlanCanvas() {
                 concreteMounted={device.concreteMounted}
                 provisional={device.provisional}
                 dataCount={device.dataCount}
+                tag={device.tag}
                 size={14 * deviceScale}
                 draggable={activeTool === 'select'}
                 onDragEnd={(x, y) => {
@@ -496,10 +500,12 @@ export default function PlanCanvas() {
                   }
                   moveDevice(device.instanceId, sx, sy);
                 }}
-                onClick={() => { if (activeTool === 'select') { selectDevice(device.instanceId); setSelectedWhitewashId(null); } }} />
+                onClick={() => { if (activeTool === 'select') { selectDevice(device.instanceId); selectCallout(null); setSelectedWhitewashId(null); } }} />
             );
           })}
         </Layer>
+
+        {activePlan === 'master' && <CalloutLayer stageScale={stageScale} />}
 
         <Layer listening={false}>
           {activePlan !== 'master' && (

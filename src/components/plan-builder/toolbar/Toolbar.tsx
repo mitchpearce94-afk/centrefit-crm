@@ -54,7 +54,7 @@ export default function Toolbar({ jobs = [], baseDocId = null }: { jobs?: JobOpt
   const [showCompletePlan, setShowCompletePlan] = useState(false);
 
   const {
-    activeTool, setActiveTool,
+    activeTool, setActiveTool, addCallout,
     layers, toggleLayer,
     activePlan, setActivePlan,
     devices, titleBlock,
@@ -487,6 +487,9 @@ export default function Toolbar({ jobs = [], baseDocId = null }: { jobs?: JobOpt
             className={`px-2.5 py-1.5 text-xs rounded transition-colors ${activeTool === id ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
             onClick={() => setActiveTool(id)}>{icon}</button>
         ))}
+        <button title="Add a note box with an arrow (points at the selected device, or drag the arrow tip)"
+          className="px-2.5 py-1.5 text-xs rounded transition-colors bg-gray-700 hover:bg-gray-600 text-gray-300"
+          onClick={() => { setActiveTool('select'); addCallout(); }}>✎ Note</button>
         {backgroundImage && (
           <button title={backgroundLocked ? 'Unlock plan (allow repositioning)' : 'Lock plan position'}
             className={`px-2.5 py-1.5 text-xs rounded transition-colors ${!backgroundLocked ? 'bg-amber-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}

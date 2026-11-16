@@ -62,6 +62,31 @@ export interface PlacedDevice {
    * many drops to terminate. Undefined or 1 = no badge.
    */
   dataCount?: number;
+  /**
+   * Short on-plan tag ("UB", "CL", "TV", "15A") drawn on the FACING side of
+   * the symbol — opposite the D/C/P number. For the little notes the
+   * sparky reads at the marker; longer explanations go in a Callout.
+   */
+  tag?: string;
+}
+
+/**
+ * Free-floating note box with a leader arrow, drawn on the plan itself
+ * (Mitchell 16 Nov 2026: "arrows and text boxes actually on the plan"
+ * instead of the NOTES panel). Canvas coordinates. The arrow either
+ * follows a device (targetInstanceId) or points at a free point (tx, ty).
+ */
+export interface Callout {
+  id: string;
+  text: string;
+  /** Top-left of the box, canvas space. */
+  x: number;
+  y: number;
+  /** Box width in canvas units (text wraps). */
+  width: number;
+  targetInstanceId?: string | null;
+  tx?: number;
+  ty?: number;
 }
 
 export interface CableRun {
@@ -169,6 +194,8 @@ export interface FloorData {
   devices: PlacedDevice[];
   commsRackId: string | null;
   whitewashRects: WhitewashRect[];
+  /** Optional for plans saved before 16 Nov 2026. */
+  callouts?: Callout[];
 }
 
 export interface RevisionEntry {

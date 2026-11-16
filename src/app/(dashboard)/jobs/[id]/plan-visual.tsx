@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { DEVICE_CATALOG } from "@/lib/plan-builder/devices";
+import { calloutBox, calloutArrow, calloutTarget, CALLOUT_LINE } from "@/lib/plan-builder/callouts";
+import type { Callout } from "@/types/plan-builder";
 
 /**
  * Fullscreen interactive plan (Mitchell 2026-08-17): the floor plan exactly
@@ -28,6 +30,7 @@ interface CfpDevice {
   labelNum?: number;
   provisional?: boolean;
   dataCount?: number;
+  tag?: string;
 }
 
 interface CfpFloor {
@@ -42,6 +45,7 @@ interface CfpFloor {
   backgroundOffsetY?: number;
   backgroundScale?: number;
   whitewashRects?: { id: string; x: number; y: number; width: number; height: number }[];
+  callouts?: Callout[];
 }
 
 const catalogById = new Map(DEVICE_CATALOG.map((d) => [d.id, d]));
@@ -342,6 +346,33 @@ export function PlanVisual({
               />
             ))}
 
+            {/* Note boxes + leader arrows (master plan annotations) */}
+            {(floor.callouts ?? []).length > 0 && (() => {
+              const devs = (floor.devices ?? []).map(d => ({ ...d, rotation: d.rotation ?? 0, labelNum: d.labelNum ?? 0 }));
+              return (floor.callouts ?? []).map((c) => {
+                const box = calloutBox(c, deviceScale);
+                const target = calloutTarget(c, devs);
+                const arrow = target ? calloutArrow(c, box, target, 16 * deviceScale) : null;
+                return (
+                  <div key={c.id}>
+                    {arrow && (
+                      <svg style={{ position: "absolute", left: 0, top: 0, overflow: "visible", pointerEvents: "none" }} width={1} height={1}>
+                        <defs>
+                          <marker id={`ah-${c.id}`} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
+                            <path d="M0,0 L6,3 L0,6 z" fill="#111" />
+                          </marker>
+                        </defs>
+                        <line x1={arrow.start.x} y1={arrow.start.y} x2={arrow.end.x} y2={arrow.end.y} stroke="#111" strokeWidth={0.9 * deviceScale} markerEnd={`url(#ah-${c.id})`} />
+                      </svg>
+                    )}
+                    <div style={{ position: "absolute", left: c.x, top: c.y, width: box.width, minHeight: box.height, boxSizing: "border-box", padding: box.pad, background: "#fff", border: `${0.6 * deviceScale}px solid #111`, borderRadius: 1.5 * deviceScale, fontSize: box.font, lineHeight: CALLOUT_LINE, color: "#111", fontFamily: "Arial, Helvetica, sans-serif", whiteSpace: "pre-wrap", pointerEvents: "none" }}>
+                      {box.lines.join("\n")}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+
             {/* Devices — true plan size + rotation, exactly as printed */}
             {(floor.devices ?? []).map((d) => {
               const def = catalogById.get(d.deviceId);
@@ -455,6 +486,27 @@ export function PlanVisual({
                       }}
                     >
                       ✓
+                    </span>
+                  )}
+
+                  {/* On-plan tag on the facing side (opposite the number) */}
+                  {d.tag && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        left: `calc(50% + ${(Math.sin((rotation * Math.PI) / 180) * symbolPx * 0.72).toFixed(1)}px)`,
+                        top: `calc(50% + ${(-Math.cos((rotation * Math.PI) / 180) * symbolPx * 0.72).toFixed(1)}px)`,
+                        transform: "translate(-50%, -50%)",
+                        color: "#111",
+                        fontWeight: 800,
+                        fontSize: labelFont,
+                        lineHeight: 1.1,
+                        whiteSpace: "nowrap",
+                        textShadow: "0 0 2px #fff, 0 0 4px #fff",
+                        pointerEvents: "none",
+                      }}
+                    >
+                      {d.tag}
                     </span>
                   )}
 

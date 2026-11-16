@@ -22,6 +22,8 @@ interface Props {
    * page rather than the pill-style camera/PIR labels.
    */
   labelPrefix?: string;
+  /** Short tag ("ub", "cl", "tv") on the FACING side, opposite the number. */
+  tag?: string;
   size?: number;
   draggable?: boolean;
   onDragEnd?: (x: number, y: number) => void;
@@ -54,7 +56,7 @@ function useSymbolImage(src: string | undefined): HTMLImageElement | null {
   return image;
 }
 
-export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelNum, concreteMounted, provisional, dataCount, labelPrefix, size = SZ, draggable, onDragEnd, onClick }: Props) {
+export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelNum, concreteMounted, provisional, dataCount, labelPrefix, tag, size = SZ, draggable, onDragEnd, onClick }: Props) {
   const img = useSymbolImage(def.symbolImage);
   const fill = def.fillColor || '#888888';
   const stroke = def.strokeColor || '#ffffff';
@@ -85,6 +87,14 @@ export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelN
     <Group x={x} y={y} rotation={rotation} draggable={draggable} onClick={onClick} onTap={onClick}
       onDragEnd={onDragEnd ? (e) => onDragEnd(e.target.x(), e.target.y()) : undefined}>
       {renderSymbol()}
+      {tag && (
+        // Facing side = local -y (stem / apex side); counter-rotated so it reads upright.
+        <Group x={0} y={-s * 2.4} rotation={-rotation} listening={false}>
+          <Text text={tag} fontSize={s * 0.85} fontStyle="bold" fill="#111111" align="center" verticalAlign="middle"
+            x={-s * 4} y={-s * 0.6} width={s * 8} height={s * 1.2}
+            shadowColor="#ffffff" shadowBlur={3} shadowOpacity={1} shadowOffset={{ x: 0, y: 0 }} />
+        </Group>
+      )}
       {selected && (
         <Rect x={-s * 1.8} y={-s * 1.8} width={s * 3.6} height={s * 3.6} stroke="#00ffff" strokeWidth={1.5} dash={[4, 4]} fill="transparent" listening={false} />
       )}

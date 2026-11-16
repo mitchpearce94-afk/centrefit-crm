@@ -12,7 +12,9 @@ export default function PropertiesPanel() {
     clientLogo, setClientLogo,
     rotateDevice, deleteDevice, setCommsRack,
     setSpeakerZone, setDataCount, setConcreteMounted, setProvisional, setCabled, setGlassDoor,
+    setDeviceTag, addCallout, callouts, selectedCalloutId, updateCallout, removeCallout, selectCallout,
   } = usePlanStore();
+  const selectedCallout = selectedCalloutId ? callouts.find(c => c.id === selectedCalloutId) : null;
 
   const selectedDevice = selectedDeviceId ? devices.find(d => d.instanceId === selectedDeviceId) : null;
   const selectedDef = selectedDevice ? getDeviceById(selectedDevice.deviceId) : null;
@@ -95,6 +97,17 @@ export default function PropertiesPanel() {
                 )}
               </div>
             )}
+            {!isCommsRack && (
+              <div className="bg-gray-800 rounded p-2">
+                <div className="text-gray-400 mb-1">On-plan tag</div>
+                <input type="text" maxLength={12} placeholder="ub, cl, tv, 15A…" value={selectedDevice.tag ?? ''}
+                  onChange={e => setDeviceTag(selectedDevice.instanceId, e.target.value)}
+                  className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500" />
+                <div className="text-[10px] text-gray-500 mt-1">Short text beside the symbol, on the side it faces. Longer notes: add a note box.</div>
+                <button className="mt-1.5 w-full px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+                  onClick={() => addCallout()}>✎ Add note with arrow</button>
+              </div>
+            )}
             <div className="flex flex-col gap-1 pt-1">
               <button className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
                 onClick={() => rotateDevice(selectedDevice.instanceId, (selectedDevice.rotation + 45) % 360)}>Rotate 45°</button>
@@ -106,8 +119,36 @@ export default function PropertiesPanel() {
                 onClick={() => deleteDevice(selectedDevice.instanceId)}>Delete Device</button>
             </div>
           </div>
+        ) : selectedCallout ? (
+          <div className="space-y-2">
+            <div><div className="text-gray-400">Note box</div></div>
+            <textarea value={selectedCallout.text} rows={4}
+              onChange={e => updateCallout(selectedCallout.id, { text: e.target.value })}
+              className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500" />
+            <div>
+              <div className="text-gray-400 mb-0.5">Box width</div>
+              <input type="range" min={60} max={400} value={selectedCallout.width}
+                onChange={e => updateCallout(selectedCallout.id, { width: parseInt(e.target.value) })} className="w-full" />
+            </div>
+            <div className="text-[10px] text-gray-500">
+              {selectedCallout.targetInstanceId
+                ? 'Arrow follows a device. Drag the box to move the note.'
+                : 'Drag the box to move the note; drag the blue dot to move the arrow tip.'}
+            </div>
+            {selectedCallout.targetInstanceId ? (
+              <button className="w-full px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+                onClick={() => {
+                  const d = devices.find(x => x.instanceId === selectedCallout.targetInstanceId);
+                  updateCallout(selectedCallout.id, { targetInstanceId: null, tx: d?.x ?? selectedCallout.x - 40, ty: d?.y ?? selectedCallout.y + 40 });
+                }}>Detach arrow from device</button>
+            ) : (
+              <div className="text-[10px] text-gray-500">To re-attach: select a device, then add a new note.</div>
+            )}
+            <button className="w-full px-2 py-1 bg-red-900 hover:bg-red-800 rounded text-red-300"
+              onClick={() => { removeCallout(selectedCallout.id); selectCallout(null); }}>Delete note</button>
+          </div>
         ) : (
-          <div className="text-gray-500">Click a device to select it</div>
+          <div className="text-gray-500">Click a device or note to select it</div>
         )}
       </div>
       <div className="p-3">
