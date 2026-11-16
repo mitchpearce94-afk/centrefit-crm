@@ -836,8 +836,30 @@ function EditableAssetRow({
     return (
       <input
         defaultValue={current ?? ""}
+        data-asset-field={field}
         onBlur={(e) => {
           if (e.target.value !== (current ?? "")) onSaveField(asset.id, field, e.target.value);
+        }}
+        onKeyDown={(e) => {
+          // A barcode scanner types the code then presses Enter. On the
+          // prefilled rows (cameras off the plan) Enter used to do nothing, so
+          // every scan landed in the same cell (Sue, PF Noarlunga 2026-11-16).
+          // Enter now moves down the SAME column — serial to the next row's
+          // serial, never sideways into MAC/IP — and blur saves the cell.
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          const el = e.currentTarget;
+          const table = el.closest("table");
+          const column = table
+            ? Array.from(table.querySelectorAll<HTMLInputElement>(`input[data-asset-field="${field}"]`))
+            : [];
+          const next = column[column.indexOf(el) + 1];
+          if (next) {
+            next.focus({ preventScroll: false });
+            next.select();
+          } else {
+            el.blur();
+          }
         }}
         autoComplete="off"
         spellCheck={false}
