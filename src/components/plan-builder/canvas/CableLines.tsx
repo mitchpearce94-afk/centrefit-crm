@@ -4,6 +4,7 @@ import React from 'react';
 import { Group, Line, Text, Circle } from 'react-konva';
 import { PlacedDevice } from '@/types/plan-builder';
 import { getDeviceById, CABLE_COLORS } from '@/lib/plan-builder/devices';
+import { buildSpeakerChain } from '@/lib/plan-builder/speaker-chain';
 
 interface Props {
   devices: PlacedDevice[];
@@ -19,29 +20,6 @@ const ZONE_COLORS = [
   '#ff4488',
 ];
 
-function buildDaisyChain(deviceList: PlacedDevice[], startX: number, startY: number): PlacedDevice[] {
-  if (deviceList.length === 0) return [];
-  const remaining = [...deviceList];
-  const chain: PlacedDevice[] = [];
-  let cx = startX;
-  let cy = startY;
-
-  while (remaining.length > 0) {
-    let nearestIdx = 0;
-    let nearestDist = Infinity;
-    for (let i = 0; i < remaining.length; i++) {
-      const dx = remaining[i].x - cx;
-      const dy = remaining[i].y - cy;
-      const dist = dx * dx + dy * dy;
-      if (dist < nearestDist) { nearestDist = dist; nearestIdx = i; }
-    }
-    const nearest = remaining.splice(nearestIdx, 1)[0];
-    chain.push(nearest);
-    cx = nearest.x;
-    cy = nearest.y;
-  }
-  return chain;
-}
 
 export default function CableLines({ devices, commsRackId }: Props) {
   if (!commsRackId) return null;
@@ -64,22 +42,9 @@ export default function CableLines({ devices, commsRackId }: Props) {
   const allSegments: Array<{ fromX: number; fromY: number; toX: number; toY: number; label: string; color: string; key: string }> = [];
 
   for (const [zone, zoneSpeakers] of zoneMap) {
-    // Volume controls go first in the chain (inline before speakers)
-    const volumeControls = zoneSpeakers.filter(d => {
-      const def = getDeviceById(d.deviceId);
-      return def?.isVolumeControl;
-    });
-    const speakers = zoneSpeakers.filter(d => {
-      const def = getDeviceById(d.deviceId);
-      return !def?.isVolumeControl;
-    });
-    // Route: comms rack → volume control(s) → speakers (daisy chained)
-    const vcChain = buildDaisyChain(volumeControls, rackDevice.x, rackDevice.y);
-    const lastVc = vcChain[vcChain.length - 1];
-    const spkStartX = lastVc?.x ?? rackDevice.x;
-    const spkStartY = lastVc?.y ?? rackDevice.y;
-    const spkChain = buildDaisyChain(speakers, spkStartX, spkStartY);
-    const chain = [...vcChain, ...spkChain];
+    // Route: comms rack → chain (automatic VC-first nearest-neighbour, with
+    // any manual run-order pins honoured — same function as the numbering).
+    const chain = buildSpeakerChain(zoneSpeakers, rackDevice.x, rackDevice.y);
 
     const zoneColor = ZONE_COLORS[(zone - 1) % ZONE_COLORS.length];
     const zoneLabel = String.fromCharCode(64 + zone);

@@ -11,7 +11,7 @@ export default function PropertiesPanel() {
     titleBlock, updateTitleBlock,
     clientLogo, setClientLogo,
     rotateDevice, deleteDevice, setCommsRack,
-    setSpeakerZone, setDataCount, setConcreteMounted, setProvisional, setCabled, setGlassDoor,
+    setSpeakerZone, setRunOrder, setDataCount, setConcreteMounted, setProvisional, setCabled, setGlassDoor,
     setDeviceTag, addCallout, callouts, selectedCalloutId, updateCallout, removeCallout, selectCallout,
   } = usePlanStore();
   const selectedCallout = selectedCalloutId ? callouts.find(c => c.id === selectedCalloutId) : null;
@@ -44,6 +44,21 @@ export default function PropertiesPanel() {
                   className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500">
                   {[1, 2, 3, 4, 5, 6].map(z => <option key={z} value={z}>Zone {z}{z === 1 ? ' (A)' : ` (${String.fromCharCode(64 + z)})`}</option>)}
                 </select>
+                <div className="text-gray-400 mt-2 mb-1">Run order (position in the cable run)</div>
+                <div className="flex gap-1">
+                  <input type="number" min={1} max={99} placeholder={`auto (${selectedDevice.labelNum})`}
+                    value={selectedDevice.runOrder ?? ''}
+                    onChange={e => setRunOrder(selectedDevice.instanceId, e.target.value === '' ? null : parseInt(e.target.value))}
+                    className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500" />
+                  {selectedDevice.runOrder !== undefined && (
+                    <button className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300" title="Back to automatic"
+                      onClick={() => setRunOrder(selectedDevice.instanceId, null)}>auto</button>
+                  )}
+                </div>
+                <div className="text-[10px] text-gray-500 mt-1">
+                  Blank = automatic chain (rack → volume controls → nearest speaker). Type a number to pin this one
+                  to that spot; the rest keep chaining around it. The cable line follows the numbers.
+                </div>
               </div>
             )}
             {isDataOutlet && (

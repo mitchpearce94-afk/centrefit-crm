@@ -2,6 +2,7 @@ import { PDFDocument, PDFPage, PDFImage, PDFFont, StandardFonts, rgb, degrees } 
 import { usePlanStore } from '@/store/planStore';
 import { getDeviceById, isPowerDevice } from '@/lib/plan-builder/devices';
 import { calloutBox, calloutArrow, calloutTarget, CALLOUT_LINE } from '@/lib/plan-builder/callouts';
+import { buildSpeakerChain } from '@/lib/plan-builder/speaker-chain';
 import { PlacedDevice, TitleBlockInfo, FloorData, RevisionEntry, DeviceCategory } from '@/types/plan-builder';
 
 type PlanView = 'master' | 'cat6' | 'sixcore' | 'speaker';
@@ -75,24 +76,6 @@ function getVisibleDevices(devices: PlacedDevice[], view: PlanView, commsRackId:
   });
 }
 
-function buildDaisyChain(deviceList: PlacedDevice[], startX: number, startY: number): PlacedDevice[] {
-  if (deviceList.length === 0) return [];
-  const remaining = [...deviceList];
-  const chain: PlacedDevice[] = [];
-  let cx = startX, cy = startY;
-  while (remaining.length > 0) {
-    let nearestIdx = 0, nearestDist = Infinity;
-    for (let i = 0; i < remaining.length; i++) {
-      const dx = remaining[i].x - cx, dy = remaining[i].y - cy;
-      const dist = dx * dx + dy * dy;
-      if (dist < nearestDist) { nearestDist = dist; nearestIdx = i; }
-    }
-    const nearest = remaining.splice(nearestIdx, 1)[0];
-    chain.push(nearest);
-    cx = nearest.x; cy = nearest.y;
-  }
-  return chain;
-}
 
 async function loadAndInjectSvg(pageNum: number, titleBlock: TitleBlockInfo, clientLogo?: string | null, revisions?: RevisionEntry[], notes?: string): Promise<string> {
   const response = await fetch(`/plan-builder/templates/page-${pageNum}.svg`);
@@ -569,27 +552,15 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
           const zoneLabel = String.fromCharCode(64 + zone);
           let prevX: number, prevY: number, startIdx: number, chain: PlacedDevice[];
 
-          // Volume controls go first in the chain (inline before speakers)
-          const volumeControls = zoneSpeakers.filter(d => { const def = getDeviceById(d.deviceId); return def?.isVolumeControl; });
-          const speakers = zoneSpeakers.filter(d => { const def = getDeviceById(d.deviceId); return !def?.isVolumeControl; });
-
-          if (comesFromPrevFloor) {
+          // Same chain as the editor numbering: automatic (VC first, nearest
+          // neighbour) with manual run-order pins honoured.
+          if (comesFromPrevFloor || !rackDevice) {
             const first = zoneSpeakers[0];
-            const vcChain = buildDaisyChain(volumeControls, first.x, first.y);
-            const lastVc = vcChain[vcChain.length - 1];
-            const spkChain = buildDaisyChain(speakers, lastVc?.x ?? first.x, lastVc?.y ?? first.y);
-            chain = [...vcChain, ...spkChain];
+            chain = buildSpeakerChain(zoneSpeakers, first.x, first.y);
             prevX = mapper.toX(chain[0].x); prevY = mapper.toY(chain[0].y); startIdx = 1;
-          } else if (rackDevice) {
-            const vcChain = buildDaisyChain(volumeControls, rackDevice.x, rackDevice.y);
-            const lastVc = vcChain[vcChain.length - 1];
-            const spkChain = buildDaisyChain(speakers, lastVc?.x ?? rackDevice.x, lastVc?.y ?? rackDevice.y);
-            chain = [...vcChain, ...spkChain];
-            prevX = mapper.toX(rackDevice.x); prevY = mapper.toY(rackDevice.y); startIdx = 0;
           } else {
-            const first = zoneSpeakers[0];
-            chain = buildDaisyChain(zoneSpeakers, first.x, first.y);
-            prevX = mapper.toX(chain[0].x); prevY = mapper.toY(chain[0].y); startIdx = 1;
+            chain = buildSpeakerChain(zoneSpeakers, rackDevice.x, rackDevice.y);
+            prevX = mapper.toX(rackDevice.x); prevY = mapper.toY(rackDevice.y); startIdx = 0;
           }
 
           for (let si = startIdx; si < chain.length; si++) {

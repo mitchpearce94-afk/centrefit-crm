@@ -68,6 +68,11 @@ export interface PlacedDevice {
    * sparky reads at the marker; longer explanations go in a Callout.
    */
   tag?: string;
+  /**
+   * Speaker-cable devices only: pin this device to a position in the
+   * zone's cable run (1 = first after the rack). Unset = automatic chain.
+   */
+  runOrder?: number;
 }
 
 /**

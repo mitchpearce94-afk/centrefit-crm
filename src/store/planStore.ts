@@ -1,5 +1,6 @@
 import React from 'react';
 import { create } from 'zustand';
+import { buildSpeakerChain } from '@/lib/plan-builder/speaker-chain';
 import { PlacedDevice, CableRun, TitleBlockInfo, LayerVisibility, ActiveTool, WhitewashRect, Callout, NUMBERED_GROUPS, FloorData, RevisionEntry, PdfElement, CustomDevice } from '@/types/plan-builder';
 import { getDeviceById, setCustomDeviceDefs } from '@/lib/plan-builder/devices';
 import { renderPdfPageFiltered } from '@/lib/plan-builder/pdfUtils';
@@ -102,6 +103,8 @@ interface PlanState {
   setClientLogo: (logo: string | null) => void;
   setSpeakerZone: (instanceId: string, zone: number) => void;
   setDataCount: (instanceId: string, count: number) => void;
+  /** Speaker-cable devices: pin to a run position (null = back to automatic). */
+  setRunOrder: (instanceId: string, order: number | null) => void;
   setConcreteMounted: (instanceId: string, value: boolean) => void;
   setProvisional: (instanceId: string, value: boolean) => void;
   setCabled: (instanceId: string, value: boolean) => void;
@@ -156,24 +159,6 @@ function sameOpIndices(a: number[], b: number[]): boolean {
   return true;
 }
 
-function nearestNeighbourChain(deviceList: PlacedDevice[], startX: number, startY: number): PlacedDevice[] {
-  if (deviceList.length === 0) return [];
-  const remaining = [...deviceList];
-  const chain: PlacedDevice[] = [];
-  let cx = startX, cy = startY;
-  while (remaining.length > 0) {
-    let nearestIdx = 0, nearestDist = Infinity;
-    for (let i = 0; i < remaining.length; i++) {
-      const dx = remaining[i].x - cx, dy = remaining[i].y - cy;
-      const dist = dx * dx + dy * dy;
-      if (dist < nearestDist) { nearestDist = dist; nearestIdx = i; }
-    }
-    const nearest = remaining.splice(nearestIdx, 1)[0];
-    chain.push(nearest);
-    cx = nearest.x; cy = nearest.y;
-  }
-  return chain;
-}
 
 function renumberDevices(devices: PlacedDevice[], commsRackId?: string | null): PlacedDevice[] {
   const labelMap = new Map<string, number>(); // instanceId -> labelNum
@@ -196,13 +181,8 @@ function renumberDevices(devices: PlacedDevice[], commsRackId?: string | null): 
 
       // Number each zone's speakers in cable run order, starting at 1
       for (const [, zoneSpeakers] of zoneMap) {
-        // Volume controls first, then speakers — same as CableLines
-        const vcs = zoneSpeakers.filter(d => { const def = getDeviceById(d.deviceId); return def?.isVolumeControl; });
-        const spks = zoneSpeakers.filter(d => { const def = getDeviceById(d.deviceId); return !def?.isVolumeControl; });
-        const vcChain = nearestNeighbourChain(vcs, startX, startY);
-        const lastVc = vcChain[vcChain.length - 1];
-        const spkChain = nearestNeighbourChain(spks, lastVc?.x ?? startX, lastVc?.y ?? startY);
-        const chain = [...vcChain, ...spkChain];
+        // Same chain as CableLines / the PDF: automatic, with manual runOrder pins honoured.
+        const chain = buildSpeakerChain(zoneSpeakers, startX, startY);
         chain.forEach((d, i) => labelMap.set(d.instanceId, i + 1));
       }
     } else if (groupName === 'data' || groupName === 'coax' || groupName === 'access_points' || groupName === 'power') {
@@ -683,6 +663,14 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     const state = get();
     const updated = state.devices.map(d => d.instanceId === instanceId ? { ...d, speakerZone: zone } : d);
     set({ devices: renumberDevices(updated, state.commsRackId), isDirty: true });
+  },
+
+  setRunOrder: (instanceId, order) => {
+    const state = get();
+    const clean = order === null || !Number.isFinite(order) || order < 1 ? undefined : Math.round(order);
+    const updated = state.devices.map(d => d.instanceId === instanceId ? { ...d, runOrder: clean } : d);
+    const devices = renumberDevices(updated, state.commsRackId);
+    set({ devices, cableRuns: buildCableRuns(devices, state.commsRackId, getDeviceById), isDirty: true });
   },
 
   setDataCount: (instanceId, count) => {
