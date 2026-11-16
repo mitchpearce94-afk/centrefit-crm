@@ -660,7 +660,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
       x = (w / 2 - state.stageX) / state.stageScale; y = (h / 2 - state.stageY) / state.stageScale;
       tx = x - 60; ty = y + 60;
     }
-    const callout: Callout = { id, text: 'Note', x, y, width: 150 * state.deviceScale, targetInstanceId, tx, ty, ...init };
+    const callout: Callout = { id, text: 'Note', x, y, width: 320 * state.deviceScale, targetInstanceId, tx, ty, ...init };
     set({ callouts: [...state.callouts, callout], selectedCalloutId: id, selectedDeviceId: null, isDirty: true });
     return id;
   },

@@ -1,8 +1,8 @@
 import { Callout, PlacedDevice } from '@/types/plan-builder';
 
 /** Shared geometry for on-plan note boxes — editor, PDF export and job plan view all use the same wrap/box/arrow maths. */
-export const CALLOUT_FONT = 9;       // × deviceScale
-export const CALLOUT_PAD = 4;        // × deviceScale
+export const CALLOUT_FONT = 22;      // canvas units × deviceScale — prints ≈ 8 pt on the A1 sheet, in step with the 26-unit D/P labels
+export const CALLOUT_PAD = 8;        // × deviceScale
 export const CALLOUT_LINE = 1.25;    // line-height multiplier
 
 /** Rough word-wrap so the box height matches what Konva/pdf-lib will draw. */

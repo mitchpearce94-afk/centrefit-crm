@@ -127,7 +127,7 @@ export default function PropertiesPanel() {
               className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500" />
             <div>
               <div className="text-gray-400 mb-0.5">Box width</div>
-              <input type="range" min={60} max={400} value={selectedCallout.width}
+              <input type="range" min={120} max={900} value={selectedCallout.width}
                 onChange={e => updateCallout(selectedCallout.id, { width: parseInt(e.target.value) })} className="w-full" />
             </div>
             <div className="text-[10px] text-gray-500">

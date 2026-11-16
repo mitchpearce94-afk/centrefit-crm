@@ -793,7 +793,7 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
       // Note boxes + leader arrows — master page only (the power & data plan).
       if (pageDef.view === 'master') {
         for (const c of floor.callouts ?? []) {
-          const fontPt = mapper.toSize(9 * dScale);
+          const fontPt = mapper.toSize(22 * dScale);
           const box = calloutBox(c, dScale, s => fontRegular.widthOfTextAtSize(s, fontPt) / mapper.toSize(1));
           const target = calloutTarget(c, devices);
           if (target) {
