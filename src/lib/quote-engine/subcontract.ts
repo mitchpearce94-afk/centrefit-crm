@@ -120,7 +120,7 @@ export function attachSubcontract<T extends ScopeDocument>(scope: T, sub?: unkno
   // blanket "no electrical works" exclusion and talks about the customer's
   // electrician. With a priced electrical section on the quote those read as
   // contradictions, so narrow them to "beyond the <section>".
-  const who = block.contractor || 'the subcontractor'
+  const who = block.contractor || 'the electrician'
   const hardExclusion = scope.hardExclusion
     ? `Electrical works beyond the "${block.heading}" section are not included in this quote.`.toUpperCase()
     : scope.hardExclusion

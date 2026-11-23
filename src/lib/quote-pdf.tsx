@@ -573,7 +573,7 @@ function SubcontractBlock({ sc }: { sc: NonNullable<ScopeDocument["subcontract"]
       <View style={styles.scHead}>
         <Text style={styles.scHeadText}>{sc.heading.toUpperCase()}</Text>
         <Text style={styles.scHeadSub}>
-          Quoted and carried out by {sc.contractor || "the subcontractor"}. Separate scope and price — not part of the Centrefit scope above.
+          {sc.contractor ? `Quoted and carried out by ${sc.contractor}. ` : ""}Separate scope and price — not part of the Centrefit scope above.
         </Text>
       </View>
       <View style={styles.scBody}>
@@ -735,7 +735,7 @@ export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDo
               <Text style={styles.sectionH}>{scope.subcontract ? "BY THE TRADES" : "BY THE CUSTOMER'S TRADES"}</Text>
               <Text style={styles.sectionSub}>
                 {scope.subcontract
-                  ? `Requirements for the electrician / locksmith — electrical items by ${scope.subcontract.contractor || "the subcontractor"} under the section below`
+                  ? `Requirements for the electrician / locksmith — electrical items${scope.subcontract.contractor ? ` by ${scope.subcontract.contractor}` : ""} under the ${scope.subcontract.label} section below`
                   : "Items the customer's electrician / locksmith handles"}
               </Text>
             </View>
@@ -750,7 +750,7 @@ export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDo
           <>
             <View style={styles.sectionDivider}>
               <Text style={styles.sectionH}>{scope.subcontract.label.toUpperCase()}</Text>
-              <Text style={styles.sectionSub}>Priced separately · {scope.subcontract.contractor ? `by ${scope.subcontract.contractor}` : "subcontractor scope"}</Text>
+              <Text style={styles.sectionSub}>Priced separately{scope.subcontract.contractor ? ` · by ${scope.subcontract.contractor}` : ""}</Text>
             </View>
             <SubcontractBlock sc={scope.subcontract} />
           </>
@@ -817,7 +817,7 @@ export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDo
                 <View style={styles.pricingSplitRow}>
                   <View>
                     <Text style={styles.pricingSplitLabel}>{quote.pricing.subcontract.label} (ex GST)</Text>
-                    <Text style={styles.pricingSplitSub}>{quote.pricing.subcontract.contractor ? `By ${quote.pricing.subcontract.contractor}` : "Subcontractor scope"}</Text>
+                    <Text style={styles.pricingSplitSub}>{quote.pricing.subcontract.contractor ? `By ${quote.pricing.subcontract.contractor}` : `As listed under "${quote.pricing.subcontract.label}"`}</Text>
                   </View>
                   <Text style={styles.pricingValue}>${fmtMoney(quote.pricing.subcontract.sell)}</Text>
                 </View>
