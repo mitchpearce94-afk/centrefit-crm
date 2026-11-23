@@ -13,6 +13,7 @@ interface Props {
   labelNum?: number;
   concreteMounted?: boolean;
   provisional?: boolean;
+  byOthers?: boolean;
   /** When > 1, shows a small "×N" badge — used for stacked data outlets. */
   dataCount?: number;
   /**
@@ -56,7 +57,7 @@ function useSymbolImage(src: string | undefined): HTMLImageElement | null {
   return image;
 }
 
-export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelNum, concreteMounted, provisional, dataCount, labelPrefix, tag, size = SZ, draggable, onDragEnd, onClick }: Props) {
+export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelNum, concreteMounted, provisional, byOthers, dataCount, labelPrefix, tag, size = SZ, draggable, onDragEnd, onClick }: Props) {
   const img = useSymbolImage(def.symbolImage);
   const fill = def.fillColor || '#888888';
   const stroke = def.strokeColor || '#ffffff';
@@ -169,6 +170,14 @@ export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelN
           <Circle x={s * -1.4} y={s * 1.4} radius={s * 0.6} fill="#f59e0b" stroke="#ffffff" strokeWidth={0.8} listening={false} />
           <Text text="P" fontSize={s * 0.7} fill="#ffffff" fontStyle="bold" align="center" verticalAlign="middle"
             x={s * -1.4 - s * 0.5} y={s * 1.4 - s * 0.35} width={s} height={s * 0.7} listening={false} />
+        </Group>
+      )}
+      {byOthers && (
+        // Editor-only grey "O" badge: on the plan for the sparky, not in our quote.
+        <Group x={0} y={0} rotation={-rotation}>
+          <Circle x={s * -1.4} y={s * -1.4} radius={s * 0.6} fill="#6b7280" stroke="#ffffff" strokeWidth={0.8} listening={false} />
+          <Text text="O" fontSize={s * 0.7} fill="#ffffff" fontStyle="bold" align="center" verticalAlign="middle"
+            x={s * -1.4 - s * 0.5} y={s * -1.4 - s * 0.35} width={s} height={s * 0.7} listening={false} />
         </Group>
       )}
       {dataCount !== undefined && dataCount > 1 && (

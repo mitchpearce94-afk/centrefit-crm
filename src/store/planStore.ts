@@ -107,6 +107,7 @@ interface PlanState {
   setRunOrder: (instanceId: string, order: number | null) => void;
   setConcreteMounted: (instanceId: string, value: boolean) => void;
   setProvisional: (instanceId: string, value: boolean) => void;
+  setByOthers: (instanceId: string, value: boolean) => void;
   setCabled: (instanceId: string, value: boolean) => void;
   setGlassDoor: (instanceId: string, value: boolean) => void;
   addWhitewashRect: (x: number, y: number, width: number, height: number) => void;
@@ -693,6 +694,11 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   setProvisional: (instanceId, value) => {
     const state = get();
     set({ devices: state.devices.map(d => d.instanceId === instanceId ? { ...d, provisional: value } : d), isDirty: true });
+  },
+
+  setByOthers: (instanceId, value) => {
+    const state = get();
+    set({ devices: state.devices.map(d => d.instanceId === instanceId ? { ...d, byOthers: value } : d), isDirty: true });
   },
 
   setCabled: (instanceId, value) => {

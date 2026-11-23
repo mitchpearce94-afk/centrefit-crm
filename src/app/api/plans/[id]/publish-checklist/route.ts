@@ -73,6 +73,8 @@ export async function POST(
       const def = catalogById.get(device.deviceId);
       // GPOs are the electrician's work — on the plan for the sparky, not an install row for our techs.
       if (def?.category === "power") return;
+      // By others (sparky-quoted data/coax etc.) — on the plan, not an install row for us.
+      if (device.byOthers) return;
       const name = def?.name ?? customNames.get(device.deviceId) ?? device.deviceId;
       const isData = device.deviceId === "cat6-data" || device.deviceId === "rg6-coax";
       const qty = isData ? Math.max(1, device.dataCount ?? 1) : 1;

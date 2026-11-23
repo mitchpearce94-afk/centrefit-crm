@@ -11,7 +11,7 @@ export default function PropertiesPanel() {
     titleBlock, updateTitleBlock,
     clientLogo, setClientLogo,
     rotateDevice, deleteDevice, setCommsRack,
-    setSpeakerZone, setRunOrder, setDataCount, setConcreteMounted, setProvisional, setCabled, setGlassDoor,
+    setSpeakerZone, setRunOrder, setDataCount, setConcreteMounted, setProvisional, setByOthers, setCabled, setGlassDoor,
     setDeviceTag, addCallout, callouts, selectedCalloutId, updateCallout, removeCallout, selectCallout,
   } = usePlanStore();
   const selectedCallout = selectedCalloutId ? callouts.find(c => c.id === selectedCalloutId) : null;
@@ -93,6 +93,12 @@ export default function PropertiesPanel() {
                     onChange={e => setProvisional(selectedDevice.instanceId, e.target.checked)}
                     className="accent-amber-500 cursor-pointer" />
                   <span className="text-gray-300">Provisional</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer" title="Stays on the plan for the electrician but is left out of our quote and install checklist (e.g. data/coax the sparky has quoted)">
+                  <input type="checkbox" checked={!!selectedDevice.byOthers}
+                    onChange={e => setByOthers(selectedDevice.instanceId, e.target.checked)}
+                    className="accent-gray-400 cursor-pointer" />
+                  <span className="text-gray-300">By others (not quoted)</span>
                 </label>
                 {isReedSwitch && (
                   <label className="flex items-center gap-2 cursor-pointer">

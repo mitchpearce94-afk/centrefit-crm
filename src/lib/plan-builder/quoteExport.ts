@@ -101,8 +101,9 @@ export function generateQuoteExport(): QuoteExportData {
     for (const device of floor.devices) {
       const def = getDeviceById(device.deviceId);
       if (!def || def.isCommsRack) continue;
-      // Provisional devices = cable run only, not counted in quote
-      if (device.provisional) continue;
+      // Provisional devices = cable run only, not counted in quote.
+      // By-others devices = on the plan for the electrician, not our scope.
+      if (device.provisional || device.byOthers) continue;
       if (device.deviceId === 'cam-tg') { floorTgCameras++; totalTgCameras++; if (device.concreteMounted) concreteMountWhite++; continue; }
       if (device.deviceId === 'sensor-tg') { floorTgSensors++; totalTgSensors++; continue; }
       const quoteCode = PLAN_TO_QUOTE_MAP[device.deviceId];
@@ -141,7 +142,7 @@ export function generateQuoteExport(): QuoteExportData {
   for (const floor of syncedFloors) {
     for (const device of floor.devices) {
       if (!device.deviceId.startsWith('custom-')) continue;
-      if (device.provisional) continue;
+      if (device.provisional || device.byOthers) continue;
       const customDef = customDeviceLookup.get(device.deviceId);
       if (!customDef?.linkedProductId) continue;
       const existing = customProductMap.get(customDef.linkedProductId);

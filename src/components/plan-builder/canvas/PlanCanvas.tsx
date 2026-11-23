@@ -488,6 +488,7 @@ export default function PlanCanvas() {
                 labelPrefix={isCoax ? 'C' : isDataOutlet ? 'D' : isPower ? 'P' : undefined}
                 concreteMounted={device.concreteMounted}
                 provisional={device.provisional}
+                byOthers={device.byOthers}
                 dataCount={device.dataCount}
                 tag={device.tag}
                 size={14 * deviceScale}

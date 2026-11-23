@@ -55,6 +55,13 @@ export interface PlacedDevice {
   speakerZone?: number;
   concreteMounted?: boolean;
   provisional?: boolean;
+  /**
+   * Drawn on the plan for the electrician but NOT in Centrefit's scope —
+   * e.g. data/coax to cardio machines and TVs when the sparky (Dane) has
+   * quoted those runs. Skipped by the quote export and the install
+   * checklist; still exported on every PDF page.
+   */
+  byOthers?: boolean;
   cabled?: boolean;
   /** Mag locks only: mounted on a glass door (armature plate instead of mounting plate). */
   glassDoor?: boolean;
