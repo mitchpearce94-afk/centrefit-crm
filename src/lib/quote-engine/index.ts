@@ -65,7 +65,7 @@ export type {
 } from './dependency-engine'
 
 // Pricing
-export { calculateQuoteSummary } from './pricing'
+export { calculateQuoteSummary, electricianMultiplier } from './pricing'
 export type { QuoteSummary } from './pricing'
 
 // Scope of Works (BOM-driven, system-card layout)

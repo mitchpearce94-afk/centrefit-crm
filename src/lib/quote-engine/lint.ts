@@ -29,6 +29,7 @@ export interface LintInput {
   templateId: string | null
   templateSupply: TemplateSupply[]
   elecDoingRoughIn?: boolean
+  elecDoingFitOff?: boolean
   /** Interstate jobs must carry the electrician's quoted cost (Mitchell, 23 Sep) */
   isInterstate?: boolean
   electricianCost?: number
@@ -126,7 +127,10 @@ export function lintQuote(input: LintInput): LintFinding[] {
   }
   const expanders = withProduct.filter(({ p }) => nameHas(p, /CM704B/i)).reduce((t, { b }) => t + b.quantity, 0)
   if (panelPresent && detectors > 16 && expanders === 0) f.push({ code: 'detectors_over_capacity', severity: 'warn', message: `${detectors} detectors on the panel with no zone expander` })
-  if (input.isInterstate && !(Number(input.electricianCost) > 0)) f.push({ code: 'electrician_cost_missing', severity: 'error', message: 'Interstate job with no electrician cost — enter the electrician\'s quote on the Labour step' })
+  if (!(Number(input.electricianCost) > 0)) {
+    if (input.isInterstate) f.push({ code: 'electrician_cost_missing', severity: 'error', message: 'Interstate job with no electrician cost — enter the electrician\'s quote on the Labour step' })
+    else if (input.elecDoingRoughIn || input.elecDoingFitOff) f.push({ code: 'electrician_cost_missing', severity: 'error', message: 'Electrician is doing the rough-in / fit-off but no electrician cost is entered — our labour has been stripped, so enter their quote' })
+  }
   if (!input.elecDoingRoughIn) {
     // Existing detectors are re-terminated on their own cable — they don't need a roll.
     const securityDevices = detectors - (dc.pir_360_roof_existing || 0) - (dc.pir_wall_existing || 0) + (dc.duress_intercom || 0) + (dc.light_siren || 0) + (dc.rf_receiver || 0)

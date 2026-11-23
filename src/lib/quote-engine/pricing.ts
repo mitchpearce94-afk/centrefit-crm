@@ -69,13 +69,23 @@ export interface QuoteSummary {
   profit: number
 }
 
+/**
+ * Sell multiplier on the electrician's quoted cost.
+ * 2x = interstate (always) or the electrician is doing our rough-in and/or
+ * fit-off — same rules as interstate for QLD clubs (Mitchell, 23 Nov 2026).
+ * 1.3x = a plain electrician quotation on a QLD job (power to the rack etc.).
+ */
+export function electricianMultiplier(o: { isInterstate?: boolean; elecDoingRoughIn?: boolean; elecDoingFitOff?: boolean }): number {
+  return o.isInterstate || o.elecDoingRoughIn || o.elecDoingFitOff ? 2 : 1.3
+}
+
 export function calculateQuoteSummary(
   bomItems: BOMItem[],
   labourData: LabourData,
   extras: ExtraItem[],
-  options: { discountPercent?: number; electricianCost?: number; isInterstate?: boolean; priceOverrideExGST?: number } = {}
+  options: { discountPercent?: number; electricianCost?: number; isInterstate?: boolean; elecDoingRoughIn?: boolean; elecDoingFitOff?: boolean; priceOverrideExGST?: number } = {}
 ): QuoteSummary {
-  const { discountPercent = 0, electricianCost = 0, isInterstate = false } = options
+  const { discountPercent = 0, electricianCost = 0 } = options
   const priceOverride = Math.round((Number(options.priceOverrideExGST) || 0) * 100) / 100
 
   // Materials
@@ -119,9 +129,11 @@ export function calculateQuoteSummary(
     extrasSell += item.sell || 0
   })
 
-  // Electrician — interstate: 2x (double), QLD: 1.3x (30% margin)
+  // Electrician — see electricianMultiplier(): 2x when interstate or when the
+  // sparky is doing our rough-in / fit-off (their cost replaces our labour,
+  // which sells at 2x), 1.3x for a plain QLD electrician quotation.
   if (electricianCost > 0) {
-    const elecMultiplier = isInterstate ? 2 : 1.3
+    const elecMultiplier = electricianMultiplier(options)
     const elecSell = Math.round(electricianCost * elecMultiplier * 100) / 100
     extrasCost += electricianCost
     extrasSell += elecSell

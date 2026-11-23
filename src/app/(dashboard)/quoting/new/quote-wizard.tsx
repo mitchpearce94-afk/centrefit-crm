@@ -20,6 +20,7 @@ import {
   recalcLabour,
   checkMandatoryLabour,
   calculateQuoteSummary,
+  electricianMultiplier,
   generateScopeOfWorks,
   ONGOING_COST_CATALOGUE,
   parseScopeItem,
@@ -1375,11 +1376,11 @@ export function QuoteWizard({
       // labour and no extras rows, but the electrician quote gets the same
       // treatment as plan mode (cost + 30% margin, 2x interstate) so its
       // margin lands in profit.
-      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, [], { discountPercent, electricianCost, isInterstate, priceOverrideExGST });
+      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, [], { discountPercent, electricianCost, isInterstate, elecDoingRoughIn, elecDoingFitOff, priceOverrideExGST });
     }
     if (!labourData) return null;
-    return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent, electricianCost, isInterstate, priceOverrideExGST });
-  }, [quoteMode, bomItems, labourData, extras, discountPercent, electricianCost, isInterstate, priceOverrideExGST, manualBomAsBomItems, manualLabourData]);
+    return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent, electricianCost, isInterstate, elecDoingRoughIn, elecDoingFitOff, priceOverrideExGST });
+  }, [quoteMode, bomItems, labourData, extras, discountPercent, electricianCost, isInterstate, elecDoingRoughIn, elecDoingFitOff, priceOverrideExGST, manualBomAsBomItems, manualLabourData]);
 
   // Manual progress quotes use directly-entered PP1/PP2 amounts; everything
   // else derives the split from the cost/sell breakdown in `summary`.
@@ -1509,11 +1510,11 @@ export function QuoteWizard({
     return lintQuote({
       bomItems: items, deviceCounts, siteInfo, products, deviceTypes,
       rules: rulesForTemplate(allRules, templateId, products), kitComponents, templateId, templateSupply,
-      elecDoingRoughIn, isInterstate, electricianCost, labourTimingCodes: labourTimings.map((t) => t.code),
+      elecDoingRoughIn, elecDoingFitOff, isInterstate, electricianCost, labourTimingCodes: labourTimings.map((t) => t.code),
       unansweredKitQuestions: kitQuestions.map((q) => ({ component: q.component, product: q.product })),
       diagnostics: bomDiagnostics, quoteMode,
     });
-  }, [bomItems, manualBomItems, deviceCounts, siteInfo, products, deviceTypes, allRules, templateId, kitComponents, templateSupply, elecDoingRoughIn, isInterstate, electricianCost, labourTimings, kitQuestions, bomDiagnostics, quoteMode]);
+  }, [bomItems, manualBomItems, deviceCounts, siteInfo, products, deviceTypes, allRules, templateId, kitComponents, templateSupply, elecDoingRoughIn, elecDoingFitOff, isInterstate, electricianCost, labourTimings, kitQuestions, bomDiagnostics, quoteMode]);
   const lintBlocking = useMemo(() => blockingFindings(lintFindings, lintOverrides), [lintFindings, lintOverrides]);
 
   async function handleSave() {
@@ -1876,6 +1877,7 @@ export function QuoteWizard({
   // Electrician quotation panel — shared by plan mode (Extras step) and
   // manual mode (Labour step). Cost + 30% margin (2x interstate) flows into
   // the summary via calculateQuoteSummary in both modes.
+  const elecMult = electricianMultiplier({ isInterstate, elecDoingRoughIn, elecDoingFitOff });
   const electricianPanel = (
     <div className="mt-6">
       <div className="flex items-center gap-2 mb-2">
@@ -1885,11 +1887,11 @@ export function QuoteWizard({
       <p className="text-xs text-muted-foreground mb-3">
         {isInterstate
           ? "Interstate job — electrician quote is mandatory. Cost is doubled (2x). Select what the electrician is covering below."
-          : "Enter the electrician's quoted cost. A 30% margin is applied automatically."}
+          : "Enter the electrician's quoted cost. Tick what they are covering — rough-in and/or fit-off strips our labour and materials for that phase and doubles their cost (same as interstate); a plain quotation gets a 30% margin."}
       </p>
 
-      {/* Electrician scope toggles — interstate only */}
-      {isInterstate && (
+      {/* Electrician scope toggles — QLD too since 23 Nov 2026 (sparkies doing our rough-ins) */}
+      {(
         <div className="flex gap-4 mb-3">
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={elecDoingRoughIn} onChange={(e) => setElecDoingRoughIn(e.target.checked)}
@@ -1905,7 +1907,7 @@ export function QuoteWizard({
       )}
 
       {/* Materials stripped from the BOM because the electrician supplies them */}
-      {isInterstate && (elecDoingRoughIn || elecDoingFitOff) && quoteMode === "plan" && (() => {
+      {(elecDoingRoughIn || elecDoingFitOff) && quoteMode === "plan" && (() => {
         const stripped = rulesForTemplate(allRules, templateId, products)
           .filter((r) => isElecSupplied(r, { elecDoingRoughIn, elecDoingFitOff }));
         if (stripped.length === 0) return null;
@@ -1919,9 +1921,11 @@ export function QuoteWizard({
         );
       })()}
 
-      {isInterstate && electricianCost === 0 && (
+      {(isInterstate || elecDoingRoughIn || elecDoingFitOff) && electricianCost === 0 && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 mb-3">
-          <p className="text-xs text-amber-500 font-medium">Electrician quote is required for interstate jobs. Enter the cost below.</p>
+          <p className="text-xs text-amber-500 font-medium">
+            {isInterstate ? "Electrician quote is required for interstate jobs. Enter the cost below." : "Our rough-in / fit-off labour has been stripped — enter the electrician's quoted cost below."}
+          </p>
         </div>
       )}
 
@@ -1929,7 +1933,7 @@ export function QuoteWizard({
         <div className="hidden lg:grid grid-cols-[1fr_120px_120px] gap-3 bg-muted/50 px-4 py-2.5 border-b border-border">
           <span className="text-xs font-medium text-muted-foreground">Item</span>
           <span className="text-xs font-medium text-muted-foreground text-center">Cost</span>
-          <span className="text-xs font-medium text-muted-foreground text-center">Sell ({isInterstate ? "2x" : "+ 30%"})</span>
+          <span className="text-xs font-medium text-muted-foreground text-center">Sell ({elecMult === 2 ? "2x" : "+ 30%"})</span>
         </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1fr_120px_120px] items-center px-4 py-2.5">
           <span className="text-sm col-span-2 lg:col-span-1">Electrician Quotation</span>
@@ -1945,9 +1949,9 @@ export function QuoteWizard({
             />
           </div>
           <div>
-            <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Sell ({isInterstate ? "2x" : "+ 30%"})</p>
+            <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Sell ({elecMult === 2 ? "2x" : "+ 30%"})</p>
             <span className="block text-sm font-mono text-center text-muted-foreground">
-              ${fmt(Math.round(electricianCost * (isInterstate ? 2 : 1.3) * 100) / 100)}
+              ${fmt(Math.round(electricianCost * elecMult * 100) / 100)}
             </span>
           </div>
         </div>
