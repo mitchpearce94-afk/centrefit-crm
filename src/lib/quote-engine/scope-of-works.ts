@@ -399,7 +399,10 @@ export function generateScopeOfWorks(
   // QR readers, the named switch and the Cloud Key read as what they are.
   const isVeyla = (p: { name: string; sku: string }) => /veyla/i.test(`${p.name} ${p.sku}`);
   const veylaAccess = r.products('access_control_system').some(isVeyla);
-  const qrReaders = r.products('card_reader').length > 0 && r.products('card_reader').every((p) => /barcode|scanner|GFS4950|QR/i.test(`${p.name} ${p.sku}`));
+  // Snap never gets a Centrefit-supplied QR reader — the club supplies its own
+  // (template supply, 23 Sep). Readers that arrive with the customer-supplied
+  // flag are described as such; the QR wording is reserved for readers we sell.
+  const qrReaders = cardReaders > 0 && r.products('card_reader').every((p) => /barcode|scanner|GFS4950|QR/i.test(`${p.name} ${p.sku}`));
   const nightlifeUnits  = r.count('nightlife');
   const breakGlass      = r.count('emergency_door_release');
   const monitoringSubs  = r.count('monitoring_subscription');

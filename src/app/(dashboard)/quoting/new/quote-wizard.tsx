@@ -455,6 +455,11 @@ export function QuoteWizard({
       notes: li.notes ?? "",
       auto_added: !!li.auto_added,
       rule_description: li.rule_description ?? null,
+      // Round-trip the supply flags. Without these every re-save of a Snap
+      // quote turned the customer-supplied reader back into a "QR code
+      // reader" we supply (CF-2026-0118 / 0112, Mitchell 23 Nov 2026).
+      customer_supplied: !!li.customer_supplied,
+      kit_parent_product_id: li.kit_parent_product_id ?? null,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
