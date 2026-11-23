@@ -1,6 +1,6 @@
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { headers } from "next/headers";
-import { generateScopeOfWorks, manualScopeDocument } from "@/lib/quote-engine";
+import { generateScopeOfWorks, manualScopeDocument, attachSubcontract } from "@/lib/quote-engine";
 import { formatAuAddress } from "@/lib/format-address";
 import { logDocumentActivity, shouldLogView } from "@/lib/activity/log";
 import { enqueueNotification } from "@/lib/notifications/enqueue";
@@ -90,9 +90,11 @@ export default async function QuoteResponsePage({
     quote.quote_mode === "manual"
       ? (quote.labour_data?.scope_of_works ?? "").trim()
       : "";
-  const scope = manualScopeText
+  const scopeBase = manualScopeText
     ? manualScopeDocument(manualScopeText, quote.labour_data?.ongoing_costs)
     : generateScopeOfWorks(bom, products, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions, (quote.device_counts as Record<string, number> | null) ?? undefined);
+  // Priced subcontractor scope (quotes.subcontract) rides on the same document, separate from Centrefit's own scope.
+  const scope = attachSubcontract(scopeBase, quote.subcontract);
 
   const clientName = tenderBuilder?.name ?? (quote.customer?.name || quote.client_name);
   if (tenderBuilder && !tenderBuilder.status.match(/accepted|declined|lost/)) {

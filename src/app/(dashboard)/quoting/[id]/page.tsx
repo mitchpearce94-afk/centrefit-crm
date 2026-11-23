@@ -149,6 +149,7 @@ export default async function QuoteDetailPage({
           quoteMode={(quote.quote_mode as "plan" | "manual") ?? "plan"}
           manualScopeText={quote.labour_data?.scope_of_works ?? ""}
           manualOngoingCosts={Array.isArray(quote.labour_data?.ongoing_costs) ? quote.labour_data.ongoing_costs : []}
+          subcontract={quote.subcontract ?? null}
           contactEmail={quote.customer?.customer_contacts?.find((c: any) => c.is_primary)?.email ?? null}
           jobId={quote.job_id ?? null}
           jobs={jobs}
@@ -234,6 +235,16 @@ export default async function QuoteDetailPage({
             <p className="text-[10px] font-medium text-muted-foreground uppercase">Profit</p>
             <p className="text-lg font-bold font-mono text-emerald-400 mt-1">${fmt(pricing.profit)}</p>
           </div>
+        </div>
+      )}
+
+      {/* Centrefit vs subcontractor split */}
+      {pricing?.subcontract && pricing?.ours && (
+        <div className="mt-3 rounded-lg border border-indigo-500/30 bg-indigo-500/5 px-4 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+          <div><p className="text-[10px] text-muted-foreground uppercase">Centrefit scope (ex GST)</p><p className="font-mono font-semibold mt-0.5">${fmt(pricing.ours.exGST)}</p></div>
+          <div><p className="text-[10px] text-muted-foreground uppercase">{pricing.subcontract.label}{pricing.subcontract.contractor ? ` — ${pricing.subcontract.contractor}` : ""} (ex GST)</p><p className="font-mono font-semibold mt-0.5">${fmt(pricing.subcontract.sell)}</p></div>
+          <div><p className="text-[10px] text-muted-foreground uppercase">Their cost</p><p className="font-mono mt-0.5">${fmt(pricing.subcontract.cost)}</p></div>
+          <div><p className="text-[10px] text-muted-foreground uppercase">Margin on their scope</p><p className="font-mono text-emerald-400 mt-0.5">${fmt(pricing.subcontract.sell - pricing.subcontract.cost)}{pricing.subcontract.marginPercent != null ? ` (${pricing.subcontract.marginPercent}%)` : ""}</p></div>
         </div>
       )}
 

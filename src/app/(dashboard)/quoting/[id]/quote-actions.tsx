@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
 import { KebabMenu } from "@/components/ui/kebab-menu";
-import { generateScopeOfWorks, manualScopeDocument, renderScopeAsHtml } from "@/lib/quote-engine";
+import { generateScopeOfWorks, manualScopeDocument, renderScopeAsHtml, attachSubcontract } from "@/lib/quote-engine";
 import { autoTransitionJobStatus } from "@/lib/job-status-transitions";
 import type { SiteInfo, ScopeOverrides } from "@/lib/quote-engine";
 import { ScopeEditor } from "./scope-editor";
@@ -34,6 +34,8 @@ interface Props {
   manualScopeText?: string;
   /** Manual quotes: ongoing-cost ids ticked on the Scope step (labour_data.ongoing_costs). */
   manualOngoingCosts?: string[];
+  /** Priced subcontractor scope (quotes.subcontract) — rendered after Centrefit's scope in the preview. */
+  subcontract?: unknown;
   contactEmail: string | null;
   jobId: string | null;
   jobs?: { id: string; number: string; customer_name: string | null }[];
@@ -45,7 +47,7 @@ export function QuoteActions({
   quoteId, status, quoteRef, clientName, siteName, siteAddress,
   quoteType, pricing, deviceCounts, lineItems, createdAt,
   siteInfo, scopeOverrides, productScopeRoles, roleDescriptions,
-  quoteMode = "plan", manualScopeText = "", manualOngoingCosts = [],
+  quoteMode = "plan", manualScopeText = "", manualOngoingCosts = [], subcontract = null,
   contactEmail, jobId, jobs = [], tenderBuilders = [],
 }: Props) {
   const router = useRouter();
@@ -176,9 +178,11 @@ export function QuoteActions({
   // CRM preview window (matches what the customer sees on the response page
   // and in the PDF attachment).
   const manualScopeTrimmed = quoteMode === "manual" ? manualScopeText.trim() : "";
-  const scope = manualScopeTrimmed
+  const scopeBase = manualScopeTrimmed
     ? manualScopeDocument(manualScopeTrimmed, manualOngoingCosts)
     : generateScopeOfWorks(scopeBom, productScopeRoles, siteInfo, scopeOverrides ?? undefined, roleDescriptions, deviceCounts);
+  // Priced subcontractor scope (quotes.subcontract) rides on the same document, separate from Centrefit's own scope.
+  const scope = attachSubcontract(scopeBase, subcontract);
   const hasScopeOverrides = !!scopeOverrides;
 
   const linkedJob = jobs.find((j) => j.id === currentJobId);

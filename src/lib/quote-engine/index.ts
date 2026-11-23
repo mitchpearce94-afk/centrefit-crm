@@ -66,6 +66,8 @@ export type {
 
 // Pricing
 export { calculateQuoteSummary, electricianMultiplier } from './pricing'
+export { attachSubcontract, subcontractTotals, subcontractToScopeBlock, normaliseSubcontract, hasSubcontract, sellFromCost, emptySubcontract, DEFAULT_SUBCONTRACT_MARGIN } from './subcontract'
+export type { QuoteSubcontract, SubcontractLine, ScopeSubcontractBlock } from './subcontract'
 export type { QuoteSummary } from './pricing'
 
 // Scope of Works (BOM-driven, system-card layout)

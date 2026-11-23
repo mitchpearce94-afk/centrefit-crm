@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withLiveSite } from "@/lib/quotes/live-site";
 import { createClient } from "@/lib/supabase/server";
 import { Resend } from "resend";
-import { generateScopeOfWorks, manualScopeDocument, renderScopeAsText, type ScopeDocument } from "@/lib/quote-engine";
+import { generateScopeOfWorks, manualScopeDocument, renderScopeAsText, type ScopeDocument, attachSubcontract } from "@/lib/quote-engine";
 import { generateQuotePdfBuffer, type QuoteForPdf } from "@/lib/quote-pdf";
 import { generateProposalPdfBuffer } from "@/lib/proposal-pdf";
 import { autoTransitionJobStatusServer } from "@/lib/job-status-transitions.server";
@@ -214,9 +214,11 @@ export async function POST(req: NextRequest) {
     quote.quote_mode === "manual"
       ? (quote.labour_data?.scope_of_works ?? "").trim()
       : "";
-  const scope: ScopeDocument = manualScopeText
+  const scopeBase: ScopeDocument = manualScopeText
     ? manualScopeDocument(manualScopeText, quote.labour_data?.ongoing_costs)
     : generateScopeOfWorks(scopeBom, scopeProducts, siteInfo, quote.scope_overrides ?? undefined, roleDescriptions, (quote.device_counts as Record<string, number> | null) ?? undefined);
+  // Priced subcontractor scope (quotes.subcontract) rides on the same document, separate from Centrefit's own scope.
+  const scope = attachSubcontract(scopeBase, quote.subcontract);
 
   // Mirror the scope-of-works + payment terms into the linked job's description.
   // Quote is the source of truth for scope, so we overwrite on every send —

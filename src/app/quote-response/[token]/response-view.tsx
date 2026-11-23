@@ -22,6 +22,8 @@ interface Props {
     override?: { exGST: number; listExGST: number; saving: number };
     pp1?: { total: number };
     pp2?: { total: number };
+    ours?: { exGST: number; gst: number; incGST: number };
+    subcontract?: { contractor: string; label: string; cost: number; sell: number };
   };
   scope: ScopeDocument;
 }
@@ -268,6 +270,13 @@ export function QuoteResponseView(props: Props) {
           <p style={{ fontSize: "12px", color: "#94a3b8", margin: "3px 0 0" }}>
             ${fmt(pricing.totalExGST)} ex GST · ${fmt(pricing.gst)} GST
           </p>
+          {pricing.subcontract && pricing.ours && (
+            <p style={{ fontSize: "12px", color: "#c7d2fe", margin: "8px 0 0", lineHeight: 1.6 }}>
+              Centrefit scope <span style={{ color: "#fff", fontFamily: "Consolas, monospace" }}>${fmt(pricing.ours.exGST)}</span> ex GST
+              {" · "}
+              {pricing.subcontract.label}{pricing.subcontract.contractor ? ` (${pricing.subcontract.contractor})` : ""} <span style={{ color: "#fff", fontFamily: "Consolas, monospace" }}>${fmt(pricing.subcontract.sell)}</span> ex GST
+            </p>
+          )}
           {pricing.override && pricing.override.saving > 0 && (
             <p style={{ fontSize: "12px", color: "#86efac", margin: "6px 0 0" }}>
               Negotiated price — list <span style={{ textDecoration: "line-through", color: "#94a3b8" }}>${fmt(pricing.override.listExGST)}</span> ex GST, saving ${fmt(pricing.override.saving)}

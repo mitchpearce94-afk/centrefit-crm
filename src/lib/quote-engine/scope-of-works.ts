@@ -9,6 +9,7 @@
 // ============================================================================
 
 import type { SiteInfo, DeviceCounts } from './constants';
+import type { ScopeSubcontractBlock } from './subcontract';
 
 // ── Document shape ─────────────────────────────────────────────────────────
 
@@ -88,6 +89,8 @@ export interface ScopeDocument {
   standards: string[];
   /** Optional client-facing per-system price breakdown (from overrides). */
   priceBreakdown?: { lines: ScopePriceBreakdownLine[]; total: number };
+  /** Priced subcontractor scope (quotes.subcontract) — printed after Centrefit's own scope, never merged into it. */
+  subcontract?: ScopeSubcontractBlock;
 }
 
 // ── Override format (v2) ───────────────────────────────────────────────────
@@ -957,6 +960,20 @@ export function renderScopeAsText(scope: ScopeDocument): string {
     lines.push(`    Total — $${scope.priceBreakdown.total.toFixed(2)}`, '');
   }
 
+  if (scope.subcontract) {
+    const sc = scope.subcontract;
+    lines.push(sc.heading.toUpperCase());
+    for (const item of sc.items) {
+      const { text, para } = parseScopeItem(item);
+      lines.push(para ? `    ${stripHtml(text)}` : `    • ${stripHtml(text)}`);
+    }
+    if (sc.lines.length > 0) {
+      lines.push(`  ${sc.label.toUpperCase()} PRICING (EX GST)`);
+      for (const l of sc.lines) lines.push(`    ${l.name} — $${l.price.toFixed(2)}`);
+    }
+    lines.push(`    ${sc.label} total — $${sc.total.toFixed(2)} ex GST`, '');
+  }
+
   if (scope.hardExclusion) lines.push(scope.hardExclusion, '');
 
   if (scope.ongoingCosts.length > 0) {
@@ -1085,5 +1102,36 @@ export function renderScopeAsHtml(scope: ScopeDocument): string {
       <p style="font-size:9.5px;color:#94a3b8;line-height:1.5;margin:0">${scope.standards.join(' · ')}</p>
     </div>` : '';
 
-  return `${summaryHtml}${systemsHtml ? `<div style="margin-top:8px">${systemsHtml}</div>` : ''}${priceBreakdownHtml}${byOthersHtml ? `<div style="margin-top:14px">${byOthersHtml}</div>` : ''}${hardExclusionHtml}${ongoingHtml}${assumptionsHtml}${standardsHtml}`;
+  // Subcontract text is typed by staff in the wizard, so escape it properly (unlike scope items, which are generated).
+  const escSub = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const sc = scope.subcontract;
+  const subcontractHtml = sc ? `
+    <div style="border:1px solid #c7d2fe;border-radius:10px;overflow:hidden;margin-top:16px;margin-bottom:12px;background:#fff">
+      <div style="padding:10px 18px;border-bottom:1px solid #c7d2fe;background:#eef2ff">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#312e81">${escSub(sc.heading)}</div>
+        <div style="font-size:10px;color:#4338ca;margin-top:2px">Separate scope and price${sc.contractor ? ` — carried out by ${escSub(sc.contractor)}` : ''}; not part of the Centrefit scope above</div>
+      </div>
+      <div style="padding:12px 18px">
+        ${sc.items.length > 0 ? `<ul style="list-style:none;padding:0;margin:0 0 10px">${sc.items.map((it) => {
+          const { text, para } = parseScopeItem(it);
+          return para ? `
+          <li style="padding:6px 0;font-size:11px;color:#1e1b4b;line-height:1.55;font-weight:600">${escSub(text)}</li>` : `
+          <li style="padding:4px 0 4px 14px;position:relative;font-size:11px;color:#334155;line-height:1.55">
+            <span style="position:absolute;left:0;top:11px;width:5px;height:5px;border-radius:50%;background:#4f46e5"></span>
+            ${escSub(text)}
+          </li>`;
+        }).join('')}</ul>` : ''}
+        ${sc.lines.map((l) => `
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed #e2e8f0;font-size:11px;color:#334155">
+          <span>${escSub(l.name)}</span>
+          <span style="font-family:Consolas,Menlo,monospace;font-weight:600;color:#0f172a">$${fmtPrice(l.price)}</span>
+        </div>`).join('')}
+        <div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;font-size:11.5px;font-weight:700;color:#0f172a">
+          <span>${escSub(sc.label)} total (ex GST)</span>
+          <span style="font-family:Consolas,Menlo,monospace">$${fmtPrice(sc.total)}</span>
+        </div>
+      </div>
+    </div>` : '';
+
+  return `${summaryHtml}${systemsHtml ? `<div style="margin-top:8px">${systemsHtml}</div>` : ''}${priceBreakdownHtml}${byOthersHtml ? `<div style="margin-top:14px">${byOthersHtml}</div>` : ''}${subcontractHtml}${hardExclusionHtml}${ongoingHtml}${assumptionsHtml}${standardsHtml}`;
 }

@@ -11,6 +11,7 @@ import { GST_RATE } from './constants'
 import type { ExtraItem } from './constants'
 import type { BOMItem } from './dependency-engine'
 import type { LabourData } from './labour-engine'
+import { normaliseSubcontract, subcontractTotals, type QuoteSubcontract } from './subcontract'
 
 export interface QuoteSummary {
   materials: { cost: number; sell: number; profit: number; markup: number }
@@ -30,6 +31,10 @@ export interface QuoteSummary {
     totalSell: number
   }
   extras: { cost: number; sell: number }
+  /** Centrefit's own scope (everything except the subcontractor block) — what the customer sees labelled "Centrefit". */
+  ours?: { exGST: number; gst: number; incGST: number }
+  /** Priced subcontractor scope (quotes.subcontract) — added on top of Centrefit's total, outside uplift/discount/override. */
+  subcontract?: { contractor: string; label: string; cost: number; sell: number; marginPercent: number }
   pp1: {
     partsCost: number
     labourCost: number
@@ -83,10 +88,16 @@ export function calculateQuoteSummary(
   bomItems: BOMItem[],
   labourData: LabourData,
   extras: ExtraItem[],
-  options: { discountPercent?: number; electricianCost?: number; isInterstate?: boolean; elecDoingRoughIn?: boolean; elecDoingFitOff?: boolean; priceOverrideExGST?: number } = {}
+  options: { discountPercent?: number; electricianCost?: number; isInterstate?: boolean; elecDoingRoughIn?: boolean; elecDoingFitOff?: boolean; priceOverrideExGST?: number; subcontract?: QuoteSubcontract | null } = {}
 ): QuoteSummary {
   const { discountPercent = 0, electricianCost = 0 } = options
   const priceOverride = Math.round((Number(options.priceOverrideExGST) || 0) * 100) / 100
+  // Subcontractor scope: the contractor's quoted cost + our margin. Kept out of
+  // every Centrefit-side calculation (uplift, discount, negotiated override) and
+  // added at the end, so "our price" and "their price" stay separable.
+  const subcontract = normaliseSubcontract(options.subcontract)
+  const sub = subcontractTotals(subcontract)
+  const subProfit = sub.sell - sub.cost
 
   // Materials
   const materialsCost = bomItems.reduce((sum, item) => sum + (item.cost_price || 0) * (item.quantity || 0), 0)
@@ -148,26 +159,34 @@ export function calculateQuoteSummary(
   const pp1Callout = labourData?.fixedCosts?.find((fc) => fc.name === 'Callout')?.cost || 0
   const pp1Incidentals = labourData?.fixedCosts?.find((fc) => fc.name === 'Hardware Incidentals')?.cost || 0
   const pp1Admin = labourData?.fixedCosts?.find((fc) => fc.name.startsWith('Administration'))?.cost || 0
-  const pp1Total = materialsCost + labourTimeCost + pp1Callout + pp1Incidentals + pp1Admin + extrasCost
+  const oursPp1Total = materialsCost + labourTimeCost + pp1Callout + pp1Incidentals + pp1Admin + extrasCost
+  // PP1 recovers the subcontractor's cost on acceptance too — same rule as every other cost.
+  const pp1Total = oursPp1Total + sub.cost
 
   const pp2PartsProfit = materialsProfit
   const pp2LabourProfit = labourProfit
   const pp2FixedProfit = fixedCostsSell - fixedCostsCost
   const pp2ExtrasProfit = extrasSell - extrasCost
-  const pp2Base = pp2PartsProfit + pp2LabourProfit + pp2FixedProfit + pp2ExtrasProfit
-  const targetExGST = pp1Total + pp2Base
+  const pp2Base = pp2PartsProfit + pp2LabourProfit + pp2FixedProfit + pp2ExtrasProfit + subProfit
+  // Centrefit-only target: uplift and discount apply to our work, never to the subcontractor's price.
+  const oursTargetExGST = oursPp1Total + (pp2Base - subProfit)
+  const targetExGST = oursTargetExGST + sub.sell
 
   // 5% uplift
   const upliftRate = 0.05
-  const fullPriceExGST = targetExGST * (1 + upliftRate)
+  const oursFullPriceExGST = oursTargetExGST * (1 + upliftRate)
+  const fullPriceExGST = oursFullPriceExGST + sub.sell
   const fullPriceGst = fullPriceExGST * GST_RATE
   const fullPriceIncGST = fullPriceExGST + fullPriceGst
-  const discountAmount = fullPriceExGST - targetExGST
+  const discountAmount = oursFullPriceExGST - oursTargetExGST
 
-  // Negotiated price (override) replaces the engine's total outright; the
-  // list price is kept alongside so quote/PDF/customer pages can show it.
-  const listExGST = discountPercent > 0 ? targetExGST : fullPriceExGST
-  const displayExGST = priceOverride > 0 ? priceOverride : listExGST
+  // Negotiated price (override) replaces the engine's total for CENTREFIT's
+  // scope outright; the list price is kept alongside so quote/PDF/customer
+  // pages can show it. The subcontractor's price is added on top untouched.
+  const oursListExGST = discountPercent > 0 ? oursTargetExGST : oursFullPriceExGST
+  const oursDisplayExGST = priceOverride > 0 ? priceOverride : oursListExGST
+  const listExGST = oursListExGST + sub.sell
+  const displayExGST = oursDisplayExGST + sub.sell
   const displayGst = displayExGST * GST_RATE
   const displayIncGST = displayExGST + displayGst
 
@@ -202,6 +221,10 @@ export function calculateQuoteSummary(
       totalSell: fixedCostsSell,
     },
     extras: { cost: extrasCost, sell: extrasSell },
+    ours: { exGST: oursDisplayExGST, gst: oursDisplayExGST * GST_RATE, incGST: oursDisplayExGST * (1 + GST_RATE) },
+    ...(subcontract && (sub.cost > 0 || sub.sell > 0)
+      ? { subcontract: { contractor: subcontract.contractor, label: subcontract.label, cost: sub.cost, sell: sub.sell, marginPercent: subcontract.marginPercent } }
+      : {}),
     pp1: {
       partsCost: materialsCost,
       labourCost: labourTimeCost,
@@ -222,7 +245,7 @@ export function calculateQuoteSummary(
     },
     discount: { percent: discountPercent, amount: discountAmount },
     ...(priceOverride > 0
-      ? { override: { exGST: priceOverride, listExGST: Math.round(listExGST * 100) / 100, saving: Math.round((listExGST - priceOverride) * 100) / 100 } }
+      ? { override: { exGST: priceOverride, listExGST: Math.round(oursListExGST * 100) / 100, saving: Math.round((oursListExGST - priceOverride) * 100) / 100 } }
       : {}),
     totalExGST: displayExGST,
     gst: displayGst,

@@ -53,6 +53,9 @@ export interface QuoteForPdf {
     override?: { exGST: number; listExGST: number; saving: number };
     pp1?: { total: number };
     pp2?: { total: number };
+    /** Centrefit-only total when a subcontractor block is priced alongside. */
+    ours?: { exGST: number; gst: number; incGST: number };
+    subcontract?: { contractor: string; label: string; cost: number; sell: number };
   };
 }
 
@@ -433,6 +436,23 @@ const styles = StyleSheet.create({
   },
   pricingTotalLabel: { color: "#ffffff", fontFamily: "Helvetica-Bold", fontSize: 11, letterSpacing: 0.5 },
   pricingTotalValue: { color: "#ffffff", fontFamily: "Helvetica-Bold", fontSize: 18 },
+  pricingSplitRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3, borderBottomWidth: 0.5, borderBottomColor: "#e2e8f0", borderBottomStyle: "dashed", marginBottom: 2 },
+  pricingSplitLabel: { fontSize: 10, color: "#0f172a", fontFamily: "Helvetica-Bold" },
+  pricingSplitSub: { fontSize: 8, color: "#64748b" },
+
+  // Subcontractor scope (priced, separate from Centrefit's scope)
+  scBlock: { borderWidth: 1, borderColor: "#c7d2fe", borderRadius: 8, overflow: "hidden", marginBottom: 12 },
+  scHead: { backgroundColor: "#eef2ff", paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#c7d2fe" },
+  scHeadText: { fontSize: 9.5, fontFamily: "Helvetica-Bold", color: "#312e81", letterSpacing: 1 },
+  scHeadSub: { fontSize: 7.5, color: "#4338ca", marginTop: 2 },
+  scBody: { paddingHorizontal: 14, paddingVertical: 10 },
+  scPara: { fontSize: 9, fontFamily: "Helvetica-Bold", color: "#1e1b4b", marginTop: 4, marginBottom: 2 },
+  scLine: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3, borderBottomWidth: 0.5, borderBottomColor: "#e2e8f0", borderBottomStyle: "dashed" },
+  scLineName: { fontSize: 9, color: "#334155" },
+  scLinePrice: { fontSize: 9, fontFamily: "Helvetica-Bold", color: "#0f172a" },
+  scTotalRow: { flexDirection: "row", justifyContent: "space-between", paddingTop: 6, marginTop: 2 },
+  scTotalLabel: { fontSize: 9.5, fontFamily: "Helvetica-Bold", color: "#0f172a" },
+  scTotalValue: { fontSize: 9.5, fontFamily: "Helvetica-Bold", color: "#0f172a" },
 
   // Progress payments
   paymentRow: { flexDirection: "row", marginBottom: 12 },
@@ -542,6 +562,40 @@ function ByOthersBlock({ blk }: { blk: ScopeByOthersBlock }) {
         {blk.items.map((item, i) => (
           <BulletItem key={i} html={item} bulletColor="#b45309" textColor="#78350f" />
         ))}
+      </View>
+    </View>
+  );
+}
+
+function SubcontractBlock({ sc }: { sc: NonNullable<ScopeDocument["subcontract"]> }) {
+  return (
+    <View style={styles.scBlock} wrap={false}>
+      <View style={styles.scHead}>
+        <Text style={styles.scHeadText}>{sc.heading.toUpperCase()}</Text>
+        <Text style={styles.scHeadSub}>
+          Separate scope and price{sc.contractor ? ` — carried out by ${sc.contractor}` : ""}. Not part of the Centrefit scope above.
+        </Text>
+      </View>
+      <View style={styles.scBody}>
+        {sc.items.map((item, i) => {
+          const { text, para } = parseScopeItem(item);
+          return para ? (
+            <Text key={i} style={styles.scPara}>{text}</Text>
+          ) : (
+            <BulletItem key={i} html={text} bulletColor="#4f46e5" textColor="#334155" />
+          );
+        })}
+        {sc.lines.length > 0 && <View style={{ marginTop: 6 }} />}
+        {sc.lines.map((l) => (
+          <View key={l.id} style={styles.scLine}>
+            <Text style={styles.scLineName}>{l.name}</Text>
+            <Text style={styles.scLinePrice}>${fmtMoney(l.price)}</Text>
+          </View>
+        ))}
+        <View style={styles.scTotalRow}>
+          <Text style={styles.scTotalLabel}>{sc.label} total (ex GST)</Text>
+          <Text style={styles.scTotalValue}>${fmtMoney(sc.total)}</Text>
+        </View>
       </View>
     </View>
   );
@@ -687,6 +741,17 @@ export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDo
           </>
         )}
 
+        {/* Subcontractor scope — priced separately from Centrefit's */}
+        {!!scope.subcontract && (
+          <>
+            <View style={styles.sectionDivider}>
+              <Text style={styles.sectionH}>{scope.subcontract.heading.toUpperCase()}</Text>
+              <Text style={styles.sectionSub}>Quoted and carried out by {scope.subcontract.contractor || "the subcontractor"} · priced separately below</Text>
+            </View>
+            <SubcontractBlock sc={scope.subcontract} />
+          </>
+        )}
+
         {/* Hard exclusion */}
         {!!scope.hardExclusion && (
           <View wrap={false}>
@@ -733,6 +798,24 @@ export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDo
                   <Text style={[styles.pricingValue, { color: "#16a34a" }]}>
                     -${fmtMoney(quote.pricing.discount.amount)}
                   </Text>
+                </View>
+              </>
+            )}
+            {!!quote.pricing.subcontract && !!quote.pricing.ours && (
+              <>
+                <View style={styles.pricingSplitRow}>
+                  <View>
+                    <Text style={styles.pricingSplitLabel}>Centrefit scope (ex GST)</Text>
+                    <Text style={styles.pricingSplitSub}>Security, CCTV, access, data &amp; AV as listed under "Included by Centrefit"</Text>
+                  </View>
+                  <Text style={styles.pricingValue}>${fmtMoney(quote.pricing.ours.exGST)}</Text>
+                </View>
+                <View style={styles.pricingSplitRow}>
+                  <View>
+                    <Text style={styles.pricingSplitLabel}>{quote.pricing.subcontract.label} (ex GST)</Text>
+                    <Text style={styles.pricingSplitSub}>{quote.pricing.subcontract.contractor ? `By ${quote.pricing.subcontract.contractor}` : "Subcontractor scope"}</Text>
+                  </View>
+                  <Text style={styles.pricingValue}>${fmtMoney(quote.pricing.subcontract.sell)}</Text>
                 </View>
               </>
             )}

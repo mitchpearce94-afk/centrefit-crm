@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
-import { generateScopeOfWorks, manualScopeDocument } from "@/lib/quote-engine";
+import { generateScopeOfWorks, manualScopeDocument, attachSubcontract } from "@/lib/quote-engine";
 import { generateQuotePdfBuffer, type QuoteForPdf } from "@/lib/quote-pdf";
 import { generateProposalPdfBuffer } from "@/lib/proposal-pdf";
 import { resolveQuoteToken } from "@/lib/quotes/tender";
@@ -87,7 +87,7 @@ export async function GET(
       ? (quote.labour_data?.scope_of_works ?? "").trim()
       : "";
 
-  const scope = manualScopeText
+  const scopeBase = manualScopeText
     ? manualScopeDocument(manualScopeText, quote.labour_data?.ongoing_costs)
     : generateScopeOfWorks(
         scopeBom,
@@ -97,6 +97,8 @@ export async function GET(
         roleDescriptions,
         (quote.device_counts as Record<string, number> | null) ?? undefined,
       );
+  // Priced subcontractor scope (quotes.subcontract) rides on the same document, separate from Centrefit's own scope.
+  const scope = attachSubcontract(scopeBase, quote.subcontract);
 
   const quoteForPdf: QuoteForPdf = {
     ref: quote.ref,

@@ -21,6 +21,11 @@ import {
   checkMandatoryLabour,
   calculateQuoteSummary,
   electricianMultiplier,
+  emptySubcontract,
+  normaliseSubcontract,
+  hasSubcontract,
+  sellFromCost,
+  subcontractTotals,
   generateScopeOfWorks,
   ONGOING_COST_CATALOGUE,
   parseScopeItem,
@@ -29,7 +34,7 @@ import {
   findingKey,
   expandKits,
 } from "@/lib/quote-engine";
-import type { DeviceTypeRow, KitComponent, TemplateSupply, KitAnswers, LintFinding, KitDiagnostic } from "@/lib/quote-engine";
+import type { DeviceTypeRow, KitComponent, TemplateSupply, KitAnswers, LintFinding, KitDiagnostic, QuoteSubcontract } from "@/lib/quote-engine";
 import { GUIDED_STORAGE_KEY, type InterviewResult } from "@/lib/quote-engine/interview";
 import type {
   DeviceCounts,
@@ -270,6 +275,8 @@ interface ExistingQuote {
   elecDoingFitOff?: boolean;
   lineItems: any[];
   extras: any[];
+  /** quotes.subcontract — priced subcontractor scope (Dane / DWP Electrical style). */
+  subcontract?: unknown;
   quoteMode?: "plan" | "manual";
   isInterstate?: boolean;
   manualScope?: string;
@@ -478,6 +485,10 @@ export function QuoteWizard({
 
   // Electrician
   const [electricianCost, setElectricianCost] = useState(existingQuote?.electricianCost ?? 0);
+  // Subcontractor scope — a second, separately-priced section on the quote
+  // (Mitchell, 23 Nov 2026: Dane's electrical/lighting on Moffat Beach). Ours
+  // is labelled as normal; theirs prints after it with its own total.
+  const [subcontract, setSubcontract] = useState<QuoteSubcontract>(() => normaliseSubcontract(existingQuote?.subcontract) ?? emptySubcontract());
   const [elecDoingRoughIn, setElecDoingRoughIn] = useState(existingQuote?.elecDoingRoughIn ?? false);
   const [elecDoingFitOff, setElecDoingFitOff] = useState(existingQuote?.elecDoingFitOff ?? false);
   // isInterstate is now persisted per-quote (quotes.is_interstate). On edit
@@ -815,6 +826,7 @@ export function QuoteWizard({
       if (d.electricianCost != null) setElectricianCost(d.electricianCost);
       if (d.elecDoingRoughIn != null) setElecDoingRoughIn(d.elecDoingRoughIn);
       if (d.elecDoingFitOff != null) setElecDoingFitOff(d.elecDoingFitOff);
+      if (d.subcontract) { const sc = normaliseSubcontract(d.subcontract); if (sc) setSubcontract(sc); }
     } catch {}
     setShowDraftBanner(false);
   }
@@ -836,6 +848,7 @@ export function QuoteWizard({
           manualPp1, manualPp2, pp1Override, priceOverride,
           electricianCost,
           elecDoingRoughIn, elecDoingFitOff,
+          subcontract,
         }));
       } catch {}
     }, 500);
@@ -845,7 +858,7 @@ export function QuoteWizard({
     linkedJobId, selectedPlanId, manualScope, manualOngoingCosts, manualBomItems, manualLabourLines,
     manualPp1, manualPp2, pp1Override, priceOverride,
     electricianCost,
-    elecDoingRoughIn, elecDoingFitOff]);
+    elecDoingRoughIn, elecDoingFitOff, subcontract]);
 
   // Warn on unload
   useEffect(() => {
@@ -1376,11 +1389,11 @@ export function QuoteWizard({
       // labour and no extras rows, but the electrician quote gets the same
       // treatment as plan mode (cost + 30% margin, 2x interstate) so its
       // margin lands in profit.
-      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, [], { discountPercent, electricianCost, isInterstate, elecDoingRoughIn, elecDoingFitOff, priceOverrideExGST });
+      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, [], { discountPercent, electricianCost, isInterstate, elecDoingRoughIn, elecDoingFitOff, priceOverrideExGST, subcontract });
     }
     if (!labourData) return null;
-    return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent, electricianCost, isInterstate, elecDoingRoughIn, elecDoingFitOff, priceOverrideExGST });
-  }, [quoteMode, bomItems, labourData, extras, discountPercent, electricianCost, isInterstate, elecDoingRoughIn, elecDoingFitOff, priceOverrideExGST, manualBomAsBomItems, manualLabourData]);
+    return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent, electricianCost, isInterstate, elecDoingRoughIn, elecDoingFitOff, priceOverrideExGST, subcontract });
+  }, [quoteMode, bomItems, labourData, extras, discountPercent, electricianCost, isInterstate, elecDoingRoughIn, elecDoingFitOff, priceOverrideExGST, subcontract, manualBomAsBomItems, manualLabourData]);
 
   // Manual progress quotes use directly-entered PP1/PP2 amounts; everything
   // else derives the split from the cost/sell breakdown in `summary`.
@@ -1580,6 +1593,8 @@ export function QuoteWizard({
       // when the quote is reopened — siteInfo.state isn't stored on quotes,
       // so without this the edit page would silently reset to 30% markup.
       is_interstate: isInterstate,
+      // Priced subcontractor scope — null when nothing is entered so old quotes stay untouched.
+      subcontract: hasSubcontract(subcontract) ? subcontract : null,
       // Top-level quote_mode column so the edit loader can route saved line
       // items into the right bucket (manualBomItems vs bomItems) without
       // having to crack open labour_data.
@@ -1878,6 +1893,102 @@ export function QuoteWizard({
   // manual mode (Labour step). Cost + 30% margin (2x interstate) flows into
   // the summary via calculateQuoteSummary in both modes.
   const elecMult = electricianMultiplier({ isInterstate, elecDoingRoughIn, elecDoingFitOff });
+
+  // Subcontractor scope panel — shared by plan mode (Extras step) and manual
+  // mode (Labour step), directly under the electrician panel. Cost = their
+  // quoted ex-GST figure per section; sell defaults to cost + margin and
+  // stays editable. Prints on the quote as "<label> — by <contractor>" with
+  // its own total, after Centrefit's scope.
+  const scTotals = subcontractTotals(subcontract);
+  const updateSc = (patch: Partial<QuoteSubcontract>) => setSubcontract((prev) => ({ ...prev, ...patch }));
+  const updateScLine = (id: string, patch: Partial<QuoteSubcontract["lines"][number]>) =>
+    setSubcontract((prev) => ({ ...prev, lines: prev.lines.map((l) => (l.id === id ? { ...l, ...patch } : l)) }));
+  const subcontractPanel = (
+    <div className="mt-6">
+      <div className="flex items-center gap-2 mb-2">
+        <h3 className="text-sm font-semibold text-foreground">Subcontractor scope</h3>
+        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400">Separate section &amp; price on the quote</span>
+      </div>
+      <p className="text-xs text-muted-foreground mb-3">
+        Work another trade has quoted that we carry on this quote — e.g. the electrician&apos;s lighting and power. It prints after our scope under its own heading with its own total; our scope stays labelled as normal. Leave empty when not needed.
+      </p>
+      <div className="rounded-lg border border-border overflow-hidden">
+        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_110px] px-4 py-3 bg-muted/30 border-b border-border">
+          <div>
+            <label className="block text-[10px] font-medium text-muted-foreground uppercase mb-1">Contractor</label>
+            <input type="text" value={subcontract.contractor} onChange={(e) => updateSc({ contractor: e.target.value })} placeholder="DWP Electrical"
+              className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm focus:border-primary focus:outline-none" />
+          </div>
+          <div>
+            <label className="block text-[10px] font-medium text-muted-foreground uppercase mb-1">Section label</label>
+            <input type="text" value={subcontract.label} onChange={(e) => updateSc({ label: e.target.value })} placeholder="Electrical & Lighting"
+              className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm focus:border-primary focus:outline-none" />
+          </div>
+          <div>
+            <label className="block text-[10px] font-medium text-muted-foreground uppercase mb-1">Margin %</label>
+            <input type="number" min="0" step="1" value={subcontract.marginPercent}
+              onChange={(e) => {
+                const m = parseFloat(e.target.value) || 0;
+                setSubcontract((prev) => ({ ...prev, marginPercent: m, lines: prev.lines.map((l) => ({ ...l, sell: sellFromCost(l.cost, m) })) }));
+              }}
+              className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+          </div>
+        </div>
+        <div className="hidden lg:grid grid-cols-[1fr_120px_120px_32px] gap-3 bg-muted/50 px-4 py-2 border-b border-border">
+          <span className="text-xs font-medium text-muted-foreground">Their section</span>
+          <span className="text-xs font-medium text-muted-foreground text-center">Their cost (ex GST)</span>
+          <span className="text-xs font-medium text-muted-foreground text-center">Our sell (ex GST)</span>
+          <span />
+        </div>
+        <div className="divide-y divide-border">
+          {subcontract.lines.map((l) => (
+            <div key={l.id} className="grid grid-cols-2 gap-3 lg:grid-cols-[1fr_120px_120px_32px] items-center px-4 py-2">
+              <input type="text" value={l.name} onChange={(e) => updateScLine(l.id, { name: e.target.value })} placeholder="Lighting"
+                className="col-span-2 lg:col-span-1 w-full rounded-md border border-border bg-input px-2 py-1 text-sm focus:border-primary focus:outline-none" />
+              <div>
+                <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Their cost</p>
+                <input type="number" min="0" step="0.01" value={l.cost || ""} placeholder="$0"
+                  onChange={(e) => { const c = parseFloat(e.target.value) || 0; updateScLine(l.id, { cost: c, sell: sellFromCost(c, subcontract.marginPercent) }); }}
+                  className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+              </div>
+              <div>
+                <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Our sell</p>
+                <input type="number" min="0" step="0.01" value={l.sell || ""} placeholder="$0"
+                  onChange={(e) => updateScLine(l.id, { sell: parseFloat(e.target.value) || 0 })}
+                  className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+              </div>
+              <button type="button" onClick={() => setSubcontract((prev) => ({ ...prev, lines: prev.lines.filter((x) => x.id !== l.id) }))}
+                className="text-muted-foreground hover:text-destructive text-sm" title="Remove">✕</button>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-between px-4 py-2.5 bg-muted/30 border-t border-border">
+          <button type="button"
+            onClick={() => setSubcontract((prev) => ({ ...prev, lines: [...prev.lines, { id: `sc_${Math.random().toString(36).slice(2, 8)}`, name: "", cost: 0, sell: 0 }] }))}
+            className="rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-[11px] text-primary hover:bg-primary/10 transition-colors">
+            + Add their section
+          </button>
+          {subcontract.lines.length > 0 && (
+            <span className="text-xs font-mono">
+              <span className="text-muted-foreground">Cost ${fmt(scTotals.cost)}</span>
+              <span className="mx-2 text-muted-foreground">·</span>
+              <span className="text-muted-foreground">Margin <span className="text-emerald-400">${fmt(scTotals.sell - scTotals.cost)}</span></span>
+              <span className="mx-2 text-muted-foreground">·</span>
+              <span className="font-semibold">Sell ${fmt(scTotals.sell)}</span>
+            </span>
+          )}
+        </div>
+        <div className="px-4 py-3 border-t border-border">
+          <label className="block text-[10px] font-medium text-muted-foreground uppercase mb-1">Their inclusions (printed under their heading)</label>
+          <textarea value={subcontract.inclusions} onChange={(e) => updateSc({ inclusions: e.target.value })} rows={6}
+            placeholder={"Lighting\n- 25x downlights\n- 16x LED high bays\nPower\n- 20x double GPO"}
+            className="w-full rounded-md border border-border bg-input px-2 py-1.5 text-sm font-mono focus:border-primary focus:outline-none" />
+          <p className="mt-1 text-[10px] text-muted-foreground">One item per line. Lines starting with &quot;- &quot; print as bullets; other lines print as sub-headings.</p>
+        </div>
+      </div>
+    </div>
+  );
+
   const electricianPanel = (
     <div className="mt-6">
       <div className="flex items-center gap-2 mb-2">
@@ -3075,6 +3186,7 @@ export function QuoteWizard({
             Sell is what the customer pays per unit (ex GST); Cost is what it costs us (wages, subbie, freight). Labour defaults to your billing-settings cost rate (${fmt(costRate)}/hr) — the margin on every line flows into the quote&apos;s profit.
           </p>
           {electricianPanel}
+          {subcontractPanel}
         </div>
       )}
 
@@ -3326,6 +3438,7 @@ export function QuoteWizard({
           </div>
 
           {electricianPanel}
+          {subcontractPanel}
         </div>
       )}
 
@@ -3374,6 +3487,9 @@ export function QuoteWizard({
               <div><p className="text-[10px] text-muted-foreground uppercase">Labour</p><p className="font-mono mt-0.5">Cost ${fmt(summary.labour.totalCost)}</p><p className="font-mono text-muted-foreground">Sell ${fmt(summary.labour.totalSell)}</p></div>
               <div><p className="text-[10px] text-muted-foreground uppercase">Fixed</p><p className="font-mono mt-0.5">Cost ${fmt(summary.fixedCosts.totalCost)}</p><p className="font-mono text-muted-foreground">Sell ${fmt(summary.fixedCosts.totalSell)}</p></div>
               <div><p className="text-[10px] text-muted-foreground uppercase">Extras</p><p className="font-mono mt-0.5">Cost ${fmt(summary.extras.cost)}</p><p className="font-mono text-muted-foreground">Sell ${fmt(summary.extras.sell)}</p></div>
+              {summary.subcontract && (
+                <div><p className="text-[10px] text-muted-foreground uppercase">{summary.subcontract.label}{summary.subcontract.contractor ? ` — ${summary.subcontract.contractor}` : ""}</p><p className="font-mono mt-0.5">Cost ${fmt(summary.subcontract.cost)}</p><p className="font-mono text-muted-foreground">Sell ${fmt(summary.subcontract.sell)}</p></div>
+              )}
             </div>
           </div>
 
@@ -3458,6 +3574,12 @@ export function QuoteWizard({
 
           {/* Totals */}
           <div className="rounded-lg border-2 border-primary/30 bg-card p-6 text-center space-y-3">
+            {summary.subcontract && summary.ours && !isManualProgress && (
+              <div className="grid grid-cols-2 gap-4 pb-3 border-b border-border text-left">
+                <div><p className="text-[10px] text-muted-foreground uppercase">Centrefit scope (ex GST)</p><p className="text-lg font-bold font-mono">${fmt(summary.ours.exGST)}</p></div>
+                <div><p className="text-[10px] text-muted-foreground uppercase">{summary.subcontract.label}{summary.subcontract.contractor ? ` — ${summary.subcontract.contractor}` : ""} (ex GST)</p><p className="text-lg font-bold font-mono">${fmt(summary.subcontract.sell)}</p></div>
+              </div>
+            )}
             <div>
               <p className="text-xs text-muted-foreground uppercase">Total Price (ex GST)</p>
               <p className="text-2xl font-bold font-mono">${fmt(isManualProgress ? effPp1 + effPp2 : summary.totalExGST)}</p>

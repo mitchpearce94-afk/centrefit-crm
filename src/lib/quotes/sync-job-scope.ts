@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { generateScopeOfWorks, manualScopeDocument, renderScopeAsText } from "@/lib/quote-engine";
+import { generateScopeOfWorks, manualScopeDocument, renderScopeAsText, attachSubcontract } from "@/lib/quote-engine";
 
 function formatAud(n: number): string {
   return n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -70,7 +70,7 @@ export async function syncQuoteScopeToJob(
     quote.quote_mode === "manual"
       ? (quote.labour_data?.scope_of_works ?? "").trim()
       : "";
-  const scope = manualScopeText
+  const scopeBase = manualScopeText
     ? manualScopeDocument(manualScopeText, quote.labour_data?.ongoing_costs)
     : generateScopeOfWorks(
         bom,
@@ -80,6 +80,8 @@ export async function syncQuoteScopeToJob(
         roleDescriptions,
         (quote.device_counts as Record<string, number> | null) ?? undefined,
       );
+  // Priced subcontractor scope (quotes.subcontract) rides on the same document, separate from Centrefit's own scope.
+  const scope = attachSubcontract(scopeBase, quote.subcontract);
   const scopeText = renderScopeAsText(scope);
 
   const isProgress = quote.quote_type === "progress";

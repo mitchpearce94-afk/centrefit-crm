@@ -75,6 +75,7 @@ export default async function EditQuotePage({
     elecDoingFitOff: quote.elec_doing_fit_off ?? false,
     lineItems: lineItemsResult.data ?? [],
     extras: extrasResult.data ?? [],
+    subcontract: quote.subcontract ?? null,
     quoteMode: (quote.quote_mode as "plan" | "manual" | undefined) ?? "plan",
     kitAnswers: (quote.kit_answers ?? {}) as Record<string, boolean>,
     interview: quote.interview ?? null,
