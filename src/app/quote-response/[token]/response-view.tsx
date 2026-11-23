@@ -284,6 +284,21 @@ export function QuoteResponseView(props: Props) {
           )}
         </div>
 
+        {pricing.subcontract && pricing.ours && (
+          <div className="qr-pp-grid">
+            <div style={{ flex: 1, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "14px", textAlign: "center" }}>
+              <p style={{ fontSize: "10px", color: "#64748b", letterSpacing: "1px", textTransform: "uppercase", fontWeight: 700, margin: 0 }}>Centrefit — security, CCTV, access, data &amp; AV</p>
+              <p style={{ fontSize: "20px", color: "#0f172a", fontWeight: 700, margin: "5px 0 0", fontFamily: "Consolas, monospace" }}>${fmt(pricing.ours.incGST)}</p>
+              <p style={{ fontSize: "10px", color: "#94a3b8", margin: "2px 0 0" }}>inc GST · ${fmt(pricing.ours.exGST)} ex GST</p>
+            </div>
+            <div style={{ flex: 1, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "14px", textAlign: "center" }}>
+              <p style={{ fontSize: "10px", color: "#64748b", letterSpacing: "1px", textTransform: "uppercase", fontWeight: 700, margin: 0 }}>{pricing.subcontract.label}{pricing.subcontract.contractor ? ` — ${pricing.subcontract.contractor}` : ""}</p>
+              <p style={{ fontSize: "20px", color: "#0f172a", fontWeight: 700, margin: "5px 0 0", fontFamily: "Consolas, monospace" }}>${fmt(pricing.subcontract.sell * 1.1)}</p>
+              <p style={{ fontSize: "10px", color: "#94a3b8", margin: "2px 0 0" }}>inc GST · ${fmt(pricing.subcontract.sell)} ex GST</p>
+            </div>
+          </div>
+        )}
+
         {isProgress && pricing.pp1 && pricing.pp2 && (
           <div className="qr-pp-grid">
             <div style={{ flex: 1, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "14px", textAlign: "center" }}>

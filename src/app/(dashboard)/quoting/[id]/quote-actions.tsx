@@ -491,6 +491,18 @@ export function QuoteActions({
 
                   <div style={{ background: "#f8fafc", borderRadius: "12px", border: "1px solid #e2e8f0", overflow: "hidden" }}>
                     <div style={{ padding: "24px 28px" }}>
+                      {pricing?.subcontract && pricing?.ours && (
+                        <>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "6px", paddingBottom: "6px", borderBottom: "1px dashed #e2e8f0" }}>
+                            <span style={{ fontSize: "14px", color: "#0f172a", fontWeight: 600 }}>Centrefit scope (ex GST)</span>
+                            <span style={{ fontSize: "16px", fontWeight: 600, color: "#0f172a", fontFamily: "monospace" }}>${fmt(pricing.ours.exGST)}</span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "10px", paddingBottom: "6px", borderBottom: "1px dashed #e2e8f0" }}>
+                            <span style={{ fontSize: "14px", color: "#0f172a", fontWeight: 600 }}>{pricing.subcontract.label}{pricing.subcontract.contractor ? ` — ${pricing.subcontract.contractor}` : ""} (ex GST)</span>
+                            <span style={{ fontSize: "16px", fontWeight: 600, color: "#0f172a", fontFamily: "monospace" }}>${fmt(pricing.subcontract.sell)}</span>
+                          </div>
+                        </>
+                      )}
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "8px" }}>
                         <span style={{ fontSize: "14px", color: "#64748b" }}>Total (ex GST)</span>
                         <span style={{ fontSize: "18px", fontWeight: 600, color: "#0f172a", fontFamily: "monospace" }}>${fmt(pricing.totalExGST)}</span>
@@ -506,6 +518,25 @@ export function QuoteActions({
                     </div>
                   </div>
                 </div>
+
+                {/* Price at a glance — Centrefit and the subcontractor side by side (mirrors the PDF) */}
+                {pricing?.subcontract && pricing?.ours && (
+                  <div className="glance-block" style={{ marginBottom: "32px" }}>
+                    <p style={{ fontSize: "12px", textTransform: "uppercase", letterSpacing: "1.5px", color: "#64748b", fontWeight: 700, margin: "0 0 16px", borderBottom: "2px solid #e2e8f0", paddingBottom: "8px" }}>Price at a glance</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                      <div style={{ background: "#f8fafc", borderRadius: "10px", border: "1px solid #e2e8f0", padding: "20px" }}>
+                        <p style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "1px", color: "#64748b", margin: "0 0 8px" }}>Centrefit — security, CCTV, access, data &amp; AV</p>
+                        <p style={{ fontSize: "24px", fontWeight: 700, color: "#0f172a", fontFamily: "monospace", margin: 0 }}>${fmt(pricing.ours.incGST)}</p>
+                        <p style={{ fontSize: "11px", color: "#94a3b8", margin: "4px 0 0" }}>inc GST · ${fmt(pricing.ours.exGST)} ex GST</p>
+                      </div>
+                      <div style={{ background: "#f8fafc", borderRadius: "10px", border: "1px solid #e2e8f0", padding: "20px" }}>
+                        <p style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "1px", color: "#64748b", margin: "0 0 8px" }}>{pricing.subcontract.label}{pricing.subcontract.contractor ? ` — ${pricing.subcontract.contractor}` : ""}</p>
+                        <p style={{ fontSize: "24px", fontWeight: 700, color: "#0f172a", fontFamily: "monospace", margin: 0 }}>${fmt(pricing.subcontract.sell * 1.1)}</p>
+                        <p style={{ fontSize: "11px", color: "#94a3b8", margin: "4px 0 0" }}>inc GST · ${fmt(pricing.subcontract.sell)} ex GST</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Progress Payments */}
                 {isProgress && (
