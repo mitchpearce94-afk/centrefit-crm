@@ -838,6 +838,28 @@ export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDo
           </View>
         </View>
 
+        {/* Two prices at a glance — Centrefit's scope and the subcontractor's, side by side */}
+        {!!quote.pricing.subcontract && !!quote.pricing.ours && (
+          <>
+            <View style={styles.sectionDivider}>
+              <Text style={styles.sectionH}>PRICE AT A GLANCE</Text>
+              <Text style={styles.sectionSub}>The two parts of the total above</Text>
+            </View>
+            <View style={styles.paymentRow} wrap={false}>
+              <View style={styles.paymentBox}>
+                <Text style={styles.paymentLabel}>CENTREFIT — SECURITY, CCTV, ACCESS, DATA &amp; AV</Text>
+                <Text style={styles.paymentValue}>${fmtMoney(quote.pricing.ours.incGST)}</Text>
+                <Text style={styles.paymentTail}>inc GST · ${fmtMoney(quote.pricing.ours.exGST)} ex GST</Text>
+              </View>
+              <View style={styles.paymentBox}>
+                <Text style={styles.paymentLabel}>{quote.pricing.subcontract.label.toUpperCase()}{quote.pricing.subcontract.contractor ? ` — ${quote.pricing.subcontract.contractor.toUpperCase()}` : ""}</Text>
+                <Text style={styles.paymentValue}>${fmtMoney(quote.pricing.subcontract.sell * 1.1)}</Text>
+                <Text style={styles.paymentTail}>inc GST · ${fmtMoney(quote.pricing.subcontract.sell)} ex GST</Text>
+              </View>
+            </View>
+          </>
+        )}
+
         {/* Progress payments */}
         {quote.isProgress && quote.pricing.pp1 && quote.pricing.pp2 && (
           <>

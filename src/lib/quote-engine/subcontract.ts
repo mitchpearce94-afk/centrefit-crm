@@ -124,6 +124,8 @@ export function attachSubcontract<T extends ScopeDocument>(scope: T, sub?: unkno
   const hardExclusion = scope.hardExclusion
     ? `Electrical works beyond the "${block.heading}" section are not included in this quote.`.toUpperCase()
     : scope.hardExclusion
-  const assumptions = scope.assumptions.map((a) => a.replace(/customer'?s electrician'?s/i, `${who}'s`).replace(/customer'?s electrician/i, who))
+  const assumptions = scope.assumptions
+    .map((a) => a.replace(/customer'?s electrician'?s/i, `${who}'s`).replace(/customer'?s electrician/i, who))
+    .map((a) => a.charAt(0).toUpperCase() + a.slice(1))
   return { ...scope, subcontract: block, hardExclusion, assumptions }
 }
