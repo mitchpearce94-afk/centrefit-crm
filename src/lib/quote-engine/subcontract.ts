@@ -115,5 +115,15 @@ export function subcontractToScopeBlock(sub?: QuoteSubcontract | null): ScopeSub
 /** Attach the subcontractor block to a generated scope document (no-op when there is none). */
 export function attachSubcontract<T extends ScopeDocument>(scope: T, sub?: unknown): T {
   const block = subcontractToScopeBlock(normaliseSubcontract(sub))
-  return block ? { ...scope, subcontract: block } : scope
+  if (!block) return scope
+  // The generated scope assumes the electrician is the customer's: it carries a
+  // blanket "no electrical works" exclusion and talks about the customer's
+  // electrician. With a priced electrical section on the quote those read as
+  // contradictions, so narrow them to "beyond the <section>".
+  const who = block.contractor || 'the subcontractor'
+  const hardExclusion = scope.hardExclusion
+    ? `Electrical works beyond the "${block.heading}" section are not included in this quote.`.toUpperCase()
+    : scope.hardExclusion
+  const assumptions = scope.assumptions.map((a) => a.replace(/customer'?s electrician'?s/i, `${who}'s`).replace(/customer'?s electrician/i, who))
+  return { ...scope, subcontract: block, hardExclusion, assumptions }
 }

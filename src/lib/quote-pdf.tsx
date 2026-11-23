@@ -573,7 +573,7 @@ function SubcontractBlock({ sc }: { sc: NonNullable<ScopeDocument["subcontract"]
       <View style={styles.scHead}>
         <Text style={styles.scHeadText}>{sc.heading.toUpperCase()}</Text>
         <Text style={styles.scHeadSub}>
-          Separate scope and price{sc.contractor ? ` — carried out by ${sc.contractor}` : ""}. Not part of the Centrefit scope above.
+          Quoted and carried out by {sc.contractor || "the subcontractor"}. Separate scope and price — not part of the Centrefit scope above.
         </Text>
       </View>
       <View style={styles.scBody}>
@@ -732,8 +732,12 @@ export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDo
         {scope.byOthers.length > 0 && (
           <>
             <View style={styles.sectionDivider}>
-              <Text style={styles.sectionH}>BY THE CUSTOMER'S TRADES</Text>
-              <Text style={styles.sectionSub}>Items the customer's electrician / locksmith handles</Text>
+              <Text style={styles.sectionH}>{scope.subcontract ? "BY THE TRADES" : "BY THE CUSTOMER'S TRADES"}</Text>
+              <Text style={styles.sectionSub}>
+                {scope.subcontract
+                  ? `Requirements for the electrician / locksmith — electrical items by ${scope.subcontract.contractor || "the subcontractor"} under the section below`
+                  : "Items the customer's electrician / locksmith handles"}
+              </Text>
             </View>
             {scope.byOthers.map((blk) => (
               <ByOthersBlock key={blk.id} blk={blk} />
@@ -745,8 +749,8 @@ export function QuotePage({ quote, scope }: { quote: QuoteForPdf; scope: ScopeDo
         {!!scope.subcontract && (
           <>
             <View style={styles.sectionDivider}>
-              <Text style={styles.sectionH}>{scope.subcontract.heading.toUpperCase()}</Text>
-              <Text style={styles.sectionSub}>Quoted and carried out by {scope.subcontract.contractor || "the subcontractor"} · priced separately below</Text>
+              <Text style={styles.sectionH}>{scope.subcontract.label.toUpperCase()}</Text>
+              <Text style={styles.sectionSub}>Priced separately · {scope.subcontract.contractor ? `by ${scope.subcontract.contractor}` : "subcontractor scope"}</Text>
             </View>
             <SubcontractBlock sc={scope.subcontract} />
           </>
