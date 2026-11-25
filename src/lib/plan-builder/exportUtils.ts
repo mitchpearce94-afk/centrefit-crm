@@ -659,11 +659,19 @@ export async function exportToPdf(opts: { download?: boolean } = {}): Promise<Bl
             // local +y rotated by the device rotation → canvas (-sin r, cos r).
             // Canvas y is down, PDF y is up — mapper.toY handles the flip.
             const rotR = ((device.rotation || 0) * Math.PI) / 180;
+            const dxc = -Math.sin(rotR); const dyc = Math.cos(rotR); // base direction, canvas space
             const off = 36 * dScale;
-            const lx = mapper.toX(device.x - Math.sin(rotR) * off);
-            const ly = mapper.toY(device.y + Math.cos(rotR) * off);
-            const labelX = lx - labelW / 2;
-            const labelY = ly - labelSize * 0.35;
+            const lx = mapper.toX(device.x + dxc * off);
+            const ly = mapper.toY(device.y + dyc * off);
+            // Anchor the text's NEAR edge at the offset point, not its centre.
+            // A marker rotated onto a wall (90°/270°) had the D-range centred
+            // 36 px beside the triangle, so half the text ran back over the
+            // symbol and under the ×N badge (Mitchell, 25 Nov 2026 — TF South
+            // Brisbane consult rooms). Below (0°) is unchanged; above (180°)
+            // lifts one text height so it clears the badge too.
+            const gap = mapper.toSize(8 * dScale);
+            const labelX = lx - labelW / 2 + dxc * (labelW / 2 + gap);
+            const labelY = ly - labelSize * 0.35 + Math.max(0, -dyc) * labelSize;
             // White halo underneath via four offset draws — pdf-lib has
             // no text-shadow, so simulate it with a 1px outline.
             const haloOff = mapper.toSize(1.2 * dScale);

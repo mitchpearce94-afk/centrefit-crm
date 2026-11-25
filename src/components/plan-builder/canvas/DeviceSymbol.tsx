@@ -120,6 +120,14 @@ export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelN
           // instead of landing on the neighbouring outlet (Mitchell, 16 Nov
           // 2026 — cardio row). Text itself is counter-rotated to stay
           // upright. Group is in the rotated frame; local +y = base side.
+          // Near edge of the text sits at the anchor (not its centre), so a
+          // marker on a side wall doesn't get its D-range drawn back over the
+          // triangle and the ×N badge — same rule as the PDF export (25 Nov 2026).
+          const rr = (rotation * Math.PI) / 180;
+          const dxc = -Math.sin(rr); const dyc = Math.cos(rr);
+          const w = Math.max(s * 1.5, text.length * s * 0.56);
+          const shiftX = dxc * (w / 2 + s * 0.5);
+          const shiftY = Math.max(0, -dyc) * s * 1.2;
           return (
             <Group x={0} y={s * 2.5} rotation={-rotation} listening={false}>
               <Text
@@ -129,9 +137,9 @@ export default function DeviceSymbol({ def, x, y, rotation = 0, selected, labelN
                 fill="#dc2626"
                 align="center"
                 verticalAlign="middle"
-                x={-s * 4}
-                y={-s * 0.6}
-                width={s * 8}
+                x={-w / 2 + shiftX}
+                y={-s * 0.6 - shiftY}
+                width={w}
                 height={s * 1.2}
                 shadowColor="#ffffff"
                 shadowBlur={3}
