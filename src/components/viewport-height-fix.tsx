@@ -27,15 +27,23 @@ import { useEffect } from "react";
 //    animation settles, so the deferred re-check saw the two agree and
 //    applied the short height — the whole app slid up out of view above
 //    the keyboard (26 Nov 2026 evening, Cortex app recording).
-// What is true in every case: the shell must never SHRINK by more than a
-// keyboard's worth (120 px+) while the width is unchanged. Rotation
-// changes the width; the status-bar oversize case is ~60 px; a keyboard
-// is 250 px+. A suspicious shrink is held back and re-checked; it is only
-// accepted if it persists for a few seconds with no editable element
-// focused (a real keyboard always has one; the resume transient lasts
-// well under a second). Growth is always applied immediately, and every
-// return to the foreground re-measures in a burst like the launch
-// correction.
+//  * "shrink > 120 px only" (the second fix) left a strip above the
+//    keyboard: iOS fires several visual-viewport resizes DURING the
+//    keyboard animation with the height stepping down, and the first
+//    steps (24–120 px) slipped through and were applied before the big
+//    ones were held back — the shell sat ~100 px short while typing and a
+//    blank band showed between the composer and the keyboard (27 Nov 2026).
+// What is true in every case:
+//  1. While an editable element is focused, NO shrink is applied at all
+//     (the keyboard is animating or open). Growth still applies.
+//  2. With nothing focused, the shell must never SHRINK by more than a
+//     keyboard's worth (120 px+) while the width is unchanged. Rotation
+//     changes the width; the status-bar oversize case is ~60 px; a
+//     keyboard is 250 px+. Such a shrink is held back and re-checked and
+//     only accepted if it persists for a few seconds (the resume transient
+//     lasts well under a second).
+// Growth is always applied immediately, and every return to the
+// foreground re-measures in a burst like the launch correction.
 const SHRINK_MIN_PX = 120;
 const RECHECK_MS = [400, 1200, 2500];
 
@@ -73,14 +81,18 @@ export function ViewportHeightFix() {
       const w = Math.round(window.innerWidth);
       if (h <= 0) return;
       const rotated = lastWidth !== 0 && w !== lastWidth;
+      // Rule 1: a focused field means the keyboard is animating or open —
+      // never shrink the shell by any amount (the animation steps down in
+      // small increments before the big one).
+      if (lastApplied && !rotated && editableFocused() && lastApplied - h >= 24) return;
       if (lastApplied && !rotated && lastApplied - h > SHRINK_MIN_PX) {
-        // Keyboard-sized shrink: hold it back. Accept only if it persists
-        // across the re-checks with nothing focused.
+        // Rule 2: keyboard-sized shrink with nothing focused (resume
+        // transient): hold it back, accept only if it persists across the
+        // re-checks.
         if (Math.abs(h - suspect) >= 24) {
           suspect = h;
           suspectStage = 0;
         }
-        if (editableFocused()) return; // a real keyboard — never apply
         if (suspectStage >= RECHECK_MS.length) {
           commit(h, w);
           return;
