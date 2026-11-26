@@ -11,6 +11,11 @@ const tabs = [
     match: (p: string) => p.startsWith("/nbn/services") || p.startsWith("/nbn/active-connections"),
   },
   {
+    href: "/nbn/sims",
+    label: "SIMs",
+    match: (p: string) => p.startsWith("/nbn/sims"),
+  },
+  {
     href: "/nbn/orders",
     label: "Orders",
     match: (p: string) => p.startsWith("/nbn/orders"),

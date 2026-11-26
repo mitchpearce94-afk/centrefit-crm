@@ -139,6 +139,8 @@ export interface SiteAsset {
   vlans: { name?: string; id?: string; notes?: string }[];
   wifi_ssids: { ssid?: string; password?: string; notes?: string }[];
   rfid: string | null;
+  /** M2M One SIM ICCID — links the asset to its Jasper Control Centre record (/nbn/sims). */
+  iccid: string | null;
   location_note: string | null;
   install_date: string | null;
   warranty_expiry: string | null;
@@ -167,6 +169,7 @@ export interface AssetType {
   has_vlans: boolean;
   has_wifi: boolean;
   has_rfid: boolean;
+  has_iccid: boolean;
   is_key_info: boolean;
   is_active: boolean;
   sort_order: number;

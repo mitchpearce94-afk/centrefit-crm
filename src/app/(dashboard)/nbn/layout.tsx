@@ -7,10 +7,14 @@ export default function NbnLayout({ children }: { children: React.ReactNode }) {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">NBN</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Active connections, enquiries from the website, and NBN-related workflows.
+          Active connections, M2M One SIM cards, enquiries from the website, and NBN-related workflows.
           Powered by the{" "}
           <Link href="https://rev3.kinetix.net.au" target="_blank" className="underline hover:text-foreground">
             Kinetix Rev3 API
+          </Link>{" "}
+          and{" "}
+          <Link href="https://m2mone.jasperwireless.com" target="_blank" className="underline hover:text-foreground">
+            Jasper Control Centre
           </Link>
           .
         </p>

@@ -920,6 +920,14 @@ function AssetRow({ asset, onEdit }: { asset: SiteAsset; onEdit: () => void }) {
               <span className="font-mono">{asset.serial}</span>
             </span>
           )}
+          {asset.iccid && (
+            <span>
+              <span className="text-muted-foreground/70">ICCID </span>
+              <a href={`/nbn/sims/${asset.iccid}`} className="font-mono underline decoration-dotted underline-offset-2 hover:text-primary" title="Open in SIMs (live status, plan, usage)">
+                {asset.iccid}
+              </a>
+            </span>
+          )}
           {asset.mac_address && (
             <span>
               <span className="text-muted-foreground/70">MAC </span>
@@ -1041,6 +1049,7 @@ function SiteAssetEditForm({
   const [manufacturer, setManufacturer] = useState(asset.manufacturer ?? "");
   const [model, setModel] = useState(asset.model ?? "");
   const [serial, setSerial] = useState(asset.serial ?? "");
+  const [iccid, setIccid] = useState(asset.iccid ?? "");
   const [macAddress, setMacAddress] = useState(asset.mac_address ?? "");
   const [ipAddress, setIpAddress] = useState(asset.ip_address ?? "");
   const [subnet, setSubnet] = useState(asset.subnet ?? "");
@@ -1130,6 +1139,7 @@ function SiteAssetEditForm({
           manufacturer: manufacturer.trim() || null,
           model: model.trim() || null,
           serial: serial.trim() || null,
+          iccid: iccid.trim() || null,
           mac_address: macAddress.trim() || null,
           ip_address: ipAddress.trim() || null,
           subnet: subnet.trim() || null,
@@ -1154,7 +1164,7 @@ function SiteAssetEditForm({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    assetTypeId, deviceName, manufacturer, model, serial, macAddress, ipAddress,
+    assetTypeId, deviceName, manufacturer, model, serial, iccid, macAddress, ipAddress,
     subnet, adminUser, staffUser, extraStaffUsers, firmware, rfid, vlans,
     wifiSsids, locationNote, installDate, warrantyExpiry, notes, showInKeyInfo,
   ]);
@@ -1171,6 +1181,7 @@ function SiteAssetEditForm({
       manufacturer: manufacturer.trim() || null,
       model: model.trim() || null,
       serial: serial.trim() || null,
+      iccid: iccid.trim() || null,
       mac_address: macAddress.trim() || null,
       ip_address: ipAddress.trim() || null,
       subnet: subnet.trim() || null,
@@ -1323,6 +1334,20 @@ function SiteAssetEditForm({
           className={inputClass + " font-mono"}
         />
       </div>
+
+      {(selectedType?.has_iccid || iccid) && (
+        <div>
+          <input
+            placeholder="ICCID (M2M One SIM — 19–20 digits)"
+            value={iccid}
+            onChange={(e) => setIccid(e.target.value.replace(/\s/g, ""))}
+            className={inputClass + " w-full font-mono"}
+          />
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            Links this SIM to its live record under NBN → SIMs. Easier: open that tab and tap &ldquo;Link to a site&rdquo;.
+          </p>
+        </div>
+      )}
 
       {(selectedType?.has_network_credentials || selectedType?.has_firmware) && (
         <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
