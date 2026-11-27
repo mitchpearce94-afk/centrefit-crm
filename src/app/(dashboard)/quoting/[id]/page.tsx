@@ -258,8 +258,12 @@ export default async function QuoteDetailPage({
         if (!(total > 0)) return null;
         const ri = Number(snap?.roughIn ?? quote.electrician_rough_in_cost ?? 0);
         const fo = Number(snap?.fitOff ?? quote.electrician_fit_off_cost ?? 0);
-        const other = snap ? Number(snap.other ?? 0) : Math.max(0, Math.round((total - ri - fo) * 100) / 100);
+        // "Other" is only what was typed into the Other row (snapshot). For
+        // quotes saved before the split the columns hold just RI/FO and the
+        // old total is whatever we quoted on — never show that gap as a line.
+        const other = snap ? Number(snap.other ?? 0) : 0;
         const unsplit = ri === 0 && fo === 0;
+        const theirTotal = snap ? total : Math.round((ri + fo) * 100) / 100;
         const incGst = (n: number) => Math.round(n * 110) / 100;
         const Amt = ({ label, value, bold = false }: { label: string; value: number; bold?: boolean }) => (
           <div>
@@ -283,7 +287,7 @@ export default async function QuoteDetailPage({
                   <Amt label="Rough In" value={ri} bold />
                   <Amt label="Fit Off" value={fo} bold />
                   {other > 0 && <Amt label="Other electrical" value={other} />}
-                  <Amt label="Their total" value={total} />
+                  <Amt label="Their total" value={theirTotal} />
                 </>
               )}
             </div>
