@@ -31,6 +31,12 @@ export interface QuoteSummary {
     totalSell: number
   }
   extras: { cost: number; sell: number }
+  /** Electrician's quoted cost split by phase (27 Nov 2026) — `cost` is the
+   *  total that sits inside `extras`; `sell` = cost × multiplier (2 or 1.3).
+   *  `other` = anything in the total not entered as rough-in / fit-off
+   *  (power to the rack etc.). Present whenever an electrician cost exists so
+   *  the quote page can show the split for invoice checking. */
+  electrician?: { roughIn: number; fitOff: number; other: number; cost: number; sell: number; multiplier: number }
   /** Centrefit's own scope (everything except the subcontractor block) — what the customer sees labelled "Centrefit". */
   ours?: { exGST: number; gst: number; incGST: number }
   /** Priced subcontractor scope (quotes.subcontract) — added on top of Centrefit's total, outside uplift/discount/override. */
@@ -88,7 +94,17 @@ export function calculateQuoteSummary(
   bomItems: BOMItem[],
   labourData: LabourData,
   extras: ExtraItem[],
-  options: { discountPercent?: number; electricianCost?: number; isInterstate?: boolean; elecDoingRoughIn?: boolean; elecDoingFitOff?: boolean; priceOverrideExGST?: number; subcontract?: QuoteSubcontract | null } = {}
+  options: {
+    discountPercent?: number
+    electricianCost?: number
+    /** Rough-in / fit-off portions of electricianCost (the rest is "other"). */
+    electricianSplit?: { roughIn?: number; fitOff?: number }
+    isInterstate?: boolean
+    elecDoingRoughIn?: boolean
+    elecDoingFitOff?: boolean
+    priceOverrideExGST?: number
+    subcontract?: QuoteSubcontract | null
+  } = {}
 ): QuoteSummary {
   const { discountPercent = 0, electricianCost = 0 } = options
   const priceOverride = Math.round((Number(options.priceOverrideExGST) || 0) * 100) / 100
@@ -143,11 +159,16 @@ export function calculateQuoteSummary(
   // Electrician — see electricianMultiplier(): 2x when interstate or when the
   // sparky is doing our rough-in / fit-off (their cost replaces our labour,
   // which sells at 2x), 1.3x for a plain QLD electrician quotation.
+  let electrician: QuoteSummary['electrician']
   if (electricianCost > 0) {
     const elecMultiplier = electricianMultiplier(options)
     const elecSell = Math.round(electricianCost * elecMultiplier * 100) / 100
     extrasCost += electricianCost
     extrasSell += elecSell
+    const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
+    const roughIn = r2(options.electricianSplit?.roughIn ?? 0)
+    const fitOff = r2(options.electricianSplit?.fitOff ?? 0)
+    electrician = { roughIn, fitOff, other: Math.max(0, r2(electricianCost - roughIn - fitOff)), cost: electricianCost, sell: elecSell, multiplier: elecMultiplier }
   }
 
   const labourTimeCost = labourTotalCost - fixedCostsCost
@@ -221,6 +242,7 @@ export function calculateQuoteSummary(
       totalSell: fixedCostsSell,
     },
     extras: { cost: extrasCost, sell: extrasSell },
+    ...(electrician ? { electrician } : {}),
     ours: { exGST: oursDisplayExGST, gst: oursDisplayExGST * GST_RATE, incGST: oursDisplayExGST * (1 + GST_RATE) },
     ...(subcontract && (sub.cost > 0 || sub.sell > 0)
       ? { subcontract: { contractor: subcontract.contractor, label: subcontract.label, cost: sub.cost, sell: sub.sell, marginPercent: subcontract.marginPercent } }

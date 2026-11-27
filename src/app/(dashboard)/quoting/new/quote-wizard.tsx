@@ -271,6 +271,9 @@ interface ExistingQuote {
   labourData: LabourData | null;
   discountPercent: number;
   electricianCost?: number;
+  /** Rough-in / fit-off portions of electricianCost (quotes.electrician_rough_in_cost / _fit_off_cost, 27 Nov 2026). */
+  electricianRoughInCost?: number;
+  electricianFitOffCost?: number;
   elecDoingRoughIn?: boolean;
   elecDoingFitOff?: boolean;
   lineItems: any[];
@@ -488,8 +491,29 @@ export function QuoteWizard({
       : DEFAULT_EXTRAS.map((e) => ({ ...e }))
   );
 
-  // Electrician
-  const [electricianCost, setElectricianCost] = useState(existingQuote?.electricianCost ?? 0);
+  // Electrician — cost entered per phase (Mitchell, 27 Nov 2026: Sue / Mark
+  // check the sparky's rough-in and fit-off invoices against the quote).
+  // electricianCost (the total) is derived; it still drives lint, the sell
+  // multiplier and job progress exactly as before. Quotes saved before the
+  // split carry one figure: it lands on the single ticked phase, else "other".
+  const [elecRoughInCost, setElecRoughInCost] = useState<number>(() => {
+    const ri = Number(existingQuote?.electricianRoughInCost ?? 0), fo = Number(existingQuote?.electricianFitOffCost ?? 0), total = Number(existingQuote?.electricianCost ?? 0);
+    if (ri > 0 || fo > 0) return ri;
+    return total > 0 && existingQuote?.elecDoingRoughIn && !existingQuote?.elecDoingFitOff ? total : 0;
+  });
+  const [elecFitOffCost, setElecFitOffCost] = useState<number>(() => {
+    const ri = Number(existingQuote?.electricianRoughInCost ?? 0), fo = Number(existingQuote?.electricianFitOffCost ?? 0), total = Number(existingQuote?.electricianCost ?? 0);
+    if (ri > 0 || fo > 0) return fo;
+    return total > 0 && existingQuote?.elecDoingFitOff && !existingQuote?.elecDoingRoughIn ? total : 0;
+  });
+  const [elecOtherCost, setElecOtherCost] = useState<number>(() => {
+    const ri = Number(existingQuote?.electricianRoughInCost ?? 0), fo = Number(existingQuote?.electricianFitOffCost ?? 0), total = Number(existingQuote?.electricianCost ?? 0);
+    if (ri > 0 || fo > 0) return Math.max(0, Math.round((total - ri - fo) * 100) / 100);
+    const onePhase = (existingQuote?.elecDoingRoughIn ? 1 : 0) + (existingQuote?.elecDoingFitOff ? 1 : 0) === 1;
+    return total > 0 && !onePhase ? total : 0;
+  });
+  const electricianCost = Math.round((elecRoughInCost + elecFitOffCost + elecOtherCost) * 100) / 100;
+  const electricianSplit = { roughIn: elecRoughInCost, fitOff: elecFitOffCost };
   // Subcontractor scope — a second, separately-priced section on the quote
   // (Mitchell, 23 Nov 2026: Dane's electrical/lighting on Moffat Beach). Ours
   // is labelled as normal; theirs prints after it with its own total.
@@ -828,7 +852,14 @@ export function QuoteWizard({
       if (d.manualPp2 != null) setManualPp2(d.manualPp2);
       if (d.pp1Override != null) setPp1Override(d.pp1Override);
       if (d.priceOverride != null) setPriceOverride(d.priceOverride);
-      if (d.electricianCost != null) setElectricianCost(d.electricianCost);
+      if (d.elecRoughInCost != null || d.elecFitOffCost != null || d.elecOtherCost != null) {
+        setElecRoughInCost(Number(d.elecRoughInCost) || 0);
+        setElecFitOffCost(Number(d.elecFitOffCost) || 0);
+        setElecOtherCost(Number(d.elecOtherCost) || 0);
+      } else if (d.electricianCost != null) {
+        // Draft from before the split — one figure, keep it as "other".
+        setElecOtherCost(Number(d.electricianCost) || 0);
+      }
       if (d.elecDoingRoughIn != null) setElecDoingRoughIn(d.elecDoingRoughIn);
       if (d.elecDoingFitOff != null) setElecDoingFitOff(d.elecDoingFitOff);
       if (d.subcontract) { const sc = normaliseSubcontract(d.subcontract); if (sc) setSubcontract(sc); }
@@ -851,7 +882,7 @@ export function QuoteWizard({
           deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
           linkedJobId, selectedPlanId, manualScope, manualOngoingCosts, manualBomItems, manualLabourLines,
           manualPp1, manualPp2, pp1Override, priceOverride,
-          electricianCost,
+          electricianCost, elecRoughInCost, elecFitOffCost, elecOtherCost,
           elecDoingRoughIn, elecDoingFitOff,
           subcontract,
         }));
@@ -862,7 +893,7 @@ export function QuoteWizard({
     deviceCounts, bomItems, labourData, extras, discountPercent, quoteType,
     linkedJobId, selectedPlanId, manualScope, manualOngoingCosts, manualBomItems, manualLabourLines,
     manualPp1, manualPp2, pp1Override, priceOverride,
-    electricianCost,
+    electricianCost, elecRoughInCost, elecFitOffCost, elecOtherCost,
     elecDoingRoughIn, elecDoingFitOff, subcontract]);
 
   // Warn on unload
@@ -1394,11 +1425,12 @@ export function QuoteWizard({
       // labour and no extras rows, but the electrician quote gets the same
       // treatment as plan mode (cost + 30% margin, 2x interstate) so its
       // margin lands in profit.
-      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, [], { discountPercent, electricianCost, isInterstate, elecDoingRoughIn, elecDoingFitOff, priceOverrideExGST, subcontract });
+      return calculateQuoteSummary(manualBomAsBomItems, manualLabourData, [], { discountPercent, electricianCost, electricianSplit, isInterstate, elecDoingRoughIn, elecDoingFitOff, priceOverrideExGST, subcontract });
     }
     if (!labourData) return null;
-    return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent, electricianCost, isInterstate, elecDoingRoughIn, elecDoingFitOff, priceOverrideExGST, subcontract });
-  }, [quoteMode, bomItems, labourData, extras, discountPercent, electricianCost, isInterstate, elecDoingRoughIn, elecDoingFitOff, priceOverrideExGST, subcontract, manualBomAsBomItems, manualLabourData]);
+    return calculateQuoteSummary(bomItems, labourData, extras, { discountPercent, electricianCost, electricianSplit, isInterstate, elecDoingRoughIn, elecDoingFitOff, priceOverrideExGST, subcontract });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- electricianSplit is rebuilt each render; its parts are the deps
+  }, [quoteMode, bomItems, labourData, extras, discountPercent, electricianCost, elecRoughInCost, elecFitOffCost, isInterstate, elecDoingRoughIn, elecDoingFitOff, priceOverrideExGST, subcontract, manualBomAsBomItems, manualLabourData]);
 
   // Manual progress quotes use directly-entered PP1/PP2 amounts; everything
   // else derives the split from the cost/sell breakdown in `summary`.
@@ -1592,6 +1624,8 @@ export function QuoteWizard({
       },
       discount_percent: discountPercent,
       electrician_cost: electricianCost || 0,
+      electrician_rough_in_cost: elecRoughInCost || 0,
+      electrician_fit_off_cost: elecFitOffCost || 0,
       elec_doing_rough_in: elecDoingRoughIn,
       elec_doing_fit_off: elecDoingFitOff,
       // Persisted so the elec markup (1.3x QLD vs 2x interstate) doesn't flip
@@ -2047,29 +2081,46 @@ export function QuoteWizard({
 
       <div className="rounded-lg border border-border overflow-hidden">
         <div className="hidden lg:grid grid-cols-[1fr_120px_120px] gap-3 bg-muted/50 px-4 py-2.5 border-b border-border">
-          <span className="text-xs font-medium text-muted-foreground">Item</span>
+          <span className="text-xs font-medium text-muted-foreground">Electrician quotation (ex GST) — split as they will invoice it</span>
           <span className="text-xs font-medium text-muted-foreground text-center">Cost</span>
           <span className="text-xs font-medium text-muted-foreground text-center">Sell ({elecMult === 2 ? "2x" : "+ 30%"})</span>
         </div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1fr_120px_120px] items-center px-4 py-2.5">
-          <span className="text-sm col-span-2 lg:col-span-1">Electrician Quotation</span>
-          <div>
-            <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Cost</p>
-            <input
-              type="number"
-              min="0"
-              value={electricianCost || ""}
-              onChange={(e) => setElectricianCost(parseFloat(e.target.value) || 0)}
-              placeholder="$0"
-              className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-            />
-          </div>
-          <div>
-            <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Sell ({elecMult === 2 ? "2x" : "+ 30%"})</p>
-            <span className="block text-sm font-mono text-center text-muted-foreground">
-              ${fmt(Math.round(electricianCost * elecMult * 100) / 100)}
-            </span>
-          </div>
+        <div className="divide-y divide-border">
+          {([
+            { key: "ri", label: "Rough In", hint: "Cabling, conduits, draw wires", value: elecRoughInCost, set: setElecRoughInCost },
+            { key: "fo", label: "Fit Off", hint: "Field plates, terminations, power to the rack", value: elecFitOffCost, set: setElecFitOffCost },
+            { key: "other", label: "Other electrical", hint: "Anything not invoiced as rough-in or fit-off", value: elecOtherCost, set: setElecOtherCost },
+          ] as const).map((row) => (
+            <div key={row.key} className="grid grid-cols-2 gap-3 lg:grid-cols-[1fr_120px_120px] items-center px-4 py-2.5">
+              <div className="col-span-2 lg:col-span-1">
+                <span className="text-sm">{row.label}</span>
+                <span className="ml-2 text-[11px] text-muted-foreground">{row.hint}</span>
+              </div>
+              <div>
+                <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Cost</p>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={row.value || ""}
+                  onChange={(e) => row.set(parseFloat(e.target.value) || 0)}
+                  placeholder="$0"
+                  className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm text-center font-mono focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+              </div>
+              <div>
+                <p className="lg:hidden text-[10px] text-muted-foreground mb-0.5">Sell ({elecMult === 2 ? "2x" : "+ 30%"})</p>
+                <span className="block text-sm font-mono text-center text-muted-foreground">
+                  ${fmt(Math.round(row.value * elecMult * 100) / 100)}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1fr_120px_120px] items-center px-4 py-2.5 bg-muted/30 border-t border-border">
+          <span className="text-sm font-medium col-span-2 lg:col-span-1">Electrician total</span>
+          <span className="block text-sm font-mono text-center font-medium">${fmt(electricianCost)}</span>
+          <span className="block text-sm font-mono text-center font-medium">${fmt(Math.round(electricianCost * elecMult * 100) / 100)}</span>
         </div>
       </div>
     </div>
@@ -3492,6 +3543,17 @@ export function QuoteWizard({
               <div><p className="text-[10px] text-muted-foreground uppercase">Labour</p><p className="font-mono mt-0.5">Cost ${fmt(summary.labour.totalCost)}</p><p className="font-mono text-muted-foreground">Sell ${fmt(summary.labour.totalSell)}</p></div>
               <div><p className="text-[10px] text-muted-foreground uppercase">Fixed</p><p className="font-mono mt-0.5">Cost ${fmt(summary.fixedCosts.totalCost)}</p><p className="font-mono text-muted-foreground">Sell ${fmt(summary.fixedCosts.totalSell)}</p></div>
               <div><p className="text-[10px] text-muted-foreground uppercase">Extras</p><p className="font-mono mt-0.5">Cost ${fmt(summary.extras.cost)}</p><p className="font-mono text-muted-foreground">Sell ${fmt(summary.extras.sell)}</p></div>
+              {summary.electrician && (
+                <div className="col-span-2 sm:col-span-4 rounded-md border border-border bg-muted/20 px-3 py-2">
+                  <p className="text-[10px] text-muted-foreground uppercase">Electrician — as they will invoice it (ex GST)</p>
+                  <div className="mt-1 grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-sm">
+                    <div><p className="text-[10px] text-muted-foreground">Rough In</p><p>${fmt(summary.electrician.roughIn)}</p></div>
+                    <div><p className="text-[10px] text-muted-foreground">Fit Off</p><p>${fmt(summary.electrician.fitOff)}</p></div>
+                    {summary.electrician.other > 0 && <div><p className="text-[10px] text-muted-foreground">Other</p><p>${fmt(summary.electrician.other)}</p></div>}
+                    <div><p className="text-[10px] text-muted-foreground">Total cost → sell ({summary.electrician.multiplier === 2 ? "2x" : "+ 30%"})</p><p>${fmt(summary.electrician.cost)} <span className="text-muted-foreground">→ ${fmt(summary.electrician.sell)}</span></p></div>
+                  </div>
+                </div>
+              )}
               {summary.subcontract && (
                 <div><p className="text-[10px] text-muted-foreground uppercase">{summary.subcontract.label}{summary.subcontract.contractor ? ` — ${summary.subcontract.contractor}` : ""}</p><p className="font-mono mt-0.5">Cost ${fmt(summary.subcontract.cost)}</p><p className="font-mono text-muted-foreground">Sell ${fmt(summary.subcontract.sell)}</p></div>
               )}

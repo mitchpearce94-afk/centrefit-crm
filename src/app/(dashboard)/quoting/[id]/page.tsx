@@ -248,6 +248,43 @@ export default async function QuoteDetailPage({
         </div>
       )}
 
+      {/* Electrician — what the sparky quoted, split the way they invoice it
+          (Mitchell, 27 Nov 2026: Sue / Mark check their invoices against this).
+          From the pricing snapshot when the quote was saved after the split;
+          older quotes fall back to the columns (one figure, unsplit). */}
+      {(() => {
+        const snap = pricing?.electrician as { roughIn: number; fitOff: number; other: number; cost: number; sell: number; multiplier: number } | undefined;
+        const total = Number(snap?.cost ?? quote.electrician_cost ?? 0);
+        if (!(total > 0)) return null;
+        const ri = Number(snap?.roughIn ?? quote.electrician_rough_in_cost ?? 0);
+        const fo = Number(snap?.fitOff ?? quote.electrician_fit_off_cost ?? 0);
+        const other = snap ? Number(snap.other ?? 0) : Math.max(0, Math.round((total - ri - fo) * 100) / 100);
+        const unsplit = ri === 0 && fo === 0;
+        const mult = snap?.multiplier ?? (quote.is_interstate || quote.elec_doing_rough_in || quote.elec_doing_fit_off ? 2 : 1.3);
+        const sell = snap?.sell ?? Math.round(total * mult * 100) / 100;
+        const covering = [quote.elec_doing_rough_in ? "rough in" : null, quote.elec_doing_fit_off ? "fit off" : null].filter(Boolean).join(" + ");
+        return (
+          <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-amber-500">Electrician — check their invoices against these (ex GST)</p>
+              {covering && <p className="text-[11px] text-muted-foreground">Electrician doing our {covering}</p>}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+              {unsplit ? (
+                <div className="col-span-2"><p className="text-[10px] text-muted-foreground uppercase">Electrician quotation (not split)</p><p className="font-mono font-semibold mt-0.5">${fmt(total)}</p></div>
+              ) : (
+                <>
+                  <div><p className="text-[10px] text-muted-foreground uppercase">Rough In</p><p className="font-mono font-semibold mt-0.5">${fmt(ri)}</p></div>
+                  <div><p className="text-[10px] text-muted-foreground uppercase">Fit Off</p><p className="font-mono font-semibold mt-0.5">${fmt(fo)}</p></div>
+                </>
+              )}
+              {other > 0 && !unsplit && <div><p className="text-[10px] text-muted-foreground uppercase">Other electrical</p><p className="font-mono mt-0.5">${fmt(other)}</p></div>}
+              <div><p className="text-[10px] text-muted-foreground uppercase">Total cost → our sell ({mult === 2 ? "2x" : "+ 30%"})</p><p className="font-mono mt-0.5">${fmt(total)} <span className="text-muted-foreground">→ ${fmt(sell)}</span></p></div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Devices summary */}
       {activeDevices.length > 0 && (
         <div className="mt-5 rounded-lg border border-border bg-card p-4">
